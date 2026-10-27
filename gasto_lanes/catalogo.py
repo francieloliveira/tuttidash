@@ -68,6 +68,7 @@ EMBUTIDOS_JSON = """\
   "alto": {"id": "opus", "flags": ["--model", "opus", "--effort", "xhigh"]}
   },
 "revisao": {"papel": "sozinho", "auto": true, "comando": ["claude", "-p", "--output-format", "text", "--permission-mode", "default", "--settings", "{settings}", "--strict-mcp-config", "--mcp-config", "{mcp}", "--max-budget-usd", "{teto}", "{flags}"], "flag_modelo": ["--model", "{modelo}"], "flag_esforco": ["--effort", "{esforco}"], "entrada": "stdin", "saida": "stdout", "modelos": ["haiku", "sonnet", "opus"], "modelo_padrao": "opus", "esforcos": ["low", "medium", "high", "xhigh"], "esforco_padrao": "high"},
+"instalar": {"comando": "curl -fsSL https://claude.ai/install.sh | bash", "entrar": "claude", "dica_entrar": "Na primeira vez o Claude Code abre o navegador para você entrar. Depois digite /exit.", "docs": "https://code.claude.com/docs/en/setup"},
 "uso": {
   "tipo": "claude",
   "fonte": "",
@@ -97,6 +98,7 @@ EMBUTIDOS_JSON = """\
   "alto": {"id": "", "flags": []}
   },
 "revisao": {"papel": "sozinho", "auto": true, "comando": ["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--color", "never", "--output-last-message", "{saida}", "{flags}", "-"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": ["-c", "model_reasoning_effort={esforco}"], "entrada": "stdin", "saida": "arquivo", "modelos": [], "modelo_padrao": "padrao", "esforcos": ["low", "medium", "high"], "esforco_padrao": "high"},
+"instalar": {"comando": "brew install --cask codex", "entrar": "codex", "dica_entrar": "Escolha Sign in with ChatGPT e entre pelo navegador. Depois digite /quit.", "docs": "https://github.com/openai/codex"},
 "uso": {
   "tipo": "codex",
   "fonte": "",
@@ -136,6 +138,7 @@ EMBUTIDOS_JSON = """\
   },
 "revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode/deepseek-v4.1-flash-free", "opencode/nemotron-3-ultra-free", "opencode/glm-5.3-flash-free"], "modelo_padrao": "opencode/deepseek-v4.1-flash-free", "esforcos": [], "esforco_padrao": ""},
 "privacidade": "opencode",
+"instalar": {"comando": "brew install opencode", "entrar": "opencode", "dica_entrar": "Dentro do OpenCode, digite /connect e escolha o provedor da sua conta.", "docs": "https://github.com/anomalyco/opencode"},
 "uso": {
   "tipo": "opencode",
   "fonte": "",
@@ -175,6 +178,7 @@ EMBUTIDOS_JSON = """\
   },
 "revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode-go/kimi-k3"], "modelo_padrao": "opencode-go/kimi-k3", "esforcos": [], "esforco_padrao": ""},
 "privacidade": "opencode",
+"instalar": {"comando": "brew install opencode", "entrar": "opencode", "dica_entrar": "Dentro do OpenCode, digite /connect e escolha o provedor da sua conta.", "docs": "https://github.com/anomalyco/opencode"},
 "uso": {
   "tipo": "opencode",
   "fonte": "",
@@ -204,6 +208,7 @@ EMBUTIDOS_JSON = """\
   "alto": {"id": "grok-4.7", "flags": ["-m", "grok-4.7", "--effort", "high"]}
   },
 "revisao": {"papel": "sozinho", "auto": true, "comando": ["grok", "{flags}", "--tools", "read_file,grep,list_dir", "--disable-web-search", "-p", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": ["--effort", "{esforco}"], "entrada": "argumento", "saida": "stdout", "modelos": ["grok-4.7", "grok-4.7-build-fast"], "modelo_padrao": "grok-4.7", "esforcos": ["high"], "esforco_padrao": "high"},
+"instalar": {"comando": "curl -fsSL https://x.ai/cli/install.sh | bash", "entrar": "grok", "dica_entrar": "Na primeira vez o Grok abre o navegador para você entrar.", "docs": "https://github.com/xai-org/grok-build"},
 "uso": {
   "tipo": "grok",
   "fonte": "",
@@ -253,6 +258,7 @@ EMBUTIDOS_JSON = """\
 "resume": "gemini",
 "pesoFontes": ["quota"],
 "nota": "Conta de uso do Gemini CLI, não é lane: não pega card e não entra no dispatcher. Opt-in (fora da lista padrão de contas). O TuttiDash aberto não lê o limite desta conta (sem API oficial de cota).",
+"instalar": {"comando": "brew install gemini-cli", "entrar": "gemini", "dica_entrar": "Escolha o jeito de entrar (conta Google ou chave da API) e siga a tela.", "docs": "https://github.com/google-gemini/gemini-cli"},
 "uso": {
   "tipo": "gemini",
   "fonte": "",

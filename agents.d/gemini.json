@@ -13,6 +13,7 @@
 "resume": "gemini",
 "pesoFontes": ["quota"],
 "nota": "Conta de uso do Gemini CLI, não é lane: não pega card e não entra no dispatcher. Opt-in (fora da lista padrão de contas). O TuttiDash aberto não lê o limite desta conta (sem API oficial de cota).",
+"instalar": {"comando": "brew install gemini-cli", "entrar": "gemini", "dica_entrar": "Escolha o jeito de entrar (conta Google ou chave da API) e siga a tela.", "docs": "https://github.com/google-gemini/gemini-cli"},
 "uso": {
   "tipo": "gemini",
   "fonte": "",

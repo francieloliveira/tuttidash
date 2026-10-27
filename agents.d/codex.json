@@ -20,6 +20,7 @@
   "alto": {"id": "", "flags": []}
   },
 "revisao": {"papel": "sozinho", "auto": true, "comando": ["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--color", "never", "--output-last-message", "{saida}", "{flags}", "-"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": ["-c", "model_reasoning_effort={esforco}"], "entrada": "stdin", "saida": "arquivo", "modelos": [], "modelo_padrao": "padrao", "esforcos": ["low", "medium", "high"], "esforco_padrao": "high"},
+"instalar": {"comando": "brew install --cask codex", "entrar": "codex", "dica_entrar": "Escolha Sign in with ChatGPT e entre pelo navegador. Depois digite /quit.", "docs": "https://github.com/openai/codex"},
 "uso": {
   "tipo": "codex",
   "fonte": "",

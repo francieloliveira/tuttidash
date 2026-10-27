@@ -40,6 +40,7 @@ do repo (E13). Ninguém edita a cópia viva.
 | `modelos` | para lanes | `{ baixo, medio, alto }`, cada um `{ id, flags }`. `flags` é o que o dispatcher passa ao CLI; vazio = default do CLI. |
 | `uso` | sim | `{ tipo, fonte, credencial }`. `tipo` é a chave que o `ColetorUso` usa para achar o código de medição (duas lanes podem medir a mesma conta — `opencode` e `opencode-go`). `fonte` e `credencial` são texto de apoio. |
 | `label_linear` | não | UUID do label da lane no Linear. `null` = ainda sem label. |
+| `instalar` | não | `{ comando, entrar, dica_entrar, docs, nome? }`. O app mostra o agente em Ajustes › Geral › Ferramentas com os botões Instalar e Entrar, que abrem o Terminal com estes comandos (a pessoa vê e confirma antes de rodar). Use só o comando da documentação oficial em `docs`. Sem `comando` = sem botão. |
 | `nota` | recomendado | Por que a lane é do jeito que é (ZDR, promoção, IDs que quebram a lane…). O que era comentário no código vive aqui agora. |
 
 ## O que continua sendo código (e por quê)

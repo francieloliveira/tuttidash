@@ -30,7 +30,6 @@ struct TelaPrimeiraAbertura: View {
     @State private var erro: String?
     @State private var contas: Set<String> = Set(ContaUso.padrao.map(\.tipo))
     private let modelo = ModeloAjustes()
-    private let deps = Dependencia.verificar()
 
     private var titulos: [String] {
         [String(localized: "Boas-vindas"), String(localized: "Contas para acompanhar"), String(localized: "Seu quadro no Linear"),
@@ -71,23 +70,11 @@ struct TelaPrimeiraAbertura: View {
     }
 
     private var boasVindas: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "O TuttiDash mostra no notch o gasto e o estado das suas lanes de agentes. Vamos configurar em poucos passos."))
-            Text(String(localized: "Dependências (opcionais)")).font(.headline)
-            ForEach(deps) { d in
-                HStack {
-                    Image(systemName: d.encontrada == nil ? "exclamationmark.triangle" : "checkmark.circle")
-                        .foregroundStyle(d.encontrada == nil ? .orange : .green)
-                    Text(d.nome).bold()
-                    if let c = d.encontrada { Text(c).foregroundStyle(.secondary) } else {
-                        Text(String(localized: "Instale com: \(d.comoInstalar)")).textSelection(.enabled)
-                        Link(String(localized: "Homebrew"), destination: d.link)
-                    }
-                }
-            }
-            Text(String(localized: "Sem elas o app funciona; só o painel de logs e os scripts ficam indisponíveis."))
-                .font(.caption).foregroundStyle(.secondary)
-        }
+        Form {
+            Text(String(localized: "O TuttiDash mostra no notch o gasto e o estado das suas lanes de agentes. Vamos configurar em poucos passos. Primeiro, o que precisa estar instalado; o que faltar instala daqui."))
+                .foregroundStyle(.secondary)
+            SecaoFerramentas()
+        }.formStyle(.grouped)
     }
 
     private var escolhaContas: some View {

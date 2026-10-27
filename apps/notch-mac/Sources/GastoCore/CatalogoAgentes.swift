@@ -92,6 +92,24 @@ public enum CatalogoAgentes {
         public var revisao: Revisao? = nil
         /// true = conta fora da lista padrão. A pessoa adiciona em Ajustes › Contas.
         public var optIn: Bool = false
+        /// Bloco `instalar` (FRA-570): como instala e como entra. nil = o app não oferece o botão.
+        public var instalar: Instalar? = nil
+
+        public struct Instalar: Equatable, Sendable {
+            /// Nome na lista de ferramentas. Vazio = o rótulo do agente.
+            public var nome: String
+            /// Comando oficial de instalação.
+            public var comando: String
+            /// Comando que entra na conta. Vazio = não precisa.
+            public var entrar: String
+            /// O que fazer depois de abrir o `entrar`.
+            public var dicaEntrar: String
+            /// Documentação oficial da instalação.
+            public var docs: String
+            public init(nome: String = "", comando: String, entrar: String = "", dicaEntrar: String = "", docs: String = "") {
+                self.nome = nome; self.comando = comando; self.entrar = entrar; self.dicaEntrar = dicaEntrar; self.docs = docs
+            }
+        }
 
         /// Modelo de um esforço. nil = sem flags (usa o default do CLI).
         public func modelo(_ effort: String) -> Modelo? { modelos[effort] }
@@ -208,7 +226,16 @@ public enum CatalogoAgentes {
                        credencial: (usoObj["credencial"] as? String) ?? ""),
             privacidade: privacidadeDe(obj["privacidade"]),
             revisao: revisaoDe(obj["revisao"]),
-            optIn: Self.flag(obj["optIn"]))
+            optIn: Self.flag(obj["optIn"]),
+            instalar: instalarDe(obj["instalar"]))
+    }
+
+    /// Bloco `instalar` do manifesto. Sem `comando`, não há botão.
+    static func instalarDe(_ v: Any?) -> ModeloAgente.Instalar? {
+        guard let d = v as? [String: Any], let cmd = d["comando"] as? String,
+              !cmd.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        let t = { (k: String) in (d[k] as? String) ?? "" }
+        return .init(nome: t("nome"), comando: cmd, entrar: t("entrar"), dicaEntrar: t("dica_entrar"), docs: t("docs"))
     }
 
     /// `optIn: true` no manifesto. Ausente = entra na lista padrão de contas.

@@ -23,23 +23,3 @@ public enum PrimeiraAbertura {
         try Data().write(to: marcador(home: modelo.home), options: .atomic)
     }
 }
-
-/// Dependências opcionais. Nunca bloqueiam: só mostram como instalar.
-public struct Dependencia: Identifiable, Equatable, Sendable {
-    public var id: String { nome }
-    public let nome: String
-    public let encontrada: String?
-    public let comoInstalar: String
-    public let link: URL
-
-    public static func verificar(existe: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> [Dependencia] {
-        let brew = URL(string: "https://brew.sh")!
-        func primeiro(_ l: [String]) -> String? { l.first(where: existe) }
-        return [
-            Dependencia(nome: "tmux", encontrada: primeiro(["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"]),
-                        comoInstalar: "brew install tmux", link: brew),
-            Dependencia(nome: "python3", encontrada: primeiro(["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]),
-                        comoInstalar: "xcode-select --install", link: brew),
-        ]
-    }
-}
