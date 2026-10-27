@@ -9,6 +9,8 @@ final class EstadoLinear: ObservableObject {
     let tokens: TokenLinear
     @Published var token = ""
     @Published var temToken = false
+    /// false até a primeira leitura do Keychain (feita fora da criação da tela, FRA-579).
+    @Published var tokenConferido = false
     @Published var mostrarToken = false
     @Published var carregando = false
     @Published var erro: String?
@@ -20,8 +22,14 @@ final class EstadoLinear: ObservableObject {
 
     init(modelo: ModeloAjustes, servico: ServicoLinear = ServicoLinear(), tokens: TokenLinear = TokenLinear()) {
         self.modelo = modelo; self.servico = servico; self.tokens = tokens
-        temToken = tokens.ler() != nil
         workspace = modelo.valorTexto("linear.workspace_url")
+    }
+
+    /// Lê o Keychain fora da thread da interface: o `security` não roda no meio de um redesenho.
+    func conferirToken() async {
+        let tokens = self.tokens
+        temToken = await Task.detached { tokens.ler() != nil }.value
+        tokenConferido = true
     }
 
     /// Conectado = a API respondeu nesta sessão (os seletores só aparecem assim).
@@ -40,7 +48,8 @@ final class EstadoLinear: ObservableObject {
     }
 
     func conectar() async {
-        guard let t = tokens.ler() else { erro = ErroLinear.semToken.errorDescription; return }
+        let tokens = self.tokens
+        guard let t = await Task.detached(operation: { tokens.ler() }).value else { erro = ErroLinear.semToken.errorDescription; return }
         carregando = true; erro = nil
         defer { carregando = false }
         do {
@@ -57,7 +66,8 @@ final class EstadoLinear: ObservableObject {
     }
 
     func carregarTime(_ id: String) async {
-        guard let t = tokens.ler() else { return }
+        let tokens = self.tokens
+        guard let t = await Task.detached(operation: { tokens.ler() }).value else { return }
         do { opcoes = try await servico.opcoes(time: id, token: t) }
         catch { erro = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
     }
@@ -78,6 +88,13 @@ struct AbaLinear: View {
     var aoSalvar: () -> Void
     /// true dentro de Ajustes na janela principal (FRA-524): as seções entram no Form de fora.
     var embutido = false
+
+    /// O estado é criado uma vez só: a página se redesenha a cada poucos segundos (FRA-579).
+    init(estado: @autoclosure @escaping () -> EstadoLinear, aoSalvar: @escaping () -> Void, embutido: Bool = false) {
+        _estado = StateObject(wrappedValue: estado())
+        self.aoSalvar = aoSalvar
+        self.embutido = embutido
+    }
 
     private func linha(_ c: CampoLinear) -> some View {
         let itens = EscolhasLinear.itens(c, times: estado.times, opcoes: estado.opcoes)
@@ -115,14 +132,19 @@ struct AbaLinear: View {
             if embutido { secoes } else { Form { secoes }.formStyle(.grouped) }
         }
         .id(estado.versao)
-        .task { if estado.temToken && !estado.conectado { await estado.conectar() } }
+        .task {
+            if !estado.tokenConferido { await estado.conferirToken() }
+            if estado.temToken && !estado.conectado { await estado.conectar() }
+        }
     }
 
     @ViewBuilder private var secoes: some View {
             if !estado.conectado {
                 Section {
                     Text(String(localized: "Conecte o Linear para escolher os projetos e as colunas."))
-                    if estado.temToken {
+                    if !estado.tokenConferido {
+                        ProgressView().controlSize(.small)
+                    } else if estado.temToken {
                         Button(String(localized: "Conectar o Linear")) { Task { await estado.conectar() } }
                             .buttonStyle(.borderedProminent)
                     } else if estado.mostrarToken {

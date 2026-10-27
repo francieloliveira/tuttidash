@@ -157,20 +157,8 @@ public struct ChaveiroSecurity: ChaveiroScripts {
 
     @discardableResult
     private func rodar(_ args: [String], entrada: String? = nil) -> (codigo: Int32, saida: String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        p.arguments = args
-        let saida = Pipe(), erro = Pipe(), dentro = Pipe()
-        p.standardOutput = saida; p.standardError = erro
-        if entrada != nil { p.standardInput = dentro }
-        do { try p.run() } catch { return (-1, "") }
-        if let entrada {
-            dentro.fileHandleForWriting.write(Data(entrada.utf8))
-            try? dentro.fileHandleForWriting.close()
-        }
-        let dados = saida.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(data: dados, encoding: .utf8) ?? "")
+        let r = Subprocesso.rodar("/usr/bin/security", args, entrada: entrada)
+        return (r.codigo, r.texto)
     }
 
     public func ler(servico: String) -> String? {

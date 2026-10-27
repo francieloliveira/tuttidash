@@ -100,20 +100,11 @@ public enum RepositorioGitHub {
     /// Roda o `gh`; nil quando falta ou sai diferente de 0 (sem login, sem rede).
     public static func rodarGh(_ args: [String]) -> Data? {
         guard let exe = gh() else { return nil }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: exe)
-        p.arguments = args
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         env["GH_PROMPT_DISABLED"] = "1"
-        p.environment = env
-        let saida = Pipe()
-        p.standardOutput = saida
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        let dados = saida.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return p.terminationStatus == 0 ? dados : nil
+        let r = Subprocesso.rodar(exe, args, ambiente: env)
+        return r.codigo == 0 ? r.saida : nil
     }
 
     /// `gh repo clone dono/repo <destino>`. Só no clique da pessoa. Não chamar na thread da interface.
