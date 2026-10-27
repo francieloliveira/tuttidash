@@ -212,7 +212,11 @@ public struct TokenLinear: Sendable {
     }
 
     public func ler() -> String? {
-        if let t = chaveiro.ler(servico: servico) { return t }
+        if let t = chaveiro.ler(servico: servico) {
+            // Sobra da migração: o item antigo com o mesmo token não serve para nada.
+            if cofre.ler(conta: Self.conta) == t { cofre.apagar(conta: Self.conta) }
+            return t
+        }
         guard let antigo = cofre.ler(conta: Self.conta) else { return nil }
         if (try? chaveiro.gravar(antigo, servico: servico, conta: NSUserName())) != nil {
             cofre.apagar(conta: Self.conta)
