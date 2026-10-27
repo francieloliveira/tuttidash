@@ -217,7 +217,7 @@ def mudar_estado(issue_id: str, state_id: str) -> bool:
     return True
 
 
-_aplicar_ids(linear_ids.carregar(_cfg))  # sem rede: config e cache
+_aplicar_ids(linear_ids.carregar(_cfg, project_id=projetos.padrao().id))  # sem rede: config e cache
 
 
 def projeto():
@@ -900,12 +900,22 @@ def copiar_para_worktree(repo: Path, wt: Path, caminhos) -> list[str]:
 def motivo_para_nao_enviar(wt: Path) -> str:
     """Vazio se a branch pode ir para o `origin`; senão o motivo (nada é enviado).
 
+    0. O `origin` da pasta é o repositório do GitHub do cadastro (FRA-567).
     1. A branch tem de ter a `origin/main` atual na história. Uma branch criada antes
        de o repositório recomeçar (histórico antigo, sem ancestral comum) levaria todo
        o histórico antigo junto no push.
     2. O `antes_do_push` do projeto (ex.: conferência de publicação) tem de sair 0."""
-    sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
     env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    esperado = projeto().github
+    origem = subprocess.run(["git", "config", "--get", "remote.origin.url"], cwd=wt,
+                            capture_output=True, text=True, env=env)
+    atual = projetos.normalizar_github(origem.stdout.strip()) if origem.returncode == 0 else ""
+    if not esperado:
+        return "o projeto não tem o repositório do GitHub no cadastro (Ajustes › Projetos)"
+    if atual != esperado:
+        return (f"o `origin` da pasta é `{atual or 'nenhum'}`, mas o projeto é do repositório "
+                f"`{esperado}`; confira a pasta no cadastro")
+    sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
     base = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=wt,
                           capture_output=True, text=True, env=env)
     if base.returncode != 0 or not base.stdout.strip():

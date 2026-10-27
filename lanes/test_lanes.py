@@ -175,11 +175,15 @@ class TravaAntesDoPush(unittest.TestCase):
         origem, self.wt = self.tmp / "origem.git", self.tmp / "wt"
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origem)], check=True)
         subprocess.run(["git", "clone", "-q", str(origem), str(self.wt)], check=True, capture_output=True)
+        # O origin fica com o link do GitHub; o git troca pelo caminho local ao buscar e enviar.
+        self.git("remote", "set-url", "origin", "https://github.com/dono/app.git", cwd=self.wt)
+        self.git("config", f"url.{origem}.insteadOf", "https://github.com/dono/app.git", cwd=self.wt)
         (self.wt / "a.txt").write_text("a", encoding="utf-8")
         self.git("add", "a.txt", cwd=self.wt)
         self.git("commit", "-q", "-m", "main", cwd=self.wt)
         self.git("push", "-q", "origin", "HEAD:main", cwd=self.wt)
-        self.conf = mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(id="x", repo=str(self.wt)))
+        self.conf = mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(
+            id="x", repo=str(self.wt), github="https://github.com/Dono/App"))
         self.conf.start()
         self.addCleanup(self.conf.stop)
 
@@ -197,9 +201,16 @@ class TravaAntesDoPush(unittest.TestCase):
         self.git("commit", "-q", "-m", "histórico antigo", cwd=self.wt)
         self.assertIn("histórico antigo", d.motivo_para_nao_enviar(self.wt))
 
+    def test_origin_diferente_do_cadastro_e_barrado(self):
+        with mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(id="x", repo=str(self.wt), github="dono/outro")):
+            self.assertIn("dono/app", d.motivo_para_nao_enviar(self.wt))
+        with mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(id="x", repo=str(self.wt))):
+            self.assertIn("não tem o repositório do GitHub", d.motivo_para_nao_enviar(self.wt))
+
     def test_conferencia_vermelha_barra_o_push(self):
         with mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(
-                id="x", repo=str(self.wt), antes_do_push="echo achou nome pessoal; exit 1")):
+                id="x", repo=str(self.wt), github="dono/app",
+                antes_do_push="echo achou nome pessoal; exit 1")):
             motivo = d.motivo_para_nao_enviar(self.wt)
         self.assertIn("saiu 1", motivo)
         self.assertIn("achou nome pessoal", motivo)

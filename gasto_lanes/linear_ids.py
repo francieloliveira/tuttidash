@@ -16,6 +16,14 @@ from pathlib import Path
 from typing import Callable, Optional
 
 CACHE = Path.home() / ".transcentia" / "lanes" / "linear-ids.json"
+#: Um cache por projeto (FRA-567): as colunas são do time de cada projeto.
+CACHE_DIR = Path.home() / ".transcentia" / "lanes" / "linear-ids"
+
+
+def caminho_cache(project_id: str = "") -> Path:
+    """Cache do projeto; sem projeto, o arquivo único de antes."""
+    pid = "".join(c for c in str(project_id or "") if c.isalnum() or c == "-")
+    return CACHE_DIR / f"{pid}.json" if pid else CACHE
 
 #: chave interna -> (chave da config, nome padrão do estado no Linear)
 ESTADOS = {
@@ -69,8 +77,8 @@ def da_config(get: Callable) -> dict:
     return d
 
 
-def ler_cache(caminho: Optional[Path] = None) -> dict:
-    p = Path(caminho or CACHE)
+def ler_cache(caminho: Optional[Path] = None, project_id: str = "") -> dict:
+    p = Path(caminho) if caminho else caminho_cache(project_id)
     try:
         bruto = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeError):
@@ -86,17 +94,17 @@ def ler_cache(caminho: Optional[Path] = None) -> dict:
     return d
 
 
-def gravar_cache(ids: dict, caminho: Optional[Path] = None) -> None:
-    p = Path(caminho or CACHE)
+def gravar_cache(ids: dict, caminho: Optional[Path] = None, project_id: str = "") -> None:
+    p = Path(caminho) if caminho else caminho_cache(project_id)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(ids, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     tmp.replace(p)
 
 
-def carregar(get: Callable, caminho: Optional[Path] = None) -> dict:
-    """Config por cima do cache. Não vai à rede."""
-    return _juntar(ler_cache(caminho), da_config(get))
+def carregar(get: Callable, caminho: Optional[Path] = None, project_id: str = "") -> dict:
+    """Config por cima do cache do projeto. Não vai à rede."""
+    return _juntar(ler_cache(caminho, project_id), da_config(get))
 
 
 def faltando(ids: dict, dono: str, lanes=()) -> list:
@@ -165,18 +173,18 @@ def garantir(get: Callable, consultar: Callable[[str, dict], dict], *, dono: str
              project_id: str = "", caminho: Optional[Path] = None,
              log: Callable[[str], None] = lambda _m: None) -> dict:
     """Carrega; se faltar algo, resolve pela API, junta e grava o cache. Erro de rede não derruba."""
-    ids = carregar(get, caminho)
+    ids = carregar(get, caminho, project_id)
     falta = faltando(ids, dono, lanes)
     if not falta:
         return ids
     try:
-        novos = resolver(consultar, team_id=_texto(get("linear.team_id", "")),
-                         project_id=project_id, dono=dono, lanes=lanes)
+        # O time sai do projeto (FRA-567): sem `linear.team_id` global.
+        novos = resolver(consultar, project_id=project_id, dono=dono, lanes=lanes)
     except Exception as exc:  # noqa: BLE001 — sem rede, fica o que já tinha
         log(f"linear: não resolvi os ids pelo nome ({exc}); faltam {', '.join(falta)}")
         return ids
-    cache = _juntar(ler_cache(caminho), novos)
-    gravar_cache(cache, caminho)
+    cache = _juntar(ler_cache(caminho, project_id), novos)
+    gravar_cache(cache, caminho, project_id)
     ids = _juntar(cache, da_config(get))
     ainda = faltando(ids, dono, lanes)
     if ainda:

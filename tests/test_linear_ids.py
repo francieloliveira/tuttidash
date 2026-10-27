@@ -76,14 +76,21 @@ class IdsDoLinear(unittest.TestCase):
 
     def test_garantir_grava_cache_e_depois_nao_consulta(self):
         f = Falso()
-        cfg = leitor({"linear": {"team_id": "t1"}})
-        ids = L.garantir(cfg, f, dono="needs:dono", lanes=["claude"], caminho=self.cache)
+        cfg = leitor({})
+        ids = L.garantir(cfg, f, dono="needs:dono", lanes=["claude"], project_id="p1", caminho=self.cache)
         self.assertEqual(ids["estados"]["todo"], "s-todo")
         self.assertTrue(self.cache.exists())
         f2 = Falso()
-        de_novo = L.garantir(cfg, f2, dono="needs:dono", lanes=["claude"], caminho=self.cache)
+        de_novo = L.garantir(cfg, f2, dono="needs:dono", lanes=["claude"], project_id="p1", caminho=self.cache)
         self.assertEqual(de_novo, ids)
         self.assertEqual(f2.chamadas, [], "tudo no cache: não vai à rede")
+
+    def test_cache_e_por_projeto(self):
+        self.assertEqual(L.caminho_cache(""), L.CACHE)
+        a, b = L.caminho_cache("p-1"), L.caminho_cache("p-2")
+        self.assertNotEqual(a, b)
+        self.assertEqual(a.parent, L.CACHE_DIR)
+        self.assertEqual(L.caminho_cache("../x/y").name, "xy.json", "o id não sai da pasta do cache")
 
     def test_config_vence_o_cache(self):
         L.gravar_cache({**L.vazio(), "estados": {"todo": "do-cache", "in_progress": "", "in_review": ""}}, self.cache)

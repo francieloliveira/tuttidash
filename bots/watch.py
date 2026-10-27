@@ -186,7 +186,7 @@ def garantir_ids() -> None:
 
 
 REPOS = _repos()
-_aplicar_ids(linear_ids.carregar(_cfg))
+_aplicar_ids(linear_ids.carregar(_cfg, project_id=projetos.padrao().id))
 
 
 def projeto_repo() -> Path:
