@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import GastoCore
 
-/// Primeira abertura guiada: contas, Linear, agendas e pronto. Nenhum arquivo para editar à mão.
+/// Primeira abertura guiada: contas, Linear, projetos, agendas e pronto. Nenhum arquivo para editar à mão.
 @MainActor
 final class JanelaPrimeiraAbertura {
     static let compartilhada = JanelaPrimeiraAbertura()
@@ -34,7 +34,7 @@ struct TelaPrimeiraAbertura: View {
 
     private var titulos: [String] {
         [String(localized: "Boas-vindas"), String(localized: "Contas para acompanhar"), String(localized: "Seu quadro no Linear"),
-         String(localized: "Tarefas automáticas"), String(localized: "Pronto")]
+         String(localized: "Projetos e repositórios"), String(localized: "Tarefas automáticas"), String(localized: "Pronto")]
     }
 
     var body: some View {
@@ -46,6 +46,10 @@ struct TelaPrimeiraAbertura: View {
                 case 1: escolhaContas
                 case 2: AbaLinear(estado: EstadoLinear(modelo: modelo), aoSalvar: {})
                 case 3: Form {
+                    Text(String(localized: "Ligue cada projeto do Linear ao repositório do GitHub em que as lanes trabalham. As duas listas vêm das suas contas."))
+                        .foregroundStyle(.secondary)
+                    SecaoProjetos(estado: EstadoProjetos(modelo: modelo)) }.formStyle(.grouped)
+                case 4: Form {
                     Text(String(localized: "Estas tarefas rodam sozinhas de tempos em tempos. Instale só as que você usa; dá para mudar depois."))
                         .foregroundStyle(.secondary)
                     SecaoAgendas(estado: EstadoAgendas(modelo: modelo)) }.formStyle(.grouped)
@@ -57,7 +61,7 @@ struct TelaPrimeiraAbertura: View {
             HStack {
                 if passo > 0 { Button(String(localized: "Voltar")) { passo -= 1 } }
                 Spacer()
-                if passo == 2 || passo == 3 { Button(String(localized: "Pular")) { passo += 1 } }
+                if (2...4).contains(passo) { Button(String(localized: "Pular")) { passo += 1 } }
                 Button(passo == titulos.count - 1 ? String(localized: "Concluir") : String(localized: "Continuar")) { avancar() }
                     .keyboardShortcut(.defaultAction)
             }

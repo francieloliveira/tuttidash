@@ -66,8 +66,7 @@ DEFAULTS = {
               "proof_default_suites": [], "effort_default": "medio"},
     # FRA-565: nenhum id no padrão. Os ids vazios são resolvidos pelo nome na API do Linear
     # (gasto_lanes/linear_ids.py) e guardados em ~/.transcentia/lanes/linear-ids.json.
-    "linear": {"workspace_url": "", "team_id": "",
-               "project_ios_id": "",
+    "linear": {"workspace_url": "",
                "state_todo_id": "", "state_in_progress_id": "", "state_in_review_id": "",
                "labels": {"nomes": {}, "esforco": {}, "lanes": {}},
                "diary_doc_id": "", "erros_conhecidos_doc_id": "",

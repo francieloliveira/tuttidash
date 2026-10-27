@@ -76,14 +76,21 @@ class IdsDoLinear(unittest.TestCase):
 
     def test_garantir_grava_cache_e_depois_nao_consulta(self):
         f = Falso()
-        cfg = leitor({"linear": {"team_id": "t1"}})
-        ids = L.garantir(cfg, f, dono="needs:dono", lanes=["claude"], caminho=self.cache)
+        cfg = leitor({})
+        ids = L.garantir(cfg, f, dono="needs:dono", lanes=["claude"], project_id="p1", caminho=self.cache)
         self.assertEqual(ids["estados"]["todo"], "s-todo")
         self.assertTrue(self.cache.exists())
         f2 = Falso()
-        de_novo = L.garantir(cfg, f2, dono="needs:dono", lanes=["claude"], caminho=self.cache)
+        de_novo = L.garantir(cfg, f2, dono="needs:dono", lanes=["claude"], project_id="p1", caminho=self.cache)
         self.assertEqual(de_novo, ids)
         self.assertEqual(f2.chamadas, [], "tudo no cache: não vai à rede")
+
+    def test_cache_e_por_projeto(self):
+        self.assertEqual(L.caminho_cache(""), L.CACHE)
+        a, b = L.caminho_cache("p-1"), L.caminho_cache("p-2")
+        self.assertNotEqual(a, b)
+        self.assertEqual(a.parent, L.CACHE_DIR)
+        self.assertEqual(L.caminho_cache("../x/y").name, "xy.json", "o id não sai da pasta do cache")
 
     def test_config_vence_o_cache(self):
         L.gravar_cache({**L.vazio(), "estados": {"todo": "do-cache", "in_progress": "", "in_review": ""}}, self.cache)
@@ -108,6 +115,80 @@ class IdsDoLinear(unittest.TestCase):
         self.assertEqual(L.ler_cache(self.cache), L.vazio())
         self.cache.write_text(json.dumps(["lista"]), encoding="utf-8")
         self.assertEqual(L.ler_cache(self.cache), L.vazio())
+
+
+class LinearQueCria:
+    """Linear falso com etiquetas iniciais e mutação de criar (FRA-569)."""
+
+    def __init__(self, iniciais):
+        self.labels = [dict(e) for e in iniciais]
+        self.criadas = []
+
+    def __call__(self, query, variaveis):
+        if "issueLabelCreate" in query:
+            e = dict(variaveis["input"])
+            novo = {"id": f"novo-{len(self.criadas) + 1}", "name": e["name"], "isGroup": e.get("isGroup", False),
+                    "team": {"id": e["teamId"]}, "parent": None}
+            if e.get("parentId"):
+                pai = next(x for x in self.labels if x["id"] == e["parentId"])
+                novo["parent"] = {"name": pai["name"]}
+            self.labels.append(novo)
+            self.criadas.append(e)
+            return {"issueLabelCreate": {"success": True, "issueLabel": {"id": novo["id"], "name": e["name"]}}}
+        if "project(" in query:
+            return {"project": {"teams": {"nodes": [{"id": "t1"}]}}}
+        if "team(" in query:
+            return {"team": {"states": {"nodes": ESTADOS}}}
+        return {"issueLabels": {"nodes": self.labels, "pageInfo": {"hasNextPage": False}}}
+
+
+class CriaEtiquetas(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_workspace_vazio_ganha_tudo_com_grupos(self):
+        f = LinearQueCria([])
+        criadas = L.criar_faltando(f, project_id="p1", dono="needs:dono", lanes=["claude", "codex"])
+        self.assertEqual(criadas, ["needs:dono", "lane:falhou", "lane:parada", "esforco (grupo)",
+                                   "esforco/baixo", "esforco/medio", "esforco/alto", "lane (grupo)",
+                                   "lane/claude", "lane/codex"])
+        grupos = [c for c in f.criadas if c.get("isGroup")]
+        self.assertEqual([g["name"] for g in grupos], ["esforco", "lane"])
+        self.assertTrue(all(c["teamId"] == "t1" for c in f.criadas))
+        ids = L.resolver(f, project_id="p1", dono="needs:dono", lanes=["claude", "codex"])
+        self.assertEqual(L.faltando(ids, "needs:dono", ["claude", "codex"]), [])
+
+    def test_nao_duplica_o_que_existe(self):
+        f = LinearQueCria(LABELS + [{"id": "g-lane", "name": "lane", "isGroup": True, "parent": None, "team": None},
+                                    {"id": "g-esf", "name": "esforco", "isGroup": True, "parent": None, "team": None}])
+        criadas = L.criar_faltando(f, project_id="p1", dono="needs:dono", lanes=["claude", "grok"])
+        self.assertEqual(criadas, ["lane/grok"])
+        self.assertEqual(f.criadas[0]["parentId"], "g-lane")
+
+    def test_garantir_cria_e_guarda_no_cache(self):
+        f = LinearQueCria([])
+        avisos = []
+        ids = L.garantir(leitor({}), f, dono="needs:dono", lanes=["claude"], project_id="p1",
+                         caminho=self.tmp / "c.json", log=avisos.append)
+        self.assertEqual(L.faltando(ids, "needs:dono", ["claude"]), [])
+        self.assertTrue(any("etiquetas criadas" in a for a in avisos))
+
+    def test_sem_criar_so_avisa(self):
+        f = LinearQueCria([])
+        avisos = []
+        L.garantir(leitor({}), f, dono="needs:dono", lanes=["claude"], project_id="p1",
+                   caminho=self.tmp / "c.json", log=avisos.append, criar=False)
+        self.assertEqual(f.criadas, [])
+        self.assertTrue(any("sem id no Linear" in a for a in avisos))
+
+    def test_erro_de_rede_nao_cria_nada(self):
+        def sem_rede(query, variaveis):
+            raise OSError("sem rede")
+        avisos = []
+        L.garantir(leitor({}), sem_rede, dono="needs:dono", project_id="p1", caminho=self.tmp / "c.json",
+                   log=avisos.append)
+        self.assertTrue(any("não resolvi" in a for a in avisos))
 
 
 if __name__ == "__main__":

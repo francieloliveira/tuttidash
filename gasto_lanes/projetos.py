@@ -13,6 +13,7 @@ Formato (lista de objetos):
        "nome": "Meu app",
        "ativo": true,
        "padrao": true,
+       "github": "dono/meu-app",
        "repo": "~/Developer/meu-app",
        "worktrees": "~/Developer/meu-app-worktrees",
        "prova": "./scripts/testar.sh {suite}",
@@ -24,6 +25,9 @@ Formato (lista de objetos):
 
 Regras:
   - `id` é obrigatório: sem ele o projeto é ignorado (e registrado como inválido).
+    É o id do projeto no Linear; o time sai dele (FRA-567).
+  - `github`: o repositório no GitHub (`dono/repo`, ou o link). O dispatcher só envia
+    a branch se o `origin` da pasta for este repositório.
   - `ativo: false` deixa o projeto listado para o app mostrar, sem dispatch.
   - `padrao: true` marca o projeto que o dispatcher trabalha neste ciclo. Sem
     `padrao`, vale o primeiro `ativo` da lista — a ordem da lista é a ordem de
@@ -77,11 +81,11 @@ def _expandir(valor: str) -> Path:
 class Projeto:
     """Um projeto que o dispatcher pode trabalhar."""
 
-    __slots__ = ("id", "nome", "ativo", "padrao", "repo", "worktrees",
+    __slots__ = ("id", "nome", "ativo", "padrao", "repo", "github", "worktrees",
                  "prova", "prova_tentativas", "protegidos", "copiar_para_worktree", "antes_do_push")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
-                 repo: str = "", worktrees: str = "", prova: str = "python3 {suite}",
+                 repo: str = "", worktrees: str = "", github: str = "", prova: str = "python3 {suite}",
                  prova_tentativas: int = 1, protegidos=None, copiar_para_worktree=None,
                  antes_do_push: str = ""):
         self.id = id
@@ -89,6 +93,7 @@ class Projeto:
         self.ativo = ativo
         self.padrao = padrao
         self.repo = _expandir(repo) if repo else Path("")
+        self.github = normalizar_github(github)
         self.worktrees = _expandir(worktrees) if worktrees else (
             Path(str(self.repo) + "-worktrees") if repo else Path(""))
         self.prova = prova or "python3 {suite}"
@@ -116,6 +121,26 @@ class Projeto:
         return Projeto(**{s: getattr(self, s) for s in Projeto.__slots__})
 
 
+def normalizar_github(valor) -> str:
+    """`dono/repo` a partir do link (https, ssh ou git@) ou do próprio `dono/repo`.
+    Vazio quando não dá para ler. Minúsculas: o GitHub não diferencia."""
+    s = str(valor or "").strip()
+    if not s:
+        return ""
+    for prefixo in ("https://github.com/", "http://github.com/", "ssh://git@github.com/",
+                    "git@github.com:", "github.com/"):
+        if s.lower().startswith(prefixo):
+            s = s[len(prefixo):]
+            break
+    s = s.strip("/")
+    if s.lower().endswith(".git"):
+        s = s[:-4]
+    partes = [p for p in s.split("/") if p]
+    if len(partes) != 2 or any(c.isspace() for c in s):
+        return ""
+    return f"{partes[0]}/{partes[1]}".lower()
+
+
 def _do_registro(bruto: dict) -> list:
     """Lista crua da chave `projetos` -> projetos válidos. Ilegíveis são pulados."""
     saida = []
@@ -137,6 +162,7 @@ def _do_registro(bruto: dict) -> list:
             ativo=True if ativos is None else bool(ativos),
             padrao=bool(item.get("padrao")),
             repo=repo,
+            github=str(item.get("github") or ""),
             worktrees=str(item.get("worktrees") or ""),
             prova=str(item.get("prova") or "python3 {suite}"),
             prova_tentativas=item.get("prova_tentativas") or 1,

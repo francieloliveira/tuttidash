@@ -121,6 +121,18 @@ class Cadastro(Base):
         self.assertEqual(ps[1].copiar_para_worktree, [], "texto solto não vale: tem de ser lista")
         self.assertEqual(ps[0].copia().copiar_para_worktree, ["AGENTS.md"])
 
+    def test_github_aceita_link_ou_dono_repo(self):
+        n = P.normalizar_github
+        self.assertEqual(n("https://github.com/Dono/App"), "dono/app")
+        self.assertEqual(n("https://github.com/dono/app.git/"), "dono/app")
+        self.assertEqual(n("git@github.com:dono/app.git"), "dono/app")
+        self.assertEqual(n("ssh://git@github.com/dono/app.git"), "dono/app")
+        self.assertEqual(n("dono/app"), "dono/app")
+        for ruim in ("", "dono", "https://gitlab.com/dono/app", "dono/app/extra", "dono / app"):
+            self.assertEqual(n(ruim), "", ruim)
+        ps = self.usar(self.config(lista=[{"id": NOTCH, "repo": "~/r", "github": "https://github.com/dono/r"}]))
+        self.assertEqual(ps[0].github, "dono/r")
+
     def test_antes_do_push_e_lido_e_vazio_por_padrao(self):
         ps = self.usar(self.config(lista=[
             {"id": NOTCH, "repo": "~/Developer/tuttidash", "antes_do_push": " bash tools/checar-publicacao.sh "},

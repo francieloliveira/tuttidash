@@ -4,10 +4,10 @@ import Foundation
 /// A tela nunca mostra um id cru.
 public struct CampoLinear: Identifiable, Equatable, Sendable {
     public var id: String { chave }
-    public enum Fonte: Sendable { case times, projetos, estados, rotulos }
-    /// Chave do id na config (`linear.project_ios_id`); no rótulo, guarda o próprio nome.
+    public enum Fonte: Sendable { case estados, rotulos }
+    /// Chave do id na config (`linear.state_in_progress_id`); no rótulo, guarda o próprio nome.
     public let chave: String
-    /// Chave do nome na config (`linear.project_name`).
+    /// Chave do nome na config (`linear.state_in_progress_name`).
     public let chaveNome: String
     public let fonte: Fonte
     public let titulo: String
@@ -15,14 +15,8 @@ public struct CampoLinear: Identifiable, Equatable, Sendable {
     /// true quando o valor guardado é o nome (etiqueta), não um id.
     public var porNome: Bool { fonte == .rotulos }
 
-    public static func todos() -> [CampoLinear] { ondeTrabalha() + colunas() + [etiqueta()] }
-
-    public static func ondeTrabalha() -> [CampoLinear] {
-        [CampoLinear(chave: "linear.team_id", chaveNome: "linear.team_name", fonte: .times,
-                     titulo: String(localized: "Time"), ajuda: String(localized: "O time do Linear onde ficam os cards.")),
-         CampoLinear(chave: "linear.project_ios_id", chaveNome: "linear.project_name", fonte: .projetos,
-                     titulo: String(localized: "Projeto"), ajuda: String(localized: "Só os cards deste projeto entram nas lanes."))]
-    }
+    /// Sem time nem projeto globais (FRA-567): cada projeto do cadastro diz o seu.
+    public static func todos() -> [CampoLinear] { colunas() + [etiqueta()] }
 
     public static func colunas() -> [CampoLinear] {
         [CampoLinear(chave: "linear.state_in_progress_id", chaveNome: "linear.state_in_progress_name", fonte: .estados,
@@ -51,8 +45,6 @@ public enum EscolhasLinear {
 
     public static func itens(_ c: CampoLinear, times: [ItemLinear], opcoes: OpcoesTime) -> [ItemLinear] {
         switch c.fonte {
-        case .times: return times
-        case .projetos: return opcoes.projetos
         case .estados: return opcoes.estados
         case .rotulos: return opcoes.rotulos
         }
@@ -63,10 +55,10 @@ public enum EscolhasLinear {
         c.porNome ? [(c.chave, item.nome)] : [(c.chave, item.id), (c.chaveNome, item.nome)]
     }
 
-    /// Depois de conectar: o time a escolher sozinho (só quando há exatamente um e nenhum escolhido).
-    public static func timeAutomatico(times: [ItemLinear], escolhido: String?) -> ItemLinear? {
-        guard escolhido?.isEmpty ?? true, times.count == 1 else { return nil }
-        return times[0]
+    /// Time de onde vêm as colunas: o do projeto padrão do cadastro (FRA-567).
+    public static func timeDasColunas(projetos: [ProjetoLinear], cadastro: [ProjetoCadastro]) -> String? {
+        guard let padrao = ProjetosConfig.padrao(cadastro) else { return nil }
+        return projetos.first { $0.id == padrao.projetoID }?.timeID
     }
 
     /// Nomes atualizados vindos da API para ids já guardados (ex.: alguém renomeou a coluna).

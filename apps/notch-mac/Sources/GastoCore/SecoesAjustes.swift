@@ -254,7 +254,7 @@ extension CatalogoAjustes {
 
     /// Chaves do Linear mostradas só para leitura.
     public static let chavesLinearLeitura = [
-        "linear.workspace_url", "linear.team_name", "linear.project_name", "linear.state_in_progress_name",
+        "linear.workspace_url", "linear.state_in_progress_name",
         "linear.state_in_review_name", "linear.owner_label", "linear.alert_labels", "linear.blocking_labels",
         "linear.diary_doc_id", "linear.keychain_service",
     ]
