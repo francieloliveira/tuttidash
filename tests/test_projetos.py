@@ -121,6 +121,13 @@ class Cadastro(Base):
         self.assertEqual(ps[1].copiar_para_worktree, [], "texto solto não vale: tem de ser lista")
         self.assertEqual(ps[0].copia().copiar_para_worktree, ["AGENTS.md"])
 
+    def test_antes_do_push_e_lido_e_vazio_por_padrao(self):
+        ps = self.usar(self.config(lista=[
+            {"id": NOTCH, "repo": "~/Developer/tuttidash", "antes_do_push": " bash tools/checar-publicacao.sh "},
+            {"id": IOS, "repo": "~/Developer/app"}]))
+        self.assertEqual(ps[0].antes_do_push, "bash tools/checar-publicacao.sh")
+        self.assertEqual(ps[1].antes_do_push, "")
+
     def test_worktrees_default_deriva_do_repo(self):
         ps = self.usar(self.config(lista=[
             {"id": NOTCH, "repo": "~/Developer/tuttidash"}]))

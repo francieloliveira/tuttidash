@@ -32,6 +32,9 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     /// Arquivos fora do git no repo (ex.: `AGENTS.md` gerado na máquina) que o dispatcher
     /// copia para cada worktree de lane. Relativos ao repo; nunca sobrescrevem.
     public var copiarParaWorktree: [String]
+    /// Comando que roda no worktree antes de cada push da lane (ex.: a conferência de
+    /// publicação de um repositório público). Vazio = sem conferência.
+    public var antesDoPush: String
 
     /// Freio padrão quando o projeto não declara o seu: a config dos agentes do projeto
     /// (igual ao `PROTEGIDOS_PADRAO` do `projetos.py`).
@@ -39,7 +42,8 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
 
     public init(projetoID: String, nome: String = "", ativo: Bool = true, padrao: Bool = false,
                 repo: String = "", worktrees: String = "", prova: String = "python3 {suite}",
-                provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = []) {
+                provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = [],
+                antesDoPush: String = "") {
         self.projetoID = projetoID
         self.nome = nome.isEmpty ? projetoID : nome
         self.ativo = ativo
@@ -50,6 +54,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         self.provaTentativas = max(1, provaTentativas)
         self.protegidos = protegidos
         self.copiarParaWorktree = copiarParaWorktree
+        self.antesDoPush = antesDoPush.trimmingCharacters(in: .whitespaces)
     }
 
     /// Pasta de worktrees efetiva: a declarada ou `<repo>-worktrees`.
@@ -113,7 +118,8 @@ public enum ProjetosConfig {
                                    worktrees: worktrees.isEmpty ? "" : worktrees,
                                    prova: prova.isEmpty ? "python3 {suite}" : prova,
                                    provaTentativas: tentativas, protegidos: prot,
-                                   copiarParaWorktree: copiar)
+                                   copiarParaWorktree: copiar,
+                                   antesDoPush: "\(item["antes_do_push"] ?? "")")
         }.filter { $0.problema() == nil }
         return saida
     }
@@ -128,6 +134,7 @@ public enum ProjetosConfig {
             if !p.worktrees.isEmpty { item["worktrees"] = p.worktrees }
             if !p.protegidos.isEmpty { item["protegidos"] = p.protegidos }
             if !p.copiarParaWorktree.isEmpty { item["copiar_para_worktree"] = p.copiarParaWorktree }
+            if !p.antesDoPush.isEmpty { item["antes_do_push"] = p.antesDoPush }
             return item
         }
     }

@@ -162,6 +162,49 @@ class CopiarParaWorktree(unittest.TestCase):
         self.assertEqual(list(self.wt.iterdir()), [])
 
 
+class TravaAntesDoPush(unittest.TestCase):
+    """Nada vai para o origin sem a main atual na história nem com a conferência vermelha."""
+
+    def git(self, *args, cwd):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd,
+                       check=True, capture_output=True, text=True)
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        origem, self.wt = self.tmp / "origem.git", self.tmp / "wt"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origem)], check=True)
+        subprocess.run(["git", "clone", "-q", str(origem), str(self.wt)], check=True, capture_output=True)
+        (self.wt / "a.txt").write_text("a", encoding="utf-8")
+        self.git("add", "a.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "main", cwd=self.wt)
+        self.git("push", "-q", "origin", "HEAD:main", cwd=self.wt)
+        self.conf = mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(id="x", repo=str(self.wt)))
+        self.conf.start()
+        self.addCleanup(self.conf.stop)
+
+    def test_branch_da_main_atual_pode_ir(self):
+        self.git("checkout", "-q", "-b", "fra-1", cwd=self.wt)
+        (self.wt / "b.txt").write_text("b", encoding="utf-8")
+        self.git("add", "b.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "lane", cwd=self.wt)
+        self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+
+    def test_branch_de_historico_antigo_e_barrada(self):
+        self.git("checkout", "-q", "--orphan", "antiga", cwd=self.wt)
+        (self.wt / "c.txt").write_text("c", encoding="utf-8")
+        self.git("add", "-A", cwd=self.wt)
+        self.git("commit", "-q", "-m", "histórico antigo", cwd=self.wt)
+        self.assertIn("histórico antigo", d.motivo_para_nao_enviar(self.wt))
+
+    def test_conferencia_vermelha_barra_o_push(self):
+        with mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(
+                id="x", repo=str(self.wt), antes_do_push="echo achou nome pessoal; exit 1")):
+            motivo = d.motivo_para_nao_enviar(self.wt)
+        self.assertIn("saiu 1", motivo)
+        self.assertIn("achou nome pessoal", motivo)
+
+
 class Comandos(unittest.TestCase):
     def setUp(self):
         sem_ajustes_reais(self)

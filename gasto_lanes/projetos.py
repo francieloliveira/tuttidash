@@ -18,7 +18,8 @@ Formato (lista de objetos):
        "prova": "./scripts/testar.sh {suite}",
        "prova_tentativas": 2,
        "protegidos": ["docs/contratos/*", "scripts/release.sh"],
-       "copiar_para_worktree": ["AGENTS.md"]}
+       "copiar_para_worktree": ["AGENTS.md"],
+       "antes_do_push": "bash tools/checar-publicacao.sh"}
     ]
 
 Regras:
@@ -36,6 +37,9 @@ Regras:
     `AGENTS.md` gerado na máquina) e que cada worktree de lane precisa. São
     caminhos relativos; o dispatcher copia os que existem e nunca sobrescreve.
     O arquivo precisa estar no `.gitignore` do projeto, senão o agente o commita.
+  - `antes_do_push`: comando que roda no worktree antes de cada push da lane (ex.: a
+    conferência de publicação de um repositório público). Saiu diferente de 0, nada
+    é enviado e o card fica com `lane:falhou`. Vazio = sem conferência.
 
 Somente Python 3 da stdlib.
 """
@@ -74,11 +78,12 @@ class Projeto:
     """Um projeto que o dispatcher pode trabalhar."""
 
     __slots__ = ("id", "nome", "ativo", "padrao", "repo", "worktrees",
-                 "prova", "prova_tentativas", "protegidos", "copiar_para_worktree")
+                 "prova", "prova_tentativas", "protegidos", "copiar_para_worktree", "antes_do_push")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
                  repo: str = "", worktrees: str = "", prova: str = "python3 {suite}",
-                 prova_tentativas: int = 1, protegidos=None, copiar_para_worktree=None):
+                 prova_tentativas: int = 1, protegidos=None, copiar_para_worktree=None,
+                 antes_do_push: str = ""):
         self.id = id
         self.nome = nome or id
         self.ativo = ativo
@@ -90,6 +95,7 @@ class Projeto:
         self.prova_tentativas = max(1, int(prova_tentativas or 1))
         self.protegidos = list(protegidos) if protegidos else list(PROTEGIDOS_PADRAO)
         self.copiar_para_worktree = [str(c) for c in (copiar_para_worktree or []) if str(c).strip()]
+        self.antes_do_push = str(antes_do_push or "").strip()
 
     def comando_prova(self, suite: str) -> str:
         """Comando completo da prova de uma suíte, já com o placeholder trocado.
@@ -135,7 +141,8 @@ def _do_registro(bruto: dict) -> list:
             prova=str(item.get("prova") or "python3 {suite}"),
             prova_tentativas=item.get("prova_tentativas") or 1,
             protegidos=prot if isinstance(prot, list) else None,
-            copiar_para_worktree=copiar if isinstance(copiar, list) else None))
+            copiar_para_worktree=copiar if isinstance(copiar, list) else None,
+            antes_do_push=str(item.get("antes_do_push") or "")))
     return saida
 
 
