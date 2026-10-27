@@ -77,20 +77,20 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     public func problema() -> String? {
         let pid = projetoID.trimmingCharacters(in: .whitespaces)
         let repoLimpo = repo.trimmingCharacters(in: .whitespaces)
-        if pid.isEmpty { return String(localized: "O projeto precisa do id do Linear.") }
+        if pid.isEmpty { return String(localized: "Escolha o projeto do Linear.") }
         if UUID(uuidString: pid) == nil {
-            return String(localized: "O id do Linear tem que ser um UUID.")
+            return String(localized: "O projeto do Linear não é válido; escolha de novo na lista.")
         }
-        if repoLimpo.isEmpty { return String(localized: "O projeto precisa do caminho do repo.") }
+        if repoLimpo.isEmpty { return String(localized: "Escolha a pasta do projeto neste Mac.") }
         if !github.isEmpty, RepositorioGitHub.normalizar(github) == nil {
             return String(localized: "Repositório do GitHub inválido (use dono/repo).")
         }
         if !repoLimpo.hasPrefix("/") && !repoLimpo.hasPrefix("~") {
-            return String(localized: "O repo tem que começar com / ou ~.")
+            return String(localized: "A pasta tem que começar com / ou ~.")
         }
         if !prova.trimmingCharacters(in: .whitespaces).isEmpty,
            !prova.contains("{suite}") {
-            return String(localized: "O comando da prova precisa de {suite} no lugar da suíte.")
+            return String(localized: "A prova precisa ter {suite} no lugar do teste.")
         }
         if provaTentativas < 1 { return String(localized: "Mínimo de 1 tentativa.") }
         return nil
@@ -157,6 +157,17 @@ public enum ProjetosConfig {
             for j in saida.indices where j != i { saida[j].padrao = false }
         }
         dados[chave] = dict(saida)
+    }
+
+    /// Projeto novo do cadastro (FRA-579): nasce ligado só quando nenhum outro está ligado,
+    /// para não trocar o que as lanes estão fazendo sem a pessoa perceber.
+    public static func novo(existentes: [ProjetoCadastro]) -> ProjetoCadastro {
+        ProjetoCadastro(projetoID: "", nome: "", ativo: !existentes.contains(where: \.ativo), repo: "")
+    }
+
+    /// "Principal" só faz sentido com mais de um projeto ligado.
+    public static func mostrarPrincipal(_ projetos: [ProjetoCadastro]) -> Bool {
+        projetos.filter(\.ativo).count > 1
     }
 
     /// Projeto que o dispatcher trabalha: o marcado, ou o primeiro ativo.

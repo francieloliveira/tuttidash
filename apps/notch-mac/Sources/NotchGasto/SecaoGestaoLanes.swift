@@ -63,7 +63,7 @@ final class EstadoGestaoLanes: ObservableObject {
 }
 
 struct SecaoGestaoLanes: View {
-    @ObservedObject var estado: EstadoGestaoLanes
+    @StateObject var estado: EstadoGestaoLanes
     var aoSalvar: () -> Void
 
     private var cor: Color {
