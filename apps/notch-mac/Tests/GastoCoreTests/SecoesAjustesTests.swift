@@ -53,7 +53,7 @@ final class SecoesAjustesTests: XCTestCase {
     func testTodoBlocoTemLugar() {
         let blocos = CatalogoAjustes.secoes().flatMap(\.blocos)
         for b: BlocoAjustes in [.lanesHabilitadas, .modeloLanes, .projetos, .contas, .quemCuida, .agentesSegundoPlano,
-                                .jobsAgendados, .linear, .linearLeitura, .manifestos] {
+                                .jobsAgendados, .linear, .linearLeitura, .manifestos, .ferramentas] {
             XCTAssertEqual(blocos.filter { $0 == b }.count, 1, "\(b)")
         }
     }

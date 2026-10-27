@@ -28,9 +28,4 @@ final class PrimeiraAberturaTests: XCTestCase {
         XCTAssertNil(ContaUso(dict: ["id": "x", "tipo": "desconhecido"]))
     }
 
-    func testDependenciasNuncaBloqueiam() {
-        let nada = Dependencia.verificar(existe: { _ in false })
-        XCTAssertEqual(nada.map(\.nome), ["tmux", "python3"]); XCTAssertTrue(nada.allSatisfy { $0.encontrada == nil })
-        XCTAssertEqual(Dependencia.verificar(existe: { $0 == "/usr/local/bin/tmux" }).first?.encontrada, "/usr/local/bin/tmux")
-    }
 }

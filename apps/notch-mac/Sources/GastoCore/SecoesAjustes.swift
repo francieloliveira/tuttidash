@@ -12,7 +12,7 @@ public enum IdSecaoAjustes: String, CaseIterable, Identifiable, Sendable {
 /// Blocos prontos (telas próprias que já existiam) que entram num grupo.
 public enum BlocoAjustes: Sendable, Equatable {
     case lanesHabilitadas, modeloLanes, projetos, contas, quemCuida, agentesSegundoPlano,
-         jobsAgendados, linear, linearLeitura, manifestos
+         jobsAgendados, linear, linearLeitura, manifestos, ferramentas
 
     /// Chaves do config que o bloco edita com controle próprio (contam como alcançáveis).
     public var chaves: [String] {
@@ -114,6 +114,9 @@ extension CatalogoAjustes {
         return [
             SecaoAjustes(id: .geral, nome: String(localized: "Geral"), simbolo: "gearshape",
                          subtitulo: String(localized: "Quando o TuttiDash abre e o que cada lane mostra"), grupos: [
+                GrupoAjustes(String(localized: "Ferramentas e logins"),
+                             ajuda: String(localized: "O que precisa estar instalado e conectado para as lanes funcionarem."),
+                             blocos: [.ferramentas]),
                 GrupoAjustes(String(localized: "Abertura"), campos: [
                     campo("geral.abrir_no_login", ajuda: String(localized: "O TuttiDash abre sozinho quando você entra no Mac.")),
                 ]),
@@ -123,7 +126,10 @@ extension CatalogoAjustes {
                 ]),
             ]),
             SecaoAjustes(id: .lanes, nome: String(localized: "Lanes"), simbolo: "arrow.triangle.branch",
-                         subtitulo: String(localized: "Quais lanes pegam card, com que modelo e quanto cada card pode gastar"), grupos: [
+                         subtitulo: String(localized: "Projetos, quais lanes pegam card, com que modelo e quanto cada card pode gastar"), grupos: [
+                GrupoAjustes(String(localized: "Projetos"),
+                             ajuda: String(localized: "Cada projeto do Linear ligado ao repositório do GitHub em que as lanes trabalham."),
+                             blocos: [.projetos]),
                 GrupoAjustes(String(localized: "Lanes ligadas"), blocos: [.lanesHabilitadas]),
                 GrupoAjustes(String(localized: "Modelo de cada lane"), blocos: [.modeloLanes]),
                 GrupoAjustes(String(localized: "Quanto cada card pode gastar"), ajuda: String(localized: "Teto em dólar por card, pelo esforço do card."), campos: [
@@ -168,9 +174,6 @@ extension CatalogoAjustes {
                     c("lanes.lane_timeout_min"), c("lanes.proof_timeout_min"),
                     campo("lanes.proof_default_suites", ajuda: String(localized: "Separe as suítes por vírgula.")),
                 ], recolhido: true),
-                GrupoAjustes(String(localized: "Projetos"),
-                             ajuda: String(localized: "Repositório, worktrees, prova e caminhos protegidos de cada projeto que o dispatcher enxerga."),
-                             blocos: [.projetos], recolhido: true),
                 GrupoAjustes(String(localized: "Ferramentas (agents.d)"),
                              ajuda: String(localized: "Cada ferramenta tem um manifesto próprio. Só leitura aqui."), blocos: [.manifestos], recolhido: true),
                 GrupoAjustes(String(localized: "Revisor: limites"), campos: revisor3.filter { !principaisRevisor.contains($0.chave) }, recolhido: true),

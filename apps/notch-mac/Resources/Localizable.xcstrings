@@ -606,6 +606,9 @@
         }
       }
     },
+    "Agente que trabalha nas lanes." : {
+
+    },
     "Agentes em segundo plano" : {
 
     },
@@ -894,6 +897,9 @@
     "Cada ferramenta tem um manifesto próprio. Só leitura aqui." : {
 
     },
+    "Cada projeto do Linear ligado ao repositório do GitHub em que as lanes trabalham." : {
+
+    },
     "Cadastre o projeto em Lanes › Projetos: as colunas vêm do time dele." : {
 
     },
@@ -1116,6 +1122,12 @@
         }
       }
     },
+    "Comando oficial (%@):" : {
+
+    },
+    "Comando:" : {
+
+    },
     "Comparado com a semana anterior até o mesmo ponto" : {
 
     },
@@ -1196,6 +1208,9 @@
     "Conecte o Linear para escolher os projetos e as colunas." : {
 
     },
+    "Conferir de novo" : {
+
+    },
     "Consultar limites das contas" : {
       "localizations" : {
         "en" : {
@@ -1211,6 +1226,9 @@
           }
         }
       }
+    },
+    "Conta de uso (opcional)." : {
+
     },
     "Conta de uso do Gemini CLI. Desligada até você adicionar. Não renova o token." : {
 
@@ -1351,6 +1369,7 @@
 
     },
     "Dependências (opcionais)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1476,6 +1495,9 @@
     "Distribui os cards prontos para as lanes, a cada minuto. Desligado, nenhuma lane começa trabalho novo." : {
 
     },
+    "Documentação oficial" : {
+
+    },
     "Documento do diário" : {
 
     },
@@ -1494,6 +1516,18 @@
     "Endereço do workspace" : {
 
     },
+    "Enter para rodar, Ctrl+C para cancelar. " : {
+
+    },
+    "Entrar" : {
+
+    },
+    "Entrar de novo" : {
+
+    },
+    "Entrar no %@" : {
+
+    },
     "Entre %@ e %@" : {
       "localizations" : {
         "pt-BR" : {
@@ -1503,6 +1537,9 @@
           }
         }
       }
+    },
+    "Escolha GitHub.com e entre pelo navegador." : {
+
     },
     "Escolha aplicada: %@" : {
 
@@ -1661,6 +1698,12 @@
     "Ferramentas (agents.d)" : {
 
     },
+    "Ferramentas da Apple (git e python3)" : {
+
+    },
+    "Ferramentas e logins" : {
+
+    },
     "Fila (%lld)" : {
 
     },
@@ -1741,6 +1784,7 @@
 
     },
     "Homebrew" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1788,8 +1832,19 @@
         }
       }
     },
+    "Instala as outras ferramentas (gh, tmux)." : {
+
+    },
+    "Instalado" : {
+
+    },
+    "Instalado e conectado" : {
+
+    },
+    "Instalado, falta entrar" : {
+
+    },
     "Instalar" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1804,6 +1859,12 @@
           }
         }
       }
+    },
+    "Instalar %@" : {
+
+    },
+    "Instalar e Entrar abrem o Terminal com o comando oficial. Ele mostra o comando e só roda depois do Enter. Para os agentes, Entrar abre o CLI: na primeira vez ele pede o login." : {
+
     },
     "Instalar e recarregar" : {
       "localizations" : {
@@ -1822,6 +1883,7 @@
       }
     },
     "Instale com: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1836,6 +1898,9 @@
           }
         }
       }
+    },
+    "Instale o Homebrew primeiro (primeira linha da lista)." : {
+
     },
     "Instale o dispatcher primeiro." : {
 
@@ -2094,6 +2159,9 @@
     "Lista que se atualiza sozinha uma vez por dia." : {
 
     },
+    "Lista seus repositórios, clona e abre os PRs das lanes." : {
+
+    },
     "Livre" : {
 
     },
@@ -2169,6 +2237,9 @@
 
     },
     "Mostra o que o agente está pensando enquanto trabalha." : {
+
+    },
+    "Mostra o terminal de cada lane no painel de logs." : {
 
     },
     "Mostrar o diff de cada edição" : {
@@ -2347,6 +2418,9 @@
     "Nunca revisar com o mesmo fornecedor que escreveu o PR" : {
 
     },
+    "Não consegui abrir o Terminal. O comando é: %@" : {
+
+    },
     "Não deu certo" : {
 
     },
@@ -2444,6 +2518,9 @@
     "Não gravado ainda. Aperte Enter para gravar." : {
 
     },
+    "Não instalado" : {
+
+    },
     "Não pode ficar vazio." : {
       "localizations" : {
         "en" : {
@@ -2476,6 +2553,7 @@
 
     },
     "O TuttiDash mostra no notch o gasto e o estado das suas lanes de agentes. Vamos configurar em poucos passos." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2490,6 +2568,9 @@
           }
         }
       }
+    },
+    "O TuttiDash mostra no notch o gasto e o estado das suas lanes de agentes. Vamos configurar em poucos passos. Primeiro, o que precisa estar instalado; o que faltar instala daqui." : {
+
     },
     "O TuttiDash precisa do dispatcher para gerenciar lanes. Instale o dispatcher e tente novamente." : {
 
@@ -2522,6 +2603,9 @@
 
     },
     "O gh não respondeu. Entre com: gh auth login" : {
+
+    },
+    "O git guarda o código; o python3 roda o dispatcher e o vigia." : {
 
     },
     "O id do Linear tem que ser um UUID." : {
@@ -2563,6 +2647,9 @@
 
     },
     "O projeto precisa do id do Linear." : {
+
+    },
+    "O que precisa estar instalado e conectado para as lanes funcionarem." : {
 
     },
     "O raciocínio e o diff valem para a janela de cada lane, na próxima tarefa que ela pegar." : {
@@ -2685,6 +2772,9 @@
       }
     },
     "Onde o vigia deixa os pedidos de cards novos." : {
+
+    },
+    "Opcional, não instalado" : {
 
     },
     "OpenCode: bloquear se a conferência de privacidade tiver mais de (dias)" : {
@@ -2841,6 +2931,12 @@
     "Peso do card" : {
 
     },
+    "Pode fechar esta janela." : {
+
+    },
+    "Precisa do Homebrew" : {
+
+    },
     "Preenchidos pela conexão em Contas. Só leitura." : {
 
     },
@@ -2892,6 +2988,9 @@
     "Projetos que o dispatcher enxerga" : {
 
     },
+    "Projetos, quais lanes pegam card, com que modelo e quanto cada card pode gastar" : {
+
+    },
     "Pronto" : {
       "localizations" : {
         "en" : {
@@ -2907,6 +3006,9 @@
           }
         }
       }
+    },
+    "Pronto. Volte ao TuttiDash: a tela confere sozinha." : {
+
     },
     "Prova vermelha" : {
 
@@ -2952,9 +3054,6 @@
           }
         }
       }
-    },
-    "Quais lanes pegam card, com que modelo e quanto cada card pode gastar" : {
-
     },
     "Quando a prova falha, a triagem local diz se foi o código ou o ambiente." : {
 
@@ -3081,9 +3180,6 @@
 
     },
     "Repositório no GitHub" : {
-
-    },
-    "Repositório, worktrees, prova e caminhos protegidos de cada projeto que o dispatcher enxerga." : {
 
     },
     "Requisições premium do GitHub Copilot na conta pessoal. Não pega card. A cota do mês é a que você informa." : {
@@ -3224,6 +3320,7 @@
 
     },
     "Sem elas o app funciona; só o painel de logs e os scripts ficam indisponíveis." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3445,6 +3542,9 @@
 
     },
     "Tempos, intervalos, caminhos e arquivos. Raramente precisa mexer" : {
+
+    },
+    "Terminou com erro (código" : {
 
     },
     "Testes ignorados: em breve" : {

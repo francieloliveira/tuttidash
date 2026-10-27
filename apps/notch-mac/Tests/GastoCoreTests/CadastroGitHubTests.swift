@@ -38,6 +38,19 @@ final class TokenUnicoTests: XCTestCase {
         XCTAssertNil(cf.ler(conta: TokenLinear.conta))
     }
 
+    func testItemAntigoIgualSaiItemAntigoDiferenteFica() throws {
+        let ch = ChaveiroFalso(), cf = cofre()
+        let tk = TokenLinear(cofre: cf, servico: "svc-teste", chaveiro: ch)
+        defer { tk.apagar() }
+        try ch.gravar("t", servico: "svc-teste", conta: "x")
+        try cf.salvar("outro", conta: TokenLinear.conta)
+        XCTAssertEqual(tk.ler(), "t")
+        XCTAssertEqual(cf.ler(conta: TokenLinear.conta), "outro", "valor diferente: não apaga")
+        try cf.salvar("t", conta: TokenLinear.conta)
+        XCTAssertEqual(tk.ler(), "t")
+        XCTAssertNil(cf.ler(conta: TokenLinear.conta))
+    }
+
     func testMigracaoQueFalhaNaoPerdeOToken() throws {
         let ch = ChaveiroFalso(), cf = cofre()
         ch.falhar = true

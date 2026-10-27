@@ -150,6 +150,7 @@ struct PaginaAjustes: View {
         case .jobsAgendados: BlocoJobs(modelo: estado.modelo)
         case .linearLeitura: BlocoLinearLeitura(modelo: estado.modelo)
         case .manifestos: BlocoManifestos()
+        case .ferramentas: SecaoFerramentas()
         }
     }
 }

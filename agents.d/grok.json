@@ -20,6 +20,7 @@
   "alto": {"id": "grok-4.7", "flags": ["-m", "grok-4.7", "--effort", "high"]}
   },
 "revisao": {"papel": "sozinho", "auto": true, "comando": ["grok", "{flags}", "--tools", "read_file,grep,list_dir", "--disable-web-search", "-p", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": ["--effort", "{esforco}"], "entrada": "argumento", "saida": "stdout", "modelos": ["grok-4.7", "grok-4.7-build-fast"], "modelo_padrao": "grok-4.7", "esforcos": ["high"], "esforco_padrao": "high"},
+"instalar": {"comando": "curl -fsSL https://x.ai/cli/install.sh | bash", "entrar": "grok", "dica_entrar": "Na primeira vez o Grok abre o navegador para você entrar.", "docs": "https://github.com/xai-org/grok-build"},
 "uso": {
   "tipo": "grok",
   "fonte": "",

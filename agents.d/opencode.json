@@ -30,6 +30,7 @@
   },
 "revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode/deepseek-v4.1-flash-free", "opencode/nemotron-3-ultra-free", "opencode/glm-5.3-flash-free"], "modelo_padrao": "opencode/deepseek-v4.1-flash-free", "esforcos": [], "esforco_padrao": ""},
 "privacidade": "opencode",
+"instalar": {"comando": "brew install opencode", "entrar": "opencode", "dica_entrar": "Dentro do OpenCode, digite /connect e escolha o provedor da sua conta.", "docs": "https://github.com/anomalyco/opencode"},
 "uso": {
   "tipo": "opencode",
   "fonte": "",
