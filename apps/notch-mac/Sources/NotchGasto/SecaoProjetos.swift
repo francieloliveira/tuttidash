@@ -162,6 +162,12 @@ private struct LinhaProjeto: View {
                             set: { projeto.protegidos = $0.split(separator: "\n")
                                     .map { $0.trimmingCharacters(in: .whitespaces) }
                                     .filter { !$0.isEmpty } }))
+                    Campo("Copiar para o worktree, fora do git (um por linha)", multilinha: true,
+                          texto: Binding(
+                            get: { projeto.copiarParaWorktree.joined(separator: "\n") },
+                            set: { projeto.copiarParaWorktree = $0.split(separator: "\n")
+                                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                                    .filter { !$0.isEmpty } }))
                     HStack {
                         Button(String(localized: "Salvar este projeto")) { estado.salvar(projeto) }
                         Button(String(localized: "Subir")) { estado.mover(projeto, -1) }

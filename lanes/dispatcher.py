@@ -27,6 +27,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -874,10 +875,33 @@ def caminho_prompt(nome: str) -> Path:
     return STATE_DIR / nome
 
 
+def copiar_para_worktree(repo: Path, wt: Path, caminhos) -> list[str]:
+    """Copia do `repo` para o worktree os arquivos que ficam fora do git (ex.: `AGENTS.md`
+    gerado na máquina). Só caminho relativo dentro do repo; nunca sobrescreve o que o
+    worktree já tem (versionado ou não). Devolve o que copiou."""
+    copiados: list[str] = []
+    raiz = repo.resolve()
+    for rel in caminhos or []:
+        rel = str(rel).strip()
+        if not rel or Path(rel).is_absolute():
+            continue
+        origem = (repo / rel).resolve()
+        if raiz not in origem.parents or not origem.is_file():
+            continue  # fora do repo (../) ou ausente: nada a copiar
+        destino = wt / rel
+        if destino.exists():
+            continue
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(origem, destino)
+        copiados.append(rel)
+    return copiados
+
+
 def prepare_worktree(branch: str, identifier: str) -> Path:
     repo, wts = projeto_repo(), projeto_worktrees()
     wt = wts / identifier.lower()
     if wt.exists():
+        copiar_para_worktree(repo, wt, projeto().copiar_para_worktree)
         return wt
     sh(["git", "fetch", "-q", "origin", "main"], cwd=repo)
     remote = sh(["git", "ls-remote", "--heads", "origin", branch], cwd=repo, check=False)
@@ -897,6 +921,7 @@ def prepare_worktree(branch: str, identifier: str) -> Path:
     if ".lane/" not in text.split():
         exclude.parent.mkdir(parents=True, exist_ok=True)
         exclude.write_text(text + ("\n" if text and not text.endswith("\n") else "") + ".lane/\n")
+    copiar_para_worktree(repo, wt, projeto().copiar_para_worktree)
     return wt
 
 
