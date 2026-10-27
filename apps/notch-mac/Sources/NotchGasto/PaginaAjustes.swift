@@ -290,8 +290,6 @@ struct BlocoLinearLeitura: View {
     private func nome(_ k: String) -> String {
         switch k {
         case "linear.workspace_url": return String(localized: "Endereço do workspace")
-        case "linear.team_name": return String(localized: "Time")
-        case "linear.project_name": return String(localized: "Projeto")
         case "linear.state_in_progress_name": return String(localized: "Coluna Em andamento")
         case "linear.state_in_review_name": return String(localized: "Coluna Em revisão")
         case "linear.owner_label": return String(localized: "Etiqueta do dono")

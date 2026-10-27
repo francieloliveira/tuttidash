@@ -32,6 +32,9 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     /// Arquivos fora do git no repo (ex.: `AGENTS.md` gerado na máquina) que o dispatcher
     /// copia para cada worktree de lane. Relativos ao repo; nunca sobrescrevem.
     public var copiarParaWorktree: [String]
+    /// Repositório no GitHub (`dono/repo`, FRA-567). O dispatcher só envia a branch se o
+    /// `origin` da pasta for este repositório.
+    public var github: String
     /// Comando que roda no worktree antes de cada push da lane (ex.: a conferência de
     /// publicação de um repositório público). Vazio = sem conferência.
     public var antesDoPush: String
@@ -43,7 +46,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     public init(projetoID: String, nome: String = "", ativo: Bool = true, padrao: Bool = false,
                 repo: String = "", worktrees: String = "", prova: String = "python3 {suite}",
                 provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = [],
-                antesDoPush: String = "") {
+                antesDoPush: String = "", github: String = "") {
         self.projetoID = projetoID
         self.nome = nome.isEmpty ? projetoID : nome
         self.ativo = ativo
@@ -55,6 +58,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         self.protegidos = protegidos
         self.copiarParaWorktree = copiarParaWorktree
         self.antesDoPush = antesDoPush.trimmingCharacters(in: .whitespaces)
+        self.github = RepositorioGitHub.normalizar(github) ?? github.trimmingCharacters(in: .whitespaces)
     }
 
     /// Pasta de worktrees efetiva: a declarada ou `<repo>-worktrees`.
@@ -78,6 +82,9 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
             return String(localized: "O id do Linear tem que ser um UUID.")
         }
         if repoLimpo.isEmpty { return String(localized: "O projeto precisa do caminho do repo.") }
+        if !github.isEmpty, RepositorioGitHub.normalizar(github) == nil {
+            return String(localized: "Repositório do GitHub inválido (use dono/repo).")
+        }
         if !repoLimpo.hasPrefix("/") && !repoLimpo.hasPrefix("~") {
             return String(localized: "O repo tem que começar com / ou ~.")
         }
@@ -119,7 +126,8 @@ public enum ProjetosConfig {
                                    prova: prova.isEmpty ? "python3 {suite}" : prova,
                                    provaTentativas: tentativas, protegidos: prot,
                                    copiarParaWorktree: copiar,
-                                   antesDoPush: "\(item["antes_do_push"] ?? "")")
+                                   antesDoPush: "\(item["antes_do_push"] ?? "")",
+                                   github: "\(item["github"] ?? "")")
         }.filter { $0.problema() == nil }
         return saida
     }
@@ -135,6 +143,7 @@ public enum ProjetosConfig {
             if !p.protegidos.isEmpty { item["protegidos"] = p.protegidos }
             if !p.copiarParaWorktree.isEmpty { item["copiar_para_worktree"] = p.copiarParaWorktree }
             if !p.antesDoPush.isEmpty { item["antes_do_push"] = p.antesDoPush }
+            if !p.github.isEmpty { item["github"] = p.github }
             return item
         }
     }

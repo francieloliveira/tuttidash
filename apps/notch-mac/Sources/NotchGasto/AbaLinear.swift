@@ -14,6 +14,7 @@ final class EstadoLinear: ObservableObject {
     @Published var erro: String?
     @Published var workspace: String?
     @Published var times: [ItemLinear] = []
+    @Published var projetos: [ProjetoLinear] = []
     @Published var opcoes = OpcoesTime()
     @Published var versao = 0
 
@@ -31,13 +32,12 @@ final class EstadoLinear: ObservableObject {
         catch { erro = String(localized: "Não foi possível salvar no Keychain: \(error.localizedDescription)") }
     }
 
-    /// Lê o token dos scripts, salva no item do app e conecta na hora.
-    func usarTokenDosScripts() async {
-        guard let t = tokens.lerAntigo() else { erro = String(localized: "Token dos scripts não encontrado no Keychain."); return }
-        token = t; await salvarToken()
-    }
+    func esquecerToken() { tokens.apagar(); temToken = false; times = []; projetos = []; opcoes = OpcoesTime() }
 
-    func esquecerToken() { tokens.apagar(); temToken = false; times = []; opcoes = OpcoesTime() }
+    /// Time das colunas: o do projeto padrão do cadastro (FRA-567). nil = nenhum projeto cadastrado.
+    var timeDasColunas: String? {
+        EscolhasLinear.timeDasColunas(projetos: projetos, cadastro: ProjetosConfig.ler(modelo.dados))
+    }
 
     func conectar() async {
         guard let t = tokens.ler() else { erro = ErroLinear.semToken.errorDescription; return }
@@ -47,11 +47,8 @@ final class EstadoLinear: ObservableObject {
             let (w, ts) = try await servico.conectar(token: t)
             workspace = w; times = ts
             try modelo.definirValor("linear.workspace_url", w)
-            let atual = modelo.valorTexto("linear.team_id")
-            if let unico = EscolhasLinear.timeAutomatico(times: ts, escolhido: atual) {
-                try gravar(CampoLinear.ondeTrabalha()[0], unico)
-            }
-            if let time = modelo.valorTexto("linear.team_id"), !time.isEmpty { await carregarTime(time) }
+            projetos = try await servico.projetos(token: t)
+            if let time = timeDasColunas, !time.isEmpty { await carregarTime(time) }
             for (k, v) in EscolhasLinear.nomesResolvidos(dados: modelo.dados, times: times, opcoes: opcoes) {
                 try modelo.definirValor(k, v)
             }
@@ -73,7 +70,6 @@ final class EstadoLinear: ObservableObject {
     func escolher(_ c: CampoLinear, _ item: ItemLinear, aoSalvar: () -> Void) {
         do { try gravar(c, item); aoSalvar() }
         catch { erro = String(localized: "Não foi possível gravar: \(error.localizedDescription)") }
-        if c.fonte == .times { Task { await carregarTime(item.id) } }
     }
 }
 
@@ -105,12 +101,11 @@ struct AbaLinear: View {
     private var fluxoToken: some View {
         VStack(alignment: .leading, spacing: 8) {
             SecureField(String(localized: "Token da API do Linear"), text: $estado.token)
-            Text(String(localized: "Crie em Linear › Settings › API. Ele fica só no Keychain, nunca no arquivo."))
+            Text(String(localized: "Crie em Linear › Settings › API. Ele fica só no Keychain, nunca no arquivo, e vale também para o dispatcher e o vigia."))
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button(String(localized: "Salvar e conectar")) { Task { await estado.salvarToken() } }
                     .buttonStyle(.borderedProminent).disabled(estado.token.isEmpty)
-                Button(String(localized: "Usar o token dos scripts")) { Task { await estado.usarTokenDosScripts() } }
             }
         }
     }
@@ -126,7 +121,7 @@ struct AbaLinear: View {
     @ViewBuilder private var secoes: some View {
             if !estado.conectado {
                 Section {
-                    Text(String(localized: "Conecte o Linear para escolher o projeto."))
+                    Text(String(localized: "Conecte o Linear para escolher os projetos e as colunas."))
                     if estado.temToken {
                         Button(String(localized: "Conectar o Linear")) { Task { await estado.conectar() } }
                             .buttonStyle(.borderedProminent)
@@ -149,8 +144,18 @@ struct AbaLinear: View {
                     }
                     if let e = estado.erro { Text(e).font(.caption).foregroundStyle(.red) }
                 }
-                Section(String(localized: "Onde o app trabalha")) { ForEach(CampoLinear.ondeTrabalha()) { linha($0) } }
-                Section(String(localized: "Colunas do quadro")) { ForEach(CampoLinear.colunas()) { linha($0) } }
+                Section {
+                    if estado.timeDasColunas == nil {
+                        Text(String(localized: "Cadastre o projeto em Lanes › Projetos: as colunas vêm do time dele."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(CampoLinear.colunas()) { linha($0) }
+                } header: {
+                    Text(String(localized: "Colunas do quadro"))
+                } footer: {
+                    Text(String(localized: "Sem escolha, valem as colunas com o nome padrão (Todo, In Progress, In Review) no time de cada projeto."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section { linha(CampoLinear.etiqueta()) }
             }
     }

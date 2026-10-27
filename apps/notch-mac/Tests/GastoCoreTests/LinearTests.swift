@@ -58,17 +58,6 @@ final class LinearTests: XCTestCase {
         catch { XCTAssertEqual(error as? ErroLinear, .resposta("organization.urlKey")) }
     }
 
-    func testTokenNoKeychainComFallback() throws {
-        let sufixo = UUID().uuidString
-        let antigo = Cofre(servico: "com.transcentia.testes.antigo-\(sufixo)")
-        let tk = TokenLinear(cofre: Cofre(servico: "com.transcentia.testes.novo-\(sufixo)"), servicoAntigo: antigo.servico)
-        defer { tk.apagar(); antigo.apagar(conta: "alguem") }
-        XCTAssertNil(tk.ler()); XCTAssertNil(tk.lerAntigo())
-        try antigo.salvar("velho", conta: "alguem")
-        XCTAssertEqual(tk.lerAntigo(), "velho")
-        try tk.salvar(" novo \n"); XCTAssertEqual(tk.ler(), "novo")
-    }
-
     func testEscolhasVaoParaConfigEVoltam() throws {
         let t = try PastaTemp()
         let m = ModeloAjustes(home: t.url)

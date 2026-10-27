@@ -57,6 +57,20 @@ public struct OpcoesTime: Equatable, Sendable {
     }
 }
 
+/// Projeto do Linear com o time dele (FRA-567): o cadastro escolhe por aqui, sem UUID digitado.
+public struct ProjetoLinear: Identifiable, Equatable, Hashable, Sendable {
+    public var id: String
+    public var nome: String
+    public var url: String
+    public var timeID: String
+    public var timeNome: String
+    public init(id: String, nome: String, url: String = "", timeID: String = "", timeNome: String = "") {
+        self.id = id; self.nome = nome; self.url = url; self.timeID = timeID; self.timeNome = timeNome
+    }
+    /// "Nome · Time", para a lista.
+    public var rotulo: String { timeNome.isEmpty ? nome : "\(nome) · \(timeNome)" }
+}
+
 /// Só leitura: nenhuma mutação é enviada ao Linear.
 public struct ServicoLinear: Sendable {
     public let cliente: ClienteLinear
@@ -99,6 +113,23 @@ public struct ServicoLinear: Sendable {
         return ("https://linear.app/\(chave)", Self.itens(d, "teams"))
     }
 
+    /// Todos os projetos do workspace, com o time de cada um (FRA-567).
+    public func projetos(token t: String) async throws -> [ProjetoLinear] {
+        let d = try await cliente.consultar(
+            "{ projects(first: 250) { nodes { id name url teams(first: 1) { nodes { id name } } } } }", token: try token(t))
+        return Self.projetos(d)
+    }
+
+    static func projetos(_ d: [String: Any]) -> [ProjetoLinear] {
+        let nodes = (d["projects"] as? [String: Any])?["nodes"] as? [[String: Any]] ?? []
+        return nodes.compactMap { n in
+            guard let id = n["id"] as? String, let nome = n["name"] as? String else { return nil }
+            let time = ((n["teams"] as? [String: Any])?["nodes"] as? [[String: Any]])?.first
+            return ProjetoLinear(id: id, nome: nome, url: n["url"] as? String ?? "",
+                                 timeID: time?["id"] as? String ?? "", timeNome: time?["name"] as? String ?? "")
+        }.sorted { $0.rotulo.localizedCaseInsensitiveCompare($1.rotulo) == .orderedAscending }
+    }
+
     public func opcoes(time: String, token t: String) async throws -> OpcoesTime {
         let id = time.replacingOccurrences(of: "\"", with: "")
         let q = """
@@ -112,19 +143,90 @@ public struct ServicoLinear: Sendable {
     }
 }
 
-/// Token do Linear: item novo do app no Keychain; o item antigo dos scripts só é lido como fallback.
+/// Item do Keychain que o dispatcher e o vigia leem (`linear.keychain_service`), gravado e lido
+/// pelo `/usr/bin/security` (FRA-568). Assim o item fica confiável para o `security` dos scripts
+/// e não abre aviso de permissão quando eles leem; o token nunca vai na linha de comando.
+public protocol ChaveiroScripts: Sendable {
+    func ler(servico: String) -> String?
+    func gravar(_ segredo: String, servico: String, conta: String) throws
+    func apagar(servico: String)
+}
+
+public struct ChaveiroSecurity: ChaveiroScripts {
+    public init() {}
+
+    @discardableResult
+    private func rodar(_ args: [String], entrada: String? = nil) -> (codigo: Int32, saida: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        p.arguments = args
+        let saida = Pipe(), erro = Pipe(), dentro = Pipe()
+        p.standardOutput = saida; p.standardError = erro
+        if entrada != nil { p.standardInput = dentro }
+        do { try p.run() } catch { return (-1, "") }
+        if let entrada {
+            dentro.fileHandleForWriting.write(Data(entrada.utf8))
+            try? dentro.fileHandleForWriting.close()
+        }
+        let dados = saida.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return (p.terminationStatus, String(data: dados, encoding: .utf8) ?? "")
+    }
+
+    public func ler(servico: String) -> String? {
+        let r = rodar(["find-generic-password", "-s", servico, "-w"])
+        let v = r.saida.trimmingCharacters(in: .whitespacesAndNewlines)
+        return r.codigo == 0 && !v.isEmpty ? v : nil
+    }
+
+    public func gravar(_ segredo: String, servico: String, conta: String) throws {
+        // `security -i` lê o comando da entrada: o segredo não aparece no `ps`.
+        guard !segredo.isEmpty, !(segredo + servico + conta).contains(where: { "\"\\\n\r".contains($0) }) else {
+            throw ErroLinear.resposta(String(localized: "token com caractere inválido"))
+        }
+        apagar(servico: servico)
+        let r = rodar(["-i"], entrada: "add-generic-password -U -a \"\(conta)\" -s \"\(servico)\" -w \"\(segredo)\"\n")
+        guard r.codigo == 0, ler(servico: servico) == segredo else {
+            throw ErroLinear.resposta(String(localized: "não foi possível gravar no Keychain"))
+        }
+    }
+
+    public func apagar(servico: String) {
+        for _ in 0..<5 where rodar(["delete-generic-password", "-s", servico]).codigo == 0 {}
+    }
+}
+
+/// Token do Linear num lugar só (FRA-568): o item que os scripts leem. O item antigo do app
+/// (`app.tuttidash.mac`, conta `linear`) só é lido para migrar e depois apagado.
 public struct TokenLinear: Sendable {
     public static let conta = "linear"
+    public static let servicoPadrao = "linear-transcentia-lanes"
     public let cofre: Cofre
-    /// Serviço do item dos scripts (`linear.keychain_service`); nil = sem fallback.
-    public let servicoAntigo: String?
+    public let servico: String
+    public let chaveiro: ChaveiroScripts
     public init(cofre: Cofre = Cofre(),
-                servicoAntigo: String? = Configuracao.valor("linear.keychain_service", em: Configuracao.lerArquivo()).map { "\($0)" }) {
-        self.cofre = cofre; self.servicoAntigo = servicoAntigo
+                servico: String = Configuracao.valor("linear.keychain_service", em: Configuracao.lerArquivo())
+                    .map { "\($0)" }.flatMap { $0.isEmpty ? nil : $0 } ?? TokenLinear.servicoPadrao,
+                chaveiro: ChaveiroScripts = ChaveiroSecurity()) {
+        self.cofre = cofre; self.servico = servico; self.chaveiro = chaveiro
     }
-    public func ler() -> String? { cofre.ler(conta: Self.conta) }
-    /// Lê o item dos scripts (`linear.keychain_service`); pode pedir permissão ao Keychain.
-    public func lerAntigo() -> String? { servicoAntigo.flatMap { Cofre(servico: $0).lerQualquer() } }
-    public func salvar(_ t: String) throws { try cofre.salvar(t.trimmingCharacters(in: .whitespacesAndNewlines), conta: Self.conta) }
-    public func apagar() { cofre.apagar(conta: Self.conta) }
+
+    public func ler() -> String? {
+        if let t = chaveiro.ler(servico: servico) { return t }
+        guard let antigo = cofre.ler(conta: Self.conta) else { return nil }
+        if (try? chaveiro.gravar(antigo, servico: servico, conta: NSUserName())) != nil {
+            cofre.apagar(conta: Self.conta)
+        }
+        return antigo
+    }
+
+    public func salvar(_ t: String) throws {
+        try chaveiro.gravar(t.trimmingCharacters(in: .whitespacesAndNewlines), servico: servico, conta: NSUserName())
+        cofre.apagar(conta: Self.conta)
+    }
+
+    public func apagar() {
+        chaveiro.apagar(servico: servico)
+        cofre.apagar(conta: Self.conta)
+    }
 }

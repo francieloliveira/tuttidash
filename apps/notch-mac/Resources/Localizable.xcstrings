@@ -308,6 +308,9 @@
         }
       }
     },
+    "(fora da lista)" : {
+
+    },
     "(sem nome)" : {
 
     },
@@ -373,6 +376,12 @@
         }
       }
     },
+    "A ANTHROPIC_API_KEY foi recusada. Confira a chave e reabra os Ajustes." : {
+
+    },
+    "A OPENAI_API_KEY foi recusada. Confira a chave e reabra os Ajustes." : {
+
+    },
     "A TuttiChave está desligada: a troca automática fica congelada como está." : {
 
     },
@@ -431,6 +440,9 @@
 
     },
     "A lista que o Codex guarda está vazia. Rode o codex uma vez e reabra os Ajustes." : {
+
+    },
+    "A pasta é um clone de %@." : {
 
     },
     "A prova é reprovada mesmo que o xcodebuild diga sucesso." : {
@@ -816,6 +828,7 @@
 
     },
     "Banco do Cursor" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -831,7 +844,7 @@
         }
       }
     },
-    "Banco do OpenCode (sessão do Console)" : {
+    "Banco do OpenCode (sessão)" : {
 
     },
     "Bem-vindo ao TuttiDash" : {
@@ -879,6 +892,9 @@
 
     },
     "Cada ferramenta tem um manifesto próprio. Só leitura aqui." : {
+
+    },
+    "Cadastre o projeto em Lanes › Projetos: as colunas vêm do time dele." : {
 
     },
     "Caminho do tmux" : {
@@ -947,6 +963,12 @@
     "Carregando" : {
 
     },
+    "Carregando os projetos do Linear…" : {
+
+    },
+    "Carregando os repositórios do GitHub…" : {
+
+    },
     "Chave dos bots (s)" : {
       "localizations" : {
         "en" : {
@@ -981,6 +1003,12 @@
       }
     },
     "Clique para abrir o login no Terminal" : {
+
+    },
+    "Clonando…" : {
+
+    },
+    "Clonar em %@" : {
 
     },
     "Cole no Terminal para usar." : {
@@ -1145,7 +1173,11 @@
     "Conecte o Linear em Ajustes › Contas para abrir os cards." : {
 
     },
+    "Conecte o Linear em Integrações para escolher o projeto na lista." : {
+
+    },
     "Conecte o Linear para escolher o projeto." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1160,6 +1192,9 @@
           }
         }
       }
+    },
+    "Conecte o Linear para escolher os projetos e as colunas." : {
+
     },
     "Consultar limites das contas" : {
       "localizations" : {
@@ -1253,6 +1288,7 @@
 
     },
     "Credencial do Claude" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1268,16 +1304,8 @@
         }
       }
     },
-    "Credencial do Codex" : {
-
-    },
-    "Credencial do Gemini" : {
-
-    },
-    "Credencial do OpenCode (arquivo)" : {
-
-    },
     "Credencial do grok CLI" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1293,7 +1321,11 @@
         }
       }
     },
+    "Crie em Linear › Settings › API. Ele fica só no Keychain, nunca no arquivo, e vale também para o dispatcher e o vigia." : {
+
+    },
     "Crie em Linear › Settings › API. Ele fica só no Keychain, nunca no arquivo." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1313,6 +1345,9 @@
 
     },
     "Decide quem cuida das lanes, o gestor ou o vigia. Desligar congela a troca automática." : {
+
+    },
+    "Defina ANTHROPIC_API_KEY para listar os modelos do Claude. Vale a última lista boa." : {
 
     },
     "Dependências (opcionais)" : {
@@ -1538,7 +1573,13 @@
     "Esperando você: %lld" : {
 
     },
+    "Esse projeto do Linear já está no cadastro." : {
+
+    },
     "Esta conta não tem interruptor e não recebe card. SuperGrok (Cursor e Grok Bot) é a mesma cota Sand. Desligar o Grok CLI não muda o % do SuperGrok: cotas e créditos separados." : {
+
+    },
+    "Esta pasta não é um clone de %@. As lanes não enviam nada enquanto não for." : {
 
     },
     "Estas contas entram em limites, gasto e retomadas. Só tipos que o app já mede. Provedor novo entra pelo catálogo agents.d, não por um nome livre." : {
@@ -1666,6 +1707,9 @@
           }
         }
       }
+    },
+    "GitHub pendente" : {
+
     },
     "Grok Bot" : {
       "extractionState" : "stale",
@@ -1889,6 +1933,9 @@
     "Já existe uma conta deste tipo. As duas leem a mesma credencial." : {
 
     },
+    "Já existe uma pasta em %@. Escolha a pasta à mão." : {
+
+    },
     "Lane %@ desligada" : {
 
     },
@@ -1956,6 +2003,7 @@
       }
     },
     "Ler credencial do Claude no Keychain" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1972,6 +2020,9 @@
       }
     },
     "Ler de novo" : {
+
+    },
+    "Ligue cada projeto do Linear ao repositório do GitHub em que as lanes trabalham. As duas listas vêm das suas contas." : {
 
     },
     "Limite da chave dos bots (%)" : {
@@ -2241,6 +2292,12 @@
     "Nenhum modelo do OpenCode passou na regra de privacidade." : {
 
     },
+    "Nenhum projeto no seu Linear." : {
+
+    },
+    "Nenhum repositório na sua conta do GitHub." : {
+
+    },
     "Nenhuma build hoje" : {
 
     },
@@ -2409,6 +2466,9 @@
     "O Claude para quando passa deste valor." : {
 
     },
+    "O GitHub CLI (gh) não está instalado. Instale com: brew install gh" : {
+
+    },
     "O Terminal não abriu" : {
 
     },
@@ -2440,6 +2500,9 @@
     "O app confere disco e carga antes de rodar a prova." : {
 
     },
+    "O clone não terminou. Confira o acesso ao repositório no gh." : {
+
+    },
     "O comando da prova precisa de {suite} no lugar da suíte." : {
 
     },
@@ -2458,17 +2521,24 @@
     "O gestor está cuidando" : {
 
     },
+    "O gh não respondeu. Entre com: gh auth login" : {
+
+    },
     "O id do Linear tem que ser um UUID." : {
-
-    },
-    "O login do Claude Code venceu. Abra o Claude Code para renovar e reabra os Ajustes." : {
-
-    },
-    "O login do Codex venceu. Rode o codex no Terminal para renovar e reabra os Ajustes." : {
 
     },
     "O número sai quando a build começa" : {
 
+    },
+    "O origin desta pasta é %@, não %@. As lanes não enviam nada enquanto não for." : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "O origin desta pasta é %1$@, não %2$@. As lanes não enviam nada enquanto não for."
+          }
+        }
+      }
     },
     "O plist e o lançador serão regravados a partir dos Ajustes e o job será recarregado." : {
       "localizations" : {
@@ -2524,6 +2594,7 @@
 
     },
     "O time do Linear onde ficam os cards." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2597,6 +2668,7 @@
 
     },
     "Onde o app trabalha" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2792,6 +2864,7 @@
 
     },
     "Projeto" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2807,7 +2880,13 @@
         }
       }
     },
+    "Projeto no Linear" : {
+
+    },
     "Projetos" : {
+
+    },
+    "Projetos e repositórios" : {
 
     },
     "Projetos que o dispatcher enxerga" : {
@@ -2998,6 +3077,12 @@
     "Repetir a prova quando ambiente ≥" : {
 
     },
+    "Repositório do GitHub inválido (use dono/repo)." : {
+
+    },
+    "Repositório no GitHub" : {
+
+    },
     "Repositório, worktrees, prova e caminhos protegidos de cada projeto que o dispatcher enxerga." : {
 
     },
@@ -3036,6 +3121,9 @@
 
     },
     "Rodam de dentro do TuttiDash, mesmo com a janela fechada." : {
+
+    },
+    "Rode o codex uma vez (ele guarda a lista) ou defina OPENAI_API_KEY. Vale a última lista boa." : {
 
     },
     "Rótulo" : {
@@ -3151,16 +3239,13 @@
         }
       }
     },
+    "Sem escolha, valem as colunas com o nome padrão (Todo, In Progress, In Review) no time de cada projeto." : {
+
+    },
     "Sem gasto conhecido neste período" : {
 
     },
     "Sem leitura das lanes" : {
-
-    },
-    "Sem login do Claude Code neste Mac. Entre no Claude Code e reabra os Ajustes." : {
-
-    },
-    "Sem login do Codex neste Mac. Rode o codex uma vez e reabra os Ajustes." : {
 
     },
     "Sem prova terminada ainda" : {
@@ -3266,6 +3351,7 @@
 
     },
     "Só os cards deste projeto entram nas lanes." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3396,6 +3482,7 @@
       }
     },
     "Time" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3450,6 +3537,7 @@
       }
     },
     "Token dos scripts não encontrado no Keychain." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3635,6 +3723,7 @@
 
     },
     "Usar o token dos scripts" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3949,9 +4038,6 @@
         }
       }
     },
-    "id do Linear pendente" : {
-
-    },
     "janela mais apertada" : {
       "localizations" : {
         "en" : {
@@ -3999,6 +4085,9 @@
     "não definido" : {
 
     },
+    "não foi possível gravar no Keychain" : {
+
+    },
     "não é lane" : {
 
     },
@@ -4037,6 +4126,9 @@
 
     },
     "precisa de aprovação nos Ajustes do Sistema" : {
+
+    },
+    "projeto do Linear pendente" : {
 
     },
     "página %lld de %lld" : {
@@ -4202,6 +4294,9 @@
           }
         }
       }
+    },
+    "token com caractere inválido" : {
+
     },
     "uma prova por vez" : {
 
