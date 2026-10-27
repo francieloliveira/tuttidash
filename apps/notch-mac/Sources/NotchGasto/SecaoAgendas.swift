@@ -74,6 +74,11 @@ struct SecaoAgendas: View {
     @StateObject var estado: EstadoAgendas
     @State private var confirmar: Trabalho?
 
+    /// O estado é criado uma vez só: a página se redesenha a cada poucos segundos (FRA-579).
+    init(estado: @autoclosure @escaping () -> EstadoAgendas) {
+        _estado = StateObject(wrappedValue: estado())
+    }
+
     private func texto(_ e: EstadoTrabalho?) -> (String, Color) {
         switch e {
         case .ativo: return (String(localized: "ativo"), .green)

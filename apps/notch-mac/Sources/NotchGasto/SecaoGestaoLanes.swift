@@ -66,6 +66,12 @@ struct SecaoGestaoLanes: View {
     @StateObject var estado: EstadoGestaoLanes
     var aoSalvar: () -> Void
 
+    /// O estado é criado uma vez só: a página se redesenha a cada poucos segundos (FRA-579).
+    init(estado: @autoclosure @escaping () -> EstadoGestaoLanes, aoSalvar: @escaping () -> Void) {
+        _estado = StateObject(wrappedValue: estado())
+        self.aoSalvar = aoSalvar
+    }
+
     private var cor: Color {
         switch estado.quem?.responsavel {
         case .gestor: return PV.azul

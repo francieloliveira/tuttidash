@@ -110,17 +110,9 @@ public enum Ferramentas {
     /// Código de saída de um comando curto (sem shell). -1 = não rodou.
     public static func codigo(_ args: [String]) -> Int32 {
         guard let exe = args.first else { return -1 }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: exe)
-        p.arguments = Array(args.dropFirst())
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = path()
-        p.environment = env
-        p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-        p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return -1 }
-        p.waitUntilExit()
-        return p.terminationStatus
+        return Subprocesso.rodar(exe, Array(args.dropFirst()), ambiente: env).codigo
     }
 
     // MARK: - Terminal

@@ -94,13 +94,9 @@ public final class GestaoLanes {
         return executar(script)
     }
 
+    /// Roda pelo `Subprocesso`: é chamado no clique, na thread da interface (FRA-579).
     public static func rodar(_ script: URL) -> Int32 {
-        let p = Process()
-        p.executableURL = script
-        p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return -1 }
-        p.waitUntilExit()
-        return p.terminationStatus
+        Subprocesso.rodar(script.path, []).codigo
     }
 }
 

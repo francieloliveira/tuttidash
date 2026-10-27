@@ -250,6 +250,10 @@ struct SecaoProjetos: View {
     /// recriar o estado (perdia as listas e o que estava sendo digitado).
     @StateObject var estado: EstadoProjetos
 
+    init(estado: @autoclosure @escaping () -> EstadoProjetos) {
+        _estado = StateObject(wrappedValue: estado())
+    }
+
     var body: some View {
         Section {
             if let e = estado.erro {
