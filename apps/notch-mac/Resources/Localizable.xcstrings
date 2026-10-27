@@ -145,10 +145,16 @@
     "%@ desligado" : {
 
     },
+    "%@ desligado: as lanes não pegam cards dele." : {
+
+    },
     "%@ está cuidando" : {
 
     },
     "%@ ligado" : {
+
+    },
+    "%@ ligado." : {
 
     },
     "%@ não respondeu. Vale a última lista boa." : {
@@ -167,6 +173,9 @@
         }
       }
     },
+    "%@ saiu do cadastro. Nada mudou no Linear nem no GitHub." : {
+
+    },
     "%@ · %@" : {
       "localizations" : {
         "pt-BR" : {
@@ -176,6 +185,9 @@
           }
         }
       }
+    },
+    "%@ é o principal: as lanes trabalham nele." : {
+
     },
     "%@ • %@" : {
       "localizations" : {
@@ -203,6 +215,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@. %2$@ %3$@"
+          }
+        }
+      }
+    },
+    "%@: %@" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
           }
         }
       }
@@ -442,7 +464,13 @@
     "A lista que o Codex guarda está vazia. Rode o codex uma vez e reabra os Ajustes." : {
 
     },
+    "A pasta tem que começar com / ou ~." : {
+
+    },
     "A pasta é um clone de %@." : {
+
+    },
+    "A prova precisa ter {suite} no lugar do teste." : {
 
     },
     "A prova é reprovada mesmo que o xcodebuild diga sucesso." : {
@@ -578,7 +606,13 @@
     "Abrir painel" : {
 
     },
+    "Achadas nesta pasta" : {
+
+    },
     "Acima disto a chave passa as lanes para o vigia." : {
+
+    },
+    "Adicionar" : {
 
     },
     "Adicionar conta" : {
@@ -673,6 +707,9 @@
     "Arquivo da medição de estresse" : {
 
     },
+    "Arquivo de teste direto" : {
+
+    },
     "Arquivo do ledger" : {
       "localizations" : {
         "en" : {
@@ -695,7 +732,13 @@
     "Arquivo do token do Copilot (opcional)" : {
 
     },
+    "As lanes deixam de pegar cards deste projeto. Nada muda no Linear, no GitHub nem na pasta." : {
+
+    },
     "As lanes param de receber cards novos até você ligar de novo. Isto não muda as lanes ligadas nem a pausa." : {
+
+    },
+    "As lanes pegam cards só de projetos ligados. Com mais de um ligado, vale o principal; os outros esperam a vez." : {
 
     },
     "As mudanças são gravadas ao confirmar cada campo." : {
@@ -935,6 +978,12 @@
         }
       }
     },
+    "Caminhos protegidos" : {
+
+    },
+    "Cancelar" : {
+
+    },
     "Card de esforço alto (US$)" : {
 
     },
@@ -969,10 +1018,7 @@
     "Carregando" : {
 
     },
-    "Carregando os projetos do Linear…" : {
-
-    },
-    "Carregando os repositórios do GitHub…" : {
+    "Carregando…" : {
 
     },
     "Chave dos bots (s)" : {
@@ -1128,6 +1174,9 @@
     "Comando:" : {
 
     },
+    "Como aparece no TuttiDash" : {
+
+    },
     "Comparado com a semana anterior até o mesmo ponto" : {
 
     },
@@ -1182,10 +1231,10 @@
         }
       }
     },
-    "Conecte o Linear em Ajustes › Contas para abrir os cards." : {
+    "Conecte o Linear (Ajustes › Contas › Linear) para escolher o projeto." : {
 
     },
-    "Conecte o Linear em Integrações para escolher o projeto na lista." : {
+    "Conecte o Linear em Ajustes › Contas para abrir os cards." : {
 
     },
     "Conecte o Linear para escolher o projeto." : {
@@ -1209,6 +1258,9 @@
 
     },
     "Conferir de novo" : {
+
+    },
+    "Conferência antes do push" : {
 
     },
     "Consultar limites das contas" : {
@@ -1294,6 +1346,9 @@
       }
     },
     "Copiado" : {
+
+    },
+    "Copiar para o worktree" : {
 
     },
     "Copilot" : {
@@ -1388,7 +1443,7 @@
     "Desativar %@" : {
 
     },
-    "Descer" : {
+    "Descartar" : {
 
     },
     "Desconectar" : {
@@ -1408,6 +1463,9 @@
       }
     },
     "Desde 23/10/2026, modelo free que registra ou treina com o uso pode receber código nas lanes e na revisão." : {
+
+    },
+    "Desligado" : {
 
     },
     "Desligar" : {
@@ -1501,6 +1559,9 @@
     "Documento do diário" : {
 
     },
+    "Editar" : {
+
+    },
     "Editar esta conta" : {
 
     },
@@ -1541,7 +1602,16 @@
     "Escolha GitHub.com e entre pelo navegador." : {
 
     },
+    "Escolha a pasta do projeto (o clone do repositório)." : {
+
+    },
+    "Escolha a pasta do projeto neste Mac." : {
+
+    },
     "Escolha aplicada: %@" : {
+
+    },
+    "Escolha o projeto do Linear." : {
 
     },
     "Escolha ou digite um modelo. Sem modelo, a lane usa o automático." : {
@@ -1585,6 +1655,9 @@
     "Escolher" : {
 
     },
+    "Escolher…" : {
+
+    },
     "Esconder até a lista de alertas mudar" : {
 
     },
@@ -1616,8 +1689,18 @@
     "Esta conta não tem interruptor e não recebe card. SuperGrok (Cursor e Grok Bot) é a mesma cota Sand. Desligar o Grok CLI não muda o % do SuperGrok: cotas e créditos separados." : {
 
     },
-    "Esta pasta não é um clone de %@. As lanes não enviam nada enquanto não for." : {
+    "Esta pasta não é um clone de %@; as lanes não enviam nada daqui." : {
 
+    },
+    "Esta pasta é de %@, não de %@; as lanes não enviam nada daqui." : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Esta pasta é de %1$@, não de %2$@; as lanes não enviam nada daqui."
+          }
+        }
+      }
     },
     "Estas contas entram em limites, gasto e retomadas. Só tipos que o app já mede. Provedor novo entra pelo catálogo agents.d, não por um nome livre." : {
 
@@ -1686,10 +1769,16 @@
     "Execuções dos últimos 7 dias sem custo (morta, em andamento, sem custo informado ou parcial). Não entram na soma." : {
 
     },
+    "Exemplos" : {
+
+    },
     "Expandir %@" : {
 
     },
     "Faz os merges, cuida da fila e das revisões quando o gestor não está." : {
+
+    },
+    "Fechar" : {
 
     },
     "Fechar aviso" : {
@@ -1751,7 +1840,7 @@
         }
       }
     },
-    "GitHub pendente" : {
+    "GitHub: escolha o repositório" : {
 
     },
     "Grok Bot" : {
@@ -2087,6 +2176,12 @@
     "Ler de novo" : {
 
     },
+    "Ligado" : {
+
+    },
+    "Ligado: as lanes podem pegar cards deste projeto." : {
+
+    },
     "Ligue cada projeto do Linear ao repositório do GitHub em que as lanes trabalham. As duas listas vêm das suas contas." : {
 
     },
@@ -2113,6 +2208,12 @@
 
     },
     "Linear não conectado" : {
+
+    },
+    "Linear: escolha o projeto" : {
+
+    },
+    "Linear: projeto escolhido" : {
 
     },
     "Linhas de diff por edição" : {
@@ -2154,6 +2255,9 @@
 
     },
     "Linhas por lane" : {
+
+    },
+    "Lista indisponível." : {
 
     },
     "Lista que se atualiza sozinha uma vez por dia." : {
@@ -2204,6 +2308,9 @@
       }
     },
     "Lê a % de uso de cada conta para equilibrar as lanes." : {
+
+    },
+    "Mais ações" : {
 
     },
     "Mede o % do menu SuperGrok pela sessão do Cursor. Não pega card. Cota separada do Grok CLI." : {
@@ -2273,6 +2380,12 @@
           }
         }
       }
+    },
+    "Mover para baixo" : {
+
+    },
+    "Mover para cima" : {
+
     },
     "Mudar um intervalo recarrega só aquele job, e só se ele foi instalado por aqui." : {
       "localizations" : {
@@ -2363,6 +2476,9 @@
     "Nenhum modelo do OpenCode passou na regra de privacidade." : {
 
     },
+    "Nenhum projeto ainda. Adicione o primeiro: escolha o projeto do Linear e o repositório do GitHub em que as lanes vão trabalhar." : {
+
+    },
     "Nenhum projeto no seu Linear." : {
 
     },
@@ -2416,6 +2532,9 @@
 
     },
     "Nunca revisar com o mesmo fornecedor que escreveu o PR" : {
+
+    },
+    "Não achei um clone de %@ neste Mac." : {
 
     },
     "Não consegui abrir o Terminal. O comando é: %@" : {
@@ -2537,6 +2656,9 @@
         }
       }
     },
+    "Não salvo" : {
+
+    },
     "Não, sempre checar" : {
 
     },
@@ -2584,7 +2706,7 @@
     "O clone não terminou. Confira o acesso ao repositório no gh." : {
 
     },
-    "O comando da prova precisa de {suite} no lugar da suíte." : {
+    "O comando que roda os testes quando a lane termina. {suite} é trocado pelo teste que o card pede." : {
 
     },
     "O comando «grok models» não respondeu. Vale a última lista boa." : {
@@ -2608,21 +2730,8 @@
     "O git guarda o código; o python3 roda o dispatcher e o vigia." : {
 
     },
-    "O id do Linear tem que ser um UUID." : {
-
-    },
     "O número sai quando a build começa" : {
 
-    },
-    "O origin desta pasta é %@, não %@. As lanes não enviam nada enquanto não for." : {
-      "localizations" : {
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "O origin desta pasta é %1$@, não %2$@. As lanes não enviam nada enquanto não for."
-          }
-        }
-      }
     },
     "O plist e o lançador serão regravados a partir dos Ajustes e o job será recarregado." : {
       "localizations" : {
@@ -2640,13 +2749,7 @@
         }
       }
     },
-    "O projeto marcado como padrão é o que as lanes trabalham neste ciclo. Sem ninguém marcado, vale o primeiro ativo da lista — a ordem da lista é a ordem de preferência. Desligar mantém o projeto listado aqui, sem o dispatcher assumir card nele." : {
-
-    },
-    "O projeto precisa do caminho do repo." : {
-
-    },
-    "O projeto precisa do id do Linear." : {
+    "O projeto do Linear não é válido; escolha de novo na lista." : {
 
     },
     "O que precisa estar instalado e conectado para as lanes funcionarem." : {
@@ -2667,9 +2770,6 @@
           }
         }
       }
-    },
-    "O repo tem que começar com / ou ~." : {
-
     },
     "O repositório de onde a lane trabalha, a pasta de worktrees, a prova e o freio de caminho protegido saem do cadastro de projetos, abaixo. O modelo de cada lane fica no bloco acima: automático pelo peso do card, ou um modelo fixo." : {
 
@@ -2790,6 +2890,9 @@
 
     },
     "Ordem dos modelos do vigia" : {
+
+    },
+    "Ordem salva." : {
 
     },
     "Orçamento esforço alto (US$)" : {
@@ -2922,6 +3025,12 @@
         }
       }
     },
+    "Pasta dos worktrees" : {
+
+    },
+    "Pasta neste Mac" : {
+
+    },
     "Pastas do app" : {
 
     },
@@ -2956,6 +3065,9 @@
         }
       }
     },
+    "Principal" : {
+
+    },
     "Privacidade dos modelos" : {
 
     },
@@ -2979,13 +3091,13 @@
     "Projeto no Linear" : {
 
     },
+    "Projeto novo" : {
+
+    },
     "Projetos" : {
 
     },
     "Projetos e repositórios" : {
-
-    },
-    "Projetos que o dispatcher enxerga" : {
 
     },
     "Projetos, quais lanes pegam card, com que modelo e quanto cada card pode gastar" : {
@@ -3008,6 +3120,9 @@
       }
     },
     "Pronto. Volte ao TuttiDash: a tela confere sozinha." : {
+
+    },
+    "Prova" : {
 
     },
     "Prova vermelha" : {
@@ -3137,7 +3252,6 @@
 
     },
     "Remover" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3152,6 +3266,9 @@
           }
         }
       }
+    },
+    "Remover %@ do cadastro?" : {
+
     },
     "Remover esta conta" : {
 
@@ -3172,6 +3289,9 @@
           }
         }
       }
+    },
+    "Remover…" : {
+
     },
     "Repetir a prova quando ambiente ≥" : {
 
@@ -3247,6 +3367,9 @@
     "Sair do TuttiDash" : {
 
     },
+    "Salvar" : {
+
+    },
     "Salvar e conectar" : {
       "localizations" : {
         "en" : {
@@ -3264,9 +3387,6 @@
       }
     },
     "Salvar esta conta" : {
-
-    },
-    "Salvar este projeto" : {
 
     },
     "Salvar token" : {
@@ -3288,7 +3408,7 @@
         }
       }
     },
-    "Salvo. O dispatcher passa a usar isso no próximo ciclo (até 60 s)." : {
+    "Salvo. As lanes usam isso a partir do próximo ciclo (até 60 s)." : {
 
     },
     "Salvo: %@" : {
@@ -3314,6 +3434,9 @@
       }
     },
     "Script da triagem local" : {
+
+    },
+    "Script do projeto (%@)" : {
 
     },
     "Segunda opinião (só bloqueia)" : {
@@ -3400,9 +3523,6 @@
     "Sozinho (aprova)" : {
 
     },
-    "Subir" : {
-
-    },
     "Substituir o agendamento atual deste job?" : {
       "localizations" : {
         "en" : {
@@ -3418,6 +3538,9 @@
           }
         }
       }
+    },
+    "Sugestões" : {
+
     },
     "SuperGrok" : {
 
@@ -3544,6 +3667,12 @@
     "Tempos, intervalos, caminhos e arquivos. Raramente precisa mexer" : {
 
     },
+    "Tentar de novo" : {
+
+    },
+    "Tentativas da prova: %lld" : {
+
+    },
     "Terminou com erro (código" : {
 
     },
@@ -3656,7 +3785,7 @@
     "Token no Keychain" : {
 
     },
-    "Tornar o projeto que as lanes trabalham" : {
+    "Tornar principal" : {
 
     },
     "Total do período: %@" : {
@@ -3806,6 +3935,12 @@
           }
         }
       }
+    },
+    "Um por linha. A lane para se mexer num deles." : {
+
+    },
+    "Um por linha. Arquivos fora do git que a lane precisa (ex.: AGENTS.md)." : {
+
     },
     "Um script seu lê o resumo do log e diz se a falha foi do ambiente. Sem script, fica desligada." : {
 
@@ -4001,6 +4136,9 @@
     "atualizando…" : {
 
     },
+    "comando; vazio = nenhuma" : {
+
+    },
     "copia o comando" : {
       "localizations" : {
         "en" : {
@@ -4163,6 +4301,9 @@
     "na prova" : {
 
     },
+    "nenhuma" : {
+
+    },
     "nenhuma lane rodando" : {
       "localizations" : {
         "en" : {
@@ -4226,9 +4367,6 @@
 
     },
     "precisa de aprovação nos Ajustes do Sistema" : {
-
-    },
-    "projeto do Linear pendente" : {
 
     },
     "página %lld de %lld" : {
@@ -4347,6 +4485,9 @@
         }
       }
     },
+    "sem pasta" : {
+
+    },
     "sem teto definido" : {
       "localizations" : {
         "en" : {
@@ -4362,6 +4503,9 @@
           }
         }
       }
+    },
+    "swift test --filter {suite}" : {
+
     },
     "só leitura" : {
 
@@ -4418,6 +4562,9 @@
       }
     },
     "vazia" : {
+
+    },
+    "vazio = <pasta>-worktrees" : {
 
     },
     "·" : {
