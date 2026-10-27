@@ -897,6 +897,29 @@ def copiar_para_worktree(repo: Path, wt: Path, caminhos) -> list[str]:
     return copiados
 
 
+def motivo_para_nao_enviar(wt: Path) -> str:
+    """Vazio se a branch pode ir para o `origin`; senão o motivo (nada é enviado).
+
+    1. A branch tem de ter a `origin/main` atual na história. Uma branch criada antes
+       de o repositório recomeçar (histórico antigo, sem ancestral comum) levaria todo
+       o histórico antigo junto no push.
+    2. O `antes_do_push` do projeto (ex.: conferência de publicação) tem de sair 0."""
+    sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
+    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    base = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=wt,
+                          capture_output=True, text=True, env=env)
+    if base.returncode != 0 or not base.stdout.strip():
+        return ("a branch não tem a `origin/main` atual na história (criada sobre um histórico "
+                "antigo); recrie a branch a partir da main antes de rodar a lane")
+    cmd = projeto().antes_do_push
+    if cmd:
+        r = subprocess.run(cmd, shell=True, cwd=wt, capture_output=True, text=True, timeout=300, env=env)
+        if r.returncode != 0:
+            fim = (r.stdout + r.stderr).strip().splitlines()[-12:]
+            return f"a conferência antes do push (`{cmd}`) saiu {r.returncode}:\n" + "\n".join(fim)
+    return ""
+
+
 def prepare_worktree(branch: str, identifier: str) -> Path:
     repo, wts = projeto_repo(), projeto_worktrees()
     wt = wts / identifier.lower()
@@ -1988,6 +2011,9 @@ def finalize(st: dict) -> Optional[str]:
     if res["status"] == "needs_dono":
         # Só empurra o que a lane fez: a branch pode ter commits antigos de pessoas.
         if g["new"] > 0:
+            barrado = motivo_para_nao_enviar(wt)
+            if barrado:
+                return fail(st, f"nada foi enviado: {barrado}")
             sh(["git", "push", "-q", "-u", "origin", f"HEAD:{st['branch']}"], cwd=wt, timeout=180)
         resume = resume_line(st)
         aplicar_label(st["issue_id"], LABEL_DONO_ID, OWNER_LABEL)
@@ -2060,6 +2086,9 @@ def finalize(st: dict) -> Optional[str]:
     res = dict(res, verification=f"dispatcher: {projeto().prova.replace('{suite}', '')}"
                                  f"{' '.join(suites)} → verde{repetida}"
                                  + (f"; agente: {res['verification']}" if res.get("verification") else ""))
+    barrado = motivo_para_nao_enviar(wt)
+    if barrado:
+        return fail(st, f"nada foi enviado: {barrado}", causa="push-barrado")
     sh(["git", "push", "-q", "-u", "origin", f"HEAD:{st['branch']}"], cwd=wt, timeout=180)
 
     meta = {k: res.get(k) for k in ("changed_files", "verification", "residual_risk", "decisions")}

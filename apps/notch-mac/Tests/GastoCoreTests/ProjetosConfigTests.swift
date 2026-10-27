@@ -82,6 +82,17 @@ final class ProjetosConfigTests: XCTestCase {
         XCTAssertEqual(ProjetosConfig.ler(d).first?.copiarParaWorktree, ["AGENTS.md"])
     }
 
+    /// Conferência antes do push: vai e volta, e vazio não vai para o arquivo.
+    func testAntesDoPushVaiEVolta() {
+        var d: [String: Any] = [:]
+        ProjetosConfig.gravar([ProjetoCadastro(projetoID: notch, repo: "~/r", antesDoPush: " bash tools/checar-publicacao.sh "),
+                               ProjetoCadastro(projetoID: ios, repo: "~/a")], em: &d)
+        let lista = d["projetos"] as? [[String: Any]]
+        XCTAssertEqual(lista?[0]["antes_do_push"] as? String, "bash tools/checar-publicacao.sh")
+        XCTAssertNil(lista?[1]["antes_do_push"])
+        XCTAssertEqual(ProjetosConfig.ler(d).first?.antesDoPush, "bash tools/checar-publicacao.sh")
+    }
+
     func testNuncaDoisProjetosPadrao() {
         var d: [String: Any] = [:]
         ProjetosConfig.gravar([

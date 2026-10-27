@@ -168,6 +168,7 @@ private struct LinhaProjeto: View {
                             set: { projeto.copiarParaWorktree = $0.split(separator: "\n")
                                     .map { $0.trimmingCharacters(in: .whitespaces) }
                                     .filter { !$0.isEmpty } }))
+                    Campo("Conferência antes do push (comando; vazio = nenhuma)", texto: $projeto.antesDoPush)
                     HStack {
                         Button(String(localized: "Salvar este projeto")) { estado.salvar(projeto) }
                         Button(String(localized: "Subir")) { estado.mover(projeto, -1) }
