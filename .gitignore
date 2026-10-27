@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+# dados locais: o ledger e a config pessoal nunca vão para o git
+ledger.jsonl
+config.json
+!config.example.json
+.build/
+
+# Build pessoal: leituras de uso fora das APIs oficiais (repositório privado à parte, FRA-565)
+apps/notch-mac/Privado/

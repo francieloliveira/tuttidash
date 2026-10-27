@@ -1,0 +1,248 @@
+#!/usr/bin/python3
+"""cfg: leitor único dos ajustes do TranscentIA (FRA-295).
+
+Ordem: TRANSCENTIA_GASTO_CONFIG > ~/Library/Application Support/TuttiDash/config.json
+       > ~/Library/Application Support/Lanekeeper/config.json
+       > ~/Library/Application Support/TranscentIA Gasto/config.json > ~/.transcentia/tools/config.json (legado) > padrão passado na linha de comando.
+
+  cfg get <chave.pontuada> [padrão]   imprime o valor (listas/dicts em JSON; bool como true/false)
+  cfg path                            imprime o arquivo em uso (ou nada)
+  cfg migrate                         cria o arquivo novo (versão atual) a partir do legado + padrões;
+                                      não apaga o legado; não sobrescreve o novo se já existir
+  cfg defaults                        imprime os padrões em JSON
+Nunca falha por config ausente/ilegível: cai no padrão (sai 0).
+Em Python: import runpy; cfg = runpy.run_path(os.path.expanduser("~/.transcentia/tools/cfg"))["get"]
+"""
+import json, os, sys
+from pathlib import Path
+
+VERSION = 1
+HOME = Path.home()
+NOVO = HOME / "Library/Application Support/TuttiDash/config.json"
+LANEKEEPER = HOME / "Library/Application Support/Lanekeeper/config.json"  # nome antes do FRA-523
+INTERMEDIO = HOME / "Library/Application Support/TranscentIA Gasto/config.json"  # nome provisório
+LEGADO = HOME / ".transcentia/tools/config.json"
+
+DEFAULTS = {
+    "version": VERSION,
+    # geral.tela: legado (FRA-534). Continua no padrão para configs antigas; o TuttiDash ignora (a pílula é NSStatusItem).
+    "geral": {"abrir_no_login": False, "tela": "principal"},
+    "contas": [
+        {"id": "claude", "tipo": "claude", "rotulo": "Claude Code", "nome": "claude", "sigla": "CL"},
+        {"id": "grok", "tipo": "grok", "rotulo": "Grok CLI", "nome": "grok", "sigla": "GR"},
+        {"id": "codex", "tipo": "codex", "rotulo": "Codex", "nome": "codex", "sigla": "CX"},
+        {"id": "opencode", "tipo": "opencode", "rotulo": "OpenCode", "nome": "opencode", "sigla": "OP"},
+        {"id": "cursor", "tipo": "cursor", "rotulo": "Cursor", "nome": "cursor", "sigla": "CU"},
+    ],
+    "agendas": {"dispatcher_s": 60, "watch_s": 180, "chave_s": 600, "env": {}, "jobs": [
+        {"label": "com.transcentia.lanes.dispatcher", "nome": "TuttiDash Dispatcher", "chave": "dispatcher",
+         "intervalo_padrao": 60, "run_at_load": True, "interpretador": "/usr/bin/python3",
+         "script": "~/.transcentia/lanes/dispatcher.py", "argumentos": ["--real"],
+         "log": "~/Library/Logs/TranscentIA/lanes-dispatcher.launchd.log"},
+        {"label": "com.transcentia.bots.watch", "nome": "TuttiDash Vigia", "chave": "watch",
+         "intervalo_padrao": 180, "run_at_load": False, "interpretador": "/usr/bin/python3",
+         "script": "~/.transcentia/bots/watch.py", "argumentos": [],
+         "log": "~/Library/Logs/TranscentIA/bots-watch.launchd.log"},
+        {"label": "com.transcentia.bots.chave", "nome": "TuttiDash Chave", "chave": "chave",
+         "intervalo_padrao": 600, "run_at_load": True, "interpretador": "/usr/bin/python3",
+         "script": "~/.transcentia/tools/bots-chave", "argumentos": [],
+         "log": "~/Library/Logs/TranscentIA/bots-chave.launchd.log"},
+    ]},
+    "bots_chave": {"limite_pct": 90, "intervalo_s": 600, "modo_forcado": "auto"},
+    "painel": {"comando": "~/.transcentia/tools/painel.command", "tmux": "/opt/homebrew/bin/tmux", "sessao": "painel",
+               "gestor_log_glob": "/tmp/fra*-*.log",
+               "proof_log_glob": "~/Developer/*-worktrees/*/.lane/proof.log",
+               # Logs de build seguidos pelo seguir-build.sh (vírgulas; o mais recente ganha).
+               "build_log_globs": "/tmp/*-device.log, ~/Developer/*-worktrees/*/.lane/build*.log",
+               "filtro": "Test Case|error:|Executed|BLOCK|TEST (SUCCEEDED|FAILED)|abortado",
+               "intervalo_s": 10, "linhas_lane": 40, "linhas_gestor": 20, "linhas_log": 30},
+    "lane_view": {"pensamento": True, "pensamento_linhas": 14, "diff": True, "diff_linhas": 14},
+    "estresse": {"saida": "~/Library/Logs/TranscentIA/estresse.tsv", "intervalo_s": 15},
+    "preflight": {"min_free_gb": 10, "warn_free_gb": 40, "max_load": 16, "external_nvme": "",
+                  "jobs": 2, "scheme": "", "skip_preflight_first": True},
+    "lanes": {"budget_usd": {"baixo": 3, "medio": 8, "alto": 20},
+              "grok_max_turns": {"baixo": 30, "medio": 60, "alto": 100},
+              "lane_timeout_min": 90, "proof_timeout_min": 150,
+              "proof_default_suites": [], "effort_default": "medio"},
+    # FRA-565: nenhum id no padrão. Os ids vazios são resolvidos pelo nome na API do Linear
+    # (gasto_lanes/linear_ids.py) e guardados em ~/.transcentia/lanes/linear-ids.json.
+    "linear": {"workspace_url": "", "team_id": "",
+               "project_ios_id": "",
+               "state_todo_id": "", "state_in_progress_id": "", "state_in_review_id": "",
+               "labels": {"nomes": {}, "esforco": {}, "lanes": {}},
+               "diary_doc_id": "", "erros_conhecidos_doc_id": "",
+               "keychain_service": "linear-transcentia-lanes",
+               "owner_label": "needs:dono",
+               "alert_labels": ["lane:falhou", "needs:dono"],
+               "blocking_labels": ["needs:dono", "lane:falhou", "lane:parada"]},
+    "watch": {"max_runs_per_tick": 1, "claude_budget_usd": "4", "claude_timeout_s": 1200,
+              "max_tarefas_por_lane": 2, "reconferir_needs_max_s": 86400,
+              # FRA-532 (23/10/2026 20h33): local primeiro, Claude por último. Lista ou texto com vírgulas.
+              "ordem_needs": "ollama, opencode, claude", "ordem_paradas": "local, opencode, claude",
+              "ordem_revisao": "escolhido, fallback, opencode-go, claude", "adaptador_fallback": "opencode",
+              "modelo_needs_ollama": "qwen2.5-coder:7b", "sombra_needs": True},
+    # Revisor dos PRs (melhoria 3, 21/10/2026): quem revisa. Não é lane: o dispatcher
+    # não enxerga e o painel não lista. `independente` = nunca o mesmo fornecedor do autor.
+    "revisores": {"pr": {"agente": "claude", "independente": True, "reserva": "auto",
+                            "folga_pct": 85, "teto_usd": 4,
+                            "claude": {"modelo": "opus", "esforco": "high"},
+                            "codex": {"modelo": "padrao", "esforco": "high"}}},
+    # Privacidade por modelo do OpenCode (gasto_lanes/privacidade.py, 21/10/2026). Desde 23/10/2026 20h20
+    # treino/registro de uso não bloqueia (lanes e revisão); exigir_sem_treino=True volta a regra de 21/10.
+    "privacidade": {"exigir_sem_treino": False, "max_retencao_dias": 30, "max_idade_dias": 7, "intervalo_h": 24, "excecoes": {}},
+    # Triagem local da prova vermelha (melhoria 4, 21/10/2026): ambiente x código. `script` lê
+    # {"texto": …} no stdin e devolve {"ambiente": p, "codigo": p, "modelo": …}; sem script, desligada.
+    "triagem_local": {"ativo": True, "limiar": 0.8, "python": "auto", "timeout_s": 240,
+                      "script": "~/.transcentia/tools/triagem-local"},
+}
+
+
+def arquivo():
+    e = os.environ.get("TRANSCENTIA_GASTO_CONFIG")
+    if e:
+        return Path(os.path.expanduser(e))
+    for p in (NOVO, LANEKEEPER, INTERMEDIO, LEGADO):
+        if p.exists():
+            return p
+    return None
+
+
+def carregar():
+    p = arquivo()
+    if p is None:
+        return {}
+    try:
+        d = json.loads(p.read_text())
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+_MISS = object()
+
+
+def _busca(d, chave):
+    for parte in chave.split("."):
+        if isinstance(d, dict) and parte in d:
+            d = d[parte]
+        else:
+            return _MISS
+    return d
+
+
+def get(chave, padrao=None):
+    v = _busca(carregar(), chave)
+    if v is _MISS or v is None or v == "":
+        v = _busca(DEFAULTS, chave) if padrao is None else padrao
+        return None if v is _MISS else v
+    return v
+
+
+def _fmt(v):
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
+def _mesclar(base, extra):
+    out = dict(base)
+    for k, v in extra.items():
+        out[k] = _mesclar(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def _faltantes(base, atual):
+    """Acrescenta em `atual` só as chaves de `base` que faltam (nunca muda valor existente)."""
+    out = dict(atual)
+    for k, v in base.items():
+        if k not in out:
+            out[k] = v
+        elif isinstance(v, dict) and isinstance(out[k], dict):
+            out[k] = _faltantes(v, out[k])
+    return out
+
+
+def _copiar_pasta_lanekeeper():
+    """FRA-523: copia (não move) os arquivos da pasta Lanekeeper para a TuttiDash.
+    Não sobrescreve nada que já exista na pasta nova."""
+    antiga, nova = LANEKEEPER.parent, NOVO.parent
+    if not antiga.is_dir():
+        return
+    import shutil
+    nova.mkdir(parents=True, exist_ok=True)
+    for f in antiga.iterdir():
+        alvo = nova / f.name
+        if f.is_file() and not alvo.exists():
+            shutil.copy2(f, alvo)
+            print(f"copiado: {f} -> {alvo}")
+
+
+NOMES_ANTIGOS = {"TranscentIA Lanes (dispatcher)": "TuttiDash Dispatcher",
+                 "TranscentIA Bots (vigia)": "TuttiDash Vigia", "TranscentIA Chave Bots": "TuttiDash Chave"}
+
+
+def _renomear_jobs(d):
+    """FRA-523: troca os nomes antigos dos lançadores (Itens de Login) pelos do TuttiDash."""
+    for j in (d.get("agendas", {}) or {}).get("jobs", []) or []:
+        if isinstance(j, dict) and j.get("nome") in NOMES_ANTIGOS:
+            j["nome"] = NOMES_ANTIGOS[j["nome"]]
+    return d
+
+
+def migrar():
+    _copiar_pasta_lanekeeper()
+    if NOVO.exists():
+        try:
+            atual = json.loads(NOVO.read_text())
+        except Exception:
+            print(f"já existe (ilegível, não mexo): {NOVO}")
+            return 0
+        novo = _renomear_jobs(_faltantes(DEFAULTS, json.loads(json.dumps(atual)))) if isinstance(atual, dict) else atual
+        if novo != atual:
+            tmp = NOVO.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(novo, ensure_ascii=False, indent=2) + "\n")
+            tmp.replace(NOVO)
+            print(f"completado com padrões novos: {NOVO}")
+        else:
+            print(f"já existe: {NOVO}")
+        return 0
+    legado = {}
+    origem = next((p for p in (LANEKEEPER, INTERMEDIO) if p.exists()), LEGADO)
+    if origem.exists():
+        try:
+            legado = json.loads(origem.read_text())
+        except Exception:
+            print(f"config antiga ilegível, usando só padrões: {origem}", file=sys.stderr)
+    d = _mesclar(DEFAULTS, legado if isinstance(legado, dict) else {})
+    d["version"] = VERSION
+    _renomear_jobs(d)
+    NOVO.parent.mkdir(parents=True, exist_ok=True)
+    tmp = NOVO.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n")
+    tmp.replace(NOVO)
+    print(f"criado: {NOVO}")
+    return 0
+
+
+def main(argv):
+    if len(argv) >= 2 and argv[0] == "get":
+        padrao = argv[2] if len(argv) > 2 else None
+        v = get(argv[1], padrao)
+        print("" if v is None else _fmt(v))
+        return 0
+    if argv[:1] == ["path"]:
+        p = arquivo(); print(p or ""); return 0
+    if argv[:1] == ["migrate"]:
+        return migrar()
+    if argv[:1] == ["defaults"]:
+        print(json.dumps(DEFAULTS, ensure_ascii=False, indent=2)); return 0
+    print(__doc__, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>app.tuttidash.agente.chave</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/tuttidash-agente</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>tuttidash-agente</string>
+		<string>chave</string>
+	</array>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>app.tuttidash.mac</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>600</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>LowPriorityIO</key>
+	<true/>
+</dict>
+</plist>

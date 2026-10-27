@@ -1,0 +1,36 @@
+{
+  "timePeriod": {
+    "year": 2026,
+    "month": 10
+  },
+  "user": "octocat",
+  "product": "copilot",
+  "usageItems": [
+    {
+      "product": "copilot",
+      "sku": "copilot_premium_request",
+      "model": "gpt-4o",
+      "unitType": "requests",
+      "pricePerUnit": 0.04,
+      "grossQuantity": 100,
+      "grossAmount": 4,
+      "discountQuantity": 0,
+      "discountAmount": 0,
+      "netQuantity": 100,
+      "netAmount": 4
+    },
+    {
+      "product": "copilot",
+      "sku": "copilot_premium_request",
+      "model": "claude-sonnet",
+      "unitType": "requests",
+      "pricePerUnit": 0.04,
+      "grossQuantity": 50,
+      "grossAmount": 2,
+      "discountQuantity": 0,
+      "discountAmount": 0,
+      "netQuantity": 50,
+      "netAmount": 2
+    }
+  ]
+}

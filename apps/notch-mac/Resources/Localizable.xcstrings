@@ -1,0 +1,4303 @@
+{
+  "sourceLanguage" : "pt-BR",
+  "strings" : {
+    "" : {
+
+    },
+    "  + " : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "  + "
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "  + "
+          }
+        }
+      }
+    },
+    " (simulação)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " (simulation)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " (simulação)"
+          }
+        }
+      }
+    },
+    " rodando " : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " running "
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " rodando "
+          }
+        }
+      }
+    },
+    " · " : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · "
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · "
+          }
+        }
+      }
+    },
+    " · %lld desconh." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · %lld unknown"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · %lld desconh."
+          }
+        }
+      }
+    },
+    " · dispatcher %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · dispatcher %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · dispatcher %@"
+          }
+        }
+      }
+    },
+    " · não instalado por este app" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · not installed by this app"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · não instalado por este app"
+          }
+        }
+      }
+    },
+    "!" : {
+
+    },
+    "\"auto\" procura um Python." : {
+
+    },
+    "\"padrao\" usa o modelo do próprio CLI." : {
+
+    },
+    "#—" : {
+
+    },
+    "%@ %lld" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$lld"
+          }
+        }
+      }
+    },
+    "%@ da semana com custo desconhecido, fora da soma." : {
+
+    },
+    "%@ desligado" : {
+
+    },
+    "%@ está cuidando" : {
+
+    },
+    "%@ ligado" : {
+
+    },
+    "%@ não respondeu. Vale a última lista boa." : {
+
+    },
+    "%@ não trouxe nenhum modelo." : {
+
+    },
+    "%@ respondeu %lld. Vale a última lista boa." : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ respondeu %2$lld. Vale a última lista boa."
+          }
+        }
+      }
+    },
+    "%@ · %@" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ • %@" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ • %2$@"
+          }
+        }
+      }
+    },
+    "%@ › %@" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ › %2$@"
+          }
+        }
+      }
+    },
+    "%@. %@ %@" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@. %2$@ %3$@"
+          }
+        }
+      }
+    },
+    "%@: esforço na revisão" : {
+
+    },
+    "%@: modelo na revisão" : {
+
+    },
+    "%@: papel (sozinho aprova; segunda opinião só bloqueia)" : {
+
+    },
+    "%lld" : {
+
+    },
+    "%lld campo(s) voltaram ao padrão." : {
+
+    },
+    "%lld execução(ões) com custo desconhecido" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld run(s) with unknown cost"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld execução(ões) com custo desconhecido"
+          }
+        }
+      }
+    },
+    "%lld execução(ões) da semana com custo desconhecido (não somadas)" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld run(s) this week with unknown cost (not added)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld execução(ões) da semana com custo desconhecido (não somadas)"
+          }
+        }
+      }
+    },
+    "%lld falha" : {
+
+    },
+    "%lld falhou" : {
+
+    },
+    "%lld ok" : {
+
+    },
+    "%lld opções" : {
+
+    },
+    "%lld passou" : {
+
+    },
+    "%lld pendente" : {
+
+    },
+    "%lld resultado(s)" : {
+
+    },
+    "%lld%%" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        }
+      }
+    },
+    "(escolhido antes; conecte para ver o nome)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(chosen earlier; connect to see the name)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(escolhido antes; conecte para ver o nome)"
+          }
+        }
+      }
+    },
+    "(sem nome)" : {
+
+    },
+    "+%lld" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%lld"
+          }
+        }
+      }
+    },
+    "+?" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+?"
+          }
+        }
+      }
+    },
+    "0" : {
+
+    },
+    "0 reconfere só quando o card muda." : {
+
+    },
+    "0 testes rodados = falha." : {
+
+    },
+    "= 0" : {
+
+    },
+    "?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "?"
+          }
+        }
+      }
+    },
+    "A TuttiChave está desligada: a troca automática fica congelada como está." : {
+
+    },
+    "A TuttiChave não conseguiu aplicar" : {
+
+    },
+    "A chave ainda não conferiu. Até lá vale quem já estava cuidando." : {
+
+    },
+    "A chave confere a cada (s)" : {
+
+    },
+    "A chave dos bots saiu com código %lld." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bots switch exited with code %lld."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A chave dos bots saiu com código %lld."
+          }
+        }
+      }
+    },
+    "A conta precisa de um id." : {
+
+    },
+    "A cota do Copilot é um número inteiro de requisições por mês." : {
+
+    },
+    "A gestão foi passada à mão para %@. A chave só registra, não decide." : {
+
+    },
+    "A lane põe esta etiqueta quando para e precisa de uma decisão sua." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The lane adds this label when it stops and needs your decision."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A lane põe esta etiqueta quando para e precisa de uma decisão sua."
+          }
+        }
+      }
+    },
+    "A lista de modelos se atualiza sozinha uma vez por dia." : {
+
+    },
+    "A lista que o Codex guarda está vazia. Rode o codex uma vez e reabra os Ajustes." : {
+
+    },
+    "A prova é reprovada mesmo que o xcodebuild diga sucesso." : {
+
+    },
+    "A troca para %@ acontece na próxima conferência da chave." : {
+
+    },
+    "A área de transferência recusou o texto." : {
+
+    },
+    "AGORA" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NOW"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AGORA"
+          }
+        }
+      }
+    },
+    "ALERTAS" : {
+
+    },
+    "Abertura" : {
+
+    },
+    "Abrindo %@ no Linear" : {
+
+    },
+    "Abrindo no Terminal…" : {
+
+    },
+    "Abrindo o pull request" : {
+
+    },
+    "Abrir %@ no Linear" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open %@ in Linear"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir %@ no Linear"
+          }
+        }
+      }
+    },
+    "Abrir Itens de Login nos Ajustes do Sistema" : {
+
+    },
+    "Abrir a janela das lanes" : {
+
+    },
+    "Abrir a janela das lanes (claude em cima, grok embaixo)" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the lanes window (claude on top, grok below)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir a janela das lanes (claude em cima, grok embaixo)"
+          }
+        }
+      }
+    },
+    "Abrir ao iniciar sessão" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open at login"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir ao iniciar sessão"
+          }
+        }
+      }
+    },
+    "Abrir manifesto" : {
+
+    },
+    "Abrir o painel de logs (testes, dispatcher e vigia)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the log panel (tests, dispatcher and watcher)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir o painel de logs (testes, dispatcher e vigia)"
+          }
+        }
+      }
+    },
+    "Abrir os Ajustes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir os Ajustes"
+          }
+        }
+      }
+    },
+    "Abrir painel" : {
+
+    },
+    "Acima disto a chave passa as lanes para o vigia." : {
+
+    },
+    "Adicionar conta" : {
+
+    },
+    "Adicionar projeto" : {
+
+    },
+    "Agendamentos" : {
+
+    },
+    "Agendas" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schedules"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agendas"
+          }
+        }
+      }
+    },
+    "Agentes em segundo plano" : {
+
+    },
+    "Agora: %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agora: %@"
+          }
+        }
+      }
+    },
+    "Ajustes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes"
+          }
+        }
+      }
+    },
+    "Alto: < %lld%%" : {
+
+    },
+    "Antes de cada build" : {
+
+    },
+    "Ao mover um card para esta coluna, uma lane começa a trabalhar nele." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving a card to this column makes a lane start working on it."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ao mover um card para esta coluna, uma lane começa a trabalhar nele."
+          }
+        }
+      }
+    },
+    "Apagar token" : {
+
+    },
+    "Arquivo da medição de estresse" : {
+
+    },
+    "Arquivo do ledger" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ledger file"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arquivo do ledger"
+          }
+        }
+      }
+    },
+    "Arquivo do token (opcional)" : {
+
+    },
+    "Arquivo do token do Copilot (opcional)" : {
+
+    },
+    "As lanes param de receber cards novos até você ligar de novo. Isto não muda as lanes ligadas nem a pausa." : {
+
+    },
+    "As mudanças são gravadas ao confirmar cada campo." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes are saved when you confirm each field."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As mudanças são gravadas ao confirmar cada campo."
+          }
+        }
+      }
+    },
+    "As mudanças são gravadas na hora. Nos campos de texto, aperte Enter para gravar." : {
+
+    },
+    "Atualizando a lista de modelos…" : {
+
+    },
+    "Atualizar" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atualizar"
+          }
+        }
+      }
+    },
+    "Atualizar agora" : {
+
+    },
+    "Atualizar estado" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh status"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atualizar estado"
+          }
+        }
+      }
+    },
+    "Automação" : {
+
+    },
+    "Automático" : {
+
+    },
+    "Automático (a conta com mais folga)" : {
+
+    },
+    "Automático (pela % da conta)" : {
+
+    },
+    "Automático (por %)" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic (by %)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automático (por %)"
+          }
+        }
+      }
+    },
+    "Automático decide pela % de uso da conta." : {
+
+    },
+    "Avançado" : {
+
+    },
+    "Aviso de disco livre (GB)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free disk warning (GB)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aviso de disco livre (GB)"
+          }
+        }
+      }
+    },
+    "Aviso em (% do teto)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warn at (% of cap)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aviso em (% do teto)"
+          }
+        }
+      }
+    },
+    "Ações da lane %@" : {
+
+    },
+    "Baixo: < %lld%%" : {
+
+    },
+    "Banco do Cursor" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cursor database"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Banco do Cursor"
+          }
+        }
+      }
+    },
+    "Banco do OpenCode (sessão do Console)" : {
+
+    },
+    "Bem-vindo ao TuttiDash" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to TuttiDash"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bem-vindo ao TuttiDash"
+          }
+        }
+      }
+    },
+    "Boas-vindas" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boas-vindas"
+          }
+        }
+      }
+    },
+    "Bots e revisão" : {
+
+    },
+    "Builds mais caros (top 5)" : {
+
+    },
+    "Buscar lanes, builds, entregas..." : {
+
+    },
+    "Buscar nos Ajustes" : {
+
+    },
+    "Cada ferramenta tem um manifesto próprio. Só leitura aqui." : {
+
+    },
+    "Caminho do tmux" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tmux path"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caminho do tmux"
+          }
+        }
+      }
+    },
+    "Caminho não existe." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Path does not exist."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caminho não existe."
+          }
+        }
+      }
+    },
+    "Card de esforço alto (US$)" : {
+
+    },
+    "Card de esforço baixo (US$)" : {
+
+    },
+    "Card de esforço médio (US$)" : {
+
+    },
+    "Card de pedidos da triagem" : {
+
+    },
+    "Cards que o dispatcher passou para você (%@)" : {
+
+    },
+    "Carga máxima" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximum load"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carga máxima"
+          }
+        }
+      }
+    },
+    "Carregando" : {
+
+    },
+    "Chave dos bots (s)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bots switch (s)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chave dos bots (s)"
+          }
+        }
+      }
+    },
+    "Claude (vigia no Mac)" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude (Mac watcher)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude (vigia no Mac)"
+          }
+        }
+      }
+    },
+    "Clique para abrir o login no Terminal" : {
+
+    },
+    "Cole no Terminal para usar." : {
+
+    },
+    "Cole o token da API do Linear." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste your Linear API token."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cole o token da API do Linear."
+          }
+        }
+      }
+    },
+    "Coluna Em andamento" : {
+
+    },
+    "Coluna Em revisão" : {
+
+    },
+    "Coluna de revisão" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review column"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coluna de revisão"
+          }
+        }
+      }
+    },
+    "Coluna que dispara a lane" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Column that starts a lane"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coluna que dispara a lane"
+          }
+        }
+      }
+    },
+    "Colunas do quadro" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Board columns"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colunas do quadro"
+          }
+        }
+      }
+    },
+    "Comando da janela das lanes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lanes window command"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando da janela das lanes"
+          }
+        }
+      }
+    },
+    "Comando do painel de logs" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log panel command"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando do painel de logs"
+          }
+        }
+      }
+    },
+    "Comparado com a semana anterior até o mesmo ponto" : {
+
+    },
+    "Comparado com ontem" : {
+
+    },
+    "Concluir" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finish"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Concluir"
+          }
+        }
+      }
+    },
+    "Conectado a %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connected to %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado a %@"
+          }
+        }
+      }
+    },
+    "Conectar o Linear" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect Linear"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectar o Linear"
+          }
+        }
+      }
+    },
+    "Conecte o Linear em Ajustes › Contas para abrir os cards." : {
+
+    },
+    "Conecte o Linear para escolher o projeto." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect Linear to choose the project."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conecte o Linear para escolher o projeto."
+          }
+        }
+      }
+    },
+    "Consultar limites das contas" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check account limits"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consultar limites das contas"
+          }
+        }
+      }
+    },
+    "Conta de uso do Gemini CLI. Desligada até você adicionar. Não renova o token." : {
+
+    },
+    "Contas" : {
+
+    },
+    "Contas acompanhadas" : {
+
+    },
+    "Contas das lanes" : {
+
+    },
+    "Contas de uso" : {
+
+    },
+    "Contas e gasto" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accounts & spend"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contas e gasto"
+          }
+        }
+      }
+    },
+    "Contas para acompanhar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accounts to track"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contas para acompanhar"
+          }
+        }
+      }
+    },
+    "Continuar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuar"
+          }
+        }
+      }
+    },
+    "Copiado" : {
+
+    },
+    "Copilot" : {
+
+    },
+    "Cota do mês (requisições premium)" : {
+
+    },
+    "Credenciais" : {
+
+    },
+    "Credencial do Claude" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude credential"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credencial do Claude"
+          }
+        }
+      }
+    },
+    "Credencial do Codex" : {
+
+    },
+    "Credencial do Gemini" : {
+
+    },
+    "Credencial do OpenCode (arquivo)" : {
+
+    },
+    "Credencial do grok CLI" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "grok CLI credential"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credencial do grok CLI"
+          }
+        }
+      }
+    },
+    "Crie em Linear › Settings › API. Ele fica só no Keychain, nunca no arquivo." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create it in Linear › Settings › API. It is kept only in the Keychain, never in the file."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crie em Linear › Settings › API. Ele fica só no Keychain, nunca no arquivo."
+          }
+        }
+      }
+    },
+    "Dados atualizados" : {
+
+    },
+    "Decide quem cuida das lanes, o gestor ou o vigia. Desligar congela a troca automática." : {
+
+    },
+    "Dependências (opcionais)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dependencies (optional)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dependências (opcionais)"
+          }
+        }
+      }
+    },
+    "Desativar %@" : {
+
+    },
+    "Descer" : {
+
+    },
+    "Desconectar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disconnect"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desconectar"
+          }
+        }
+      }
+    },
+    "Desde 23/10/2026, modelo free que registra ou treina com o uso pode receber código nas lanes e na revisão." : {
+
+    },
+    "Desligar" : {
+
+    },
+    "Desligar o dispatcher?" : {
+
+    },
+    "Detalhes do Linear" : {
+
+    },
+    "Digite um número inteiro." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a whole number."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digite um número inteiro."
+          }
+        }
+      }
+    },
+    "Digite um número." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a number."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digite um número."
+          }
+        }
+      }
+    },
+    "Disco NVMe externo (opcional)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External NVMe disk (optional)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disco NVMe externo (opcional)"
+          }
+        }
+      }
+    },
+    "Dispatcher" : {
+
+    },
+    "Dispatcher das lanes (s)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lane dispatcher (s)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispatcher das lanes (s)"
+          }
+        }
+      }
+    },
+    "Dispatcher não encontrado" : {
+
+    },
+    "Dispatcher pula a checagem da máquina" : {
+
+    },
+    "Distribui os cards prontos para as lanes, a cada minuto. Desligado, nenhuma lane começa trabalho novo." : {
+
+    },
+    "Documento do diário" : {
+
+    },
+    "Editar esta conta" : {
+
+    },
+    "Ela pode receber cards no próximo ciclo do dispatcher." : {
+
+    },
+    "Ela saiu com código %lld. A escolha ficou gravada e vale na próxima conferência." : {
+
+    },
+    "Ela termina o card atual e não pega outro." : {
+
+    },
+    "Endereço do workspace" : {
+
+    },
+    "Entre %@ e %@" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Entre %1$@ e %2$@"
+          }
+        }
+      }
+    },
+    "Escolha aplicada: %@" : {
+
+    },
+    "Escolha ou digite um modelo. Sem modelo, a lane usa o automático." : {
+
+    },
+    "Escolha um tipo que o app já mede." : {
+
+    },
+    "Escolha uma das opções." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick one of the options."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha uma das opções."
+          }
+        }
+      }
+    },
+    "Escolha…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha…"
+          }
+        }
+      }
+    },
+    "Escolher" : {
+
+    },
+    "Esconder até a lista de alertas mudar" : {
+
+    },
+    "Esforço" : {
+
+    },
+    "Esforço padrão" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default effort"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esforço padrão"
+          }
+        }
+      }
+    },
+    "Esperando você: %lld" : {
+
+    },
+    "Esta conta não tem interruptor e não recebe card. SuperGrok (Cursor e Grok Bot) é a mesma cota Sand. Desligar o Grok CLI não muda o % do SuperGrok: cotas e créditos separados." : {
+
+    },
+    "Estas contas entram em limites, gasto e retomadas. Só tipos que o app já mede. Provedor novo entra pelo catálogo agents.d, não por um nome livre." : {
+
+    },
+    "Estas contas medem uso. Não recebem card e não têm interruptor." : {
+
+    },
+    "Estas tarefas rodam sozinhas de tempos em tempos. Instale só as que você usa; dá para mudar depois." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These tasks run on their own from time to time. Install only the ones you use; you can change this later."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estas tarefas rodam sozinhas de tempos em tempos. Instale só as que você usa; dá para mudar depois."
+          }
+        }
+      }
+    },
+    "Etiqueta de \"precisa de você\"" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"Needs you\" label"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etiqueta de \"precisa de você\""
+          }
+        }
+      }
+    },
+    "Etiqueta do dono" : {
+
+    },
+    "Etiquetas de alerta" : {
+
+    },
+    "Etiquetas que bloqueiam" : {
+
+    },
+    "Execuções dos últimos 7 dias sem custo (morta, em andamento, grok OAuth ou parcial). Não entram na soma." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runs in the last 7 days without cost (dead, in progress, grok OAuth or partial). Not added to the total."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Execuções dos últimos 7 dias sem custo (morta, em andamento, grok OAuth ou parcial). Não entram na soma."
+          }
+        }
+      }
+    },
+    "Execuções dos últimos 7 dias sem custo (morta, em andamento, sem custo informado ou parcial). Não entram na soma." : {
+
+    },
+    "Expandir %@" : {
+
+    },
+    "Faz os merges, cuida da fila e das revisões quando o gestor não está." : {
+
+    },
+    "Fechar aviso" : {
+
+    },
+    "Ferramentas (agents.d)" : {
+
+    },
+    "Fila (%lld)" : {
+
+    },
+    "Filtra a página atual por texto (id, título ou lane)" : {
+
+    },
+    "Filtro das linhas (regex)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Line filter (regex)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtro das linhas (regex)"
+          }
+        }
+      }
+    },
+    "Fixo" : {
+
+    },
+    "Gasto por lane (%@)" : {
+
+    },
+    "Gemini CLI. Conta consumer Google AI Pro/Ultra pode ficar sem dado: o Google barrou esse acesso." : {
+
+    },
+    "Geral" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geral"
+          }
+        }
+      }
+    },
+    "Grok Bot" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok Bot"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok Bot"
+          }
+        }
+      }
+    },
+    "Grok Bot / SuperGrok (via Cursor)" : {
+
+    },
+    "Grok Bot / SuperGrok, lido pela sessão do Cursor. Não compartilha cota nem crédito com o Grok CLI." : {
+
+    },
+    "Grok CLI" : {
+
+    },
+    "Grok CLI no terminal. Créditos próprios, separados do SuperGrok." : {
+
+    },
+    "Homebrew" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Homebrew"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Homebrew"
+          }
+        }
+      }
+    },
+    "Informe ao menos um item." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter at least one item."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Informe ao menos um item."
+          }
+        }
+      }
+    },
+    "Informe um caminho." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a path."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Informe um caminho."
+          }
+        }
+      }
+    },
+    "Instalar" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instalar"
+          }
+        }
+      }
+    },
+    "Instalar e recarregar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install and reload"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instalar e recarregar"
+          }
+        }
+      }
+    },
+    "Instale com: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install with: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instale com: %@"
+          }
+        }
+      }
+    },
+    "Instale o dispatcher primeiro." : {
+
+    },
+    "Integrações" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrations"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrações"
+          }
+        }
+      }
+    },
+    "Intervalo da medição de estresse (s)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stress sampling interval (s)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intervalo da medição de estresse (s)"
+          }
+        }
+      }
+    },
+    "Intervalo de troca (s)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch interval (s)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intervalo de troca (s)"
+          }
+        }
+      }
+    },
+    "Janela de cada lane" : {
+
+    },
+    "Janela de cada lane: linhas" : {
+
+    },
+    "Jobs" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jobs"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jobs"
+          }
+        }
+      }
+    },
+    "Jobs de build" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build jobs"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jobs de build"
+          }
+        }
+      }
+    },
+    "Já existe uma conta com este id." : {
+
+    },
+    "Já existe uma conta deste tipo. As duas leem a mesma credencial." : {
+
+    },
+    "Lane %@ desligada" : {
+
+    },
+    "Lane %@ ligada" : {
+
+    },
+    "Lane do comando grok no terminal. Créditos próprios, separados do SuperGrok." : {
+
+    },
+    "Lanes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lanes"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lanes"
+          }
+        }
+      }
+    },
+    "Lanes ligadas" : {
+
+    },
+    "Lanes: tempos e turnos" : {
+
+    },
+    "Lendo o estado das lanes…" : {
+
+    },
+    "Lendo o gasto das lanes…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading lane spend…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lendo o gasto das lanes…"
+          }
+        }
+      }
+    },
+    "Lendo os limites das contas…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading account limits…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lendo os limites das contas…"
+          }
+        }
+      }
+    },
+    "Ler credencial do Claude no Keychain" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read Claude credential from Keychain"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ler credencial do Claude no Keychain"
+          }
+        }
+      }
+    },
+    "Ler de novo" : {
+
+    },
+    "Limite da chave dos bots (%)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bots switch limit (%)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limite da chave dos bots (%)"
+          }
+        }
+      }
+    },
+    "Limpar busca" : {
+
+    },
+    "Linear" : {
+
+    },
+    "Linear não conectado" : {
+
+    },
+    "Linhas de diff por edição" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diff lines per edit"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linhas de diff por edição"
+          }
+        }
+      }
+    },
+    "Linhas de raciocínio por bloco" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reasoning lines per block"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linhas de raciocínio por bloco"
+          }
+        }
+      }
+    },
+    "Linhas do log" : {
+
+    },
+    "Linhas dos testes manuais" : {
+
+    },
+    "Linhas por lane" : {
+
+    },
+    "Lista que se atualiza sozinha uma vez por dia." : {
+
+    },
+    "Livre" : {
+
+    },
+    "Local primeiro (Ollama, triagem local), depois opencode free, Claude por último. Quem fez cada análise aparece no log do painel." : {
+
+    },
+    "Lock de build" : {
+
+    },
+    "Logs das provas (padrão)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proof logs (pattern)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logs das provas (padrão)"
+          }
+        }
+      }
+    },
+    "Logs dos testes manuais (padrão)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual test logs (pattern)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Logs dos testes manuais (padrão)"
+          }
+        }
+      }
+    },
+    "Lê a % de uso de cada conta para equilibrar as lanes." : {
+
+    },
+    "Mede o % do menu SuperGrok pela sessão do Cursor. Não pega card. Cota separada do Grok CLI." : {
+
+    },
+    "Medição de estresse" : {
+
+    },
+    "Modelo" : {
+
+    },
+    "Modelo %@" : {
+
+    },
+    "Modelo de %@" : {
+
+    },
+    "Modelo de cada lane" : {
+
+    },
+    "Modelo de cada revisor" : {
+
+    },
+    "Modelo do %@ salvo" : {
+
+    },
+    "Modelo fixo" : {
+
+    },
+    "Mostra as linhas que o agente mudou em cada arquivo." : {
+
+    },
+    "Mostra o que o agente está pensando enquanto trabalha." : {
+
+    },
+    "Mostrar o diff de cada edição" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the diff of each edit"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar o diff de cada edição"
+          }
+        }
+      }
+    },
+    "Mostrar o raciocínio do agente" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the agent's reasoning"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar o raciocínio do agente"
+          }
+        }
+      }
+    },
+    "Mudar um intervalo recarrega só aquele job, e só se ele foi instalado por aqui." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changing an interval reloads only that job, and only if it was installed here."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mudar um intervalo recarrega só aquele job, e só se ele foi instalado por aqui."
+          }
+        }
+      }
+    },
+    "Mudar um intervalo recarrega só aquele serviço." : {
+
+    },
+    "Máquina e testes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Machine & tests"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Máquina e testes"
+          }
+        }
+      }
+    },
+    "Médio: < %lld%%" : {
+
+    },
+    "Mínimo de 1 tentativa." : {
+
+    },
+    "Mínimo livre em disco (GB)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimum free disk (GB)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mínimo livre em disco (GB)"
+          }
+        }
+      }
+    },
+    "Nada encontrado para «%@»." : {
+
+    },
+    "Nenhum alerta agora" : {
+
+    },
+    "Nenhum build neste período" : {
+
+    },
+    "Nenhum card fechado neste registro" : {
+
+    },
+    "Nenhum job em agendas.jobs na config." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No jobs in agendas.jobs in the config."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum job em agendas.jobs na config."
+          }
+        }
+      }
+    },
+    "Nenhum modelo do OpenCode passou na regra de privacidade." : {
+
+    },
+    "Nenhuma build hoje" : {
+
+    },
+    "Nenhuma execução nos últimos 7 dias" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No runs in the last 7 days"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhuma execução nos últimos 7 dias"
+          }
+        }
+      }
+    },
+    "Nenhuma lane ligada." : {
+
+    },
+    "Nenhuma lane parou sem fechar o card." : {
+
+    },
+    "Nenhuma prova agora" : {
+
+    },
+    "Nenhuma prova esperando para compilar." : {
+
+    },
+    "No automático, cada peso de card usa um modelo. No fixo, a lane usa sempre o mesmo. A lista vem das ferramentas e atualiza ao abrir os Ajustes. Se o modelo não aparecer, digite o id." : {
+
+    },
+    "No automático, o gestor cuida enquanto o uso do Grok Bot está abaixo do limite; depois, o vigia assume." : {
+
+    },
+    "No card há %@" : {
+
+    },
+    "Nome" : {
+
+    },
+    "Notificações: em breve" : {
+
+    },
+    "Nunca revisar com o mesmo fornecedor que escreveu o PR" : {
+
+    },
+    "Não deu certo" : {
+
+    },
+    "Não deu para %@ o %@" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Não deu para %1$@ o %2$@"
+          }
+        }
+      }
+    },
+    "Não deu para abrir %@" : {
+
+    },
+    "Não deu para abrir o pull request" : {
+
+    },
+    "Não deu para conferir a privacidade dos modelos. Vale a última lista boa." : {
+
+    },
+    "Não deu para copiar" : {
+
+    },
+    "Não deu para gravar" : {
+
+    },
+    "Não deu para gravar o modelo do %@" : {
+
+    },
+    "Não deu para medir o uso do Grok Bot. Na dúvida, o vigia assume." : {
+
+    },
+    "Não deu para mudar a lane %@" : {
+
+    },
+    "Não deu para restaurar o padrão" : {
+
+    },
+    "Não foi possível falar com o Linear: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not reach Linear: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível falar com o Linear: %@"
+          }
+        }
+      }
+    },
+    "Não foi possível gravar a escolha" : {
+
+    },
+    "Não foi possível gravar: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível gravar: %@"
+          }
+        }
+      }
+    },
+    "Não foi possível salvar no Keychain: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save to Keychain: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível salvar no Keychain: %@"
+          }
+        }
+      }
+    },
+    "Não foi possível salvar o token no Keychain: %@" : {
+
+    },
+    "Não gravado ainda. Aperte Enter para gravar." : {
+
+    },
+    "Não pode ficar vazio." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cannot be empty."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não pode ficar vazio."
+          }
+        }
+      }
+    },
+    "Não, sempre checar" : {
+
+    },
+    "O Claude para quando passa deste valor." : {
+
+    },
+    "O Terminal não abriu" : {
+
+    },
+    "O TuttiDash abre sozinho quando você entra no Mac." : {
+
+    },
+    "O TuttiDash mostra no notch o gasto e o estado das suas lanes de agentes. Vamos configurar em poucos passos." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TuttiDash shows your agent lanes' spend and status in the notch. Let's set it up in a few steps."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O TuttiDash mostra no notch o gasto e o estado das suas lanes de agentes. Vamos configurar em poucos passos."
+          }
+        }
+      }
+    },
+    "O TuttiDash precisa do dispatcher para gerenciar lanes. Instale o dispatcher e tente novamente." : {
+
+    },
+    "O app avisa quando o gasto chega nesta % do teto." : {
+
+    },
+    "O app confere disco e carga antes de rodar a prova." : {
+
+    },
+    "O comando da prova precisa de {suite} no lugar da suíte." : {
+
+    },
+    "O comando «grok models» não respondeu. Vale a última lista boa." : {
+
+    },
+    "O comando «opencode models» não respondeu. Vale a última lista boa." : {
+
+    },
+    "O endereço do card não abriu no navegador." : {
+
+    },
+    "O endereço não abriu no navegador." : {
+
+    },
+    "O gestor está cuidando" : {
+
+    },
+    "O id do Linear tem que ser um UUID." : {
+
+    },
+    "O login do Claude Code venceu. Abra o Claude Code para renovar e reabra os Ajustes." : {
+
+    },
+    "O login do Codex venceu. Rode o codex no Terminal para renovar e reabra os Ajustes." : {
+
+    },
+    "O número sai quando a build começa" : {
+
+    },
+    "O plist e o lançador serão regravados a partir dos Ajustes e o job será recarregado." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The plist and launcher will be rewritten from Settings and the job will be reloaded."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O plist e o lançador serão regravados a partir dos Ajustes e o job será recarregado."
+          }
+        }
+      }
+    },
+    "O projeto marcado como padrão é o que as lanes trabalham neste ciclo. Sem ninguém marcado, vale o primeiro ativo da lista — a ordem da lista é a ordem de preferência. Desligar mantém o projeto listado aqui, sem o dispatcher assumir card nele." : {
+
+    },
+    "O projeto precisa do caminho do repo." : {
+
+    },
+    "O projeto precisa do id do Linear." : {
+
+    },
+    "O raciocínio e o diff valem para a janela de cada lane, na próxima tarefa que ela pegar." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reasoning and diff apply to each lane's window, starting with the next task it picks up."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O raciocínio e o diff valem para a janela de cada lane, na próxima tarefa que ela pegar."
+          }
+        }
+      }
+    },
+    "O repo tem que começar com / ou ~." : {
+
+    },
+    "O repositório de onde a lane trabalha, a pasta de worktrees, a prova e o freio de caminho protegido saem do cadastro de projetos, abaixo. O modelo de cada lane fica no bloco acima: automático pelo peso do card, ou um modelo fixo." : {
+
+    },
+    "O revisor lê os PRs de qualquer projeto antes do merge." : {
+
+    },
+    "O revisor não é uma lane: o dispatcher não o enxerga e o painel não o lista. Estes ajustes valem para qualquer projeto do cadastro." : {
+
+    },
+    "O time do Linear onde ficam os cards." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Linear team that holds the cards."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O time do Linear onde ficam os cards."
+          }
+        }
+      }
+    },
+    "O token do Linear fica só no Keychain, nunca no arquivo." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Linear token is kept only in the Keychain, never in the file."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O token do Linear fica só no Keychain, nunca no arquivo."
+          }
+        }
+      }
+    },
+    "O token está vazio." : {
+
+    },
+    "O token fica só no Chaveiro, nunca no arquivo." : {
+
+    },
+    "O token fica só no Keychain, nunca no arquivo de ajustes. Para um token fino, a permissão é Plan, leitura. O arquivo acima, se preenchido, é só o caminho." : {
+
+    },
+    "O uso do Grok Bot chegou a %@%%, o limite é %@%%. O vigia assume." : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "O uso do Grok Bot chegou a %1$@%%, o limite é %2$@%%. O vigia assume."
+          }
+        }
+      }
+    },
+    "O uso do Grok Bot está em %@%%, abaixo do limite de %@%%. O gestor cuida." : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "O uso do Grok Bot está em %1$@%%, abaixo do limite de %2$@%%. O gestor cuida."
+          }
+        }
+      }
+    },
+    "O vigia está cuidando" : {
+
+    },
+    "O «grok models» não trouxe nenhum modelo." : {
+
+    },
+    "Ocupado" : {
+
+    },
+    "Onde o app acha o login de cada ferramenta. Vazio usa o padrão." : {
+
+    },
+    "Onde o app trabalha" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where the app works"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onde o app trabalha"
+          }
+        }
+      }
+    },
+    "Onde o vigia deixa os pedidos de cards novos." : {
+
+    },
+    "OpenCode: bloquear se a conferência de privacidade tiver mais de (dias)" : {
+
+    },
+    "OpenCode: com a regra de 21/10, aceitar retenção de até (dias; 0 = só retenção zero)" : {
+
+    },
+    "OpenCode: conferir a privacidade a cada (h)" : {
+
+    },
+    "OpenCode: só modelo que não treina com o uso (regra de 21/10)" : {
+
+    },
+    "Ordem dos modelos do vigia" : {
+
+    },
+    "Orçamento esforço alto (US$)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "High effort budget (US$)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orçamento esforço alto (US$)"
+          }
+        }
+      }
+    },
+    "Orçamento esforço baixo (US$)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low effort budget (US$)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orçamento esforço baixo (US$)"
+          }
+        }
+      }
+    },
+    "Orçamento esforço médio (US$)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medium effort budget (US$)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orçamento esforço médio (US$)"
+          }
+        }
+      }
+    },
+    "Ou digite o id" : {
+
+    },
+    "Ou digite o modelo" : {
+
+    },
+    "Padrão da ferramenta" : {
+
+    },
+    "Padrão restaurado" : {
+
+    },
+    "Padrão restaurado em %@" : {
+
+    },
+    "Painel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Panel"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Painel"
+          }
+        }
+      }
+    },
+    "Painel de logs" : {
+
+    },
+    "Para onde o card vai quando a lane termina e abre o PR." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where the card goes when the lane finishes and opens the PR."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para onde o card vai quando a lane termina e abre o PR."
+          }
+        }
+      }
+    },
+    "Pasta de estado das lanes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lane state folder"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pasta de estado das lanes"
+          }
+        }
+      }
+    },
+    "Pasta de logs das lanes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lane logs folder"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pasta de logs das lanes"
+          }
+        }
+      }
+    },
+    "Pastas do app" : {
+
+    },
+    "Pedir cards à triagem no máximo a cada (s)" : {
+
+    },
+    "Peso do card" : {
+
+    },
+    "Preenchidos pela conexão em Contas. Só leitura." : {
+
+    },
+    "Primeira tentativa sem checagem" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "First attempt without preflight"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Primeira tentativa sem checagem"
+          }
+        }
+      }
+    },
+    "Privacidade dos modelos" : {
+
+    },
+    "Projeto" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Project"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projeto"
+          }
+        }
+      }
+    },
+    "Projetos" : {
+
+    },
+    "Projetos que o dispatcher enxerga" : {
+
+    },
+    "Pronto" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pronto"
+          }
+        }
+      }
+    },
+    "Prova vermelha" : {
+
+    },
+    "Próxima ação: %@" : {
+
+    },
+    "Pular" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pular"
+          }
+        }
+      }
+    },
+    "Python da triagem local (auto = procura um)" : {
+
+    },
+    "Quais agentes acompanhar? (vale para limites, gasto e retomadas)" : {
+
+    },
+    "Quais contas mostrar no card de limites?" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Which accounts should the limits card show?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quais contas mostrar no card de limites?"
+          }
+        }
+      }
+    },
+    "Quais lanes pegam card, com que modelo e quanto cada card pode gastar" : {
+
+    },
+    "Quando a prova falha, a triagem local diz se foi o código ou o ambiente." : {
+
+    },
+    "Quando o TuttiDash abre e o que cada lane mostra" : {
+
+    },
+    "Quando o uso do Grok Bot passa do limite, o vigia assume." : {
+
+    },
+    "Quantas tarefas o vigia começa a cada ciclo." : {
+
+    },
+    "Quanto cada card pode gastar" : {
+
+    },
+    "Quanto de cada conta já foi usado. SuperGrok (via Cursor) e Grok CLI são cotas separadas." : {
+
+    },
+    "Quanto você aceita gastar por semana. 0 desliga o teto." : {
+
+    },
+    "Quem cuida das lanes" : {
+
+    },
+    "Quem cuida das lanes e os agentes que rodam sozinhos" : {
+
+    },
+    "Quem cuida dos bots" : {
+
+    },
+    "Quem decide" : {
+
+    },
+    "Quem gerencia as lanes" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Who manages the lanes"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quem gerencia as lanes"
+          }
+        }
+      }
+    },
+    "Quem revisa os PRs antes do merge" : {
+
+    },
+    "Reativar %@" : {
+
+    },
+    "Recarregar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reload"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recarregar"
+          }
+        }
+      }
+    },
+    "Recolher %@" : {
+
+    },
+    "Reconferir needs sem mudança a cada (s, 0 = só quando o card muda)" : {
+
+    },
+    "Relatório oficial de billing da conta pessoal. Licença de organização não entra neste número. O token fica no Keychain." : {
+
+    },
+    "Remover" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover"
+          }
+        }
+      }
+    },
+    "Remover esta conta" : {
+
+    },
+    "Remover tudo que este app instalou" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove everything this app installed"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remover tudo que este app instalou"
+          }
+        }
+      }
+    },
+    "Repetir a prova quando ambiente ≥" : {
+
+    },
+    "Repositório, worktrees, prova e caminhos protegidos de cada projeto que o dispatcher enxerga." : {
+
+    },
+    "Requisições premium do GitHub Copilot na conta pessoal. Não pega card. A cota do mês é a que você informa." : {
+
+    },
+    "Resposta inesperada do Linear: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unexpected response from Linear: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resposta inesperada do Linear: %@"
+          }
+        }
+      }
+    },
+    "Restaurar padrão" : {
+
+    },
+    "Revisor dos PRs" : {
+
+    },
+    "Revisor reserva (auto = a conta com mais folga)" : {
+
+    },
+    "Revisor: limites" : {
+
+    },
+    "Revisão" : {
+
+    },
+    "Rodam de dentro do TuttiDash, mesmo com a janela fechada." : {
+
+    },
+    "Rótulo" : {
+
+    },
+    "SEMANA %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WEEK %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SEMANA %lld"
+          }
+        }
+      }
+    },
+    "Sair" : {
+
+    },
+    "Sair do TuttiDash" : {
+
+    },
+    "Salvar e conectar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save and connect"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salvar e conectar"
+          }
+        }
+      }
+    },
+    "Salvar esta conta" : {
+
+    },
+    "Salvar este projeto" : {
+
+    },
+    "Salvar token" : {
+
+    },
+    "Salvo em %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved to %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salvo em %@"
+          }
+        }
+      }
+    },
+    "Salvo. O dispatcher passa a usar isso no próximo ciclo (até 60 s)." : {
+
+    },
+    "Salvo: %@" : {
+
+    },
+    "Salvo: Aviso em (% do teto)" : {
+
+    },
+    "Scheme do Xcode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xcode scheme"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scheme do Xcode"
+          }
+        }
+      }
+    },
+    "Script da triagem local" : {
+
+    },
+    "Segunda opinião (só bloqueia)" : {
+
+    },
+    "Sem elas o app funciona; só o painel de logs e os scripts ficam indisponíveis." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app works without them; only the log panel and scripts are unavailable."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sem elas o app funciona; só o painel de logs e os scripts ficam indisponíveis."
+          }
+        }
+      }
+    },
+    "Sem gasto conhecido neste período" : {
+
+    },
+    "Sem leitura das lanes" : {
+
+    },
+    "Sem login do Claude Code neste Mac. Entre no Claude Code e reabra os Ajustes." : {
+
+    },
+    "Sem login do Codex neste Mac. Rode o codex uma vez e reabra os Ajustes." : {
+
+    },
+    "Sem prova terminada ainda" : {
+
+    },
+    "Sem token no Keychain" : {
+
+    },
+    "Sempre o Grok Bot" : {
+
+    },
+    "Sempre o gestor" : {
+
+    },
+    "Sempre o vigia" : {
+
+    },
+    "Separe as suítes por vírgula." : {
+
+    },
+    "Serviço em segundo plano do TuttiDash." : {
+
+    },
+    "Serviço no Chaveiro" : {
+
+    },
+    "Serviços agendados" : {
+
+    },
+    "Sessão do tmux" : {
+
+    },
+    "Seu quadro no Linear" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Linear board"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seu quadro no Linear"
+          }
+        }
+      }
+    },
+    "Sigla" : {
+
+    },
+    "Sim, pular" : {
+
+    },
+    "Sozinho (aprova)" : {
+
+    },
+    "Subir" : {
+
+    },
+    "Substituir o agendamento atual deste job?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace this job's current schedule?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Substituir o agendamento atual deste job?"
+          }
+        }
+      }
+    },
+    "SuperGrok" : {
+
+    },
+    "Suítes (%lld)" : {
+
+    },
+    "Suítes padrão da prova (vírgula)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default proof suites (comma-separated)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suítes padrão da prova (vírgula)"
+          }
+        }
+      }
+    },
+    "Só as lanes ligadas recebem cards novos. Desligar não interrompe o card que já está rodando." : {
+
+    },
+    "Só o caminho. O token em si fica no Keychain. Vazio = só o Keychain." : {
+
+    },
+    "Só os cards deste projeto entram nas lanes." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only cards in this project go to the lanes."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Só os cards deste projeto entram nas lanes."
+          }
+        }
+      }
+    },
+    "Tarefas automáticas" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic tasks"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tarefas automáticas"
+          }
+        }
+      }
+    },
+    "Tarefas novas por ciclo do vigia" : {
+
+    },
+    "Tarefas por lane ativa" : {
+
+    },
+    "Tela" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screen"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tela"
+          }
+        }
+      }
+    },
+    "Tempo máximo da lane (min)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lane timeout (min)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tempo máximo da lane (min)"
+          }
+        }
+      }
+    },
+    "Tempo máximo da prova (min)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proof timeout (min)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tempo máximo da prova (min)"
+          }
+        }
+      }
+    },
+    "Tempo máximo da tarefa do Claude (s)" : {
+
+    },
+    "Tempo máximo da triagem (s)" : {
+
+    },
+    "Tempos, intervalos, caminhos e arquivos. Raramente precisa mexer" : {
+
+    },
+    "Testes ignorados: em breve" : {
+
+    },
+    "Teto de gasto" : {
+
+    },
+    "Teto de gasto, limites das contas e o Linear" : {
+
+    },
+    "Teto em dólar por card, pelo esforço do card." : {
+
+    },
+    "Teto por revisão no Claude (US$)" : {
+
+    },
+    "Teto por tarefa do Claude no vigia (US$)" : {
+
+    },
+    "Teto semanal (US$, 0 = sem teto)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekly cap (US$, 0 = no cap)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teto semanal (US$, 0 = sem teto)"
+          }
+        }
+      }
+    },
+    "Time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Team"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time"
+          }
+        }
+      }
+    },
+    "Tipo" : {
+
+    },
+    "Token da API do Linear" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linear API token"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token da API do Linear"
+          }
+        }
+      }
+    },
+    "Token do GitHub" : {
+
+    },
+    "Token do Linear inválido ou sem permissão. Gere um novo em Linear › Settings › API." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid Linear token or missing permission. Create a new one in Linear › Settings › API."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token do Linear inválido ou sem permissão. Gere um novo em Linear › Settings › API."
+          }
+        }
+      }
+    },
+    "Token dos scripts não encontrado no Keychain." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripts' token not found in Keychain."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token dos scripts não encontrado no Keychain."
+          }
+        }
+      }
+    },
+    "Token no Keychain" : {
+
+    },
+    "Tornar o projeto que as lanes trabalham" : {
+
+    },
+    "Total do período: %@" : {
+
+    },
+    "Total: %@" : {
+
+    },
+    "Triagem local" : {
+
+    },
+    "Triagem local na prova vermelha" : {
+
+    },
+    "Tudo certo. Você pode mudar qualquer escolha depois na engrenagem do painel." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All set. You can change any choice later from the panel's gear."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tudo certo. Você pode mudar qualquer escolha depois na engrenagem do painel."
+          }
+        }
+      }
+    },
+    "Tudo em pausa" : {
+
+    },
+    "Turnos do grok, alto" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "grok turns, high"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turnos do grok, alto"
+          }
+        }
+      }
+    },
+    "Turnos do grok, baixo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "grok turns, low"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turnos do grok, baixo"
+          }
+        }
+      }
+    },
+    "Turnos do grok, médio" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "grok turns, medium"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turnos do grok, médio"
+          }
+        }
+      }
+    },
+    "TuttiChave" : {
+
+    },
+    "TuttiDash · gasto das lanes" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TuttiDash · lane spend"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TuttiDash · gasto das lanes"
+          }
+        }
+      }
+    },
+    "TuttiDash · lanes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TuttiDash · lanes"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TuttiDash · lanes"
+          }
+        }
+      }
+    },
+    "US$" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "US$"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "US$"
+          }
+        }
+      }
+    },
+    "US$ …" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "US$ …"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "US$ …"
+          }
+        }
+      }
+    },
+    "Um script seu lê o resumo do log e diz se a falha foi do ambiente. Sem script, fica desligada." : {
+
+    },
+    "Uma pausa geral feita por você sempre vence esta escolha." : {
+
+    },
+    "Uma rodando e o resto esperando." : {
+
+    },
+    "Usado quando o card não diz o esforço." : {
+
+    },
+    "Usar a reserva só abaixo de (% da conta)" : {
+
+    },
+    "Usar o token dos scripts" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use the scripts' token"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar o token dos scripts"
+          }
+        }
+      }
+    },
+    "Use um valor entre %@ e %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use a value between %@ and %@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use um valor entre %@ e %@."
+          }
+        }
+      }
+    },
+    "Uso %lld%%" : {
+
+    },
+    "Uso da conta %@" : {
+
+    },
+    "Uso do SuperGrok" : {
+
+    },
+    "Uso sem leitura" : {
+
+    },
+    "Usuário do GitHub" : {
+
+    },
+    "Vale na próxima tarefa que a lane pegar." : {
+
+    },
+    "Vale no próximo ciclo do dispatcher." : {
+
+    },
+    "Valor inválido." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid value."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valor inválido."
+          }
+        }
+      }
+    },
+    "Variação: em breve" : {
+
+    },
+    "Ver detalhes" : {
+
+    },
+    "Vigia" : {
+
+    },
+    "Vigia dos bots (s)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bots watcher (s)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vigia dos bots (s)"
+          }
+        }
+      }
+    },
+    "Vigia: ordem na análise de parada (vírgulas)" : {
+
+    },
+    "Vigia: ordem na conferência da etiqueta do dono (vírgulas)" : {
+
+    },
+    "Vigia: ordem na revisão de PR (vírgulas)" : {
+
+    },
+    "Vigia: revisor reserva quando o escolhido falha" : {
+
+    },
+    "Você escolheu «Sempre o gestor»." : {
+
+    },
+    "Você escolheu «Sempre o vigia»." : {
+
+    },
+    "Você pausou tudo. A chave não troca nada até você tirar a pausa geral." : {
+
+    },
+    "Volta os campos deste grupo ao padrão" : {
+
+    },
+    "Voltar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voltar"
+          }
+        }
+      }
+    },
+    "abrir no Linear" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "open in Linear"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "abrir no Linear"
+          }
+        }
+      }
+    },
+    "aguardando" : {
+
+    },
+    "aguardando o próximo ciclo" : {
+
+    },
+    "aguardando · %lldº" : {
+
+    },
+    "ativo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "active"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ativo"
+          }
+        }
+      }
+    },
+    "atualizando…" : {
+
+    },
+    "copia o comando" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copies the command"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copia o comando"
+          }
+        }
+      }
+    },
+    "copiado" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copied"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "copiado"
+          }
+        }
+      }
+    },
+    "custo desconhecido" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unknown cost"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "custo desconhecido"
+          }
+        }
+      }
+    },
+    "custo desconhecido: %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unknown cost: %lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "custo desconhecido: %lld"
+          }
+        }
+      }
+    },
+    "de %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "of %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "de %@"
+          }
+        }
+      }
+    },
+    "desconhecido" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unknown"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "desconhecido"
+          }
+        }
+      }
+    },
+    "desligado" : {
+
+    },
+    "dispatcher não encontrado. Nada foi alterado." : {
+
+    },
+    "do limite" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "of limit"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "do limite"
+          }
+        }
+      }
+    },
+    "em andamento" : {
+
+    },
+    "erro: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "error: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "erro: %@"
+          }
+        }
+      }
+    },
+    "id do Linear pendente" : {
+
+    },
+    "janela mais apertada" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tightest window"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "janela mais apertada"
+          }
+        }
+      }
+    },
+    "lendo…" : {
+
+    },
+    "lock único: uma prova por vez" : {
+
+    },
+    "na prova" : {
+
+    },
+    "nenhuma lane rodando" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no lanes running"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nenhuma lane rodando"
+          }
+        }
+      }
+    },
+    "ninguém" : {
+
+    },
+    "não definido" : {
+
+    },
+    "não é lane" : {
+
+    },
+    "o gestor" : {
+
+    },
+    "o vigia" : {
+
+    },
+    "padrão" : {
+
+    },
+    "padrão a cada %lld s" : {
+
+    },
+    "padrão do CLI" : {
+
+    },
+    "parado" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stopped"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "parado"
+          }
+        }
+      }
+    },
+    "posição %lld na fila" : {
+
+    },
+    "precisa de aprovação nos Ajustes do Sistema" : {
+
+    },
+    "página %lld de %lld" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "página %1$lld de %2$lld"
+          }
+        }
+      }
+    },
+    "reset não informado" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "reset not reported"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "reset não informado"
+          }
+        }
+      }
+    },
+    "reseta %@" : {
+
+    },
+    "reseta %@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "resets %@ · %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "reseta %@ · %@"
+          }
+        }
+      }
+    },
+    "retomar" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "resume"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "retomar"
+          }
+        }
+      }
+    },
+    "retomar copia o comando para a área de transferência." : {
+
+    },
+    "rodando" : {
+
+    },
+    "sem" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "none"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sem"
+          }
+        }
+      }
+    },
+    "sem dado" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no data"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sem dado"
+          }
+        }
+      }
+    },
+    "sem leitura" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no reading"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sem leitura"
+          }
+        }
+      }
+    },
+    "sem teto definido" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no cap set"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sem teto definido"
+          }
+        }
+      }
+    },
+    "só leitura" : {
+
+    },
+    "tentativa %lld de %lld" : {
+      "localizations" : {
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "tentativa %1$lld de %2$lld"
+          }
+        }
+      }
+    },
+    "testes hoje" : {
+
+    },
+    "teto" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cap"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "teto"
+          }
+        }
+      }
+    },
+    "uma prova por vez" : {
+
+    },
+    "usado · falta %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "used · %@ left"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "usado · falta %@"
+          }
+        }
+      }
+    },
+    "vazia" : {
+
+    },
+    "·" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "·"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "·"
+          }
+        }
+      }
+    },
+    "· %@" : {
+
+    },
+    "última saída %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last exit %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "última saída %@"
+          }
+        }
+      }
+    },
+    "últimos 7 dias" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last 7 days"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "últimos 7 dias"
+          }
+        }
+      }
+    },
+    "—" : {
+
+    },
+    "— ignorado" : {
+
+    },
+    "•" : {
+
+    },
+    "↑ %@" : {
+
+    },
+    "↑ %lld" : {
+
+    },
+    "↓ %@" : {
+
+    },
+    "↓ %lld" : {
+
+    }
+  },
+  "version" : "1.0"
+}

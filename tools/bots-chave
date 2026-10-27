@@ -1,0 +1,169 @@
+#!/usr/bin/python3
+"""Chave espelho: vigia dos bots <-> rotinas do Grok Bot (só um lado roda por vez).
+
+- grokbot < LIMITE  -> garante ~/.transcentia/bots/PAUSE (vigia parado; Grok Bot trabalha)
+- grokbot >= LIMITE ou medida falhou -> apaga PAUSE (vigia assume). Na dúvida, o vigia assume.
+- ~/.transcentia/bots/PAUSE.manual -> não mexe em nada (pausa geral do dono). Vence tudo.
+- ~/.transcentia/bots/gestor (passagem de gestão, ex.: grokbot -> opencode):
+  se existir com valor válido (grokbot|vigia|opencode|claude|agente|humano[:nome]),
+  vence modo_forcado e a %: a chave só regista o dono em modo.json e garante o
+  PAUSE (presente, salvo gestor=vigia). Sem o ficheiro, comportamento antigo.
+- bots_chave.modo_forcado (config.json, via cfg): auto (padrão, decide pela %),
+  vigia (apaga PAUSE e não recria) ou grokbot (cria PAUSE e não apaga). Escolhido no TuttiDash.
+Teste: BOTS_CHAVE_PCT=97 (simula a medida) ou BOTS_CHAVE_PCT=falha (simula erro).
+Lançador: ~/Library/Application Support/AgentesLocais/TuttiDash Chave
+"""
+import json, os, subprocess, sys
+from datetime import datetime
+from pathlib import Path
+
+
+def _cfg(chave, padrao):
+    """Lê ~/.transcentia/tools/cfg (FRA-295); sem cfg ou com erro, devolve o padrão."""
+    try:
+        import runpy
+        v = runpy.run_path(str(Path.home() / ".transcentia/tools/cfg"))["get"](chave, padrao)
+        return type(padrao)(v) if padrao is not None and not isinstance(padrao, (list, set, dict)) else v
+    except Exception:
+        return padrao
+
+LIMITE = float(_cfg("bots_chave.limite_pct", 90.0))
+MODOS_FORCADOS = ("auto", "vigia", "grokbot")
+
+
+def modo_forcado() -> str:
+    """auto|vigia|grokbot; valor desconhecido vira auto."""
+    v = str(_cfg("bots_chave.modo_forcado", "auto")).strip().lower()
+    return v if v in MODOS_FORCADOS else "auto"
+HOME = Path.home()
+BOTS = HOME / ".transcentia/bots"
+PAUSE = BOTS / "PAUSE"
+MANUAL = BOTS / "PAUSE.manual"
+MODO = BOTS / "modo.json"
+GESTOR = BOTS / "gestor"
+GESTORES_VALIDOS = ("grokbot", "vigia", "opencode", "claude", "agente", "humano")
+LOG = HOME / "Library/Logs/TranscentIA/bots-chave.log"
+LANEPCT = HOME / ".transcentia/tools/lanepct-auto"
+
+
+def agora() -> str:
+    return datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S%z")
+
+
+def log(msg: str) -> None:
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write(f"{agora()} {msg}\n")
+
+
+def ler_modo() -> dict:
+    try:
+        return json.loads(MODO.read_text())
+    except Exception:
+        return {}
+
+
+def ler_gestor():
+    """Dono atual da gestão (passagem GrokBot -> Claude/OpenCode), lido de
+    ~/.transcentia/bots/gestor. Valor desconhecido ou vazio -> None, que mantém
+    o comportamento antigo (modo_forcado / %)."""
+    try:
+        partes = GESTOR.read_text().strip().lower().split()
+    except OSError:
+        return None
+    if not partes:
+        return None
+    v = partes[0]
+    if v.split(":", 1)[0] not in GESTORES_VALIDOS:
+        return None
+    return v
+
+
+def gravar_modo(d: dict) -> None:
+    tmp = MODO.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n")
+    tmp.replace(MODO)
+
+
+def medir():
+    """Devolve (pct ou None, motivo)."""
+    teste = os.environ.get("BOTS_CHAVE_PCT")
+    if teste is not None:
+        try:
+            return float(teste), f"teste BOTS_CHAVE_PCT={teste}"
+        except ValueError:
+            return None, f"teste BOTS_CHAVE_PCT={teste} (medida simulada como falha)"
+    try:
+        r = subprocess.run([str(LANEPCT)], capture_output=True, text=True, timeout=300)
+    except Exception as e:
+        return None, f"lanepct-auto não rodou: {e.__class__.__name__}"
+    if r.returncode != 0:
+        return None, f"lanepct-auto saiu com código {r.returncode}"
+    for linha in r.stdout.splitlines():
+        partes = linha.split("\t")
+        if partes and partes[0].strip() == "grokbot":
+            try:
+                pct = float(partes[1].strip())
+                if 0 <= pct <= 1000:
+                    return pct, "medida lanepct-auto"
+            except (IndexError, ValueError):
+                pass
+            return None, f"linha grokbot inválida: {linha!r}"
+    return None, "linha grokbot ausente"
+
+
+def main() -> int:
+    BOTS.mkdir(parents=True, exist_ok=True)
+    antes = ler_modo()
+
+    if MANUAL.exists():
+        if antes.get("modo") != "manual":
+            log(f"PAUSE.manual presente: chave não mexe em nada (PAUSE {'existe' if PAUSE.exists() else 'ausente'})")
+            gravar_modo({"modo": "manual", "grokbot_pct": antes.get("grokbot_pct"),
+                         "medido_em": agora(), "motivo": "PAUSE.manual presente (pausa geral do dono)",
+                         "modo_anterior": antes.get("modo")})
+        return 0
+
+    forcado = modo_forcado()
+    pct, motivo = medir()
+    gestor = ler_gestor()
+    if gestor is not None:
+        modo = gestor
+        pct_txt = "?" if pct is None else f"{pct:g}%"
+        motivo = f"gestor={gestor} (passagem de gestão; a chave regista, não decide; grokbot {pct_txt})"
+    elif forcado != "auto":
+        modo = forcado
+        pct_txt = "?" if pct is None else f"{pct:g}%"
+        motivo = f"forçado no TuttiDash (modo_forcado={forcado}); grokbot {pct_txt}"
+    elif pct is not None and pct < LIMITE:
+        modo = "grokbot"
+        motivo = f"{motivo}: grokbot {pct:g}% < {LIMITE:g}%"
+    else:
+        modo = "vigia"
+        if pct is not None:
+            motivo = f"{motivo}: grokbot {pct:g}% >= {LIMITE:g}%"
+        else:
+            motivo = f"{motivo}: na dúvida, o vigia assume"
+
+    mudou_arquivo = False
+    if modo == "vigia":
+        if PAUSE.exists():
+            PAUSE.unlink()
+            mudou_arquivo = True
+    elif not PAUSE.exists():
+        # grokbot ou terceiro a gerir (opencode/claude/agente/humano): bots parados
+        PAUSE.touch()
+        mudou_arquivo = True
+
+    if mudou_arquivo or antes.get("modo") != modo:
+        pct_txt = "?" if pct is None else f"{pct:g}%"
+        estado = "presente" if PAUSE.exists() else "ausente"
+        log(f"troca -> modo={modo} pct={pct_txt} PAUSE={estado} ({motivo})")
+
+    gravar_modo({"modo": modo, "grokbot_pct": pct, "medido_em": agora(), "motivo": motivo,
+                 "modo_forcado": forcado, "gestor": gestor})
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

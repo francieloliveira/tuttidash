@@ -1,0 +1,29 @@
+#!/bin/zsh
+# Mede o uso das lanes (lanepct). Se alguma conta vier com 'token local vencido',
+# renova o token rodando uma pergunta curta no CLI dela (sem login nem senha) e mede de novo.
+# Conta nova = 1 linha no `case` abaixo (contas sem renovação automática só entram no log).
+# Saida: igual ao lanepct (conta<TAB>pct<TAB>janela<TAB>reset). Log: ~/Library/Logs/TranscentIA/lanepct-auto.log
+export PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH
+PCT=$HOME/.transcentia/tools/lane-pct/.build/release/lanepct
+LOG=$HOME/Library/Logs/TranscentIA/lanepct-auto.log
+mkdir -p ${LOG:h}
+out=$($PCT 2>&1)
+renovou=0
+vencidas=(${(f)"$(print -r -- "$out" | grep -E '^[^[:space:]]+[[:space:]]+[?][[:space:]].*vencido' | awk '{print $1}')"})
+for conta in ${(u)vencidas}; do
+  print "$(date '+%F %T') $conta: token vencido, renovando" >> $LOG
+  cd /tmp
+  case $conta in
+    claude) print 'responda apenas: ok' | timeout 90 claude -p --max-turns 1 >> $LOG 2>&1 ;;
+    grok) timeout 90 grok -p 'responda apenas: ok' >> $LOG 2>&1 ;;
+    codex) timeout 90 codex exec 'responda apenas: ok' >> $LOG 2>&1 ;;
+    opencode) timeout 90 opencode run 'responda apenas: ok' >> $LOG 2>&1 ;;
+    *) print "$(date '+%F %T') $conta: sem renovação automática (renove no CLI)" >> $LOG; continue ;;
+  esac
+  renovou=1
+done
+(( renovou )) && out=$($PCT 2>&1)
+print "$(date '+%F %T') medida: ${(j: | :)${(f)out}}" >> $LOG
+print -r -- "$out"
+print -r -- "$out" | grep -q 'vencido' && exit 3
+exit 0

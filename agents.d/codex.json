@@ -1,0 +1,28 @@
+{
+"schema": 1,
+"nome": "codex",
+"rotulo": "Codex",
+"sigla": "CX",
+"cli": "codex",
+"ordem": 2,
+"prioridade": 5,
+"painel": true,
+"execucao": "implementada",
+"cor": {"base": "#7D5CFF", "gradiente": "#5B3DF0", "claro": "#B79DFF"},
+"corPainel": "#3DFFA8",
+"custo": "estimado",
+"resume": "codex",
+"pesoFontes": ["quota", "gasto"],
+"nota": "Promovido a implementada após `codex exec --json` validado ponta a ponta em 2026-10-15. Modelos ficam vazios de propósito: IDs inventados quebram a lane, então cada esforço usa o default do CLI. `exec` não tem teto de gasto no CLI — monitorado pelo ledger. Fixar modelos por esforço depois da primeira rodada.",
+"modelos": {
+  "baixo": {"id": "", "flags": []},
+  "medio": {"id": "", "flags": []},
+  "alto": {"id": "", "flags": []}
+  },
+"revisao": {"papel": "sozinho", "auto": true, "comando": ["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--color", "never", "--output-last-message", "{saida}", "{flags}", "-"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": ["-c", "model_reasoning_effort={esforco}"], "entrada": "stdin", "saida": "arquivo", "modelos": [], "modelo_padrao": "padrao", "esforcos": ["low", "medium", "high"], "esforco_padrao": "high"},
+"uso": {
+  "tipo": "codex",
+  "fonte": "",
+  "credencial": ""
+  }
+}

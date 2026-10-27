@@ -1,0 +1,38 @@
+{
+"schema": 1,
+"nome": "opencode-go",
+"rotulo": "OpenCode Go",
+"sigla": "OG",
+"cli": "opencode",
+"ordem": 4,
+"prioridade": 4,
+"painel": true,
+"execucao": "implementada",
+"cor": {"base": "#5CFFC8", "gradiente": "#2E9BFF", "claro": "#9BE6FF"},
+"corPainel": "#5CFFC8",
+"custo": "estimado",
+"resume": "opencode",
+"pesoFontes": ["quota", "gasto"],
+"nota": "Modelos Go com ZDR (teto mensal por modelo, ex. deepseek-v4.1-flash US$80/mês; janelas 5h = 20%, semana = 50%, mês = 100%; após o teto: free + balance). Lane separada no notch. Proibidos: gemini-4-argon-contributor e muse-spark-1.2/1.3-contributor (treinam, sem ZDR). Os nomes sob opencode-go/ não têm o sufixo -free do Console free. Os modelos deepseek do Go exigem a região Global na Privacidade do workspace (erro 400 desde 23/10/2026); por isso a lane usa glm-5.3 (baixo) e kimi-k3 (médio, alto e revisão), que rodam sem a Global.",
+"modelos": {
+  "baixo": {
+    "id": "opencode-go/glm-5.3",
+    "flags": ["-m", "opencode-go/glm-5.3"]
+    },
+  "medio": {
+    "id": "opencode-go/kimi-k3",
+    "flags": ["-m", "opencode-go/kimi-k3"]
+    },
+  "alto": {
+    "id": "opencode-go/kimi-k3",
+    "flags": ["-m", "opencode-go/kimi-k3"]
+    }
+  },
+"revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode-go/kimi-k3"], "modelo_padrao": "opencode-go/kimi-k3", "esforcos": [], "esforco_padrao": ""},
+"privacidade": "opencode",
+"uso": {
+  "tipo": "opencode",
+  "fonte": "",
+  "credencial": ""
+  }
+}

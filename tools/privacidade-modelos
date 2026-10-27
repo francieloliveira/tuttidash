@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Privacidade dos modelos do OpenCode (gasto_lanes/privacidade.py), à mão.
+
+  privacidade-modelos                         mostra a última conferência
+  privacidade-modelos --atualizar             confere agora (acha a documentação pelo conteúdo)
+  privacidade-modelos opencode/x opencode-go/y  diz se cada modelo pode receber código
+
+O dispatcher confere sozinho uma vez por `privacidade.intervalo_h` (padrão 24 h).
+"""
+import sys
+from pathlib import Path
+
+for cand in (Path.home() / ".transcentia/lanes", Path(__file__).resolve().parents[1] / "gasto_lanes"):
+    if (cand / "privacidade.py").is_file():
+        sys.path.insert(0, str(cand))
+        break
+import privacidade as P  # noqa: E402
+
+if "--atualizar" in sys.argv:
+    _, avisos = P.atualizar()
+    for a in avisos:
+        print("AVISO:", a)
+est = P.ler_estado()
+for doc, d in (est.get("docs") or {}).items():
+    print(f"[{doc}] {d.get('repo')}:{d.get('caminho')} · conferido {d.get('conferido_em')} · "
+          f"{'ok' if d.get('ok') else 'FALHOU: ' + str(d.get('erro'))} · {len(d.get('modelos') or {})} modelos")
+for m in sys.argv[1:]:
+    if not m.startswith("--"):
+        ok, motivo = P.pode_receber_codigo(m, est)
+        print(f"{'PODE ' if ok else 'NÃO  '} {m}: {motivo}")

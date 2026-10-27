@@ -1,0 +1,26 @@
+{
+"schema": 1,
+"nome": "cursor",
+"rotulo": "Grok Bot / SuperGrok (via Cursor)",
+"sigla": "CU",
+"cli": null,
+"ordem": 6,
+"prioridade": null,
+"painel": false,
+"cor": {"base": "#5CFFC8", "gradiente": "#5CFFC8", "claro": "#5CFFC8"},
+"corPainel": "#5CFFC8",
+"custo": "informado",
+"resume": null,
+"pesoFontes": ["quota"],
+"nota": "Conta de uso do Grok Bot / SuperGrok. O TuttiDash aberto não lê o limite dela (sem API oficial de cota). Não é lane de execução, não pega card e não compartilha cota com o Grok CLI. Não entra no painel/notch nem no dispatcher. Sem CLI próprio — `--resume` cai em claude.",
+"modelos": {
+  "baixo": {"id": "", "flags": []},
+  "medio": {"id": "", "flags": []},
+  "alto": {"id": "", "flags": []}
+  },
+"uso": {
+  "tipo": "cursor",
+  "fonte": "",
+  "credencial": ""
+  }
+}

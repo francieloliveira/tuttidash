@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-05 20:30:00",
+  "dry_run": false,
+  "enabled": [
+    "claude",
+    "grok"
+  ],
+  "implemented": [
+    "claude",
+    "grok"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+"schema": 1,
+"nome": "grok",
+"rotulo": "Grok CLI",
+"sigla": "GR",
+"cli": "grok",
+"ordem": 5,
+"prioridade": 2,
+"painel": true,
+"execucao": "implementada",
+"cor": {"base": "#5CD3FF", "gradiente": "#2E9BFF", "claro": "#9BE6FF"},
+"corPainel": "#5CD3FF",
+"custo": "informado",
+"resume": "grok",
+"pesoFontes": ["quota", "gasto"],
+"nota": "Lane do CLI grok no terminal: créditos próprios, separados do SuperGrok (Grok Bot via Cursor). Grok não tem teto em dólar: o limite é de turnos (GROK_MAX_TURNS no dispatcher). Ferramentas permitidas via --tools estão na lista GROK_TOOLS; fora dela ficam agendador, subagentes e web (use_tool/search_tool/workflow/ask_user_question cancelam a sessão sem executar — testado em 2026-10-03, grok 1.0.41).",
+"modelos": {
+  "baixo": {"id": "grok-4.7-build-fast", "flags": ["-m", "grok-4.7-build-fast"]},
+  "medio": {"id": "grok-4.7", "flags": ["-m", "grok-4.7", "--effort", "high"]},
+  "alto": {"id": "grok-4.7", "flags": ["-m", "grok-4.7", "--effort", "high"]}
+  },
+"revisao": {"papel": "sozinho", "auto": true, "comando": ["grok", "{flags}", "--tools", "read_file,grep,list_dir", "--disable-web-search", "-p", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": ["--effort", "{esforco}"], "entrada": "argumento", "saida": "stdout", "modelos": ["grok-4.7", "grok-4.7-build-fast"], "modelo_padrao": "grok-4.7", "esforcos": ["high"], "esforco_padrao": "high"},
+"uso": {
+  "tipo": "grok",
+  "fonte": "",
+  "credencial": ""
+  }
+}

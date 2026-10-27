@@ -1,0 +1,28 @@
+{
+"schema": 1,
+"nome": "claude",
+"rotulo": "Claude Code",
+"sigla": "CL",
+"cli": "claude",
+"ordem": 1,
+"prioridade": 1,
+"painel": true,
+"execucao": "implementada",
+"cor": {"base": "#FF8A5C", "gradiente": "#E8673C", "claro": "#FFAE85"},
+"corPainel": "#9B7BFF",
+"custo": "estimado",
+"resume": "claude",
+"pesoFontes": ["quota", "gasto"],
+"nota": "Tabela de esforço aprovada em 2026-10-03. Lane de referência: é o fallback de `--resume` para qualquer agente sem CLI próprio.",
+"modelos": {
+  "baixo": {"id": "sonnet", "flags": ["--model", "sonnet", "--effort", "medium"]},
+  "medio": {"id": "opus", "flags": ["--model", "opus", "--effort", "high"]},
+  "alto": {"id": "opus", "flags": ["--model", "opus", "--effort", "xhigh"]}
+  },
+"revisao": {"papel": "sozinho", "auto": true, "comando": ["claude", "-p", "--output-format", "text", "--permission-mode", "default", "--settings", "{settings}", "--strict-mcp-config", "--mcp-config", "{mcp}", "--max-budget-usd", "{teto}", "{flags}"], "flag_modelo": ["--model", "{modelo}"], "flag_esforco": ["--effort", "{esforco}"], "entrada": "stdin", "saida": "stdout", "modelos": ["haiku", "sonnet", "opus"], "modelo_padrao": "opus", "esforcos": ["low", "medium", "high", "xhigh"], "esforco_padrao": "high"},
+"uso": {
+  "tipo": "claude",
+  "fonte": "",
+  "credencial": ""
+  }
+}

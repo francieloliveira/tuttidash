@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "transcentia-docs": {
+      "command": "/usr/bin/python3",
+      "args": [
+        "/x/docs_mcp.py"
+      ]
+    }
+  }
+}

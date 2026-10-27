@@ -1,0 +1,14 @@
+{
+  "lane": "claude",
+  "card": "FRA-253",
+  "issue_id": "x",
+  "title": "card de teste",
+  "url": "https://linear.app/x",
+  "branch": "b",
+  "worktree": "/w",
+  "effort": "medio",
+  "started": 0,
+  "started_at": "2026-10-05 20:00:00",
+  "log": "/Users/x/Library/Logs/TranscentIA/lanes/FRA-253-claude-20261005-200000.jsonl",
+  "session": "lane-claude"
+}

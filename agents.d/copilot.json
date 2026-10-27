@@ -1,0 +1,21 @@
+{
+"schema": 1,
+"nome": "copilot",
+"rotulo": "Copilot",
+"sigla": "CP",
+"cli": null,
+"ordem": 8,
+"painel": false,
+"optIn": true,
+"cor": {"base": "#6E40C9", "gradiente": "#4B2A8C", "claro": "#C4B5FD"},
+"corPainel": "#6E40C9",
+"custo": "informado",
+"resume": null,
+"pesoFontes": ["quota"],
+"nota": "Conta de uso do GitHub Copilot, não é lane: não pega card e não entra no dispatcher. Opt-in (fora da lista padrão). A pessoa informa o usuário e a cota mensal de requisições premium. O token fica no Keychain (app.tuttidash.mac, conta copilot) ou num arquivo cujo caminho ela aponta; nunca no config.json. A leitura é o relatório pessoal oficial de billing. Licença gerida por organização não entra neste número.",
+"uso": {
+  "tipo": "copilot",
+  "fonte": "api.github.com/users/{username}/settings/billing/premium_request/usage",
+  "credencial": "copilot_token"
+  }
+}

@@ -1,0 +1,38 @@
+{
+"schema": 1,
+"nome": "opencode",
+"rotulo": "OpenCode",
+"sigla": "OP",
+"cli": "opencode",
+"ordem": 3,
+"prioridade": 3,
+"painel": true,
+"execucao": "implementada",
+"cor": {"base": "#FF7AB8", "gradiente": "#E14E96", "claro": "#FFAED4"},
+"corPainel": "#3DE8FF",
+"custo": "estimado",
+"resume": "opencode",
+"pesoFontes": ["quota", "gasto"],
+"nota": "Privacidade por MODELO, não por ser free: a regra de cada um sai da documentação do OpenCode (gasto_lanes/privacidade.py, conferida todo dia). Desde 23/10/2026 20h20 (troca a regra de 21/10) modelo free que registra ou treina com o uso também recebe código, nas lanes e na revisão, quando for o melhor free; `privacidade.exigir_sem_treino` religa a regra antiga. Por peso: baixo GLM 5.3 Flash (rápido), médio DeepSeek V4.1 Flash (o que mais entregou), alto Nemotron 3 Ultra (melhor SWE-bench dos free, 1M de contexto).",
+"modelos": {
+  "baixo": {
+    "id": "opencode/glm-5.3-flash-free",
+    "flags": ["-m", "opencode/glm-5.3-flash-free"]
+    },
+  "medio": {
+    "id": "opencode/deepseek-v4.1-flash-free",
+    "flags": ["-m", "opencode/deepseek-v4.1-flash-free"]
+    },
+  "alto": {
+    "id": "opencode/nemotron-3-ultra-free",
+    "flags": ["-m", "opencode/nemotron-3-ultra-free"]
+    }
+  },
+"revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode/deepseek-v4.1-flash-free", "opencode/nemotron-3-ultra-free", "opencode/glm-5.3-flash-free"], "modelo_padrao": "opencode/deepseek-v4.1-flash-free", "esforcos": [], "esforco_padrao": ""},
+"privacidade": "opencode",
+"uso": {
+  "tipo": "opencode",
+  "fonte": "",
+  "credencial": ""
+  }
+}

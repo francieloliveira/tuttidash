@@ -1,0 +1,280 @@
+import Foundation
+
+/// Escolha de modelo de uma lane (FRA-521). O mesmo formato que `gasto_lanes/catalogo.py`
+/// grava em `lanes.modelo.<lane>`: automático pelo peso do card, ou um modelo fixo.
+/// Uma string antiga no config vale como modelo fixo.
+public enum ModoModelo: String, Equatable, Hashable, Sendable {
+    case auto
+    case fixo
+}
+
+public struct EscolhaPeso: Equatable, Sendable {
+    public var modelo: String
+    public var esforco: String
+    /// false quando o config não trouxe `esforco` (vale o do manifesto).
+    public var esforcoExplicito: Bool
+
+    public init(modelo: String, esforco: String, esforcoExplicito: Bool) {
+        self.modelo = modelo
+        self.esforco = esforco
+        self.esforcoExplicito = esforcoExplicito
+    }
+}
+
+public struct ConfigModelo: Equatable, Sendable {
+    public var modo: ModoModelo
+    public var fixo: String
+    public var porPeso: [String: EscolhaPeso]
+    public var aviso: String
+
+    public init(modo: ModoModelo, fixo: String, porPeso: [String: EscolhaPeso], aviso: String) {
+        self.modo = modo
+        self.fixo = fixo
+        self.porPeso = porPeso
+        self.aviso = aviso
+    }
+
+    public static let automatico = ConfigModelo(modo: .auto, fixo: "", porPeso: [:], aviso: "")
+}
+
+public struct ResolucaoModelo: Equatable, Sendable {
+    public var modelo: String
+    public var fixo: Bool
+    public var aviso: String
+
+    public init(modelo: String, fixo: Bool, aviso: String) {
+        self.modelo = modelo
+        self.fixo = fixo
+        self.aviso = aviso
+    }
+}
+
+public enum ModeloLane {
+    public static let pesos = ["baixo", "medio", "alto"]
+
+    public static func rotuloPeso(_ peso: String) -> String {
+        switch peso {
+        case "baixo": return "Baixo"
+        case "medio": return "Médio"
+        case "alto": return "Alto"
+        default: return peso
+        }
+    }
+
+    /// «lane · modelo (peso)» do card em curso.
+    public static func textoPainel(lane: String, modelo: String, peso: String) -> String {
+        let nome = modelo.isEmpty ? "padrão do CLI" : modelo
+        return "\(lane) · \(nome) (\(rotuloPeso(peso).lowercased()))"
+    }
+
+    public static func padrao(_ agente: CatalogoAgentes.ModeloAgente) -> [String: EscolhaPeso] {
+        var saida: [String: EscolhaPeso] = [:]
+        for peso in pesos {
+            let modelo = agente.modelos[peso]
+            saida[peso] = EscolhaPeso(modelo: modelo?.id ?? "",
+                                      esforco: esforco(das: modelo?.flags ?? []),
+                                      esforcoExplicito: false)
+        }
+        return saida
+    }
+
+    public static func esforco(das flags: [String]) -> String {
+        if let i = flags.firstIndex(of: "--effort"), i + 1 < flags.count {
+            return flags[i + 1]
+        }
+        for tok in flags where tok.contains("model_reasoning_effort=") {
+            return String(tok.split(separator: "=", maxSplits: 1).last ?? "")
+        }
+        return ""
+    }
+
+    public static func prefixo(_ padrao: [String: EscolhaPeso]) -> String {
+        for peso in pesos {
+            let id = padrao[peso]?.modelo ?? ""
+            if let barra = id.firstIndex(of: "/") {
+                return String(id[...barra])
+            }
+        }
+        return ""
+    }
+
+    public static func comPrefixo(_ modelo: String, _ prefixo: String) -> String {
+        let m = modelo.trimmingCharacters(in: .whitespacesAndNewlines)
+        if m.isEmpty { return "" }
+        if !prefixo.isEmpty && !m.contains("/") { return prefixo + m }
+        return m
+    }
+
+    /// Valor cru do config: a chave plana antiga ganha da aninhada, como no dispatcher.
+    public static func bruto(lane: String, em dados: [String: Any]) -> Any? {
+        if let plano = dados["lanes.modelo.\(lane)"] {
+            if let s = plano as? String {
+                if !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return s }
+            } else if !(plano is NSNull) {
+                return plano
+            }
+        }
+        return Configuracao.valor("lanes.modelo.\(lane)", em: dados)
+    }
+
+    public static func ler(_ valor: Any?) -> ConfigModelo {
+        if let s = valor as? String {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? .automatico : ConfigModelo(modo: .fixo, fixo: t, porPeso: [:], aviso: "")
+        }
+        guard let d = valor as? [String: Any] else { return .automatico }
+        let modo = modoDe(d)
+        var por: [String: EscolhaPeso] = [:]
+        let bruto = d["porPeso"] as? [String: Any] ?? [:]
+        for peso in pesos {
+            guard let item = bruto[peso] else { continue }
+            if let s = item as? String {
+                por[peso] = EscolhaPeso(modelo: s, esforco: "", esforcoExplicito: false)
+            } else if let obj = item as? [String: Any] {
+                let temEsforco = obj["esforco"] != nil
+                por[peso] = EscolhaPeso(modelo: (obj["modelo"] as? String) ?? "",
+                                        esforco: (obj["esforco"] as? String) ?? "",
+                                        esforcoExplicito: temEsforco)
+            }
+        }
+        return ConfigModelo(modo: modo, fixo: (d["fixo"] as? String) ?? "",
+                            porPeso: por, aviso: (d["aviso"] as? String) ?? "")
+    }
+
+    public static func paraGravar(_ cfg: ConfigModelo) -> [String: Any] {
+        var por: [String: Any] = [:]
+        for (peso, escolha) in cfg.porPeso {
+            var item: [String: Any] = ["modelo": escolha.modelo]
+            if escolha.esforcoExplicito { item["esforco"] = escolha.esforco }
+            por[peso] = item
+        }
+        var saida: [String: Any] = ["modo": cfg.modo.rawValue, "fixo": cfg.fixo, "porPeso": por]
+        if !cfg.aviso.isEmpty { saida["aviso"] = cfg.aviso }
+        return saida
+    }
+
+    public static func sumiu(_ modelo: String, lane: String, prefixo: String, cache: CacheModelos) -> Bool {
+        let listas = cache.listas[lane] ?? []
+        let anteriores = cache.anteriores[lane] ?? []
+        guard !modelo.isEmpty, !listas.isEmpty, !anteriores.isEmpty else { return false }
+        return contem(modelo, prefixo, anteriores) && !contem(modelo, prefixo, listas)
+    }
+
+    /// Mesmo texto do `catalogo.AVISO_FIXO_VAZIO` (Python).
+    public static let avisoFixoVazio = "modo fixo sem modelo; a lane usa o automático"
+
+    public static func resolver(lane: String, peso: String, config: ConfigModelo,
+                                padrao: [String: EscolhaPeso], cache: CacheModelos) -> ResolucaoModelo {
+        let pref = prefixo(padrao)
+        let base = padrao[peso] ?? EscolhaPeso(modelo: "", esforco: "", esforcoExplicito: false)
+        if config.modo == .fixo && !config.fixo.isEmpty {
+            if sumiu(config.fixo, lane: lane, prefixo: pref, cache: cache) {
+                let aviso = "o modelo \(comPrefixo(config.fixo, pref)) saiu da lista; a lane voltou ao automático"
+                return resolverAuto(lane: lane, peso: peso, config: config, base: base, pref: pref,
+                                    cache: cache, avisoForcado: aviso)
+            }
+            return ResolucaoModelo(modelo: comPrefixo(config.fixo, pref), fixo: true, aviso: "modelo fixo")
+        }
+        // FRA-564: «Fixo» sem modelo roda no automático; o aviso deixa isso visível.
+        let aviso = config.modo == .fixo ? avisoFixoVazio : ""
+        return resolverAuto(lane: lane, peso: peso, config: config, base: base, pref: pref, cache: cache, avisoForcado: aviso)
+    }
+
+    /// Devolve a config já em automático quando o modelo escolhido saiu da lista.
+    public static func reconciliar(_ cfg: ConfigModelo, lane: String, padrao: [String: EscolhaPeso],
+                                   cache: CacheModelos) -> ConfigModelo {
+        let pref = prefixo(padrao)
+        var saida = cfg
+        var mudou = false
+        if saida.modo == .fixo && !saida.fixo.isEmpty && sumiu(saida.fixo, lane: lane, prefixo: pref, cache: cache) {
+            saida.modo = .auto
+            saida.aviso = "o modelo \(comPrefixo(saida.fixo, pref)) saiu da lista; a lane voltou ao automático"
+            mudou = true
+        }
+        for peso in pesos {
+            guard var escolha = saida.porPeso[peso], !escolha.modelo.isEmpty,
+                  sumiu(escolha.modelo, lane: lane, prefixo: pref, cache: cache) else { continue }
+            let base = padrao[peso] ?? EscolhaPeso(modelo: "", esforco: "", esforcoExplicito: false)
+            if saida.aviso.isEmpty {
+                saida.aviso = "o modelo \(comPrefixo(escolha.modelo, pref)) saiu da lista; o peso \(peso) voltou ao padrão"
+            }
+            escolha.modelo = base.modelo
+            if !escolha.esforcoExplicito { escolha.esforco = base.esforco }
+            saida.porPeso[peso] = escolha
+            mudou = true
+        }
+        return mudou ? saida : cfg
+    }
+
+    /// Textos do painel: «lane · modelo (peso)» do card em curso e o aviso, se houver.
+    public static func textosPainel(rodando: [EstadoLanes.LaneRodando], dados: [String: Any],
+                                    cache: CacheModelos, agentes: [CatalogoAgentes.ModeloAgente]) -> (texto: [String: String], aviso: [String: String]) {
+        var texto: [String: String] = [:]
+        var aviso: [String: String] = [:]
+        let porNome = Dictionary(uniqueKeysWithValues: agentes.map { ($0.nome, $0) })
+        for lane in rodando {
+            if let modelo = lane.modelo, !modelo.isEmpty {
+                let peso = lane.effort ?? "medio"
+                texto[lane.lane] = textoPainel(lane: lane.lane, modelo: modelo, peso: peso)
+                if let gravado = lane.avisoModelo, !gravado.isEmpty {
+                    aviso[lane.lane] = gravado
+                } else if lane.modeloFixo {
+                    aviso[lane.lane] = "modelo fixo"
+                }
+            }
+        }
+        let nomes = Set(agentes.map(\.nome)).union(rodando.map(\.lane))
+        for nome in nomes {
+            let agente = porNome[nome]
+            let padrao = agente.map(padrao) ?? [:]
+            let cfg = ler(bruto(lane: nome, em: dados))
+            let emCurso = rodando.first { $0.lane == nome }
+            let peso = emCurso?.effort ?? "medio"
+            let r = resolver(lane: nome, peso: peso, config: cfg, padrao: padrao, cache: cache)
+            if texto[nome] == nil, emCurso != nil, !r.modelo.isEmpty {
+                texto[nome] = textoPainel(lane: nome, modelo: r.modelo, peso: peso)
+            }
+            if aviso[nome] == nil {
+                if !r.aviso.isEmpty {
+                    aviso[nome] = r.aviso
+                } else if !cfg.aviso.isEmpty && emCurso == nil {
+                    aviso[nome] = cfg.aviso
+                }
+            }
+        }
+        return (texto, aviso)
+    }
+
+    private static func resolverAuto(lane: String, peso: String, config: ConfigModelo, base: EscolhaPeso,
+                                     pref: String, cache: CacheModelos, avisoForcado: String) -> ResolucaoModelo {
+        var aviso = avisoForcado
+        var modelo = ""
+        if let escolha = config.porPeso[peso], !escolha.modelo.isEmpty {
+            if sumiu(escolha.modelo, lane: lane, prefixo: pref, cache: cache) {
+                if aviso.isEmpty {
+                    aviso = "o modelo \(comPrefixo(escolha.modelo, pref)) saiu da lista; o peso \(peso) voltou ao padrão"
+                }
+            } else {
+                modelo = comPrefixo(escolha.modelo, pref)
+            }
+        }
+        if modelo.isEmpty { modelo = base.modelo }
+        if aviso.isEmpty { aviso = config.aviso }
+        return ResolucaoModelo(modelo: modelo, fixo: false, aviso: aviso)
+    }
+
+    private static func modoDe(_ d: [String: Any]) -> ModoModelo {
+        switch d["modo"] as? String {
+        case "fixo": return .fixo
+        case "auto": return .auto
+        default:
+            if let fixo = d["fixo"] as? String, !fixo.isEmpty { return .fixo }
+            return .auto
+        }
+    }
+
+    private static func contem(_ modelo: String, _ prefixo: String, _ lista: [String]) -> Bool {
+        let alvo = comPrefixo(modelo, prefixo)
+        return lista.contains { comPrefixo($0, prefixo) == alvo }
+    }
+}

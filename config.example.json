@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "teto_semanal_usd": 100,
+  "aviso_pct": 80,
+  "uso_contas": true,
+  "contas": [
+    {"id": "claude", "tipo": "claude", "rotulo": "Claude Code"},
+    {"id": "codex", "tipo": "codex", "rotulo": "Codex"},
+    {"id": "opencode", "tipo": "opencode", "rotulo": "OpenCode"},
+    {"id": "opencode_sessao", "tipo": "opencode_sessao", "rotulo": "OpenCode (sessão)"}
+  ],
+  "linear": {
+    "owner_label": "needs:dono"
+  },
+  "projetos": [
+    {
+      "id": "00000000-0000-4000-8000-000000000000",
+      "nome": "Meu app",
+      "ativo": true,
+      "padrao": true,
+      "repo": "~/Developer/meu-app",
+      "worktrees": "~/Developer/meu-app-worktrees",
+      "prova": "./scripts/testar.sh {suite}",
+      "prova_tentativas": 1,
+      "protegidos": [".github/workflows/*", "scripts/release.sh"]
+    }
+  ],
+  "lanes": {
+    "budget_usd": {"baixo": 3, "medio": 8, "alto": 20},
+    "lane_timeout_min": 90,
+    "proof_timeout_min": 150,
+    "effort_default": "medio"
+  },
+  "watch": {
+    "instalar_comando": ""
+  }
+}
