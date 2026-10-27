@@ -17,7 +17,8 @@ Formato (lista de objetos):
        "worktrees": "~/Developer/meu-app-worktrees",
        "prova": "./scripts/testar.sh {suite}",
        "prova_tentativas": 2,
-       "protegidos": ["docs/contratos/*", "scripts/release.sh"]}
+       "protegidos": ["docs/contratos/*", "scripts/release.sh"],
+       "copiar_para_worktree": ["AGENTS.md"]}
     ]
 
 Regras:
@@ -31,6 +32,10 @@ Regras:
     agente pediu em `.lane/result.json`. Default `python3 {suite}`.
   - `prova_tentativas`: 1 (padrão) roda a prova uma vez; 2 repete a segunda vez
     sem `SKIP_PREFLIGHT` (para scripts de prova com um preflight caro).
+  - `copiar_para_worktree`: arquivos que ficam fora do git no `repo` (ex.: um
+    `AGENTS.md` gerado na máquina) e que cada worktree de lane precisa. São
+    caminhos relativos; o dispatcher copia os que existem e nunca sobrescreve.
+    O arquivo precisa estar no `.gitignore` do projeto, senão o agente o commita.
 
 Somente Python 3 da stdlib.
 """
@@ -69,11 +74,11 @@ class Projeto:
     """Um projeto que o dispatcher pode trabalhar."""
 
     __slots__ = ("id", "nome", "ativo", "padrao", "repo", "worktrees",
-                 "prova", "prova_tentativas", "protegidos")
+                 "prova", "prova_tentativas", "protegidos", "copiar_para_worktree")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
                  repo: str = "", worktrees: str = "", prova: str = "python3 {suite}",
-                 prova_tentativas: int = 1, protegidos=None):
+                 prova_tentativas: int = 1, protegidos=None, copiar_para_worktree=None):
         self.id = id
         self.nome = nome or id
         self.ativo = ativo
@@ -84,6 +89,7 @@ class Projeto:
         self.prova = prova or "python3 {suite}"
         self.prova_tentativas = max(1, int(prova_tentativas or 1))
         self.protegidos = list(protegidos) if protegidos else list(PROTEGIDOS_PADRAO)
+        self.copiar_para_worktree = [str(c) for c in (copiar_para_worktree or []) if str(c).strip()]
 
     def comando_prova(self, suite: str) -> str:
         """Comando completo da prova de uma suíte, já com o placeholder trocado.
@@ -118,6 +124,7 @@ def _do_registro(bruto: dict) -> list:
         vistos.add(pid)
         ativos = item.get("ativo")
         prot = item.get("protegidos")
+        copiar = item.get("copiar_para_worktree")
         saida.append(Projeto(
             id=pid,
             nome=str(item.get("nome") or pid),
@@ -127,7 +134,8 @@ def _do_registro(bruto: dict) -> list:
             worktrees=str(item.get("worktrees") or ""),
             prova=str(item.get("prova") or "python3 {suite}"),
             prova_tentativas=item.get("prova_tentativas") or 1,
-            protegidos=prot if isinstance(prot, list) else None))
+            protegidos=prot if isinstance(prot, list) else None,
+            copiar_para_worktree=copiar if isinstance(copiar, list) else None))
     return saida
 
 

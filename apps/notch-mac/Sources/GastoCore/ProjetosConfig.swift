@@ -29,6 +29,9 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     public var provaTentativas: Int
     /// Globs, relativos ao repo, que nenhuma lane pode tocar.
     public var protegidos: [String]
+    /// Arquivos fora do git no repo (ex.: `AGENTS.md` gerado na máquina) que o dispatcher
+    /// copia para cada worktree de lane. Relativos ao repo; nunca sobrescrevem.
+    public var copiarParaWorktree: [String]
 
     /// Freio padrão quando o projeto não declara o seu: a config dos agentes do projeto
     /// (igual ao `PROTEGIDOS_PADRAO` do `projetos.py`).
@@ -36,7 +39,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
 
     public init(projetoID: String, nome: String = "", ativo: Bool = true, padrao: Bool = false,
                 repo: String = "", worktrees: String = "", prova: String = "python3 {suite}",
-                provaTentativas: Int = 1, protegidos: [String] = []) {
+                provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = []) {
         self.projetoID = projetoID
         self.nome = nome.isEmpty ? projetoID : nome
         self.ativo = ativo
@@ -46,6 +49,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         self.prova = prova
         self.provaTentativas = max(1, provaTentativas)
         self.protegidos = protegidos
+        self.copiarParaWorktree = copiarParaWorktree
     }
 
     /// Pasta de worktrees efetiva: a declarada ou `<repo>-worktrees`.
@@ -101,12 +105,15 @@ public enum ProjetosConfig {
             let prova = "\(item["prova"] ?? "python3 {suite}")"
             let tentativas = (item["prova_tentativas"] as? NSNumber)?.intValue ?? 1
             let prot = (item["protegidos"] as? [String]) ?? []
+            let copiar = ((item["copiar_para_worktree"] as? [String]) ?? [])
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             return ProjetoCadastro(projetoID: pid, nome: nome.isEmpty ? pid : nome,
                                    ativo: ativosBool, padrao: (item["padrao"] as? NSNumber)?.boolValue ?? false,
                                    repo: "\(item["repo"] ?? "")",
                                    worktrees: worktrees.isEmpty ? "" : worktrees,
                                    prova: prova.isEmpty ? "python3 {suite}" : prova,
-                                   provaTentativas: tentativas, protegidos: prot)
+                                   provaTentativas: tentativas, protegidos: prot,
+                                   copiarParaWorktree: copiar)
         }.filter { $0.problema() == nil }
         return saida
     }
@@ -120,6 +127,7 @@ public enum ProjetosConfig {
             ]
             if !p.worktrees.isEmpty { item["worktrees"] = p.worktrees }
             if !p.protegidos.isEmpty { item["protegidos"] = p.protegidos }
+            if !p.copiarParaWorktree.isEmpty { item["copiar_para_worktree"] = p.copiarParaWorktree }
             return item
         }
     }

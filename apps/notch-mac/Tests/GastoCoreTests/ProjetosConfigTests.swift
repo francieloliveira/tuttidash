@@ -69,6 +69,17 @@ final class ProjetosConfigTests: XCTestCase {
         // worktrees vazio não vai para o arquivo: o Python deriva do repo
         XCTAssertNil(lista?[0]["worktrees"])
         XCTAssertNil(lista?[0]["protegidos"])
+        XCTAssertNil(lista?[0]["copiar_para_worktree"])
+    }
+
+    /// Arquivo fora do git que vai para o worktree da lane: o app não pode perder ao salvar.
+    func testCopiarParaWorktreeVaiEVolta() {
+        var d: [String: Any] = [:]
+        let p = ProjetoCadastro(projetoID: notch, repo: "~/r", copiarParaWorktree: ["AGENTS.md"])
+        ProjetosConfig.gravar([p], em: &d)
+        let lista = d["projetos"] as? [[String: Any]]
+        XCTAssertEqual(lista?[0]["copiar_para_worktree"] as? [String], ["AGENTS.md"])
+        XCTAssertEqual(ProjetosConfig.ler(d).first?.copiarParaWorktree, ["AGENTS.md"])
     }
 
     func testNuncaDoisProjetosPadrao() {
@@ -91,7 +102,7 @@ final class ProjetosConfigTests: XCTestCase {
                             repo: "~/Developer/app-exemplo"),
             ProjetoCadastro(projetoID: notch, nome: "TuttiDash", padrao: true,
                             repo: "~/Developer/tuttidash", prova: "python3 {suite}",
-                            protegidos: ["agents.d/*"]),
+                            protegidos: ["agents.d/*"], copiarParaWorktree: ["AGENTS.md"]),
         ]
         try m.definirProjetos(ps)
         let outro = ModeloAjustes(home: home)

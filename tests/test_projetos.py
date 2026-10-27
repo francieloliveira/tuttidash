@@ -113,6 +113,14 @@ class Cadastro(Base):
             {"id": NOTCH, "repo": "~/Developer/tuttidash"}]))
         self.assertTrue(ps[0].ativo)
 
+    def test_copiar_para_worktree_e_lido_e_vazio_por_padrao(self):
+        ps = self.usar(self.config(lista=[
+            {"id": NOTCH, "repo": "~/Developer/tuttidash", "copiar_para_worktree": ["AGENTS.md", " "]},
+            {"id": IOS, "repo": "~/Developer/app", "copiar_para_worktree": "AGENTS.md"}]))
+        self.assertEqual(ps[0].copiar_para_worktree, ["AGENTS.md"])
+        self.assertEqual(ps[1].copiar_para_worktree, [], "texto solto não vale: tem de ser lista")
+        self.assertEqual(ps[0].copia().copiar_para_worktree, ["AGENTS.md"])
+
     def test_worktrees_default_deriva_do_repo(self):
         ps = self.usar(self.config(lista=[
             {"id": NOTCH, "repo": "~/Developer/tuttidash"}]))

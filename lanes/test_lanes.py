@@ -131,6 +131,37 @@ def sem_ajustes_reais(teste: unittest.TestCase) -> None:
     d.CONFIG_FILES = [Path(tempfile.mkdtemp()) / "nao-existe.json"]
 
 
+class CopiarParaWorktree(unittest.TestCase):
+    """Arquivos fora do git (ex.: AGENTS.md gerado na máquina) chegam ao worktree da lane."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.repo, self.wt = self.tmp / "repo", self.tmp / "wt"
+        (self.repo / "docs").mkdir(parents=True)
+        self.wt.mkdir()
+        (self.repo / "AGENTS.md").write_text("regras locais", encoding="utf-8")
+        (self.repo / "docs" / "local.md").write_text("doc", encoding="utf-8")
+        (self.tmp / "segredo.txt").write_text("fora do repo", encoding="utf-8")
+
+    def test_copia_o_que_existe_e_nao_sobrescreve(self):
+        (self.wt / "docs").mkdir()
+        (self.wt / "docs" / "local.md").write_text("versão do git", encoding="utf-8")
+        copiados = d.copiar_para_worktree(self.repo, self.wt, ["AGENTS.md", "docs/local.md", "nao-existe.md"])
+        self.assertEqual(copiados, ["AGENTS.md"])
+        self.assertEqual((self.wt / "AGENTS.md").read_text(encoding="utf-8"), "regras locais")
+        self.assertEqual((self.wt / "docs" / "local.md").read_text(encoding="utf-8"), "versão do git")
+
+    def test_recusa_caminho_absoluto_ou_fora_do_repo(self):
+        copiados = d.copiar_para_worktree(self.repo, self.wt, [str(self.tmp / "segredo.txt"), "../segredo.txt", ""])
+        self.assertEqual(copiados, [])
+        self.assertFalse((self.wt / "segredo.txt").exists())
+
+    def test_lista_vazia_nao_faz_nada(self):
+        self.assertEqual(d.copiar_para_worktree(self.repo, self.wt, []), [])
+        self.assertEqual(list(self.wt.iterdir()), [])
+
+
 class Comandos(unittest.TestCase):
     def setUp(self):
         sem_ajustes_reais(self)
