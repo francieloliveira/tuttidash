@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coletandoUso = false
     /// Última leitura do disco das lanes, para remontar o painel quando o uso das contas chega.
     private var entradaPainel = EntradaPainel.vazia
+    /// FRA-580: carimbo da última modificação dos arquivos relevantes.
+    private var ultimaModificacaoArquivos: Date? = nil
+    private var forcarProximaLeitura: Bool = false
     private var execucoesPainel: [Execucao] = []
     private var ordinaisPainel: [String: Int] = [:]
     /// `--foto <arquivo.png>`: depois da primeira leitura, desenha a própria janela num PNG
@@ -91,7 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modelo.atualizarAgora = { [weak self] in
             guard let self else { return }
             self.avisarAoAtualizar = true
-            self.atualizar(); self.atualizarUso()
+            self.forcarProximaLeitura = true
+            self.atualizar(forcar: true); self.atualizarUso()
         }
         modelo.abrirPainel = { [weak self] in
             guard let self else { return }
@@ -99,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         modelo.desativarLane = { [weak self] lane in self?.desativar(lane) }
         modelo.ativarLane = { [weak self] lane in self?.ativar(lane) }
-        NavegacaoPainel.compartilhada.aoSalvar = { [weak self] in self?.atualizar() }
+        NavegacaoPainel.compartilhada.aoSalvar = { [weak self] in self?.atualizar(forcar: true) }
 
         if let i = args.firstIndex(of: "--foto-painel"), i + 1 < args.count {
             let url = URL(fileURLWithPath: args[i + 1])
@@ -158,8 +162,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Ao abrir o painel: atualiza se a última leitura tem mais de 5 s.
     func atualizarSeAntigo() {
         if let em = modelo.atualizadoEm, Date().timeIntervalSince(em) < 5 { return }
-        atualizar()
+        atualizar(forcar: true)
     }
+
+    func atualizar(forcarLeitura: Bool) { atualizar(forcar: forcarLeitura) }
+    func atualizar(force: Bool) { atualizar(forcar: force) }
+    func atualizar(forceRead: Bool) { atualizar(forcar: forceRead) }
+    func atualizar(forcarRefresh: Bool) { atualizar(forcar: forcarRefresh) }
 
     /// Limites das contas: um GET por conta com credencial (nada é gravado nas credenciais).
     func atualizarUso() {
@@ -186,18 +195,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func atualizar() {
+    func atualizar(forcar: Bool = false) {
         guard !carregando else { leituraPendente = true; return }
+        let forcarAgora = forcar || forcarProximaLeitura
+        if forcarAgora { forcarProximaLeitura = false }
+        // FRA-580: pula leitura se nada mudou
+        if !forcarAgora, let ultima = ultimaModificacaoArquivos, ultima == assinaturaArquivos() {
+            modelo.atualizadoEm = Date()
+            return
+        }
         carregando = true
         modelo.atualizando = true
         let carregador = self.carregador
         fila.async { [weak self] in
             let cfg = Configuracao.resolver()
-            let res = carregador.carregar(config: cfg)
+            let res = carregador.carregar(config: cfg, forcar: forcarAgora)
             let resumo = Agregador.resumir(execucoes: res.execucoes, estado: res.estado,
                                            teto: cfg.tetoSemanalUSD, avisoPct: cfg.avisoPct)
             let logDispatcher = cfg.logsDir.deletingLastPathComponent().appendingPathComponent("lanes-dispatcher.log")
-            let entrada = LeitorPainelDisco.ler(pasta: cfg.stateDir, logDispatcher: logDispatcher, logsDir: cfg.logsDir)
+            let entrada = LeitorPainelDisco.ler(pasta: cfg.stateDir, logDispatcher: logDispatcher, logsDir: cfg.logsDir, forcar: forcarAgora)
             let ledgerExiste = res.ledgerExiste, logsExiste = res.logsDirExiste
             let retomadas = res.retomadas
             let execucoes = res.execucoes
@@ -218,6 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.entradaPainel = entrada
                 self.execucoesPainel = execucoes
                 self.ordinaisPainel = ordinais
+                self.ultimaModificacaoArquivos = self.assinaturaArquivos()
                 self.publicarPainel()
                 self.atualizarMenuLanes()
                 self.atualizarMenuRetomar(retomadas)
@@ -232,6 +249,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    /// FRA-580: carimbo da última modificação dos arquivos relevantes.
+    private func assinaturaArquivos() -> Date {
+        let fm = FileManager.default
+        let cfg = modelo.config
+        var datas: [Date] = []
+        func coletar(_ url: URL) {
+            if let attrs = try? fm.attributesOfItem(atPath: url.path), let d = attrs[.modificationDate] as? Date {
+                datas.append(d)
+            }
+            var ehPasta: ObjCBool = false
+            if fm.fileExists(atPath: url.path, isDirectory: &ehPasta), ehPasta.boolValue {
+                if let itens = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.contentModificationDateKey], options: []) {
+                    for it in itens { coletar(it) }
+                }
+            }
+        }
+        coletar(cfg.stateDir)
+        coletar(cfg.logsDir)
+        coletar(cfg.ledger)
+        return datas.max() ?? .distantPast
     }
 
     private func fotografarSePedido() {
@@ -526,7 +565,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// FRA-524: Ajustes ficam na janela principal, no item "Ajustes" da barra lateral.
     func abrirConfig() {
-        NavegacaoPainel.compartilhada.aoSalvar = { [weak self] in self?.atualizar() }
+        NavegacaoPainel.compartilhada.aoSalvar = { [weak self] in self?.atualizar(forcar: true) }
         NavegacaoPainel.compartilhada.abrirAjustes()
         JanelaPainel.compartilhada.mostrar(modelo: modelo)
     }
