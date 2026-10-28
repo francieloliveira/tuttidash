@@ -182,6 +182,27 @@ public final class ObservadorArquivos {
         self.init(caminhos: caminhos, debounce: intervaloDebounce, fallbackIntervalo: fallbackIntervalo, aoMudar: aoMudar)
     }
 
+    public convenience init(caminhos: [URL],
+                            intervaloDebounce: TimeInterval,
+                            fallbackIntervalo: TimeInterval = 30,
+                            onChange: (() -> Void)? = nil) {
+        self.init(caminhos: caminhos, debounce: intervaloDebounce, fallbackIntervalo: fallbackIntervalo, aoMudar: onChange)
+    }
+
+    public convenience init(caminhos: [URL],
+                            debounceInterval: TimeInterval,
+                            fallbackIntervalo: TimeInterval = 30,
+                            aoMudar: (() -> Void)? = nil) {
+        self.init(caminhos: caminhos, debounce: debounceInterval, fallbackIntervalo: fallbackIntervalo, aoMudar: aoMudar)
+    }
+
+    public convenience init(caminhos: [URL],
+                            debounceInterval: TimeInterval,
+                            fallbackIntervalo: TimeInterval = 30,
+                            onChange: (() -> Void)? = nil) {
+        self.init(caminhos: caminhos, debounce: debounceInterval, fallbackIntervalo: fallbackIntervalo, aoMudar: onChange)
+    }
+
     deinit { parar() }
 
     // MARK: - Controle
