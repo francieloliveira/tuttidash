@@ -30,4 +30,10 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
 
     /// A animação do ponto pulsando só roda com o painel expandido e visível.
     public func animarPonto(expandido: Bool) -> Bool { expandido }
+
+    /// FRA-582: o snapshot montado em `montadoEm`, com os mesmos dados, ainda vale em `agora`?
+    /// Relógio que voltou (agora antes de `montadoEm`) não vale: remonta.
+    public static func painelVale(montadoEm: Date, agora: Date) -> Bool {
+        (0..<validadePainel).contains(agora.timeIntervalSince(montadoEm))
+    }
 }

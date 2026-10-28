@@ -391,7 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
         let agora = Date()
         if let ultima = ultimaMontagem, ultima.dados == dados,
-           (0..<PoliticaAtualizacao.validadePainel).contains(agora.timeIntervalSince(ultima.em)) {
+           PoliticaAtualizacao.painelVale(montadoEm: ultima.em, agora: agora) {
             return false
         }
         let snap = MontadorPainel.montar(entrada: dados.entrada, execucoes: dados.execucoes, usos: dados.usos,
