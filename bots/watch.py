@@ -1850,7 +1850,6 @@ def main() -> int:
                     log(f"revisão PR #{pr['number']} falhou: {exc}")
                     if agent_paused():
                         continue  # limite da conta: não marca, revisa quando a conta voltar
-                    panel(f"PR #{pr['number']} revisão falhou ({str(exc)[:120]}); PR parado sem revisão")
                     st["reviewed"][pr["headRefOid"]] = f"erro {datetime.now():%m-%d %H:%M}"
     except Exception as exc:  # noqa: BLE001
         log(f"tick falhou: {exc}")
