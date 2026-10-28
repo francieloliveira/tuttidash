@@ -20,20 +20,20 @@ public enum MontadorPainel {
 
     /// Hash dos dados de entrada: serve para saber se `montar` precisa rodar de novo.
     public static func hashEntrada(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta] = [],
-                                   agora: Date = Date(), calendario: Calendar = Datas.calendarioISO,
+                                   agora: Date? = nil, calendario: Calendar = Datas.calendarioISO,
                                    taxaUsdBrl: Double? = nil, ordinais: [String: Int]? = nil) -> Int {
         Self.chave(entrada: entrada, execucoes: execucoes, usos: usos, agora: agora, calendario: calendario,
                    taxaUsdBrl: taxaUsdBrl, ordinais: ordinais)
     }
     /// Alias em português.
     public static func hashDosDados(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta] = [],
-                                    agora: Date = Date(), calendario: Calendar = Datas.calendarioISO,
+                                    agora: Date? = nil, calendario: Calendar = Datas.calendarioISO,
                                     taxaUsdBrl: Double? = nil, ordinais: [String: Int]? = nil) -> Int {
         hashEntrada(entrada: entrada, execucoes: execucoes, usos: usos, agora: agora, calendario: calendario,
                     taxaUsdBrl: taxaUsdBrl, ordinais: ordinais)
     }
     public static func hashDeEntrada(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta] = [],
-                                     agora: Date = Date(), calendario: Calendar = Datas.calendarioISO,
+                                     agora: Date? = nil, calendario: Calendar = Datas.calendarioISO,
                                      taxaUsdBrl: Double? = nil, ordinais: [String: Int]? = nil) -> Int {
         hashEntrada(entrada: entrada, execucoes: execucoes, usos: usos, agora: agora, calendario: calendario,
                     taxaUsdBrl: taxaUsdBrl, ordinais: ordinais)
@@ -42,13 +42,13 @@ public enum MontadorPainel {
     public static var ultimoSnapshotMontado: SnapshotPainel? { cacheSnapshot }
 
     private static func chave(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta],
-                             agora: Date, calendario: Calendar, taxaUsdBrl: Double?,
+                             agora: Date?, calendario: Calendar, taxaUsdBrl: Double?,
                              ordinais: [String: Int]?) -> Int {
         var hasher = Hasher()
         hasher.combine(String(reflecting: entrada))
         for ex in execucoes { hasher.combine(String(reflecting: ex)) }
         for u in usos { hasher.combine(String(reflecting: u)) }
-        hasher.combine(agora.timeIntervalSinceReferenceDate)
+        if let agora { hasher.combine(agora.timeIntervalSinceReferenceDate) }
         hasher.combine(String(describing: calendario.identifier))
         hasher.combine(calendario.timeZone.identifier)
         if let taxa = taxaUsdBrl { hasher.combine(taxa) } else { hasher.combine(0 as Int) }
