@@ -15,6 +15,10 @@ Card {card}: {title} (estado: {state})
 
 Diga em até 12 linhas: causa provável (cite o E# se for um erro conhecido), o que a lane deve fazer diferente na próxima
 rodada (instrução curta que entra no card) e se o trabalho já feito na branch pode ser aproveitado.
+Confira também se a descrição cita repo/prova antigos (ex.: outro repo ou comando de prova que não é o do cadastro do
+projeto em `projetos`): texto velho é causa válida — peça a atualização do texto para o repo/prova do projeto.
+O campo `tests` do result.json deve ser suíte que o comando de prova do projeto roda (ex.: módulo Python `tests.*`,
+nunca um alvo Swift quando a prova é `python3 -m unittest`).
 Na PENÚLTIMA linha, a instrução para a lane, numa linha só, começando por `INSTRUCAO:` (o vigia cola
 essa linha no topo da DESCRIÇÃO do card; a lane não lê comentários). Ex.: `INSTRUCAO: um comando por vez, sem &&.`
 Na ÚLTIMA linha, exatamente uma destas:
