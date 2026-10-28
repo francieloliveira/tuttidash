@@ -59,7 +59,10 @@ como «sem leitura ainda».
   coleta e log em andamento são lidos direto, com as mesmas regras do `parser.py`, num cache em
   memória. Então o app não precisa do Python rodando, e o `python3 gasto.py coletar` continua
   sendo o que grava o ledger.
-- Lê de novo a cada 30 s e ao abrir o painel.
+- Lê de novo quando o disco muda (FSEvents) e ao abrir o painel. Mudança no estado das lanes
+  aparece em segundos; logs e ledger, que crescem a cada linha, releem no máximo a cada 30 s.
+  Sem mudança, só uma releitura a cada 5 min (virada do dia, limites que vencem). Se o FSEvents
+  não subir, volta a ler a cada 30 s.
 - **Custo desconhecido nunca entra como zero**: fica de fora da soma. No painel, a lane ou o dia
   aparece como «desconhecido» ou «sem dado».
 - O custo de hoje no notch e o bloco de custos usam os últimos 7 dias (hoje incluso).

@@ -128,9 +128,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         criarItemStatus()
 
         atualizar()
-        // FRA-581: observa mudanças no sistema de arquivos em vez de polling cego.
-        // Fallback (timer) fica dentro do observador se o FSEventStream falhar.
+        // FRA-581: as leituras vêm do observador de arquivos (sem FSEvents, ele mesmo faz o polling).
+        // Este timer só pega virada de dia/semana, limites que vencem e evento perdido.
         atualizarObservador(config: modelo.config)
+        timer = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloReserva, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.atualizar() }
+        }
+        timer?.tolerance = 30
 
         atualizarUso()
         timerUso = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloUso, repeats: true) { [weak self] _ in
@@ -196,8 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let res = carregador.carregar(config: cfg)
             let resumo = Agregador.resumir(execucoes: res.execucoes, estado: res.estado,
                                            teto: cfg.tetoSemanalUSD, avisoPct: cfg.avisoPct)
-            let logDispatcher = cfg.logsDir.deletingLastPathComponent().appendingPathComponent("lanes-dispatcher.log")
-            let entrada = LeitorPainelDisco.ler(pasta: cfg.stateDir, logDispatcher: logDispatcher, logsDir: cfg.logsDir)
+            let entrada = LeitorPainelDisco.ler(pasta: cfg.stateDir, logDispatcher: cfg.logDispatcher, logsDir: cfg.logsDir)
             let ledgerExiste = res.ledgerExiste, logsExiste = res.logsDirExiste
             let retomadas = res.retomadas
             let execucoes = res.execucoes
@@ -235,17 +238,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Cria/recria o observador de arquivos quando a config muda (FRA-581).
+    /// Monta o observador com os caminhos da config; refaz só quando eles mudam (FRA-581).
     private func atualizarObservador(config: Configuracao) {
-        let novos = [config.stateDir, config.logsDir]
-        if let obs = observador, obs.caminhos == novos { return }
+        let caminhos = modelo.politica.caminhosObservados(config)
+        if observador?.caminhos == caminhos { return }
         observador?.parar()
-        let obs = ObservadorArquivos(caminhos: novos,
-                                     debounce: 0.3,
-                                     fallbackIntervalo: modelo.politica.intervaloDados,
-                                     aoMudar: { [weak self] in
+        let obs = ObservadorArquivos(caminhos: caminhos, fallback: modelo.politica.intervaloDados) { [weak self] in
             Task { @MainActor in self?.atualizar() }
-        })
+        }
         obs.iniciar()
         observador = obs
     }

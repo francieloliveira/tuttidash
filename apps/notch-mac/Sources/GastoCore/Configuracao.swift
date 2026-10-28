@@ -37,6 +37,10 @@ public struct Configuracao: Equatable, Sendable {
     public var projetos: [ProjetoCadastro] = []
     /// O projeto em que o dispatcher trabalha agora (o marcado `padrao` ou o primeiro ativo).
     public var projetoPadrao: ProjetoCadastro? { ProjetosConfig.padrao(projetos) }
+    /// `lanes-dispatcher.log`, na pasta acima dos logs das lanes.
+    public var logDispatcher: URL {
+        logsDir.deletingLastPathComponent().appendingPathComponent("lanes-dispatcher.log")
+    }
     /// true quando o arquivo em uso é o legado (`Legado.configLegada`).
     public var usandoLegado: Bool = false
     /// Erro de leitura da config (o app continua com os padrões e mostra o aviso).
