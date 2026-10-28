@@ -6,9 +6,69 @@ public enum MontadorPainel {
     /// O log já guarda no máximo 60 fechamentos; o dashboard mostra só as 5 primeiras.
     public static let limiteEntregas = 60
 
+    // MARK: Cache do último snapshot montado (FRA-582)
+    /// Chave (hash dos dados de entrada) do último snapshot montado.
+    private static var cacheChave: Int?
+    /// Último snapshot montado, reutilizado quando os dados de entrada não mudaram.
+    private static var cacheSnapshot: SnapshotPainel?
+
+    /// Limpa o cache do último snapshot. Útil em testes e quando se quer forçar remontagem.
+    public static func limparCache() {
+        cacheChave = nil
+        cacheSnapshot = nil
+    }
+
+    /// Hash dos dados de entrada: serve para saber se `montar` precisa rodar de novo.
+    public static func hashEntrada(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta] = [],
+                                   agora: Date = Date(), calendario: Calendar = Datas.calendarioISO,
+                                   taxaUsdBrl: Double? = nil, ordinais: [String: Int]? = nil) -> Int {
+        Self.chave(entrada: entrada, execucoes: execucoes, usos: usos, agora: agora, calendario: calendario,
+                   taxaUsdBrl: taxaUsdBrl, ordinais: ordinais)
+    }
+    /// Alias em português.
+    public static func hashDosDados(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta] = [],
+                                    agora: Date = Date(), calendario: Calendar = Datas.calendarioISO,
+                                    taxaUsdBrl: Double? = nil, ordinais: [String: Int]? = nil) -> Int {
+        hashEntrada(entrada: entrada, execucoes: execucoes, usos: usos, agora: agora, calendario: calendario,
+                    taxaUsdBrl: taxaUsdBrl, ordinais: ordinais)
+    }
+    public static func hashDeEntrada(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta] = [],
+                                     agora: Date = Date(), calendario: Calendar = Datas.calendarioISO,
+                                     taxaUsdBrl: Double? = nil, ordinais: [String: Int]? = nil) -> Int {
+        hashEntrada(entrada: entrada, execucoes: execucoes, usos: usos, agora: agora, calendario: calendario,
+                    taxaUsdBrl: taxaUsdBrl, ordinais: ordinais)
+    }
+    /// Último snapshot montado (somente leitura).
+    public static var ultimoSnapshotMontado: SnapshotPainel? { cacheSnapshot }
+
+    private static func chave(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta],
+                             agora: Date, calendario: Calendar, taxaUsdBrl: Double?,
+                             ordinais: [String: Int]?) -> Int {
+        var hasher = Hasher()
+        hasher.combine(String(reflecting: entrada))
+        for ex in execucoes { hasher.combine(String(reflecting: ex)) }
+        for u in usos { hasher.combine(String(reflecting: u)) }
+        hasher.combine(agora.timeIntervalSinceReferenceDate)
+        hasher.combine(String(describing: calendario.identifier))
+        hasher.combine(calendario.timeZone.identifier)
+        if let taxa = taxaUsdBrl { hasher.combine(taxa) } else { hasher.combine(0 as Int) }
+        if let ord = ordinais {
+            for k in ord.keys.sorted() {
+                hasher.combine(k)
+                hasher.combine(ord[k] ?? 0)
+            }
+        }
+        return hasher.finalize()
+    }
+
     public static func montar(entrada: EntradaPainel, execucoes: [Execucao], usos: [UsoConta] = [],
                               agora: Date = Date(), calendario: Calendar = Datas.calendarioISO,
                               taxaUsdBrl: Double? = nil, ordinais: [String: Int]? = nil) -> SnapshotPainel {
+        let chaveAtual = Self.chave(entrada: entrada, execucoes: execucoes, usos: usos, agora: agora,
+                                    calendario: calendario, taxaUsdBrl: taxaUsdBrl, ordinais: ordinais)
+        if let cacheChave, cacheChave == chaveAtual, let snap = cacheSnapshot {
+            return snap
+        }
         let quadro = Provas.organizar(entrada.provas, agora: agora)
         let medidas = medidasEfetivas(entrada: entrada, usos: usos)
         let numeros = ordinais ?? Indicadores.ordinais(execucoes)
@@ -51,7 +111,7 @@ public enum MontadorPainel {
             linhas: linhas, testes: textoTestes(quadro.cartas),
             build: textoBuild(dono), custoHoje: textoCusto(custos))
         let laneSugerida = dono?.lane ?? linhas.filter { $0.estado == .rodando }.map(\.lane).only
-        return SnapshotPainel(
+        let snap = SnapshotPainel(
             geral: geral, rotuloGeral: geral.rotulo, notch: notch, alertas: alertas, lanes: linhas,
             provas: quadro.cartas, historico: quadro.historico,
             lockTexto: dono.map { "\($0.lane) · \($0.card)" } ?? "livre",
@@ -77,6 +137,9 @@ public enum MontadorPainel {
                                                  fechamentos: entrada.fechamentos, lockLane: dono?.lane,
                                                  lockCard: dono?.card, titulos: entrada.titulos),
             esperandoVoce: esperandoVoce(entrada.fechamentos))
+        cacheChave = chaveAtual
+        cacheSnapshot = snap
+        return snap
     }
 
     /// Branch do card em curso e número/início da última execução de cada lane.

@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coletandoUso = false
     /// Última leitura do disco das lanes, para remontar o painel quando o uso das contas chega.
     private var entradaPainel = EntradaPainel.vazia
+    /// Cache do último snapshot publicado (FRA-582): evita remontar quando nada mudou.
+    private var ultimoHashPainel: Int?
+    private var ultimoSnapshotPainel: SnapshotPainel?
     private var execucoesPainel: [Execucao] = []
     private var ordinaisPainel: [String: Int] = [:]
     /// `--foto <arquivo.png>`: depois da primeira leitura, desenha a própria janela num PNG
@@ -179,9 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if self.modelo.usos != usos { self.modelo.usos = usos }
                 self.atualizarMenuUso(usos)
                 if tinhaAlerta != (self.modelo.alertaUso != nil) { self.controlador?.pilulaMudou() }
-                self.publicarPainel()
+                let snapshotMudou = self.publicarPainel()
                 self.atualizarMenuLanes()
-                self.controlador?.painelMudou()
+                if snapshotMudou { self.controlador?.painelMudou() }
             }
         }
     }
@@ -218,14 +221,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.entradaPainel = entrada
                 self.execucoesPainel = execucoes
                 self.ordinaisPainel = ordinais
-                self.publicarPainel()
+                let snapshotMudou = self.publicarPainel()
                 self.atualizarMenuLanes()
                 self.atualizarMenuRetomar(retomadas)
                 self.modelo.atualizadoEm = Date()
                 self.atualizarMenu(resumo)
                 self.fotografarSePedido()
                 // a altura do painel pode mudar com os dados
-                Task { @MainActor [weak self] in self?.controlador?.painelMudou() }
+                if snapshotMudou {
+                    Task { @MainActor [weak self] in self?.controlador?.painelMudou() }
+                }
                 if self.leituraPendente {
                     self.leituraPendente = false
                     self.atualizar()
@@ -380,11 +385,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Remonta o retrato com a última leitura e o uso das contas. Não grava estado.
-    private func publicarPainel() {
+    /// Devolve `true` quando o snapshot mudou (views precisam ser notificadas).
+    private func publicarPainel() -> Bool {
+        let hashAtual = MontadorPainel.hashEntrada(entrada: entradaPainel, execucoes: execucoesPainel, usos: modelo.usos,
+                                                  taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
+        if let ultimoHashPainel, ultimoHashPainel == hashAtual, let snap = ultimoSnapshotPainel {
+            if modelo.snapshot == nil { modelo.snapshot = snap }
+            if modelo.laneEmFoco == nil { modelo.laneEmFoco = snap.laneSugerida }
+            return false
+        }
         let snap = MontadorPainel.montar(entrada: entradaPainel, execucoes: execucoesPainel, usos: modelo.usos,
                                         taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
-        if modelo.snapshot != snap { modelo.snapshot = snap }
+        ultimoHashPainel = hashAtual
+        ultimoSnapshotPainel = snap
+        var mudou = false
+        if modelo.snapshot != snap {
+            modelo.snapshot = snap
+            mudou = true
+        }
         if modelo.laneEmFoco == nil { modelo.laneEmFoco = snap.laneSugerida }
+        return mudou
     }
 
     /// Desativa a lane pelo `lanes_ctl.py`. Não escreve `enabled` e não cria PAUSE.
