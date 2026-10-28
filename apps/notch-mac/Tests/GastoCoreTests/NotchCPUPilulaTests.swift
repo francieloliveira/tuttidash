@@ -19,6 +19,21 @@ final class PoliticaAtualizacaoTests: XCTestCase {
         XCTAssertFalse(PoliticaAtualizacao.padrao.animarPonto(expandido: false))
         XCTAssertTrue(PoliticaAtualizacao.padrao.animarPonto(expandido: true))
     }
+
+    func testDadosAntigosAoAbrirPainel() {
+        let p = PoliticaAtualizacao.padrao
+        let agora = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertTrue(p.dadosAntigos(atualizadoEm: nil, agora: agora), "nunca lido = antigo")
+        XCTAssertFalse(p.dadosAntigos(atualizadoEm: agora, agora: agora))
+        XCTAssertFalse(p.dadosAntigos(atualizadoEm: agora.addingTimeInterval(-4.9), agora: agora))
+        XCTAssertTrue(p.dadosAntigos(atualizadoEm: agora.addingTimeInterval(-5), agora: agora))
+        XCTAssertTrue(p.dadosAntigos(atualizadoEm: agora.addingTimeInterval(-p.intervaloDados), agora: agora))
+    }
+
+    func testIdadeAntigaAbaixoDoTimer() {
+        // Se a idade passasse do intervalo do timer, abrir o painel nunca releria.
+        XCTAssertLessThan(PoliticaAtualizacao.padrao.idadeAntiga, PoliticaAtualizacao.padrao.intervaloDados)
+    }
 }
 
 final class GeometriaPilulaTests: XCTestCase {
