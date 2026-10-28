@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coletorUso = ColetorUso()
     private var timerUso: Timer?
     private var coletandoUso = false
+    private var observador: ObservadorArquivos?
     /// Última leitura do disco das lanes, para remontar o painel quando o uso das contas chega.
     private var entradaPainel = EntradaPainel.vazia
     private var execucoesPainel: [Execucao] = []
@@ -127,10 +128,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         criarItemStatus()
 
         atualizar()
-        timer = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloDados, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.atualizar() }
-        }
-        timer?.tolerance = 5
+        // FRA-581: observa mudanças no sistema de arquivos em vez de polling cego.
+        // Fallback (timer) fica dentro do observador se o FSEventStream falhar.
+        atualizarObservador(config: modelo.config)
 
         atualizarUso()
         timerUso = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloUso, repeats: true) { [weak self] _ in
@@ -211,6 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     CentralAvisos.compartilhada.ok(String(localized: "Dados atualizados"))
                 }
                 self.modelo.config = cfg
+                self.atualizarObservador(config: cfg)
                 self.modelo.ledgerExiste = ledgerExiste
                 self.modelo.logsDirExiste = logsExiste
                 if self.modelo.resumo != resumo { self.modelo.resumo = resumo }
@@ -232,6 +233,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    /// Cria/recria o observador de arquivos quando a config muda (FRA-581).
+    private func atualizarObservador(config: Configuracao) {
+        let novos = [config.stateDir, config.logsDir]
+        if let obs = observador, obs.caminhos == novos { return }
+        observador?.parar()
+        let obs = ObservadorArquivos(caminhos: novos,
+                                     debounce: 0.3,
+                                     fallbackIntervalo: modelo.politica.intervaloDados,
+                                     aoMudar: { [weak self] in
+            Task { @MainActor in self?.atualizar() }
+        })
+        obs.iniciar()
+        observador = obs
     }
 
     private func fotografarSePedido() {
