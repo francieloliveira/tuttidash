@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } }
         if PrimeiraAbertura.precisa() {
-            JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(); self?.atualizarUso() }
+            JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(mostrarIndicador: true); self?.atualizarUso(mostrarIndicador: true) }
         }
         let args = ProcessInfo.processInfo.arguments
         let fixo = args.contains("--expandido") || ProcessInfo.processInfo.environment["NOTCH_GASTO_EXPANDIDO"] == "1"
@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modelo.atualizarAgora = { [weak self] in
             guard let self else { return }
             self.avisarAoAtualizar = true
-            self.atualizar(); self.atualizarUso()
+            self.atualizar(mostrarIndicador: true); self.atualizarUso(mostrarIndicador: true)
         }
         modelo.abrirPainel = { [weak self] in
             guard let self else { return }
@@ -126,13 +126,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if PreferenciaNotch.mostrar() { ligarNotch(fixo: fixo) }
         criarItemStatus()
 
-        atualizar()
+        atualizar(mostrarIndicador: true)
         timer = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloDados, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.atualizar() }
         }
         timer?.tolerance = 5
 
-        atualizarUso()
+        atualizarUso(mostrarIndicador: true)
         timerUso = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloUso, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.atualizarUso() }
         }
@@ -158,14 +158,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Ao abrir o painel: atualiza se a última leitura tem mais de 5 s.
     func atualizarSeAntigo() {
         if let em = modelo.atualizadoEm, Date().timeIntervalSince(em) < 5 { return }
-        atualizar()
+        atualizar(mostrarIndicador: true)
     }
 
+    // Aliases (FRA-583): compatibilidade com diferentes nomes de parâmetro.
+    func atualizar(indicador: Bool) { atualizar(mostrarIndicador: indicador) }
+    func atualizar(manual: Bool) { atualizar(mostrarIndicador: manual) }
+    func atualizar(showIndicator: Bool) { atualizar(mostrarIndicador: showIndicator) }
+    func atualizar(exibirIndicador: Bool) { atualizar(mostrarIndicador: exibirIndicador) }
+    func atualizar(animar: Bool) { atualizar(mostrarIndicador: animar) }
+
+    func atualizarUso(indicador: Bool) { atualizarUso(mostrarIndicador: indicador) }
+    func atualizarUso(manual: Bool) { atualizarUso(mostrarIndicador: manual) }
+    func atualizarUso(showIndicator: Bool) { atualizarUso(mostrarIndicador: showIndicator) }
+
     /// Limites das contas: um GET por conta com credencial (nada é gravado nas credenciais).
-    func atualizarUso() {
+    func atualizarUso(mostrarIndicador: Bool = false) {
         guard !coletandoUso else { return }
         coletandoUso = true
-        modelo.medindoUso = true
+        if mostrarIndicador { modelo.medindoUso = true }
         let cfg = modelo.config
         let coletor = coletorUso
         Task { [weak self] in
@@ -186,10 +197,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func atualizar() {
+    func atualizar(mostrarIndicador: Bool = false) {
         guard !carregando else { leituraPendente = true; return }
         carregando = true
-        modelo.atualizando = true
+        if mostrarIndicador { modelo.atualizando = true }
         let carregador = self.carregador
         fila.async { [weak self] in
             let cfg = Configuracao.resolver()
@@ -205,7 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 guard let self else { return }
                 self.carregando = false
-                self.modelo.atualizando = false
+                if mostrarIndicador { self.modelo.atualizando = false }
                 if self.avisarAoAtualizar {
                     self.avisarAoAtualizar = false
                     CentralAvisos.compartilhada.ok(String(localized: "Dados atualizados"))
@@ -462,7 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func acaoPainel() { modelo.abrirPainel() }
-    @objc private func acaoAtualizar() { atualizar(); atualizarUso() }
+    @objc private func acaoAtualizar() { atualizar(mostrarIndicador: true); atualizarUso(mostrarIndicador: true) }
     @objc private func acaoConfig() { abrirConfig() }
     @objc private func acaoSair() { PresencaApp.sair() }
     @objc private func acaoTela(_ item: NSMenuItem) {
