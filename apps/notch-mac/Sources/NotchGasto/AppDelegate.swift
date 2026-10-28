@@ -388,7 +388,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Devolve `true` quando o snapshot mudou (views precisam ser notificadas).
     private func publicarPainel() -> Bool {
         let hashAtual = MontadorPainel.hashEntrada(entrada: entradaPainel, execucoes: execucoesPainel, usos: modelo.usos,
-                                                  taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
+                                                  agora: nil, taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
         if let ultimoHashPainel, ultimoHashPainel == hashAtual, let snap = ultimoSnapshotPainel {
             if modelo.snapshot == nil { modelo.snapshot = snap }
             if modelo.laneEmFoco == nil { modelo.laneEmFoco = snap.laneSugerida }
