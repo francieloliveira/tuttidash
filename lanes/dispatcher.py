@@ -1587,8 +1587,15 @@ def proof_suites(res: dict) -> list[str]:
     tests = res.get("tests")
     if isinstance(tests, str):
         tests = tests.split()
-    suites = [t for t in (tests or []) if isinstance(t, str) and t.replace("/", "").replace("_", "").isalnum()]
-    return suites or list(PROOF_DEFAULT_SUITES)
+    suites = [t for t in (tests or []) if isinstance(t, str) and t.replace("/", "").replace("_", "").replace(".", "").isalnum()]
+    if suites:
+        return suites
+    # Sem suíte válida na lane: vale o padrão do projeto, nunca o de outro projeto.
+    try:
+        padrao = projeto().suites
+    except Exception:  # noqa: BLE001 — sem projeto: cai no legado
+        padrao = []
+    return list(padrao) if padrao else list(PROOF_DEFAULT_SUITES)
 
 
 def proof_script(wt: Path, suites: list[str]) -> str:

@@ -162,6 +162,17 @@ class Cadastro(Base):
         self.assertEqual(ps[0].protegidos, [".claude/*", ".mcp.json"],
                       "o freio de um projeto não vaza para o outro")
 
+    def test_suites_padrao_do_projeto(self):
+        ps = self.usar(self.dois(suites=["tests.test_parser"]))
+        self.assertEqual(ps[1].suites, ["tests.test_parser"])
+        self.assertEqual(ps[0].suites, [],
+                      "sem chave, sem padrão: o fallback legado decide")
+
+    def test_suites_que_nao_e_lista_e_ignorado(self):
+        ps = self.usar(self.config(lista=[
+            {"id": NOTCH, "repo": "~/x", "suites": "texto solto"}]))
+        self.assertEqual(ps[0].suites, [])
+
     def test_por_id(self):
         self.usar(self.dois())
         self.assertEqual(P.por_id(NOTCH).nome, "TuttiDash")
