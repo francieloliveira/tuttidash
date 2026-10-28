@@ -26,11 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coletandoUso = false
     /// Última leitura do disco das lanes, para remontar o painel quando o uso das contas chega.
     private var entradaPainel = EntradaPainel.vazia
-    /// Cache do último snapshot publicado (FRA-582): evita remontar quando nada mudou.
-    private var ultimoHashPainel: Int?
-    private var ultimoSnapshotPainel: SnapshotPainel?
     private var execucoesPainel: [Execucao] = []
     private var ordinaisPainel: [String: Int] = [:]
+    /// Dados e hora do último `MontadorPainel.montar` (FRA-582): com os mesmos dados, não remonta.
+    private var ultimaMontagem: (dados: DadosPainel, em: Date)?
     /// `--foto <arquivo.png>`: depois da primeira leitura, desenha a própria janela num PNG
     /// (conferência de layout sem precisar de permissão de gravação de tela) e segue rodando.
     private var caminhoFoto: URL?
@@ -385,24 +384,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Remonta o retrato com a última leitura e o uso das contas. Não grava estado.
-    /// Devolve `true` quando o snapshot mudou (views precisam ser notificadas).
+    /// FRA-582: com os mesmos dados e dentro de `PoliticaAtualizacao.validadePainel`, o snapshot
+    /// publicado continua valendo e o montador não roda. Devolve `true` só quando o snapshot mudou.
     private func publicarPainel() -> Bool {
-        let hashAtual = MontadorPainel.hashEntrada(entrada: entradaPainel, execucoes: execucoesPainel, usos: modelo.usos,
-                                                  agora: nil, taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
-        if let ultimoHashPainel, ultimoHashPainel == hashAtual, let snap = ultimoSnapshotPainel {
-            if modelo.snapshot == nil { modelo.snapshot = snap }
-            if modelo.laneEmFoco == nil { modelo.laneEmFoco = snap.laneSugerida }
+        let dados = DadosPainel(entrada: entradaPainel, execucoes: execucoesPainel, usos: modelo.usos,
+                                taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
+        let agora = Date()
+        if let ultima = ultimaMontagem, ultima.dados == dados,
+           (0..<PoliticaAtualizacao.validadePainel).contains(agora.timeIntervalSince(ultima.em)) {
             return false
         }
-        let snap = MontadorPainel.montar(entrada: entradaPainel, execucoes: execucoesPainel, usos: modelo.usos,
-                                        taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
-        ultimoHashPainel = hashAtual
-        ultimoSnapshotPainel = snap
-        var mudou = false
-        if modelo.snapshot != snap {
-            modelo.snapshot = snap
-            mudou = true
-        }
+        let snap = MontadorPainel.montar(entrada: dados.entrada, execucoes: dados.execucoes, usos: dados.usos,
+                                        agora: agora, taxaUsdBrl: dados.taxaUsdBrl, ordinais: dados.ordinais)
+        ultimaMontagem = (dados, agora)
+        let mudou = modelo.snapshot != snap
+        if mudou { modelo.snapshot = snap }
         if modelo.laneEmFoco == nil { modelo.laneEmFoco = snap.laneSugerida }
         return mudou
     }
@@ -550,4 +546,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NavegacaoPainel.compartilhada.abrirAjustes()
         JanelaPainel.compartilhada.mostrar(modelo: modelo)
     }
+}
+
+/// Tudo o que `MontadorPainel.montar` recebe, menos o relógio (FRA-582).
+private struct DadosPainel: Equatable {
+    var entrada: EntradaPainel
+    var execucoes: [Execucao]
+    var usos: [UsoConta]
+    var taxaUsdBrl: Double?
+    var ordinais: [String: Int]
 }

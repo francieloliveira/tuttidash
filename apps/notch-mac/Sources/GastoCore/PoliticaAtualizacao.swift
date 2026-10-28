@@ -5,6 +5,9 @@ import Foundation
 public struct PoliticaAtualizacao: Equatable, Sendable {
     /// Menor intervalo aceito para qualquer timer (evita polling agressivo).
     public static let intervaloMinimo: TimeInterval = 1
+    /// FRA-582: com os mesmos dados, o painel reaproveita o último snapshot até este prazo.
+    /// Depois remonta assim mesmo: batimento parado, "há X min" e o custo de hoje dependem do relógio.
+    public static let validadePainel: TimeInterval = 60
 
     public var intervaloDados: TimeInterval
     public var intervaloUso: TimeInterval
