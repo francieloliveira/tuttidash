@@ -55,7 +55,7 @@ struct SecaoModeloLanes: View {
             }
             ForEach(agentes, id: \.nome) { agente in
                 BlocoModeloLane(agente: agente, lista: listas.cache.listas[agente.nome] ?? [],
-                                motivo: listas.motivos[agente.nome],
+                                cache: listas.cache, motivo: listas.motivos[agente.nome],
                                 imposta: externas[agente.nome], modelo: modelo, aoSalvar: aoSalvar)
             }
             if let erro {
@@ -64,7 +64,7 @@ struct SecaoModeloLanes: View {
         } header: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(localized: "Modelo de cada lane")).font(.headline).foregroundStyle(.white)
-                Text(String(localized: "No automático, cada peso de card usa um modelo. No fixo, a lane usa sempre o mesmo. A lista vem das ferramentas e atualiza ao abrir os Ajustes. Se o modelo não aparecer, digite o id."))
+                Text(String(localized: "No automático, cada peso de card usa um modelo e um esforço. No fixo, a lane usa sempre o mesmo modelo e o mesmo esforço. Modelos e esforços vêm das ferramentas e atualizam ao abrir os Ajustes. Mudanças valem no próximo card; a lane em andamento não muda."))
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -108,10 +108,12 @@ struct SecaoModeloLanes: View {
     }
 }
 
-/// Uma lane: Automático (três pesos) ou Fixo. O texto livre só grava ao confirmar.
+/// Uma lane: Automático (três pesos) ou Fixo. Os seletores gravam na hora; o id digitado grava
+/// com Enter ou ao sair do campo. Cada peso mostra o que vai rodar, pela mesma regra do dispatcher.
 struct BlocoModeloLane: View {
     let agente: CatalogoAgentes.ModeloAgente
     let lista: [String]
+    var cache: CacheModelos = .vazio
     /// Por que a lista da ferramenta não veio nesta abertura. Com lista antiga, ela continua valendo.
     let motivo: String?
     let imposta: ConfigModelo?
@@ -122,11 +124,15 @@ struct BlocoModeloLane: View {
     @State private var base: ConfigModelo
     @State private var erro: String?
     @State private var retorno: EstadoAcao = .ocioso
+    @State private var salvoEm: Date?
+    @State private var avisoLocal: String?
+    @FocusState private var foco: String?
 
-    init(agente: CatalogoAgentes.ModeloAgente, lista: [String], motivo: String? = nil, imposta: ConfigModelo?,
-         modelo: ModeloAjustes, aoSalvar: @escaping () -> Void) {
+    init(agente: CatalogoAgentes.ModeloAgente, lista: [String], cache: CacheModelos = .vazio, motivo: String? = nil,
+         imposta: ConfigModelo?, modelo: ModeloAjustes, aoSalvar: @escaping () -> Void) {
         self.agente = agente
         self.lista = lista
+        self.cache = cache
         self.motivo = motivo
         self.imposta = imposta
         self.modelo = modelo
@@ -145,6 +151,10 @@ struct BlocoModeloLane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(ClarezaCota.detalhe(nome: agente.nome) ?? ClarezaCota.titulo(nome: agente.nome, rotulo: agente.rotulo))
                 IndicadorAcao(estado: retorno)
+                if let salvoEm {
+                    Text(String(localized: "salvo \(salvoEm.formatted(date: .omitted, time: .shortened))"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 if cfg.modo == .auto {
                     Button(String(localized: "Restaurar padrão"), action: restaurar).buttonStyle(.link).font(.caption)
@@ -176,6 +186,9 @@ struct BlocoModeloLane: View {
             if !cfg.aviso.isEmpty {
                 Text(cfg.aviso).font(.caption).foregroundStyle(.orange)
             }
+            if let avisoLocal {
+                Text(avisoLocal).font(.caption).foregroundStyle(.orange)
+            }
             if let erro {
                 Text(erro).font(.caption).foregroundStyle(.red)
             }
@@ -188,6 +201,7 @@ struct BlocoModeloLane: View {
             base = preenchida
         }
         .onDisappear(perform: gravarSeMudou)
+        .onChange(of: foco) { antigo, _ in if antigo != nil { gravarSeMudou() } }
     }
 
     private var modo: Binding<ModoModelo> {
@@ -213,7 +227,7 @@ struct BlocoModeloLane: View {
                 GridRow {
                     Text(ModeloLane.rotuloPeso(peso)).frame(width: 70, alignment: .leading)
                     Picker(String(localized: "Modelo \(ModeloLane.rotuloPeso(peso))"), selection: selecaoModelo(peso)) {
-                        Text(String(localized: "Padrão da ferramenta")).tag("")
+                        Text(rotuloPadrao(peso)).tag("")
                         ForEach(opcoes(cfg.porPeso[peso]?.modelo ?? ""), id: \.self) { id in
                             Text(id).tag(id)
                         }
@@ -224,32 +238,80 @@ struct BlocoModeloLane: View {
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .frame(minWidth: 120)
+                        .focused($foco, equals: "modelo-\(peso)")
                         .onSubmit(gravar)
-                    TextField(String(localized: "Esforço"), text: textoEsforco(peso), prompt: Text(String(localized: "padrão")))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                        .onSubmit(gravar)
+                    seletorEsforco(selecaoEsforco(peso), aceitos: aceitos(peso: peso),
+                                   padrao: ModeloLane.padrao(agente)[peso]?.esforco ?? "",
+                                   rotulo: String(localized: "Esforço \(ModeloLane.rotuloPeso(peso))"))
+                }
+                GridRow {
+                    Color.clear.frame(width: 70, height: 1)
+                    Text(vaiRodar(peso)).font(.caption2).foregroundStyle(.secondary)
+                        .gridCellColumns(3)
                 }
             }
         }
     }
 
     private var linhaFixa: some View {
-        HStack(spacing: 8) {
-            Picker(String(localized: "Modelo fixo"), selection: selecaoFixa) {
-                Text(String(localized: "Escolher")).tag("")
-                ForEach(opcoes(cfg.fixo), id: \.self) { id in
-                    Text(id).tag(id)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Picker(String(localized: "Modelo fixo"), selection: selecaoFixa) {
+                    Text(String(localized: "Escolher")).tag("")
+                    ForEach(opcoes(cfg.fixo), id: \.self) { id in
+                        Text(id).tag(id)
+                    }
+                }
+                .labelsHidden()
+                TextField(String(localized: "Ou digite o modelo"), text: textoFixo,
+                          prompt: Text(String(localized: "Ou digite o modelo")))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .focused($foco, equals: "fixo")
+                    .onSubmit(gravar)
+                seletorEsforco(selecaoEsforcoFixo, aceitos: aceitos(modelo: cfg.fixo),
+                               padrao: String(localized: "do peso"), rotulo: String(localized: "Esforço do modelo fixo"))
+            }
+            Text(ModeloLane.pesos.map { "\(ModeloLane.rotuloPeso($0)): \(vaiRodar($0, curto: true))" }.joined(separator: " · "))
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    /// Esforço sempre em lista: só o que o modelo aceita, mais «padrão (valor)». Sem esforço, desabilitado.
+    @ViewBuilder
+    private func seletorEsforco(_ selecao: Binding<String>, aceitos: [String], padrao: String, rotulo: String) -> some View {
+        if aceitos.isEmpty {
+            Text(String(localized: "sem esforço")).font(.caption).foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+        } else {
+            Picker(rotulo, selection: selecao) {
+                Text(padrao.isEmpty ? String(localized: "padrão") : String(localized: "padrão (\(padrao))")).tag("")
+                ForEach(aceitos + (aceitos.contains(selecao.wrappedValue) || selecao.wrappedValue.isEmpty ? [] : [selecao.wrappedValue]),
+                        id: \.self) { e in
+                    Text(e).tag(e)
                 }
             }
             .labelsHidden()
-            TextField(String(localized: "Ou digite o modelo"), text: textoFixo,
-                      prompt: Text(String(localized: "Ou digite o modelo")))
-                .labelsHidden()
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(gravar)
+            .frame(width: 130)
         }
+    }
+
+    private func aceitos(modelo: String) -> [String] {
+        let id = modelo.trimmingCharacters(in: .whitespaces)
+        return ModeloLane.esforcosAceitos(lane: agente.nome, modelo: id, agente: agente, cache: cache)
+    }
+
+    private func aceitos(peso: String) -> [String] {
+        let escolhido = cfg.porPeso[peso]?.modelo ?? ""
+        return aceitos(modelo: escolhido.isEmpty ? (ModeloLane.padrao(agente)[peso]?.modelo ?? "") : escolhido)
+    }
+
+    /// O que o dispatcher vai rodar neste peso, com a config da tela.
+    private func vaiRodar(_ peso: String, curto: Bool = false) -> String {
+        let r = ModeloLane.resolver(lane: agente.nome, peso: peso, config: cfg, padrao: ModeloLane.padrao(agente),
+                                    cache: cache, agente: agente)
+        let modelo = r.modelo.isEmpty ? String(localized: "padrão do CLI") : r.modelo
+        let texto = r.esforco.isEmpty ? modelo : "\(modelo) · \(r.esforco)"
+        return curto ? texto : String(localized: "vai rodar: \(texto)")
     }
 
     private func opcoes(_ atual: String) -> [String] {
@@ -260,6 +322,12 @@ struct BlocoModeloLane: View {
         }
         if !atual.isEmpty && vistos.insert(atual).inserted { saida.insert(atual, at: 0) }
         return saida
+    }
+
+    /// «Padrão (sonnet)», ou «Padrão do CLI» quando o catálogo não passa modelo (Codex).
+    private func rotuloPadrao(_ peso: String) -> String {
+        let id = ModeloLane.padrao(agente)[peso]?.modelo ?? ""
+        return id.isEmpty ? String(localized: "Padrão do CLI") : String(localized: "Padrão (\(id))")
     }
 
     private func padraoModelo(_ peso: String) -> String {
@@ -274,6 +342,7 @@ struct BlocoModeloLane: View {
             escolha.modelo = novo
             c.porPeso[peso] = escolha
             c.aviso = ""
+            ajustarEsforco(&c, peso: peso)
             cfg = c
             gravar()
         })
@@ -290,15 +359,47 @@ struct BlocoModeloLane: View {
         })
     }
 
-    private func textoEsforco(_ peso: String) -> Binding<String> {
-        Binding(get: { cfg.porPeso[peso]?.esforco ?? "" }, set: { novo in
+    private func selecaoEsforco(_ peso: String) -> Binding<String> {
+        Binding(get: { cfg.porPeso[peso].map { $0.esforcoExplicito ? $0.esforco : "" } ?? "" }, set: { novo in
             var c = cfg
-            var escolha = c.porPeso[peso] ?? EscolhaPeso(modelo: "", esforco: "", esforcoExplicito: true)
+            var escolha = c.porPeso[peso] ?? EscolhaPeso(modelo: "", esforco: "", esforcoExplicito: false)
             escolha.esforco = novo
-            escolha.esforcoExplicito = true
+            escolha.esforcoExplicito = !novo.isEmpty
             c.porPeso[peso] = escolha
             cfg = c
+            avisoLocal = nil
+            gravar()
         })
+    }
+
+    private var selecaoEsforcoFixo: Binding<String> {
+        Binding(get: { cfg.esforcoFixo }, set: { novo in
+            var c = cfg
+            c.esforcoFixo = novo
+            cfg = c
+            avisoLocal = nil
+            gravar()
+        })
+    }
+
+    /// Troca de modelo: esforço que o novo modelo não aceita volta ao padrão, com aviso na lane.
+    private func ajustarEsforco(_ c: inout ConfigModelo, peso: String?) {
+        if let peso, var escolha = c.porPeso[peso], escolha.esforcoExplicito, !escolha.esforco.isEmpty {
+            let modelo = escolha.modelo.isEmpty ? (ModeloLane.padrao(agente)[peso]?.modelo ?? "") : escolha.modelo
+            let ok = ModeloLane.esforcosAceitos(lane: agente.nome, modelo: modelo, agente: agente, cache: cache)
+            if !ok.contains(escolha.esforco) {
+                avisoLocal = String(localized: "O esforço \(escolha.esforco) não vale para \(modelo); voltou ao padrão.")
+                escolha.esforco = ""
+                escolha.esforcoExplicito = false
+                c.porPeso[peso] = escolha
+            }
+        } else if peso == nil, !c.esforcoFixo.isEmpty {
+            let ok = ModeloLane.esforcosAceitos(lane: agente.nome, modelo: c.fixo, agente: agente, cache: cache)
+            if !ok.contains(c.esforcoFixo) {
+                avisoLocal = String(localized: "O esforço \(c.esforcoFixo) não vale para \(c.fixo); voltou ao padrão.")
+                c.esforcoFixo = ""
+            }
+        }
     }
 
     private var selecaoFixa: Binding<String> {
@@ -306,6 +407,7 @@ struct BlocoModeloLane: View {
             var c = cfg
             c.fixo = novo
             c.aviso = ""
+            ajustarEsforco(&c, peso: nil)
             cfg = c
             gravar()
         })
@@ -320,15 +422,10 @@ struct BlocoModeloLane: View {
         })
     }
 
+    /// Volta tudo ao padrão do catálogo: nenhum modelo nem esforço escolhido.
     private func restaurar() {
-        var c = ConfigModelo.automatico
-        let padrao = ModeloLane.padrao(agente)
-        for peso in ModeloLane.pesos {
-            guard var item = padrao[peso] else { continue }
-            item.esforcoExplicito = true
-            c.porPeso[peso] = item
-        }
-        cfg = c
+        cfg = Self.preencher(.automatico, agente)
+        avisoLocal = nil
         gravar()
     }
 
@@ -342,6 +439,7 @@ struct BlocoModeloLane: View {
             try modelo.definirModelo(agente.nome, cfg)
             base = cfg
             erro = nil
+            salvoEm = Date()
             comAnimacao(DS.suave) { retorno = .ok("", em: Date()) }
             CentralAvisos.compartilhada.ok(String(localized: "Modelo do \(ClarezaCota.titulo(nome: agente.nome, rotulo: agente.rotulo)) salvo"))
             DispatchQueue.main.asyncAfter(deadline: .now() + MaquinaAcao.tempoOk) { comAnimacao(DS.suave) { retorno = .ocioso } }
@@ -353,12 +451,12 @@ struct BlocoModeloLane: View {
         }
     }
 
-    /// Pesos sem escolha no config aparecem com o id e o esforço do manifesto.
-    private static func preencher(_ cfg: ConfigModelo, _ agente: CatalogoAgentes.ModeloAgente) -> ConfigModelo {
+    /// Pesos sem escolha no config aparecem como «Padrão (valor)»: sem modelo nem esforço gravado.
+    /// A tela mostra o que está no arquivo; o valor real do padrão aparece no rótulo e no «vai rodar».
+    static func preencher(_ cfg: ConfigModelo, _ agente: CatalogoAgentes.ModeloAgente) -> ConfigModelo {
         var saida = cfg
-        let padrao = ModeloLane.padrao(agente)
         for peso in ModeloLane.pesos where saida.porPeso[peso] == nil {
-            if let item = padrao[peso] { saida.porPeso[peso] = item }
+            saida.porPeso[peso] = EscolhaPeso(modelo: "", esforco: "", esforcoExplicito: false)
         }
         return saida
     }
