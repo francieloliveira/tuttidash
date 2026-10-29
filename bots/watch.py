@@ -205,6 +205,11 @@ IMPLEMENTED_LANES = catalogo.lanes_implementadas()
 # Conflito entre cards (mesmos arquivos): o mais pesado mergeia primeiro, o outro rebaseia.
 EFFORT_WEIGHT = {"baixo": 1, "medio": 2, "alto": 3}
 CONFLICT_WAIT_MAX_S = _cfg("watch.conflito_espera_max_s", 6 * 3600)
+# Merge só com APROVADO do revisor no head atual (revisão de 29/10, R2). Sem veredito por
+# este tempo depois da prova verde, o card ganha needs:dono em vez de mergear sozinho.
+REVIEW_WAIT_MAX_S = _cfg("watch.revisao_espera_max_s", 6 * 3600)
+# Revisão que falhou (nenhum revisor, erro do CLI) é tentada de novo depois deste tempo (R3).
+REVIEW_RETRY_S = _cfg("watch.revisao_nova_tentativa_s", 3600)
 FILE_RE = re.compile(r"((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:swift|plist|json|ya?ml|py|sh|xcstrings|strings|entitlements))")
 EMPTY_QUEUE_PANEL_S = _cfg("watch.fila_vazia_painel_s", 3600)   # aviso de fila vazia no painel, no máximo 1/h
 STOP_ANALYSIS_TRIES = 3          # tentativas de analisar a mesma parada antes de desistir e avisar
@@ -258,7 +263,7 @@ def load_state() -> dict:
         st = json.loads(STATE_FILE.read_text())
     except Exception:  # noqa: BLE001
         st = {}
-    for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases", "bloqueios", "removidas_pelo_vigia"):
+    for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases", "bloqueios", "removidas_pelo_vigia", "sem_revisao", "erros_revisao"):
         st.setdefault(k, {})
     return st
 
@@ -405,6 +410,57 @@ def revisor_ja_revisou(repo: dict, pr: dict) -> bool:
     raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "comments"], cwd=repo["dir"])
     sha7 = pr["headRefOid"][:7]
     return any(tem_tag(c["body"], TAG_REVISOR) and sha7 in c["body"] for c in json.loads(raw)["comments"])
+
+
+def veredito_publicado(repo: dict, pr: dict) -> str | None:
+    """Veredito do último comentário [Revisor] no PR que cita o head atual; None sem nenhum."""
+    raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "comments"], cwd=repo["dir"])
+    sha7 = pr["headRefOid"][:7]
+    achados = [c["body"] for c in json.loads(raw)["comments"]
+               if tem_tag(c["body"], TAG_REVISOR) and sha7 in c["body"]]
+    return veredito_de(achados[-1][achar_tag(achados[-1], TAG_REVISOR):]) if achados else None
+
+
+def veredito_do_head(repo: dict, pr: dict, st: dict) -> str | None:
+    """APROVADO, AJUSTES ou None (sem veredito). `ja-tinha` (estado antigo) é resolvido
+    lendo o comentário do revisor no PR."""
+    v = st["reviewed"].get(pr["headRefOid"])
+    if v in ("APROVADO", "AJUSTES"):
+        return v
+    if v == "ja-tinha":
+        v = veredito_publicado(repo, pr)
+        if v:
+            st["reviewed"][pr["headRefOid"]] = v
+        return v
+    return None
+
+
+def revisao_pode_tentar(st: dict, head: str, agora: float | None = None) -> bool:
+    """Head sem revisão, ou com erro mais velho que REVIEW_RETRY_S (R3)."""
+    v = st["reviewed"].get(head)
+    if v is None:
+        return True
+    if not str(v).startswith("erro"):
+        return False
+    agora = time.time() if agora is None else agora
+    return agora - float(st.setdefault("erros_revisao", {}).get(head, 0)) >= REVIEW_RETRY_S
+
+
+def segurar_sem_aprovacao(ci: dict, pr: dict, st: dict, diary: list[str], agora: float | None = None) -> None:
+    """PR pronto sem APROVADO: espera; passou de REVIEW_WAIT_MAX_S, chama o dono (uma vez por head)."""
+    agora = time.time() if agora is None else agora
+    head = pr["headRefOid"]
+    desde = st.setdefault("sem_revisao", {}).setdefault(head, agora)
+    if agora - desde < REVIEW_WAIT_MAX_S or st["sem_revisao"].get(head + "|avisado"):
+        return
+    st["sem_revisao"][head + "|avisado"] = agora
+    situacao = st["reviewed"].get(head) or "nenhuma revisão ainda"
+    add_label(ci["id"], OWNER_LABEL)
+    comment(ci["id"], f"[Gestor] PR #{pr['number']} está pronto (prova verde), mas o head `{head[:7]}` "
+                      f"está sem APROVADO do revisor há {int((agora - desde) // 3600)} h ({situacao}). "
+                      f"Não mergeio sem revisão: revise o PR ou mergeie à mão, e tire `{OWNER_LABEL}`.")
+    diary.append(f"Gestor · {ci['identifier']} PR #{pr['number']} sem revisão há "
+                 f"{int((agora - desde) // 3600)} h → chamou o dono")
 
 
 def card_of(title: str, branch: str) -> str | None:
@@ -680,8 +736,12 @@ def merge_ready(st: dict, diary: list[str]) -> None:
             continue
         if not proof_passed(ci, pr):
             continue
-        if st["reviewed"].get(pr["headRefOid"]) == "AJUSTES":
+        veredito = veredito_do_head(repo, pr, st)
+        if veredito == "AJUSTES":
             continue  # a revisão pediu ajustes no head atual
+        if veredito != "APROVADO":
+            segurar_sem_aprovacao(ci, pr, st, diary)
+            continue
         if pr.get("mergeStateStatus") not in ("CLEAN", "UNSTABLE", "HAS_HOOKS"):
             log(f"{ci['identifier']} PR #{pr['number']}: merge adiado ({pr.get('mergeStateStatus')})")
             continue
@@ -691,7 +751,7 @@ def merge_ready(st: dict, diary: list[str]) -> None:
            cwd=repo["dir"], timeout=180)
         st["merged"][str(pr["number"])] = datetime.now().isoformat(timespec="seconds")
         st["done_moves"][f"app#{pr['number']}"] = ci["identifier"]
-        move_done(ci, f"PR #{pr['number']} mergeado com a prova do dispatcher verde", diary)
+        move_done(ci, f"PR #{pr['number']} mergeado com a prova do dispatcher verde e revisão APROVADO", diary)
         st["installs"]["pendente_main"] = True
         st["installs"]["card_main"] = ci["id"]
         return  # um merge por vez
@@ -1914,8 +1974,10 @@ def main() -> int:
             for pr in open_prs(repo):
                 if runs >= MAX_RUNS_PER_TICK:
                     break
-                if pr["headRefOid"] in st["reviewed"] or revisor_ja_revisou(repo, pr):
-                    st["reviewed"].setdefault(pr["headRefOid"], "ja-tinha")
+                if not revisao_pode_tentar(st, pr["headRefOid"]):
+                    continue
+                if st["reviewed"].get(pr["headRefOid"]) is None and revisor_ja_revisou(repo, pr):
+                    st["reviewed"][pr["headRefOid"]] = "ja-tinha"
                     continue
                 runs += 1
                 try:
@@ -1925,6 +1987,7 @@ def main() -> int:
                     if agent_paused():
                         continue  # limite da conta: não marca, revisa quando a conta voltar
                     st["reviewed"][pr["headRefOid"]] = f"erro {datetime.now():%m-%d %H:%M}"
+                    st.setdefault("erros_revisao", {})[pr["headRefOid"]] = time.time()
     except Exception as exc:  # noqa: BLE001
         log(f"tick falhou: {exc}")
     finally:

@@ -338,6 +338,51 @@ class CliNoPathDoVigiaTest(unittest.TestCase):
         self.assertEqual(vistos, [watch.PATH_ENV])
 
 
+class MergeExigeAprovadoTest(unittest.TestCase):
+    """Revisão de 29/10, R2/R3: sem APROVADO no head não mergeia; erro de revisão é tentado de novo."""
+
+    PR = {"number": 7, "headRefOid": "abc1234def"}
+
+    def setUp(self):
+        self.calls = []
+        velhos = (watch.add_label, watch.comment, watch.sh)
+        self.addCleanup(lambda: setattr(watch, "add_label", velhos[0]) or setattr(watch, "comment", velhos[1])
+                        or setattr(watch, "sh", velhos[2]))
+        watch.add_label = lambda i, n: self.calls.append(("label", n))
+        watch.comment = lambda i, b: self.calls.append(("comment", b))
+
+    def test_veredito_do_estado_e_do_pr(self):
+        st = {"reviewed": {"abc1234def": "APROVADO"}}
+        self.assertEqual(watch.veredito_do_head({"dir": "."}, self.PR, st), "APROVADO")
+        for v in (None, "formato-invalido", "erro 10-29 01:56"):
+            st = {"reviewed": {} if v is None else {"abc1234def": v}}
+            self.assertIsNone(watch.veredito_do_head({"dir": "."}, self.PR, st))
+        watch.sh = lambda *a, **k: ('{"comments":[{"body":"[Revisor] REVISOR: AJUSTES em abc1234"},'
+                                    '{"body":"[Revisor] REVISOR: APROVADO head abc1234"}]}')
+        st = {"reviewed": {"abc1234def": "ja-tinha"}}
+        self.assertEqual(watch.veredito_do_head({"dir": "."}, self.PR, st), "APROVADO")
+        self.assertEqual(st["reviewed"]["abc1234def"], "APROVADO")
+
+    def test_erro_de_revisao_tenta_de_novo_depois_do_intervalo(self):
+        st = {"reviewed": {"h": "erro 10-29 01:56"}, "erros_revisao": {"h": 1000.0}}
+        self.assertFalse(watch.revisao_pode_tentar(st, "h", 1000.0 + watch.REVIEW_RETRY_S - 1))
+        self.assertTrue(watch.revisao_pode_tentar(st, "h", 1000.0 + watch.REVIEW_RETRY_S))
+        self.assertTrue(watch.revisao_pode_tentar({"reviewed": {}}, "h"))
+        self.assertFalse(watch.revisao_pode_tentar({"reviewed": {"h": "AJUSTES"}}, "h"))
+        self.assertFalse(watch.revisao_pode_tentar({"reviewed": {"h": "formato-invalido"}}, "h"))
+
+    def test_sem_aprovado_espera_e_depois_chama_o_dono_uma_vez(self):
+        st, ci, diary = {"reviewed": {}}, {"id": "i", "identifier": "FRA-7"}, []
+        watch.segurar_sem_aprovacao(ci, self.PR, st, diary, agora=0.0)
+        watch.segurar_sem_aprovacao(ci, self.PR, st, diary, agora=watch.REVIEW_WAIT_MAX_S - 1)
+        self.assertEqual(self.calls, [])
+        watch.segurar_sem_aprovacao(ci, self.PR, st, diary, agora=watch.REVIEW_WAIT_MAX_S)
+        watch.segurar_sem_aprovacao(ci, self.PR, st, diary, agora=watch.REVIEW_WAIT_MAX_S * 2)
+        self.assertEqual([c[0] for c in self.calls], ["label", "comment"])
+        self.assertEqual(self.calls[0][1], watch.OWNER_LABEL)
+        self.assertIn("Não mergeio sem revisão", self.calls[1][1])
+
+
 class CardFilesLaneInfraTest(unittest.TestCase):
     """result.json e .lane/ não contam como arquivo do card (conflito falso de 11/10)."""
 
