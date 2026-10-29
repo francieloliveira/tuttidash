@@ -591,13 +591,16 @@ def expirar_retomadas(issues: list[dict], st: dict, diary: list[str]) -> None:
             continue
         set_description(ci, nova)
         ci["description"] = nova
-        comment(ci["id"], "[Triagem] Card liberado pelo dono: tirei da descrição a instrução de retomada, "
+        comment(ci["id"], "[Triagem] Card liberado: tirei da descrição a instrução de retomada, "
                           "que valia para a parada anterior. Texto tirado (se ainda valer, cole de volta):\n\n"
                           + "\n\n".join(tirados))
         diary.append(f"Triagem · {ident} liberado → {len(tirados)} instrução(ões) de retomada tirada(s)")
     for ident in list(st["bloqueios"]):
         if ident not in vistos:
             st["bloqueios"].pop(ident, None)
+    for chave in list(st["removidas_pelo_vigia"]):
+        if chave.split("|", 1)[0] not in vistos:
+            st["removidas_pelo_vigia"].pop(chave, None)
 
 
 # ---------- 0/1. merge + instalação no aparelho ----------
