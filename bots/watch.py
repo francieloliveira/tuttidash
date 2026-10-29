@@ -168,8 +168,12 @@ def _repos() -> dict:
     return {"app": {"dir": repo, "slug": _slug_git(repo)}}
 
 
+IDS_LINEAR: dict = {}
+
+
 def _aplicar_ids(ids: dict) -> None:
-    global STATE_IN_PROGRESS_ID, STATE_TODO_ID, LABEL_IDS
+    global STATE_IN_PROGRESS_ID, STATE_TODO_ID, LABEL_IDS, IDS_LINEAR
+    IDS_LINEAR = dict(ids or {})
     estados, labels = ids.get("estados") or {}, ids.get("labels") or {}
     STATE_IN_PROGRESS_ID = estados.get("in_progress", "")
     STATE_TODO_ID = estados.get("todo", "")
@@ -179,8 +183,9 @@ def _aplicar_ids(ids: dict) -> None:
 def garantir_ids() -> None:
     """Começo do tick: resolve pelo nome o que faltar (o dispatcher usa o mesmo cache)."""
     try:
+        # lanes: a caixa do dono precisa do id da etiqueta de cada lane (opção «passar à lane X»).
         _aplicar_ids(linear_ids.garantir(_cfg, lambda q, v: linear(q, v), dono=OWNER_LABEL,
-                                         project_id=projeto().id, log=log))
+                                         lanes=catalogo.lanes_por_prioridade(), project_id=projeto().id, log=log))
     except Exception as exc:  # noqa: BLE001
         log(f"linear: ids não conferidos ({exc})")
 
@@ -263,7 +268,7 @@ def load_state() -> dict:
         st = json.loads(STATE_FILE.read_text())
     except Exception:  # noqa: BLE001
         st = {}
-    for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases", "bloqueios", "removidas_pelo_vigia", "sem_revisao", "erros_revisao"):
+    for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases", "bloqueios", "removidas_pelo_vigia", "sem_revisao", "erros_revisao", "caixa_analise", "caixa_desde", "cancelados_limpos"):
         st.setdefault(k, {})
     return st
 
@@ -1280,6 +1285,12 @@ def recheck_needs(ci: dict, st: dict, diary: list[str]) -> bool:
     except Exception as exc:  # noqa: BLE001
         panel(f"{ci['identifier']} {OWNER_LABEL}: reconferência sem resposta ({str(exc)[:140]}); tento quando o card mudar")
         return True
+    an = caixa_da_analise(text)
+    st.setdefault("caixa_analise", {})
+    if decision(text) == "remover_needs":
+        st["caixa_analise"].pop(ci["identifier"], None)
+    else:
+        st["caixa_analise"][ci["identifier"]] = dict(an, imp=imp, quem=quem, at=time.time())
     if decision(text) == "remover_needs":
         remove_label(ci["id"], OWNER_LABEL)
         comment(ci["id"], text + rodape_analise(quem))
@@ -1288,6 +1299,174 @@ def recheck_needs(ci: dict, st: dict, diary: list[str]) -> bool:
         comment(ci["id"], text + rodape_analise(quem))
     st["alerts"][ci["identifier"] + "|" + OWNER_LABEL] = datetime.now().isoformat(timespec="seconds")
     return True
+
+
+# ---------- 4b. caixa do dono (PRD de 29/10) ----------
+# O vigia monta `~/.transcentia/lanes/caixa-dono.json`: um item por card com a etiqueta do dono,
+# com a pendência, até 3 decisões e a recomendada (da reconferência), para o app mostrar e o
+# dono decidir com um clique. Card cancelado com pendência é limpo aqui também.
+CAIXA_ARQUIVO = LANES_DIR / "caixa-dono.json"
+ACAO_RE = re.compile(r"\[\s*(esforco\s*=\s*(baixo|medio|alto)|lane\s*=\s*([a-z0-9-]+)|cancelar)\s*\]\s*$", re.I)
+SEM_DECISAO_RE = re.compile(r"\b(manter|esperar|aguardar)\b", re.I)
+
+
+def caixa_da_analise(texto: str) -> dict:
+    """PENDENCIA / OPCOES / RECOMENDA da reconferência. Linha ausente = campo vazio; opção
+    "manter/esperar" ou com ação fora da lista fechada é descartada (não responder já é manter)."""
+    def linha(nome: str) -> str:
+        m = re.search(rf"^{nome}:\s*(.+)$", texto or "", re.M | re.I)
+        return m.group(1).strip() if m else ""
+    opcoes = []
+    for parte in re.split(r"\s*\|\s*", linha("OPCOES")):
+        m = re.match(r"^\(?([A-Da-d])\)\s*(.+)$", parte.strip())
+        if not m:
+            continue
+        texto_op, acao = m.group(2).strip(), None
+        a = ACAO_RE.search(texto_op)
+        if a:
+            texto_op = texto_op[:a.start()].strip()
+            if a.group(2):
+                acao = {"tipo": "esforco", "valor": a.group(2).lower()}
+            elif a.group(3):
+                if a.group(3).lower() not in catalogo.lanes_por_prioridade():
+                    continue
+                acao = {"tipo": "lane", "valor": a.group(3).lower()}
+            else:
+                acao = {"tipo": "cancelar", "valor": ""}
+        elif "[" in texto_op:
+            continue  # ação fora da lista fechada
+        if not texto_op or (acao is None and SEM_DECISAO_RE.search(texto_op)):
+            continue
+        opcoes.append({"letra": m.group(1).upper(), "texto": texto_op, "acao": acao})
+    rec = linha("RECOMENDA")
+    m = re.match(r"^([A-Da-d])\b\s*[—–:-]?\s*(.*)$", rec)
+    letra = m.group(1).upper() if m else ""
+    opcoes = opcoes[:3]
+    return {"pendencia": linha("PENDENCIA"), "opcoes": opcoes,
+            "recomenda": letra if any(o["letra"] == letra for o in opcoes) else "",
+            "porque": m.group(2).strip() if m else ""}
+
+
+def _limpar_md(texto: str, n: int = 240) -> str:
+    t = re.sub(r"[*`_>#]", "", texto or "")
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:n] + ("…" if len(t) > n else "")
+
+
+def origem_e_motivo(ci: dict) -> tuple[str, str]:
+    """Quem chamou o dono e por quê, pelo comentário mais novo que pediu o dono."""
+    for n in reversed(ci["comments"]["nodes"]):
+        b = n["body"] or ""
+        if b.lstrip().startswith("✋"):
+            m = re.search(r"Motivo:\*\*\s*(.+?)(?:\n\n|$)", b, re.S)
+            return "lane", _limpar_md(m.group(1) if m else b)
+        if b.startswith("[Triagem]") and ("preciso de você" in b or "chamar_dono" in b):
+            return "triagem", _limpar_md(b.split("\n", 1)[0].replace("[Triagem]", ""))
+        if b.startswith("[Gestor]") and OWNER_LABEL in b:
+            return "gestor", _limpar_md(b.replace("[Gestor]", ""))
+    return "dono", ""
+
+
+def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> dict:
+    """Grava a caixa do dono (atômica) e devolve o que gravou."""
+    agora = time.time() if agora is None else agora
+    st.setdefault("caixa_analise", {})
+    st.setdefault("caixa_desde", {})
+    itens, vistos = [], set()
+    for ci in issues:
+        if OWNER_LABEL not in labels_of(ci):
+            continue
+        ident = ci["identifier"]
+        vistos.add(ident)
+        desde = st["caixa_desde"].setdefault(ident, agora)
+        an = st["caixa_analise"].get(ident) or {}
+        origem, motivo = origem_e_motivo(ci)
+        nomes = labels_of(ci)
+        pergunta = f"{ident}:{an.get('imp') or int(desde)}"
+        itens.append({"card": ident, "issue_id": ci["id"], "titulo": ci.get("title") or "", "url": ci.get("url") or "",
+                      "desde": datetime.fromtimestamp(desde).isoformat(timespec="seconds"),
+                      "origem": origem, "motivo": motivo, "pergunta_id": pergunta,
+                      "pendencia": an.get("pendencia") or "", "opcoes": an.get("opcoes") or [],
+                      "recomenda": an.get("recomenda") or "", "porque": an.get("porque") or "",
+                      "analise": an.get("quem") or "",
+                      "esforco": next((e for e in ESFORCOS if e in nomes), ""),
+                      "lane": next((l for l in catalogo.lanes_por_prioridade() if l in nomes), "")})
+    for ident in list(st["caixa_desde"]):
+        if ident not in vistos:
+            st["caixa_desde"].pop(ident, None)
+    ids = IDS_LINEAR or {}
+    dados = {"atualizado_em": datetime.fromtimestamp(agora).isoformat(timespec="seconds"),
+             "rotulo_dono": OWNER_LABEL,
+             "ids": {"dono": LABEL_IDS.get(OWNER_LABEL, ""), "esforco": dict(ids.get("esforco") or {}),
+                     "lanes": dict(ids.get("lanes") or {}), "cancelado": st.get("estado_cancelado_id", "")},
+             "itens": sorted(itens, key=lambda i: i["desde"]),
+             "cancelados": sorted((st.get("cancelados_limpos") or {}).keys())}
+    CAIXA_ARQUIVO.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CAIXA_ARQUIVO.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(CAIXA_ARQUIVO)
+    return dados
+
+
+def estado_cancelado_id(st: dict) -> str:
+    """Id do estado do tipo `canceled` do time do projeto (cache no estado do vigia)."""
+    if st.get("estado_cancelado_id"):
+        return st["estado_cancelado_id"]
+    time_id = linear_ids.time_do_projeto(lambda q, v: linear(q, v), projeto_linear())
+    if not time_id:
+        return ""
+    nos = ((linear("query($id:String!){ team(id:$id){ states{ nodes{ id type } } } }", {"id": time_id})
+            .get("team") or {}).get("states") or {}).get("nodes") or []
+    st["estado_cancelado_id"] = next((n["id"] for n in nos if n.get("type") == "canceled"), "")
+    return st["estado_cancelado_id"]
+
+
+def cancelados_recentes() -> list[dict]:
+    flt = ("project:{ id:{ eq:$p } }, state:{ type:{ eq:\"canceled\" } }, "
+           "updatedAt:{ gt:\"-P7D\" }")
+    q = f"""query($p:ID!){{ issues(first:50, filter:{{ {flt} }}){{ nodes{{ {ISSUE_FIELDS} }} }} }}"""
+    return [em_ordem(n) for n in linear(q, {"p": projeto_linear()})["issues"]["nodes"]]
+
+
+def limpar_cancelados(cancelados: list[dict], st: dict, diary: list[str]) -> None:
+    """Card cancelado com pendência: tira as etiquetas que seguram o card, os blocos de
+    Retomada e o contador de paradas, e comenta o que limpou. Worktree e branch ficam."""
+    st.setdefault("cancelados_limpos", {})
+    for ci in cancelados:
+        ident = ci["identifier"]
+        presos = [lb for lb in (OWNER_LABEL, "lane:falhou", "lane:parada") if lb in labels_of(ci)]
+        nova, tirados = limpar_retomadas(ci.get("description") or "")
+        if not presos and not tirados:
+            continue
+        for lb in presos:
+            remove_label(ci["id"], lb)
+        if tirados:
+            set_description(ci, nova)
+        st["stops"].pop(ident, None)
+        st.setdefault("caixa_analise", {}).pop(ident, None)
+        st.setdefault("caixa_desde", {}).pop(ident, None)
+        st["cancelados_limpos"][ident] = datetime.now().isoformat(timespec="seconds")
+        partes = ([f"etiquetas {', '.join(f'`{x}`' for x in presos)}"] if presos else []) + \
+                 ([f"{len(tirados)} instrução(ões) de retomada"] if tirados else [])
+        comment(ci["id"], f"[Gestor] Card cancelado: limpei {' e '.join(partes)}. O worktree e a branch "
+                          "ficaram; apagar é decisão do dono.")
+        diary.append(f"Gestor · {ident} cancelado → pendências limpas ({', '.join(partes)})")
+    corte = time.time() - 7 * 86400
+    for ident, quando in list(st["cancelados_limpos"].items()):
+        try:
+            if datetime.fromisoformat(quando).timestamp() < corte:
+                st["cancelados_limpos"].pop(ident, None)
+        except ValueError:
+            st["cancelados_limpos"].pop(ident, None)
+
+
+def caixa_do_ciclo(issues: list[dict], st: dict, diary: list[str]) -> None:
+    try:
+        estado_cancelado_id(st)
+        limpar_cancelados(cancelados_recentes(), st, diary)
+    except Exception as exc:  # noqa: BLE001 — a limpeza é acessória; a caixa sai mesmo assim
+        log(f"cancelados: {exc}")
+    escrever_caixa(issues, st)
 
 
 # ---------- 5. fila ----------
@@ -1883,7 +2062,9 @@ def main() -> int:
                         runs += recheck_needs(ci, st, diary)
             except Exception as exc:  # noqa: BLE001
                 log(f"{ci['identifier']}: {exc}")
-        step("fila", keep_lanes_busy, project_issues(), st, diary)
+        atuais = project_issues()  # uma leitura para a caixa do dono e para a fila
+        step("caixa do dono", caixa_do_ciclo, atuais, st, diary)
+        step("fila", keep_lanes_busy, atuais, st, diary)
         for key, repo in REPOS.items():
             if runs >= MAX_RUNS_PER_TICK:
                 break

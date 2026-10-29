@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Intervalos (dados 30 s, uso 120 s: endpoints limitados por IP) vivem em `PoliticaAtualizacao`.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        EstadoCaixa.compartilhada.iniciar()  // caixa do dono: contador do sino e aviso do macOS
         NSApp.setActivationPolicy(.accessory)
         Configuracao.copiarPastaAntiga()
         Self.migrarPreferenciasLanekeeper()
