@@ -15,6 +15,13 @@ final class PoliticaAtualizacaoTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(PoliticaAtualizacao.padrao.intervaloDados, 30)
     }
 
+    /// FRA-580: a leitura reaproveitada vale vários ciclos, mas não para sempre.
+    func testIdadeMaximaDaLeitura() {
+        let p = PoliticaAtualizacao.padrao
+        XCTAssertGreaterThan(p.idadeMaximaLeitura, p.intervaloDados)
+        XCTAssertEqual(PoliticaAtualizacao(idadeMaximaLeitura: 0).idadeMaximaLeitura, 1)
+    }
+
     func testAnimacaoSoExpandido() {
         XCTAssertFalse(PoliticaAtualizacao.padrao.animarPonto(expandido: false))
         XCTAssertTrue(PoliticaAtualizacao.padrao.animarPonto(expandido: true))

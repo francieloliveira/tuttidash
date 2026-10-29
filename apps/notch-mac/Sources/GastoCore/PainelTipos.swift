@@ -404,6 +404,9 @@ public struct EntradaPainel: Equatable, Sendable {
     public var textoModelo: [String: String] = [:]
     /// Aviso de modelo fixo ou de modelo que saiu da lista.
     public var avisoModelo: [String: String] = [:]
+    /// Pastas `.lane` dos worktrees das lanes rodando (a prova mora lá). Entram no carimbo
+    /// da próxima leitura (FRA-580).
+    public var pastasLane: [URL] = []
 
     public static let vazia = EntradaPainel(
         heartbeat: nil, rodando: [], titulos: [:], habilitadas: nil, desligadasPeloUsuario: [],

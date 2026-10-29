@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import GastoCore
+import os
 
 /// App de barra de menus. Arranca como accessory (só a pílula). Com o painel aberto,
 /// JanelaPainel pede .regular (Dock e Cmd-Tab) e volta a .accessory ao fechar (FRA-553).
@@ -9,6 +10,8 @@ import GastoCore
 /// O botão desativar do notch só chama `lanes_ctl.py disable` e não cria `PAUSE`.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// `log stream --level debug --predicate 'subsystem == "app.tuttidash.mac"'` mostra os ciclos sem leitura.
+    private static let log = Logger(subsystem: "app.tuttidash.mac", category: "leitura")
     private let modelo = ModeloNotch()
     private var controlador: ControladorNotch?
     private var barra: ControladorBarra?
@@ -21,8 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var carregando = false
     /// Toggle de lane no meio de uma leitura: a leitura em curso ainda não viu o arquivo novo.
     private var leituraPendente = false
+    /// A leitura pendente veio de um pedido forçado («Atualizar agora», Ajustes).
+    private var forcarPendente = false
     /// A releitura pendente veio de um pedido manual: o indicador segue aceso até ela acabar.
     private var indicadorPendente = false
+    /// Última leitura completa do disco; o ciclo a reaproveita enquanto nada muda (FRA-580).
+    private var leituraDisco: LeituraDisco?
     private let coletorUso = ColetorUso()
     private var timerUso: Timer?
     private var coletandoUso = false
@@ -59,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } }
         if PrimeiraAbertura.precisa() {
-            JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(mostrarIndicador: true); self?.atualizarUso(mostrarIndicador: true) }
+            JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(forcar: true, mostrarIndicador: true); self?.atualizarUso(mostrarIndicador: true) }
         }
         let args = ProcessInfo.processInfo.arguments
         let fixo = args.contains("--expandido") || ProcessInfo.processInfo.environment["NOTCH_GASTO_EXPANDIDO"] == "1"
@@ -95,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modelo.atualizarAgora = { [weak self] in
             guard let self else { return }
             self.avisarAoAtualizar = true
-            self.atualizar(mostrarIndicador: true); self.atualizarUso(mostrarIndicador: true)
+            self.atualizar(forcar: true, mostrarIndicador: true); self.atualizarUso(mostrarIndicador: true)
         }
         modelo.abrirPainel = { [weak self] in
             guard let self else { return }
@@ -104,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         modelo.desativarLane = { [weak self] lane in self?.desativar(lane) }
         modelo.ativarLane = { [weak self] lane in self?.ativar(lane) }
-        NavegacaoPainel.compartilhada.aoSalvar = { [weak self] in self?.atualizar() }
+        NavegacaoPainel.compartilhada.aoSalvar = { [weak self] in self?.atualizar(forcar: true) }
 
         if let i = args.firstIndex(of: "--foto-painel"), i + 1 < args.count {
             let url = URL(fileURLWithPath: args[i + 1])
@@ -162,12 +169,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Dados
 
-    /// Ao abrir o painel (janela ou notch): relê com «atualizando…» se os dados são antigos.
+    /// Ao abrir o painel (janela ou notch): relê o disco com «atualizando…» se os dados são antigos.
+    /// A idade conta da última leitura completa: um ciclo reaproveitado não a renova (FRA-580).
     /// Com uma leitura já em curso, só acende o indicador: ela traz o dado novo.
     func atualizarSeAntigo() {
-        guard modelo.politica.dadosAntigos(atualizadoEm: modelo.atualizadoEm, agora: Date()) else { return }
+        guard modelo.politica.dadosAntigos(atualizadoEm: leituraDisco?.lidaEm, agora: Date()) else { return }
         if carregando { modelo.atualizando = true; return }
-        atualizar(mostrarIndicador: true)
+        atualizar(forcar: true, mostrarIndicador: true)
     }
 
     /// Limites das contas: um GET por conta com credencial (nada é gravado nas credenciais).
@@ -197,52 +205,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Sem `forcar`, reaproveita a última leitura do disco quando nenhum arquivo mudou (FRA-580).
+    /// O retrato é remontado mesmo assim: idade do batimento, «há X no card» e virada do dia
+    /// dependem do relógio, não do disco. Só é republicado se mudou.
     /// `mostrarIndicador` só em «Atualizar agora» e ao abrir o painel com dados antigos (FRA-583).
     /// Timer, Ajustes salvos e ações de lane releem sem indicador.
-    func atualizar(mostrarIndicador: Bool = false) {
+    func atualizar(forcar: Bool = false, mostrarIndicador: Bool = false) {
         if mostrarIndicador { modelo.atualizando = true }
         guard !carregando else {
-            // A leitura em curso começou antes do pedido: relê no fim, com o indicador se pedido.
+            // A leitura em curso começou antes do pedido: relê no fim, forçada e com o indicador se pedido.
             leituraPendente = true
+            forcarPendente = forcarPendente || forcar
             if mostrarIndicador { indicadorPendente = true }
             return
         }
         carregando = true
         let carregador = self.carregador
+        let anterior = leituraDisco
+        let politica = modelo.politica
         fila.async { [weak self] in
             let cfg = Configuracao.resolver()
-            let res = carregador.carregar(config: cfg)
+            let (leitura, pulou) = LeituraDisco.ler(config: cfg, carregador: carregador, anterior: anterior,
+                                                    forcar: forcar, politica: politica)
+            let res = leitura.resultado
             let resumo = Agregador.resumir(execucoes: res.execucoes, estado: res.estado,
                                            teto: cfg.tetoSemanalUSD, avisoPct: cfg.avisoPct)
-            let logDispatcher = cfg.logsDir.deletingLastPathComponent().appendingPathComponent("lanes-dispatcher.log")
-            let entrada = LeitorPainelDisco.ler(pasta: cfg.stateDir, logDispatcher: logDispatcher, logsDir: cfg.logsDir)
-            let ledgerExiste = res.ledgerExiste, logsExiste = res.logsDirExiste
-            let retomadas = res.retomadas
-            let execucoes = res.execucoes
-            let ordinais = res.ordinais
             Task { @MainActor in
                 guard let self else { return }
+                if pulou { Self.log.debug("ciclo sem leitura do disco: nenhum arquivo mudou") }
                 self.carregando = false
                 let releitura = self.leituraPendente, comIndicador = self.indicadorPendente
+                let forcarDeNovo = self.forcarPendente
                 self.leituraPendente = false
                 self.indicadorPendente = false
+                self.forcarPendente = false
                 // Pedido manual à espera da releitura: indicador e aviso ficam para o fim dela.
                 if !comIndicador { self.modelo.atualizando = false }
                 if self.avisarAoAtualizar, !comIndicador {
                     self.avisarAoAtualizar = false
                     CentralAvisos.compartilhada.ok(String(localized: "Dados atualizados"))
                 }
-                self.modelo.config = cfg
-                self.modelo.ledgerExiste = ledgerExiste
-                self.modelo.logsDirExiste = logsExiste
+                if self.modelo.config != cfg { self.modelo.config = cfg }
+                if self.modelo.ledgerExiste != res.ledgerExiste { self.modelo.ledgerExiste = res.ledgerExiste }
+                if self.modelo.logsDirExiste != res.logsDirExiste { self.modelo.logsDirExiste = res.logsDirExiste }
                 if self.modelo.resumo != resumo { self.modelo.resumo = resumo }
-                if self.modelo.retomadas != retomadas { self.modelo.retomadas = retomadas }
-                self.entradaPainel = entrada
-                self.execucoesPainel = execucoes
-                self.ordinaisPainel = ordinais
+                if self.modelo.retomadas != res.retomadas { self.modelo.retomadas = res.retomadas }
+                self.leituraDisco = leitura
+                self.entradaPainel = leitura.entrada
+                self.execucoesPainel = res.execucoes
+                self.ordinaisPainel = res.ordinais
                 let snapshotMudou = self.publicarPainel()
                 self.atualizarMenuLanes()
-                self.atualizarMenuRetomar(retomadas)
+                self.atualizarMenuRetomar(res.retomadas)
                 self.modelo.atualizadoEm = Date()
                 self.atualizarMenu(resumo)
                 self.fotografarSePedido()
@@ -250,7 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if snapshotMudou {
                     Task { @MainActor [weak self] in self?.controlador?.painelMudou() }
                 }
-                if releitura { self.atualizar(mostrarIndicador: comIndicador) }
+                if releitura { self.atualizar(forcar: forcarDeNovo, mostrarIndicador: comIndicador) }
             }
         }
     }
@@ -455,7 +469,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     self.modelo.avisoCtl = "lanes_ctl saiu com código \(resultado.codigo)."
                 }
-                self.atualizar()
+                self.atualizar(forcar: true)
             }
         }
     }
@@ -489,13 +503,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     self.modelo.avisoCtl = "lanes_ctl saiu com código \(processo.terminationStatus)."
                 }
-                self.atualizar()
+                self.atualizar(forcar: true)
             }
         }
     }
 
     @objc private func acaoPainel() { modelo.abrirPainel() }
-    @objc private func acaoAtualizar() { atualizar(mostrarIndicador: true); atualizarUso(mostrarIndicador: true) }
+    @objc private func acaoAtualizar() { atualizar(forcar: true, mostrarIndicador: true); atualizarUso(mostrarIndicador: true) }
     @objc private func acaoConfig() { abrirConfig() }
     @objc private func acaoSair() { PresencaApp.sair() }
     @objc private func acaoTela(_ item: NSMenuItem) {
@@ -559,7 +573,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// FRA-524: Ajustes ficam na janela principal, no item "Ajustes" da barra lateral.
     func abrirConfig() {
-        NavegacaoPainel.compartilhada.aoSalvar = { [weak self] in self?.atualizar() }
+        NavegacaoPainel.compartilhada.aoSalvar = { [weak self] in self?.atualizar(forcar: true) }
         NavegacaoPainel.compartilhada.abrirAjustes()
         JanelaPainel.compartilhada.mostrar(modelo: modelo)
     }
