@@ -38,6 +38,9 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     /// Comando que roda no worktree antes de cada push da lane (ex.: a conferência de
     /// publicação de um repositório público). Vazio = sem conferência.
     public var antesDoPush: String
+    /// Suítes padrão da prova quando a lane não lista nenhuma (`suites` do `projetos.py`).
+    /// O app não edita, mas guarda: antes, salvar o cadastro apagava a lista (revisão do PR #19).
+    public var suites: [String]
 
     /// Freio padrão quando o projeto não declara o seu: a config dos agentes do projeto
     /// (igual ao `PROTEGIDOS_PADRAO` do `projetos.py`).
@@ -46,7 +49,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     public init(projetoID: String, nome: String = "", ativo: Bool = true, padrao: Bool = false,
                 repo: String = "", worktrees: String = "", prova: String = "python3 {suite}",
                 provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = [],
-                antesDoPush: String = "", github: String = "") {
+                antesDoPush: String = "", github: String = "", suites: [String] = []) {
         self.projetoID = projetoID
         self.nome = nome.isEmpty ? projetoID : nome
         self.ativo = ativo
@@ -59,6 +62,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         self.copiarParaWorktree = copiarParaWorktree
         self.antesDoPush = antesDoPush.trimmingCharacters(in: .whitespaces)
         self.github = RepositorioGitHub.normalizar(github) ?? github.trimmingCharacters(in: .whitespaces)
+        self.suites = suites
     }
 
     /// Pasta de worktrees efetiva: a declarada ou `<repo>-worktrees`.
@@ -127,7 +131,8 @@ public enum ProjetosConfig {
                                    provaTentativas: tentativas, protegidos: prot,
                                    copiarParaWorktree: copiar,
                                    antesDoPush: "\(item["antes_do_push"] ?? "")",
-                                   github: "\(item["github"] ?? "")")
+                                   github: "\(item["github"] ?? "")",
+                                   suites: ((item["suites"] as? [String]) ?? []).filter { !$0.isEmpty })
         }.filter { $0.problema() == nil }
         return saida
     }
@@ -144,6 +149,7 @@ public enum ProjetosConfig {
             if !p.copiarParaWorktree.isEmpty { item["copiar_para_worktree"] = p.copiarParaWorktree }
             if !p.antesDoPush.isEmpty { item["antes_do_push"] = p.antesDoPush }
             if !p.github.isEmpty { item["github"] = p.github }
+            if !p.suites.isEmpty { item["suites"] = p.suites }
             return item
         }
     }

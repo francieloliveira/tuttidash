@@ -191,13 +191,22 @@ struct PaginaBuilds: View {
                             }
                             .padding(.horizontal, 10)
                             ForEach(Array(builds.enumerated()), id: \.offset) { _, b in
-                                HStack(spacing: 0) {
+                                HStack(alignment: .center, spacing: 0) {
                                     Text(verbatim: b.numero.map { "#" + String($0) } ?? "—").frame(width: 80, alignment: .leading)
                                     Button { modelo.abrirCard(b.card) } label: {
-                                        Text(b.card).foregroundStyle(PV.azul)
+                                        Text(b.card)
+                                            .font(PV.fonte(12.5, .semibold))
+                                            .foregroundStyle(PV.azul)
+                                            .frame(width: 100, alignment: .leading)
+                                            .contentShape(Rectangle())
                                     }
-                                    .buttonStyle(.plain).frame(width: 100, alignment: .leading)
-                                    Text(b.titulo ?? b.card).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                                    .buttonStyle(.plain)
+                                    .accessibilityAddTraits(.isLink)
+                                    .help("Abrir \(b.card) no Linear")
+                                    Text(b.titulo ?? b.card)
+                                        .foregroundStyle(PV.texto2)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     Text(b.lane).frame(width: 100, alignment: .leading)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(b.textoStatus).foregroundStyle(b.naProva ? PV.ambar : cor(b.status))
@@ -212,7 +221,9 @@ struct PaginaBuilds: View {
                                         .frame(width: 110, alignment: .trailing)
                                 }
                                 .font(PV.fonte(12.5))
-                                .padding(.horizontal, 10).frame(height: 38)
+                                .padding(.horizontal, 10)
+                                .frame(height: 40)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(PV.linha))
                                 .overlay(alignment: .bottom) {
                                     if let p = b.progresso(tipica: BuildPainel.duracaoTipica(builds), agora: ctx.date) {
                                         BarraProgresso(progresso: p, cor: b.naProva ? PV.ambar : PV.verde, altura: 2, mostrarLegenda: false)

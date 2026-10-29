@@ -60,7 +60,8 @@ Then configure, in the app (*Ajustes*) or in `~/Library/Application Support/Tutt
 (start from [`config.example.json`](config.example.json)):
 
 - **`projetos`**: the Linear project id, the repo, the worktrees folder, the proof command
-  (`{suite}` is replaced by the suite the agent asked for) and the protected paths.
+  (`{suite}` is replaced by the suite the agent asked for) and the protected paths. Each project can also set
+  `suites` (default suites when the lane doesn't specify any) and `prova_tentativas`.
 - **Linear**: states named *Todo*, *In Progress* and *In Review*; labels `needs:dono` (or your
   `linear.owner_label`), `lane:falhou` and `lane:parada`; a label group `esforco` with `baixo`, `medio`
   and `alto`; and a label group `lane` with one label per agent (`claude`, `codex`…). The ids are looked up

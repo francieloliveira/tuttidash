@@ -181,4 +181,12 @@ final class ProjetosConfigTests: XCTestCase {
         XCTAssertEqual(cfg.projetos.map(\.projetoID), [], "sem config, sem projeto (FRA-565)")
         XCTAssertNil(cfg.projetoPadrao)
     }
+
+    func testSalvarOCadastroGuardaAsSuites() {
+        var d: [String: Any] = ["projetos": [["id": notch, "nome": "P", "repo": "~/Developer/tuttidash", "suites": ["tests.test_x", "GastoCoreTests"]]]]
+        let ps = ProjetosConfig.ler(d)
+        XCTAssertEqual(ps.first?.suites, ["tests.test_x", "GastoCoreTests"])
+        ProjetosConfig.gravar(ps, em: &d)
+        XCTAssertEqual((d["projetos"] as? [[String: Any]])?.first?["suites"] as? [String], ["tests.test_x", "GastoCoreTests"])
+    }
 }
