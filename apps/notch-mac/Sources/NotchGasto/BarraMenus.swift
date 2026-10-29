@@ -188,11 +188,23 @@ struct PainelBarra: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
             }
             if let ultima = ResumoBarra.ultimaLinha(modelo.snapshot?.logTexto ?? "") {
-                Text(ultima)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(TemaPainel.mudo)
-                    .lineLimit(2)
+                if ultima.lowercased().contains("fila vazia") {
+                    // Mensagem do vigia quando não há cards prontos no Todo nem no Backlog.
+                    // Apresenta de forma amigável em vez da linha bruta do log.
+                    HStack(spacing: 6) {
+                        Image(systemName: "tray").font(.system(size: 11)).foregroundStyle(TemaPainel.amarelo)
+                        Text("Sem cards prontos no Todo nem no Backlog")
+                            .font(.system(size: 11)).foregroundStyle(TemaPainel.mudo)
+                            .lineLimit(2)
+                    }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(ultima)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(TemaPainel.mudo)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             HStack {
                 Button("Abrir painel") { fechar(); modelo.abrirPainel() }

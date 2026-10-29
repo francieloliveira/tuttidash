@@ -72,11 +72,18 @@ struct NotchAberto: View {
                     .foregroundStyle(linha.estado == .desligada ? TemaPainel.mudo : TemaPainel.texto)
                     .lineLimit(1)
                 if let texto = linha.textoModelo {
-                    Text(linha.avisoModelo.map { texto + " · " + $0 } ?? texto)
-                        .font(.system(size: 10))
-                        .foregroundStyle(linha.avisoModelo == nil ? TemaPainel.mudo : TemaPainel.amarelo)
-                        .lineLimit(1)
-                } else if let aviso = linha.avisoModelo {
+                    if let aviso = linha.avisoModelo, aviso != "modelo fixo" {
+                        Text(texto + " · " + aviso)
+                            .font(.system(size: 10))
+                            .foregroundStyle(TemaPainel.amarelo)
+                            .lineLimit(1)
+                    } else {
+                        Text(texto)
+                            .font(.system(size: 10))
+                            .foregroundStyle(TemaPainel.mudo)
+                            .lineLimit(1)
+                    }
+                } else if let aviso = linha.avisoModelo, aviso != "modelo fixo" {
                     Text(aviso).font(.system(size: 10)).foregroundStyle(TemaPainel.amarelo).lineLimit(1)
                 }
             }

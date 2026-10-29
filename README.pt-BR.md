@@ -59,7 +59,8 @@ Depois configure, no app (*Ajustes*) ou em `~/Library/Application Support/TuttiD
 (partindo do [`config.example.json`](config.example.json)):
 
 - **`projetos`**: o id do projeto no Linear, o repositório, a pasta dos worktrees, o comando da prova
-  (`{suite}` vira a suíte que o agente pediu) e os caminhos protegidos.
+  (`{suite}` vira a suíte que o agente pediu) e os caminhos protegidos. Cada projeto pode definir
+  `suites` (suítes padrão quando a lane não especifica nenhuma) e `prova_tentativas`.
 - **Linear**: estados *Todo*, *In Progress* e *In Review*; etiquetas `needs:dono` (ou a sua
   `linear.owner_label`), `lane:falhou` e `lane:parada`; um grupo de etiquetas `esforco` com `baixo`,
   `medio` e `alto`; e um grupo `lane` com uma etiqueta por agente (`claude`, `codex`…). Os ids são

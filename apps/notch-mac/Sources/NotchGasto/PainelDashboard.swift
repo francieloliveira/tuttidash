@@ -624,9 +624,8 @@ struct LinhaLaneDashboard: View {
     }
 
     private func secundaria(_ linha: LinhaLane) -> String {
-        guard let texto = linha.textoModelo else { return linha.branch ?? "—" }
-        if linha.avisoModelo == "modelo fixo" { return texto + " · modelo fixo" }
-        return texto
+        if let texto = linha.textoModelo { return texto }
+        return linha.branch ?? "—"
     }
 }
 
@@ -641,7 +640,7 @@ struct DetalheLane: View {
             }
             if let aviso = linha.avisoModelo {
                 Text(aviso).font(PV.fonte(11.5, .semibold))
-                    .foregroundStyle(aviso == "modelo fixo" ? PV.ambar : Color(hex: 0xFF8DA3))
+                    .foregroundStyle(Color(hex: 0xFF8DA3))
                     .lineLimit(2)
             }
             Text(linha.estado == .desligada ? "desligada" : linha.descricao).font(PV.fonte(12)).lineLimit(2)
