@@ -494,7 +494,7 @@ READ_ONLY_SETTINGS = {
         "deny": ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Bash(git push:*)",
                  "Bash(git commit:*)", "Bash(git merge:*)", "Bash(git rebase:*)", "Bash(git checkout:*)",
                  "Bash(git reset:*)", "Bash(gh:*)", "Bash(rm:*)", "Bash(curl:*)", "Bash(osascript:*)",
-                 "Bash(xcodebuild:*)", "Bash(sudo:*)"],
+                 "Bash(xcodebuild:*)", "Bash(sudo:*)", "Bash(git worktree:*)", "Bash(git clone:*)"],
     }
 }
 
@@ -2011,6 +2011,74 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> Non
     log(f"PR #{pr['number']} {verdict} (revisor {revisor}, autor {lane}{', ' + extra if extra else ''})")
 
 
+# ---------- worktrees fora da pasta de branches (regra do dono, 29/10/2026) ----------
+# `<repo>` é a main alinhada com o GitHub; qualquer outro checkout é branch e fica em
+# `<worktrees>` do projeto (~/Developer/tuttidash-branches). O vigia só AVISA: não apaga nada.
+WORKTREE_AVISO_S = 24 * 3600
+
+
+def ler_worktrees(porcelain: str) -> list[dict]:
+    """`git worktree list --porcelain` → [{path, head, branch}] (branch vazio = detached)."""
+    out: list[dict] = []
+    atual: dict = {}
+    for linha in porcelain.splitlines() + [""]:
+        if not linha.strip():
+            if atual.get("path"):
+                out.append({"path": atual["path"], "head": atual.get("head", ""),
+                            "branch": atual.get("branch", "")})
+            atual = {}
+            continue
+        chave, _, valor = linha.partition(" ")
+        if chave == "worktree":
+            atual["path"] = valor
+        elif chave == "HEAD":
+            atual["head"] = valor
+        elif chave == "branch":
+            atual["branch"] = valor.removeprefix("refs/heads/")
+    return out
+
+
+def _dentro(caminho: Path, raiz: Path) -> bool:
+    try:
+        caminho.resolve().relative_to(raiz.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def worktrees_fora(lista: list[dict], repo: Path, branches: Path) -> list[dict]:
+    """Os que não são o checkout principal nem ficam dentro da pasta de branches."""
+    fora = []
+    for wt in lista:
+        p = Path(wt["path"])
+        if p.resolve() == repo.resolve():
+            continue
+        if str(branches) and _dentro(p, branches):
+            continue
+        fora.append(wt)
+    return fora
+
+
+def avisar_worktrees_fora(st: dict, diary: list[str], agora: float | None = None) -> None:
+    """Uma linha no painel por worktree fora do lugar, no máximo uma vez por dia cada."""
+    p = projeto()
+    if not str(p.repo) or not Path(p.repo).exists():
+        return
+    agora = time.time() if agora is None else agora
+    lista = ler_worktrees(sh(["git", "worktree", "list", "--porcelain"], cwd=Path(p.repo), check=False))
+    avisados = st.setdefault("worktrees_avisados", {})
+    vistos = set()
+    for wt in worktrees_fora(lista, Path(p.repo), Path(p.worktrees)):
+        vistos.add(wt["path"])
+        if wt["path"] in avisados and agora - float(avisados[wt["path"]]) < WORKTREE_AVISO_S:
+            continue
+        avisados[wt["path"]] = agora
+        qual = wt["branch"] or f"detached {wt['head'][:7]}"
+        panel(f"worktree fora da pasta de branches: {wt['path']} ({qual}); o lugar é {p.worktrees}")
+    for velho in [k for k in avisados if k not in vistos]:
+        del avisados[velho]
+
+
 def step(name: str, fn, *args) -> None:
     try:
         fn(*args)
@@ -2066,6 +2134,7 @@ def main() -> int:
                 log(f"{ci['identifier']}: {exc}")
         atuais = project_issues()  # uma leitura para a caixa do dono e para a fila
         step("caixa do dono", caixa_do_ciclo, atuais, st, diary)
+        step("worktrees", avisar_worktrees_fora, st, diary)
         step("fila", keep_lanes_busy, atuais, st, diary)
         for key, repo in REPOS.items():
             if runs >= MAX_RUNS_PER_TICK:
