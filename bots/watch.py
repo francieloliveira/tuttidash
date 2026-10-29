@@ -299,13 +299,25 @@ def linear(query: str, variables: dict) -> dict:
 
 ISSUE_FIELDS = """id identifier title description url priority sortOrder startedAt branchName
       state{ id name type } labels{ nodes{ id name parent{ name } } } project{ id name }
-      comments(last:30){ nodes{ id body createdAt } }
+      comments(first:30, orderBy: createdAt){ nodes{ id body createdAt } }
       inverseRelations(first:30){ nodes{ type issue{ identifier state{ type } } } }"""
+
+
+def em_ordem(ci: dict | None) -> dict | None:
+    """Comentários do mais antigo para o mais novo, como o resto do vigia espera.
+
+    O Linear devolve do mais novo para o mais antigo: `comments(last:30)` trazia os 30
+    MAIS ANTIGOS. Card com mais de 30 comentários (FRA-582, 29/10) ficava sem o DONE
+    novo, e o PR aprovado não mergeava; a parada mais recente também sumia da triagem.
+    Agora a consulta pede os 30 mais novos e aqui eles voltam à ordem cronológica."""
+    if ci and ci.get("comments"):
+        ci["comments"]["nodes"] = sorted(ci["comments"]["nodes"], key=lambda n: n.get("createdAt") or "")
+    return ci
 
 
 def issue(ident: str) -> dict | None:
     try:
-        return linear(f"query($id:String!){{ issue(id:$id){{ {ISSUE_FIELDS} }} }}", {"id": ident})["issue"]
+        return em_ordem(linear(f"query($id:String!){{ issue(id:$id){{ {ISSUE_FIELDS} }} }}", {"id": ident})["issue"])
     except RuntimeError as exc:
         log(f"issue {ident}: {exc}")
         return None
@@ -314,7 +326,7 @@ def issue(ident: str) -> dict | None:
 def project_issues(state_names: list[str] | None = None) -> list[dict]:
     flt = "project:{ id:{ eq:$p } }, state:{ type:{ nin:[\"completed\",\"canceled\"] } }"
     q = f"""query($p:ID!){{ issues(first:100, filter:{{ {flt} }}){{ nodes{{ {ISSUE_FIELDS} }} }} }}"""
-    nodes = linear(q, {"p": projeto_linear()})["issues"]["nodes"]
+    nodes = [em_ordem(n) for n in linear(q, {"p": projeto_linear()})["issues"]["nodes"]]
     if state_names:
         nodes = [n for n in nodes if n["state"]["name"] in state_names]
     return nodes

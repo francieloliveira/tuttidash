@@ -977,6 +977,21 @@ def juntar_main(wt: Path) -> tuple[str, str]:
         return f"- main não entrou ({type(exc).__name__}: {str(exc)[:120]}); a rodada segue com a branch como está\n", ""
 
 
+def historico_antigo(wt: Path) -> bool:
+    """A branch do worktree não tem ancestral comum com a `origin/main` (veio de outro histórico)."""
+    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    try:
+        tem = subprocess.run(["git", "rev-parse", "-q", "--verify", "origin/main"], cwd=wt,
+                             capture_output=True, text=True, env=env, timeout=60)
+        if tem.returncode != 0:
+            return False  # sem origin/main local (fetch falhou): não dá para afirmar
+        base = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=wt,
+                              capture_output=True, text=True, env=env, timeout=60)
+        return base.returncode != 0 or not base.stdout.strip()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _nota_conflito(main: str, lista: str) -> str:
     return ("\n\n## Rodada de conflito (escrito pelo dispatcher)\n\n"
             f"O `git merge origin/main` ({main}) neste worktree deu conflito em {lista} e o merge "
@@ -1038,6 +1053,13 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     ident = card["identifier"]
     wt = prepare_worktree(card["branchName"], ident)
     linha_main, nota_main = juntar_main(wt)
+    if historico_antigo(wt):
+        # FRA-443 (29/10): a branch local era do repositório antigo; a lane rodou opus xhigh
+        # sobre código velho e o push seria barrado no fim. Melhor falhar antes de gastar.
+        raise RuntimeError(
+            f"a branch `{card['branchName']}` não tem ancestral comum com a `origin/main` (histórico "
+            f"antigo do repositório). Nada foi rodado. Se ela não tem trabalho a salvar, recrie-a no "
+            f"worktree com `git checkout -B {card['branchName']} origin/main` e devolva o card à fila")
     lane_dir = wt / ".lane"
     if lane_dir.exists():
         for f in ("exit_code", "result.json", "finalized", "triagem_reprova"):

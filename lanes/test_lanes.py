@@ -1511,6 +1511,15 @@ class JuntaMainAntesDaRodada(unittest.TestCase):
         self.assertIn("TimeoutExpired", linha)
         self.assertEqual(nota, "")
 
+    def test_historico_antigo_e_detectado(self):
+        self.assertFalse(d.historico_antigo(self.wt))
+        self._git(self.wt, "checkout", "-q", "--orphan", "velha")
+        (self.wt / "velho.txt").write_text("v\n", encoding="utf-8")
+        self._git(self.wt, "add", "-A")
+        self._git(self.wt, "commit", "-q", "-m", "histórico antigo")
+        self._git(self.wt, "fetch", "-q", "origin", "main")
+        self.assertTrue(d.historico_antigo(self.wt))
+
     def test_fetch_falho_segue_a_rodada(self):
         self._git(self.wt, "remote", "set-url", "origin", str(self.origem) + "-nao-existe")
         head = self._git(self.wt, "rev-parse", "HEAD")

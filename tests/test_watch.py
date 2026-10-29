@@ -383,6 +383,25 @@ class MergeExigeAprovadoTest(unittest.TestCase):
         self.assertIn("Não mergeio sem revisão", self.calls[1][1])
 
 
+class ComentariosMaisRecentesTest(unittest.TestCase):
+    """O Linear devolve do mais novo para o mais antigo; o vigia lê em ordem cronológica."""
+
+    def test_consulta_pede_os_mais_novos(self):
+        self.assertIn("comments(first:30, orderBy: createdAt)", watch.ISSUE_FIELDS)
+        self.assertNotIn("last:30", watch.ISSUE_FIELDS)
+
+    def test_em_ordem_poe_o_mais_novo_no_fim_e_o_done_novo_vale(self):
+        ci = {"comments": {"nodes": [
+            {"id": "3", "body": "[Revisor] REVISOR: APROVADO", "createdAt": "2026-10-29T13:28:00Z"},
+            {"id": "2", "body": "DONE e445dea\n\nx", "createdAt": "2026-10-29T11:07:00Z"},
+            {"id": "1", "body": "DONE 91aa661\n\nx", "createdAt": "2026-10-29T09:55:00Z"}]}}
+        watch.em_ordem(ci)
+        self.assertEqual([n["id"] for n in ci["comments"]["nodes"]], ["1", "2", "3"])
+        pr = {"body": "dispatcher: x → verde", "headRefOid": "e445dea0000"}
+        self.assertTrue(watch.proof_passed(ci, pr))
+        self.assertIsNone(watch.em_ordem(None))
+
+
 class CardFilesLaneInfraTest(unittest.TestCase):
     """result.json e .lane/ não contam como arquivo do card (conflito falso de 11/10)."""
 
