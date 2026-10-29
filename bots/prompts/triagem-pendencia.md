@@ -14,6 +14,8 @@ Card {card}: {title} (estado: {state})
 
 Em até 8 linhas: qual era a pendência, se ela ainda existe e, se existir, o que exatamente o dono precisa fazer
 (uma frase, com o card e uma descrição curta ao lado do número).
+Se a pendência for só texto velho no card (repo/prova antigos, diferentes do cadastro do projeto em `projetos`),
+diga isso e peça a atualização do texto em vez de manter o bloqueio.
 Na ÚLTIMA linha, exatamente uma destas:
 DECISAO: remover_needs      (a pendência não existe mais)
 DECISAO: manter

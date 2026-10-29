@@ -65,7 +65,8 @@ final class ModeloNotch: ObservableObject {
             else { CentralAvisos.compartilhada.ok(m) }
         }
     }
-    /// Leitura dos dados e medição de uso em andamento (indicador no cabeçalho).
+    /// Leitura dos dados e medição de uso pedidas pelo usuário em andamento (indicador no cabeçalho).
+    /// Só «Atualizar agora» e abrir o painel com dados antigos acendem; o timer não (FRA-583).
     @Published var atualizando = false
     @Published var medindoUso = false
     @Published var usoEm: Date?

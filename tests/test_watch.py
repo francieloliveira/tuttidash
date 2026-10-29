@@ -250,6 +250,82 @@ class StopNoteTest(unittest.TestCase):
         self.assertIsNone(watch.stop_note({"description": ""}, "[Triagem] x\nDECISAO: voltar_fila", 1, "r"))
 
 
+class RetomadaExpiraTest(unittest.TestCase):
+    """PRD 29/10, mudança 2: a instrução da triagem sai quando o dono libera o card."""
+
+    CORPO = "## Objetivo\n\nTexto `com código` e > citação do card.\n"
+
+    def _bloco(self, n: int, instr: str) -> str:
+        texto = f"[Triagem] x\nINSTRUCAO: {instr}\nDECISAO: voltar_fila"
+        return watch.stop_note({"description": ""}, texto, n, "causa:prova-vermelha")
+
+    def test_sem_bloco_nao_muda_nada(self):
+        self.assertEqual(watch.limpar_retomadas(self.CORPO), (self.CORPO, []))
+
+    def test_tira_um_e_dois_blocos_e_preserva_o_resto(self):
+        um = self._bloco(2, "faça git rebase main.")
+        nova, tirados = watch.limpar_retomadas(um + self.CORPO)
+        self.assertEqual(nova, self.CORPO)
+        self.assertEqual(len(tirados), 1)
+        self.assertIn("git rebase main", tirados[0])
+        dois = self._bloco(3, "um comando por vez.") + um + self.CORPO
+        nova, tirados = watch.limpar_retomadas(dois)
+        self.assertEqual(nova, self.CORPO)
+        self.assertEqual(len(tirados), 2)
+
+    def _rodar(self, cards, st):
+        self.escritas, self.comentarios = [], []
+        velhos = watch.set_description, watch.comment
+        watch.set_description = lambda ci, t: self.escritas.append((ci["identifier"], t))
+        watch.comment = lambda i, b: self.comentarios.append((i, b))
+        try:
+            watch.expirar_retomadas(cards, st, [])
+        finally:
+            watch.set_description, watch.comment = velhos
+
+    def _card(self, labels, desc):
+        return {"id": "id-1", "identifier": "FRA-1", "description": desc,
+                "labels": {"nodes": [{"name": n, "parent": None} for n in labels]}}
+
+    def _st(self):
+        return {"bloqueios": {}, "removidas_pelo_vigia": {},
+                "stops": {"FRA-1": {"vistos": ["c1"], "motivos": {"causa:prova-vermelha": 3}}}}
+
+    def test_dono_tira_needs_dono(self):
+        st, desc = self._st(), self._bloco(2, "faça git rebase main.") + self.CORPO
+        self._rodar([self._card(["needs:dono", "lane:falhou"], desc)], st)
+        self.assertEqual(self.escritas, [])                 # 1ª vez: só registra
+        self._rodar([self._card([], desc)], st)
+        self.assertEqual(self.escritas, [("FRA-1", self.CORPO)])
+        self.assertIn("git rebase main", self.comentarios[0][1])
+        self.assertEqual(st["stops"]["FRA-1"]["motivos"], {})
+        self.assertEqual(st["stops"]["FRA-1"]["vistos"], ["c1"])
+        self.assertNotIn("FRA-1", st["bloqueios"])
+
+    def test_vigia_tira_lane_falhou_e_a_instrucao_fica(self):
+        st, desc = self._st(), self._bloco(1, "um comando por vez.") + self.CORPO
+        self._rodar([self._card(["lane:falhou"], desc)], st)
+        st["removidas_pelo_vigia"]["FRA-1|lane:falhou"] = "agora"
+        self._rodar([self._card([], desc)], st)
+        self.assertEqual(self.escritas, [])
+        self.assertEqual(st["stops"]["FRA-1"]["motivos"], {"causa:prova-vermelha": 3})
+        self.assertEqual(st["removidas_pelo_vigia"], {})
+
+    def test_dono_tira_lane_falhou(self):
+        st, desc = self._st(), self._bloco(1, "um comando por vez.") + self.CORPO
+        self._rodar([self._card(["lane:falhou"], desc)], st)
+        self._rodar([self._card([], desc)], st)
+        self.assertEqual(self.escritas, [("FRA-1", self.CORPO)])
+        self.assertEqual(st["stops"]["FRA-1"]["motivos"], {})
+
+    def test_liberado_sem_bloco_so_zera_o_contador(self):
+        st = self._st()
+        self._rodar([self._card(["needs:dono"], self.CORPO)], st)
+        self._rodar([self._card([], self.CORPO)], st)
+        self.assertEqual((self.escritas, self.comentarios), ([], []))
+        self.assertEqual(st["stops"]["FRA-1"]["motivos"], {})
+
+
 class CardFilesLaneInfraTest(unittest.TestCase):
     """result.json e .lane/ não contam como arquivo do card (conflito falso de 11/10)."""
 
