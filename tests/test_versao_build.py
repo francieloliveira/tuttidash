@@ -43,7 +43,7 @@ class VersaoDoBuild(unittest.TestCase):
         self.assertEqual(self.versao(), f"alpha branch-main-{self.sha}-sujo")
 
     def test_branch_e_alpha_sem_o_prefixo(self):
-        git(self.wt, "checkout", "-q", "-b", "francieltechnix/caixa-do-dono")
+        git(self.wt, "checkout", "-q", "-b", "dono/caixa-do-dono")
         (self.wt / "b.txt").write_text("b\n")
         git(self.wt, "add", "b.txt")
         git(self.wt, "commit", "-q", "-m", "b")
