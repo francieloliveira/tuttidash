@@ -183,8 +183,9 @@ def _aplicar_ids(ids: dict) -> None:
 def garantir_ids() -> None:
     """Começo do tick: resolve pelo nome o que faltar (o dispatcher usa o mesmo cache)."""
     try:
+        # lanes: a caixa do dono precisa do id da etiqueta de cada lane (opção «passar à lane X»).
         _aplicar_ids(linear_ids.garantir(_cfg, lambda q, v: linear(q, v), dono=OWNER_LABEL,
-                                         project_id=projeto().id, log=log))
+                                         lanes=catalogo.lanes_por_prioridade(), project_id=projeto().id, log=log))
     except Exception as exc:  # noqa: BLE001
         log(f"linear: ids não conferidos ({exc})")
 
@@ -1327,7 +1328,7 @@ def caixa_da_analise(texto: str) -> dict:
             if a.group(2):
                 acao = {"tipo": "esforco", "valor": a.group(2).lower()}
             elif a.group(3):
-                if a.group(3).lower() not in AGENTES_NOMES:
+                if a.group(3).lower() not in catalogo.lanes_por_prioridade():
                     continue
                 acao = {"tipo": "lane", "valor": a.group(3).lower()}
             else:
@@ -1389,7 +1390,7 @@ def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> 
                       "recomenda": an.get("recomenda") or "", "porque": an.get("porque") or "",
                       "analise": an.get("quem") or "",
                       "esforco": next((e for e in ESFORCOS if e in nomes), ""),
-                      "lane": next((l for l in AGENTES_NOMES if l in nomes), "")})
+                      "lane": next((l for l in catalogo.lanes_por_prioridade() if l in nomes), "")})
     for ident in list(st["caixa_desde"]):
         if ident not in vistos:
             st["caixa_desde"].pop(ident, None)

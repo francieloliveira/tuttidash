@@ -10,6 +10,8 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
     static let compartilhada = EstadoCaixa()
 
     @Published private(set) var arquivo: ArquivoCaixa = .vazio
+    /// false enquanto o vigia não gravou a caixa: o sino cai no contador antigo do log.
+    @Published private(set) var arquivoExiste = false
     /// Perguntas respondidas pelo app que o vigia ainda não tirou do arquivo.
     @Published private(set) var respondidas: Set<String> = []
     @Published private(set) var enviando: Set<String> = []
@@ -20,13 +22,17 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
     private var dataArquivo: Date?
     private var relogio: Timer?
     private let chaveVistas = "caixa.vistas"
+    /// Fora de um `.app` (swift run, binário solto) a central de avisos aborta o processo.
+    private let temBundle = Bundle.main.bundleIdentifier != nil
+    /// Perguntas cujo aviso já foi pedido nesta execução (evita pedir de novo a cada 3 s).
+    private var avisoPedido: Set<String> = []
 
     var abertas: Int { CaixaDono.abertas(arquivo.itens, respondidas: respondidas) }
     var itens: [ItemCaixa] { arquivo.itens }
 
     func iniciar() {
         guard relogio == nil else { return }
-        UNUserNotificationCenter.current().delegate = self
+        if temBundle { UNUserNotificationCenter.current().delegate = self }
         recarregar()
         relogio = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.recarregar() }
@@ -38,6 +44,7 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
         let data = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
         guard data != dataArquivo else { return }
         dataArquivo = data
+        arquivoExiste = data != nil
         let novo = CaixaDono.ler(url)
         arquivo = novo
         let atuais = Set(novo.itens.map(\.perguntaId))
@@ -77,12 +84,19 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
     // MARK: aviso do macOS
 
     private func avisarNovas() {
-        var vistas = Set(UserDefaults.standard.stringArray(forKey: chaveVistas) ?? [])
-        let novas = CaixaDono.novas(arquivo.itens, vistas: vistas, respondidas: respondidas)
+        guard temBundle else { return }
+        let vistas = Set(UserDefaults.standard.stringArray(forKey: chaveVistas) ?? [])
+        let novas = CaixaDono.novas(arquivo.itens, vistas: vistas.union(avisoPedido), respondidas: respondidas)
         guard !novas.isEmpty else { return }
+        avisoPedido.formUnion(novas.map(\.perguntaId))
         let central = UNUserNotificationCenter.current()
+        let chave = chaveVistas
         central.requestAuthorization(options: [.alert, .sound]) { ok, _ in
+            // Só conta como visto o aviso que saiu: autorizado depois, os pendentes ainda avisam.
             guard ok else { return }
+            var gravadas = Set(UserDefaults.standard.stringArray(forKey: chave) ?? [])
+            gravadas.formUnion(novas.map(\.perguntaId))
+            UserDefaults.standard.set(Array(gravadas.suffix(500)), forKey: chave)
             for item in novas {
                 let c = UNMutableNotificationContent()
                 c.title = String(localized: "\(item.card) espera você")
@@ -91,8 +105,6 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
                 central.add(UNNotificationRequest(identifier: item.perguntaId, content: c, trigger: nil))
             }
         }
-        vistas.formUnion(novas.map(\.perguntaId))
-        UserDefaults.standard.set(Array(vistas.suffix(500)), forKey: chaveVistas)
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,

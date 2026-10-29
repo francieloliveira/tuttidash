@@ -248,8 +248,8 @@ struct CabecalhoPainel: View {
             Button { comAnimacao { NavegacaoPainel.compartilhada.pagina = .esperando } } label: {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell").font(.system(size: 19)).foregroundStyle(PV.icone)
-                    if caixa.abertas > 0 {
-                        Text("\(caixa.abertas)").font(PV.fonte(10.5, .bold)).foregroundStyle(.white)
+                    if abertas > 0 {
+                        Text("\(abertas)").font(PV.fonte(10.5, .bold)).foregroundStyle(.white)
                             .padding(.horizontal, 5).frame(minWidth: 17, minHeight: 17)
                             .background(Capsule().fill(PV.vermelhoPonto))
                             .overlay(Capsule().strokeBorder(PV.fundo, lineWidth: 1.5))
@@ -266,7 +266,7 @@ struct CabecalhoPainel: View {
             .buttonStyle(Pressionavel())
             .padding(.leading, 5)
             .padding(.trailing, 5)
-            .help(caixa.abertas > 0 ? String(localized: "\(caixa.abertas) resposta(s) em aberto: abrir Esperando você")
+            .help(abertas > 0 ? String(localized: "\(abertas) resposta(s) em aberto: abrir Esperando você")
                                      : String(localized: "Nada esperando por você"))
             .onAppear { caixa.iniciar() }
         }
@@ -275,4 +275,6 @@ struct CabecalhoPainel: View {
     }
 
     @ObservedObject private var caixa = EstadoCaixa.compartilhada
+    /// Sem o arquivo da caixa (vigia parado), vale o contador antigo do log do dispatcher.
+    private var abertas: Int { caixa.arquivoExiste ? caixa.abertas : (modelo.snapshot?.esperandoVoce ?? 0) }
 }
