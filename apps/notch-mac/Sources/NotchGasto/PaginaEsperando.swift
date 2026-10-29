@@ -28,6 +28,29 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
     private var avisoPedido: Set<String> = []
 
     var abertas: Int { CaixaDono.abertas(arquivo.itens, respondidas: respondidas) }
+
+    /// Catálogo, config e cache de modelos, lidos quando a caixa muda (não a cada desenho da tela).
+    private var agentes: [String: CatalogoAgentes.ModeloAgente] = [:]
+    private var dadosConfig: [String: Any] = [:]
+    private var cacheModelos: CacheModelos = .vazio
+
+    private func carregarContexto() {
+        agentes = Dictionary(CatalogoAgentes.carregar().map { ($0.nome, $0) }, uniquingKeysWith: { a, _ in a })
+        dadosConfig = Configuracao.lerArquivo()
+        cacheModelos = ListaModelos.ler(ListaModelos.arquivoCache())
+    }
+
+    /// «opus · high»: o que a lane roda neste peso, pela mesma regra do dispatcher.
+    /// Peso vazio = `lanes.effort_default` da config (como o dispatcher).
+    func vaiRodar(_ lane: String, _ peso: String) -> String? {
+        guard let agente = agentes[lane] else { return nil }
+        let padrao = (Configuracao.valor("lanes.effort_default", em: dadosConfig) as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "medio"
+        let r = ModeloLane.resolver(lane: lane, peso: peso.isEmpty ? padrao : peso,
+                                    config: ModeloLane.ler(ModeloLane.bruto(lane: lane, em: dadosConfig)),
+                                    padrao: ModeloLane.padrao(agente), cache: cacheModelos, agente: agente)
+        let modelo = r.modelo.isEmpty ? "o modelo padrão do CLI" : r.modelo
+        return r.esforco.isEmpty ? modelo : "\(modelo) · \(r.esforco)"
+    }
     var itens: [ItemCaixa] { arquivo.itens }
 
     func iniciar() {
@@ -45,6 +68,7 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
         guard data != dataArquivo else { return }
         dataArquivo = data
         arquivoExiste = data != nil
+        carregarContexto()
         let novo = CaixaDono.ler(url)
         arquivo = novo
         let atuais = Set(novo.itens.map(\.perguntaId))
@@ -132,6 +156,10 @@ struct PaginaEsperando: View {
     @State private var confirmarCancelar = false
 
     private var atual: ItemCaixa? { caixa.itens.first { $0.card == caixa.selecionado } ?? caixa.itens.first }
+
+    private func oQueAcontece(_ d: CaixaDono.Decisao, _ item: ItemCaixa) -> String {
+        CaixaDono.consequencia(d, item: item, vaiRodar: caixa.vaiRodar)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 13) {
@@ -223,7 +251,13 @@ struct PaginaEsperando: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(String(localized: "Decisões sugeridas")).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
                     ForEach(item.opcoes) { op in
-                        botaoOpcao(op, item: item, recomendada: op.letra == item.recomenda).disabled(ocupado)
+                        VStack(alignment: .leading, spacing: 3) {
+                            botaoOpcao(op, item: item, recomendada: op.letra == item.recomenda).disabled(ocupado)
+                            Text(String(localized: "O que acontece: \(oQueAcontece(.opcao(op, comentario: ""), item))"))
+                                .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.leading, 12)
+                        }
                     }
                     if !item.porque.isEmpty {
                         Text(String(localized: "Por que \(item.recomenda): \(item.porque)")).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
@@ -235,9 +269,12 @@ struct PaginaEsperando: View {
             HStack(spacing: 8) {
                 Button(String(localized: "Responder")) { caixa.decidir(.responder(resposta, liberar: false), item: item); resposta = "" }
                     .disabled(resposta.trimmingCharacters(in: .whitespaces).isEmpty || ocupado)
+                    .help(oQueAcontece(.responder(resposta, liberar: false), item))
                 Button(String(localized: "Responder e liberar")) { caixa.decidir(.responder(resposta, liberar: true), item: item); resposta = "" }
                     .disabled(ocupado)
+                    .help(oQueAcontece(.responder(resposta, liberar: true), item))
                 Button(String(localized: "Liberar")) { caixa.decidir(.liberar, item: item) }.disabled(ocupado)
+                    .help(oQueAcontece(.liberar, item))
                 Spacer()
                 if let u = URL(string: item.url), !item.url.isEmpty {
                     Button(String(localized: "Abrir no Linear")) { NSWorkspace.shared.open(u) }
@@ -252,7 +289,7 @@ struct PaginaEsperando: View {
         .confirmationDialog(String(localized: "Cancelar \(item.card)?"), isPresented: $confirmarCancelar) {
             Button(String(localized: "Cancelar o card e limpar as pendências"), role: .destructive) { caixa.decidir(.cancelar, item: item) }
         } message: {
-            Text(String(localized: "O card vai para Canceled. O vigia tira as etiquetas e as instruções de retomada. O worktree e a branch ficam."))
+            Text(oQueAcontece(.cancelar, item))
         }
     }
 

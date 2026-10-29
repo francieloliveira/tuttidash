@@ -460,6 +460,7 @@ class CaixaDoDonoTest(unittest.TestCase):
         item = dados["itens"][0]
         self.assertEqual((item["origem"], item["motivo"]), ("lane", "rebase negado"))
         self.assertEqual((item["esforco"], item["lane"], item["pergunta_id"]), ("alto", "claude", "FRA-1:abc"))
+        self.assertEqual(item["outras_travas"], [])
         self.assertEqual(item["recomenda"], "A")
         self.assertEqual(dados["ids"]["dono"], "lab-dono")
         self.assertEqual(dados["ids"]["esforco"], {"medio": "lab-medio"})
@@ -468,10 +469,11 @@ class CaixaDoDonoTest(unittest.TestCase):
         self.assertNotIn("FRA-1", st["caixa_desde"], "saiu da caixa, sai o «desde»")
 
     def test_sem_analise_sai_o_motivo_cru(self):
-        c = self._card("FRA-3", ["needs:dono"], ["[Triagem] 3ª parada pelo mesmo motivo (x). dono, preciso de você"])
+        c = self._card("FRA-3", ["needs:dono", "lane:falhou"], ["[Triagem] 3ª parada pelo mesmo motivo (x). dono, preciso de você"])
         item = watch.escrever_caixa([c], {}, agora=5.0)["itens"][0]
         self.assertEqual(item["origem"], "triagem")
         self.assertEqual((item["pendencia"], item["opcoes"]), ("", []))
+        self.assertEqual(item["outras_travas"], ["lane:falhou"])
 
     def test_cancelado_com_pendencia_e_limpo_uma_vez(self):
         bloco = watch.stop_note({"description": ""}, "[Triagem] x\nINSTRUCAO: faça rebase.\nDECISAO: voltar_fila", 2, "r")

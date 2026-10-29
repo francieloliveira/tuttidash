@@ -66,6 +66,33 @@ final class CaixaDonoTests: XCTestCase {
         XCTAssertThrowsError(try CaixaDono.mutacoes(.liberar, item: item, ids: IdsCaixa()))
     }
 
+    func testOQueAconteceNuncaOmiteOEfeito() {
+        let vr: (String, String) -> String? = { lane, peso in "\(lane)-modelo · \(peso)" }
+        let b = CaixaDono.consequencia(.opcao(item.opcoes[1], comentario: ""), item: item, vaiRodar: vr)
+        XCTAssertTrue(b.contains("de alto para médio"), b)
+        XCTAssertTrue(b.contains("lane claude, que vai rodar em claude-modelo · medio"), b)
+        let c = CaixaDono.consequencia(.opcao(item.opcoes[2], comentario: ""), item: item, vaiRodar: vr)
+        XCTAssertTrue(c.contains("da lane claude para a lane codex") && c.contains("codex-modelo · alto"), c)
+        let a = CaixaDono.consequencia(.opcao(item.opcoes[0], comentario: ""), item: item)
+        XCTAssertTrue(a.contains("Comenta a sua decisão") && a.contains("sai da sua caixa") && a.contains("lane claude"), a)
+        XCTAssertTrue(CaixaDono.consequencia(.cancelar, item: item).contains("não são apagados"))
+        XCTAssertTrue(CaixaDono.consequencia(.responder("x", liberar: false), item: item).contains("continua esperando"))
+    }
+
+    func testOQueAconteceCasosDaRevisao() {
+        XCTAssertEqual(CaixaDono.consequencia(.responder("  ", liberar: true), item: item),
+                       CaixaDono.consequencia(.liberar, item: item), "sem texto, «responder e liberar» só libera")
+        let cancelar = OpcaoCaixa(letra: "C", texto: "Cancelar", acao: AcaoCaixa(tipo: .cancelar, valor: ""))
+        let c = CaixaDono.consequencia(.opcao(cancelar, comentario: ""), item: item)
+        XCTAssertTrue(c.contains("comenta a sua decisão") && c.contains("sai da sua caixa") == false && c.contains("tira o card da sua caixa agora"), c)
+        let mesmo = OpcaoCaixa(letra: "A", texto: "x", acao: AcaoCaixa(tipo: .esforco, valor: "alto"))
+        XCTAssertTrue(CaixaDono.consequencia(.opcao(mesmo, comentario: ""), item: item).hasPrefix("Mantém o esforço alto"))
+        var preso = item
+        preso.outrasTravas = ["lane:falhou"]
+        let l = CaixaDono.consequencia(.liberar, item: preso, vaiRodar: { _, _ in "x" })
+        XCTAssertTrue(l.contains("a marca de que a lane falhou") && !l.contains("volta para a fila da lane"), l)
+    }
+
     func testExecutarParaNoPrimeiroErro() async throws {
         final class Falso: ClienteLinear, @unchecked Sendable {
             var feitas: [String] = []
