@@ -707,7 +707,12 @@ def load_state(lane: str) -> Optional[dict]:
 
 
 def save_state(lane: str, st: dict) -> None:
-    state_file(lane).write_text(json.dumps(st, ensure_ascii=False, indent=2))
+    # Escrita atômica: um lane-<x>.json pela metade (Mac dormiu, disco cheio) fazia o
+    # load_state levantar em todo ciclo e parava o dispatcher inteiro.
+    f = state_file(lane)
+    tmp = f.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(st, ensure_ascii=False, indent=2))
+    tmp.replace(f)
 
 
 TITULOS_MAX = 500  # o painel só mostra cards recentes; o arquivo não cresce sem fim
@@ -1890,9 +1895,21 @@ def ultimas_tentativas(blocos: list[list[str]]) -> list[list[str]]:
 EXEC_OK_RE = re.compile(r"Executed ([1-9]\d*) tests?, with 0 failures\b")
 
 
+# unittest do Python (o `scripts/testar.sh` manda `tests*` para `python3 -m unittest`):
+# `Ran N tests in …` com N>0 e, depois, a linha `OK` (ou `OK (skipped=…)`).
+RAN_RE = re.compile(r"^Ran ([1-9]\d*) tests? in ")
+UNITTEST_OK_RE = re.compile(r"^OK(?: \(.*\))?\s*$")
+
+
 def suite_provada(bloco: list[str]) -> bool:
-    """A tentativa tem `Executed N tests, with 0 failures` com N>0."""
-    return any(EXEC_OK_RE.search(l) for l in bloco)
+    """A tentativa provou teste de verdade: `Executed N tests, with 0 failures` (XCTest)
+    ou `Ran N tests` seguido de `OK` (unittest), sempre com N>0."""
+    if any(EXEC_OK_RE.search(l) for l in bloco):
+        return True
+    for i, l in enumerate(bloco):
+        if RAN_RE.match(l) and any(UNITTEST_OK_RE.match(x) for x in bloco[i + 1:]):
+            return True
+    return False
 
 
 def prova_e22(wt: Path) -> bool:
@@ -2179,7 +2196,10 @@ def finalize(st: dict) -> Optional[str]:
             f"Executado pela lane:{st['lane']} (esforço {st['effort']}).\n\n"
             f"```json\n{json.dumps(meta, ensure_ascii=False, indent=2)}\n```\n")
     # Idempotente: se o fechamento anterior caiu depois de abrir o PR, reaproveita.
-    pr = sh(["gh", "pr", "view", st["branch"], "--json", "url", "-q", ".url"], cwd=wt, check=False)
+    # Só PR aberto: `gh pr view <branch>` também acha PR fechado ou mergeado, e o card ia para
+    # In Review apontando para ele, sem PR aberto para o vigia mergear.
+    pr = sh(["gh", "pr", "view", st["branch"], "--json", "url,state", "-q",
+             'select(.state == "OPEN") | .url'], cwd=wt, check=False)
     if not pr:
         pr = sh(["gh", "pr", "create", "--base", "main", "--head", st["branch"],
                  "--title", f"[{st['card']}] {st['title']}", "--body", body], cwd=wt, timeout=120)
@@ -2527,9 +2547,14 @@ def run(real: bool, verbose: bool) -> int:
 
     if real:
         for lane in LANES:
-            st = load_state(lane)
-            if st:
-                watch(lane, st)
+            # Uma lane com erro (estado ilegível, tmux, janela) não pode impedir as outras
+            # de fechar nem a fila de andar.
+            try:
+                st = load_state(lane)
+                if st:
+                    watch(lane, st)
+            except Exception as exc:  # noqa: BLE001
+                log(f"lane:{lane} ERRO ao acompanhar: {type(exc).__name__}: {exc}")
 
     if PAUSE_FILE.exists():
         lines = ["PAUSE presente: nenhum claim novo"]

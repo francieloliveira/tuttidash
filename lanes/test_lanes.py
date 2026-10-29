@@ -1167,6 +1167,19 @@ class ProvaE22(unittest.TestCase):
         )
         self.assertEqual(d.proof_veredito(ok, "0"), "verde")
 
+    def test_unittest_do_python_conta_como_prova(self):
+        ok = self.wt("[prova] tests.test_watch", "......", "-" * 70, "Ran 77 tests in 0.007s", "", "OK")
+        self.assertEqual(d.proof_veredito(ok, "0"), "verde")
+        pulado = self.wt("[prova] tests.test_x", "Ran 3 tests in 0.1s", "", "OK (skipped=1)")
+        self.assertEqual(d.proof_veredito(pulado, "0"), "verde")
+        zero = self.wt("[prova] tests.test_x", "Ran 0 tests in 0.000s", "", "OK")
+        self.assertEqual(d.proof_veredito(zero, "0"), "sem-prova")
+        sem_ok = self.wt("[prova] tests.test_x", "Ran 3 tests in 0.1s", "", "FAILED (failures=1)")
+        self.assertNotEqual(d.proof_veredito(sem_ok, "0"), "verde")
+        misto = self.wt("[prova] FooTests", "Executed 4 tests, with 0 failures",
+                        "[prova] tests.test_x", "Ran 3 tests in 0.1s", "OK")
+        self.assertEqual(d.proof_veredito(misto, "0"), "verde")
+
     def test_vermelho_na_ultima_tentativa_continua_vermelho(self):
         wt = self.wt("[prova] FooTests: 1ª tentativa", "Executed 4 tests, with 1 failure")
         self.assertEqual(d.proof_veredito(wt, "0"), "vermelho")
@@ -1505,6 +1518,16 @@ class JuntaMainAntesDaRodada(unittest.TestCase):
         self.assertIn("fetch falhou", linha)
         self.assertEqual(nota, "")
         self.assertEqual(self._git(self.wt, "rev-parse", "HEAD"), head)
+
+
+class EstadoDaLaneAtomico(unittest.TestCase):
+    def test_save_state_nao_deixa_temporario_e_le_de_volta(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with mock.patch.object(d, "STATE_DIR", tmp):
+            d.save_state("claude", {"card": "FRA-1"})
+            self.assertEqual(d.load_state("claude"), {"card": "FRA-1"})
+            self.assertEqual(sorted(p.name for p in tmp.iterdir()), ["lane-claude.json"])
 
 
 class FilaDoTodo(unittest.TestCase):
