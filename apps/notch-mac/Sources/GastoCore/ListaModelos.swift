@@ -9,13 +9,16 @@ public struct CacheModelos: Equatable, Sendable {
     /// FRA-564: quando cada lane teve lista boa pela última vez. Lane que falhou não ganha selo,
     /// então o dispatcher tenta de novo. `atualizadoEm` fica como a última tentativa.
     public var porLane: [String: String]
+    /// PRD de 29/10: esforços que a ferramenta informa, por lane: `{modelo: [...]}` ou `{"*": [...]}`.
+    public var esforcos: [String: [String: [String]]]
 
     public init(atualizadoEm: String, listas: [String: [String]], anteriores: [String: [String]],
-                porLane: [String: String] = [:]) {
+                porLane: [String: String] = [:], esforcos: [String: [String: [String]]] = [:]) {
         self.atualizadoEm = atualizadoEm
         self.listas = listas
         self.anteriores = anteriores
         self.porLane = porLane
+        self.esforcos = esforcos
     }
 
     public static let vazio = CacheModelos(atualizadoEm: "", listas: [:], anteriores: [:])
@@ -112,9 +115,14 @@ public enum ListaModelos {
         for (lane, selo) in (obj["atualizado_em_por_lane"] as? [String: Any]) ?? [:] {
             if let selo = selo as? String { porLane[lane] = selo }
         }
+        var esforcos: [String: [String: [String]]] = [:]
+        for (lane, v) in (obj["esforcos"] as? [String: Any]) ?? [:] {
+            let m = mapa(v)
+            if !m.isEmpty { esforcos[lane] = m }
+        }
         return CacheModelos(atualizadoEm: (obj["atualizado_em"] as? String) ?? "",
                             listas: mapa(obj["listas"]), anteriores: mapa(obj["anteriores"]),
-                            porLane: porLane)
+                            porLane: porLane, esforcos: esforcos)
     }
 
     public static func gravar(_ cache: CacheModelos, em url: URL) throws {
@@ -123,6 +131,7 @@ public enum ListaModelos {
             "listas": cache.listas,
             "anteriores": cache.anteriores,
             "atualizado_em_por_lane": cache.porLane,
+            "esforcos": cache.esforcos,
         ]
         let dados = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -151,7 +160,8 @@ public enum ListaModelos {
     public static func atualizar(_ pedidos: [Pedido], cache: CacheModelos, agora: String,
                                  rodar: (String) -> String?,
                                  claude: () -> ResultadoLista, codex: () -> ResultadoLista,
-                                 pode: ([String]) -> [String: Bool]?) -> Atualizacao {
+                                 pode: ([String]) -> [String: Bool]?,
+                                 esforcos: (String) -> [String: [String]] = { _ in [:] }) -> Atualizacao {
         var saida = cache
         var motivos: [String: String] = [:]
         var textoOpencode: String?
@@ -194,6 +204,10 @@ public enum ListaModelos {
             if let motivo = r.motivo { motivos[pedido.lane] = motivo }
             saida = aplicar(saida, lane: pedido.lane, modelos: r.modelos, agora: agora)
         }
+        for pedido in pedidos {
+            let e = esforcos(pedido.lane)
+            if !e.isEmpty { saida.esforcos[pedido.lane] = e }  // busca vazia não apaga o que havia
+        }
         if saida.atualizadoEm.isEmpty { saida.atualizadoEm = agora }
         return Atualizacao(cache: saida, motivos: motivos)
     }
@@ -206,7 +220,59 @@ public enum ListaModelos {
                          rodar: { cli in saida(de: [cli, "models"]) },
                          claude: { modelosClaude(home: home) },
                          codex: { modelosCodex(home: home) },
-                         pode: { privacidade($0, home: home) })
+                         pode: { privacidade($0, home: home) },
+                         esforcos: { lane in esforcosNoMac(lane: lane, home: home) })
+    }
+
+    /// Esforços que a ferramenta informa (mesmo critério do `catalogo.buscar_esforcos`).
+    static func esforcosNoMac(lane: String, home: URL) -> [String: [String]] {
+        switch lane {
+        case "claude":
+            let niveis = esforcosDoHelp(saida(de: ["claude", "--help"]) ?? "")
+            return niveis.isEmpty ? [:] : ["*": niveis]
+        case "codex":
+            guard let dados = try? Data(contentsOf: home.appendingPathComponent(".codex/models_cache.json")) else { return [:] }
+            return esforcosCacheCodex(dados)
+        default:
+            return [:]
+        }
+    }
+
+    /// `claude --help`: os níveis entre parênteses depois de `--effort`.
+    /// Mesmo critério do `catalogo._EFFORT_HELP`: `--effort` como palavra inteira, com os níveis
+    /// entre parênteses na mesma linha ou na seguinte.
+    public static func esforcosDoHelp(_ texto: String) -> [String] {
+        let padrao = #"--effort(?![\w-])[^(\n]*(?:\n[^(\n-]*)?\(([^)]*)\)"#
+        guard let re = try? NSRegularExpression(pattern: padrao),
+              let m = re.firstMatch(in: texto, range: NSRange(texto.startIndex..., in: texto)),
+              let faixa = Range(m.range(at: 1), in: texto) else { return [] }
+        var saida: [String] = []
+        let miolo = texto[faixa]
+        for parte in miolo.split(whereSeparator: { ",|/ \n\t".contains($0) }) {
+            let tok = parte.trimmingCharacters(in: CharacterSet(charactersIn: "'\" "))
+            if tok.range(of: "^[a-z][a-z0-9_-]{0,15}$", options: .regularExpression) != nil, !saida.contains(tok) {
+                saida.append(tok)
+            }
+        }
+        return saida
+    }
+
+    /// `~/.codex/models_cache.json`: `supported_reasoning_levels` de cada modelo visível.
+    public static func esforcosCacheCodex(_ dados: Data) -> [String: [String]] {
+        guard let obj = try? JSONSerialization.jsonObject(with: dados) as? [String: Any],
+              let modelos = obj["models"] as? [[String: Any]] else { return [:] }
+        var saida: [String: [String]] = [:]
+        for m in modelos {
+            guard let slug = (m["slug"] as? String)?.trimmingCharacters(in: .whitespaces), !slug.isEmpty else { continue }
+            if let vis = m["visibility"] as? String, vis != "list" { continue }
+            var niveis: [String] = []
+            for item in (m["supported_reasoning_levels"] as? [Any]) ?? [] {
+                let e = (item as? [String: Any])?["effort"] as? String ?? (item as? String)
+                if let e, !e.isEmpty, !niveis.contains(e) { niveis.append(e) }
+            }
+            if !niveis.isEmpty { saida[slug] = niveis }
+        }
+        return saida
     }
 
     /// `~/.codex/models_cache.json`, a lista que o próprio Codex CLI usa: só `visibility == "list"`

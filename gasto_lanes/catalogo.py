@@ -544,6 +544,102 @@ def padrao_por_peso(lane: str) -> dict:
     return saida
 
 
+def lane_tem_esforco(lane: str) -> bool:
+    """O CLI da lane recebe esforço (flag no manifesto ou `revisao.flag_esforco`). OpenCode: não."""
+    rev = (catalogo().get(lane) or {}).get("revisao") or {}
+    if rev.get("flag_esforco"):
+        return True
+    return any(esforco_das_flags(flag_de_effort(lane, n)) for n in PESOS_MODELO)
+
+
+def _sem_prefixo(lane: str, modelo: str) -> str:
+    pref = prefixo_de_lane(lane)
+    m = (modelo or "").strip()
+    return m[len(pref):] if pref and m.startswith(pref) else m
+
+
+def esforcos_aceitos(lane: str, modelo: str, cache: dict | None = None) -> list:
+    """Esforços que o modelo aceita, na ordem de preferência (PRD de 29/10):
+    1. o que a ferramenta informou para o modelo (Codex: `models_cache.json`);
+    2. o que a ferramenta informou para todos os modelos (`*`; Claude: `claude --help`);
+    3. a lista do agente no manifesto (`revisao.esforcos`).
+    Vazio = a lane não recebe esforço."""
+    if not lane_tem_esforco(lane):
+        return []
+    por_lane = ((cache or {}).get("esforcos") or {}).get(lane) or {}
+    if isinstance(por_lane, dict):
+        for chave in (com_prefixo_modelo(lane, modelo), _sem_prefixo(lane, modelo)):
+            if chave and isinstance(por_lane.get(chave), list) and por_lane[chave]:
+                return [str(x) for x in por_lane[chave]]
+        if isinstance(por_lane.get("*"), list) and por_lane["*"]:
+            return [str(x) for x in por_lane["*"]]
+    rev = (catalogo().get(lane) or {}).get("revisao") or {}
+    return [str(x) for x in (rev.get("esforcos") or ())]
+
+
+# `--effort` como palavra inteira (não `--effort-x`), com os níveis entre parênteses na mesma linha
+# ou na seguinte (o `claude --help` quebra a descrição).
+_EFFORT_HELP = re.compile(r"--effort(?![\w-])[^(\n]*(?:\n[^(\n-]*)?\(([^)]*)\)")
+
+
+def esforcos_do_help(texto: str) -> list:
+    """`claude --help`: os níveis entre parênteses depois de `--effort` (ex.: low, medium, high, xhigh, max)."""
+    m = _EFFORT_HELP.search(texto or "")
+    if not m:
+        return []
+    saida = []
+    for tok in re.split(r"[,|/\s]+", m.group(1)):
+        tok = tok.strip().strip("'\"")
+        if re.fullmatch(r"[a-z][a-z0-9_-]{0,15}", tok or "") and tok not in saida:
+            saida.append(tok)
+    return saida
+
+
+def esforcos_cache_codex(dados) -> dict:
+    """`~/.codex/models_cache.json`: `supported_reasoning_levels` de cada modelo visível."""
+    saida = {}
+    if not isinstance(dados, dict) or not isinstance(dados.get("models"), list):
+        return saida
+    for m in dados["models"]:
+        if not isinstance(m, dict) or not isinstance(m.get("slug"), str) or not m["slug"].strip():
+            continue
+        if isinstance(m.get("visibility"), str) and m["visibility"] != "list":
+            continue
+        niveis = []
+        for item in m.get("supported_reasoning_levels") or []:
+            e = item.get("effort") if isinstance(item, dict) else item
+            if isinstance(e, str) and e and e not in niveis:
+                niveis.append(e)
+        if niveis:
+            saida[m["slug"].strip()] = niveis
+    return saida
+
+
+def buscar_esforcos(lane: str) -> dict:
+    """Esforços que a ferramenta informa: {modelo: [...]} ou {"*": [...]}. Vazio se não informa
+    ou se falhou (vale o que estava no cache e, depois, o manifesto)."""
+    try:
+        if lane == "claude":
+            niveis = esforcos_do_help(_rodar(["claude", "--help"]))
+            return {"*": niveis} if niveis else {}
+        if lane == "codex":
+            return esforcos_cache_codex(json.loads(
+                (Path.home() / ".codex/models_cache.json").read_text(encoding="utf-8")))
+    except Exception:  # noqa: BLE001 — acessório: nunca derruba o ciclo
+        return {}
+    return {}
+
+
+def atualizar_cache_esforcos(cache: dict, lane: str, dados: dict) -> dict:
+    """Troca os esforços da lane só quando a busca trouxe algo."""
+    saida = dict(cache or {})
+    esf = dict(saida.get("esforcos") or {})
+    if dados:
+        esf[lane] = dict(dados)
+    saida["esforcos"] = esf
+    return saida
+
+
 def prefixo_de_lane(lane: str) -> str:
     """`opencode/` ou `opencode-go/` quando o manifesto usa esse prefixo. Senão, vazio."""
     for nivel in PESOS_MODELO:
@@ -567,9 +663,9 @@ def com_prefixo_modelo(lane: str, modelo: str) -> str:
 def normalizar_config_modelo(valor) -> dict:
     """String antiga vira modo fixo. Sem valor, automático sem tabela (vale o manifesto)."""
     if isinstance(valor, str):
-        return {"modo": "fixo", "fixo": valor, "porPeso": {}, "aviso": ""}
+        return {"modo": "fixo", "fixo": valor, "porPeso": {}, "aviso": "", "esforco": ""}
     if not isinstance(valor, dict):
-        return {"modo": "auto", "fixo": "", "porPeso": {}, "aviso": ""}
+        return {"modo": "auto", "fixo": "", "porPeso": {}, "aviso": "", "esforco": ""}
     modo = valor.get("modo")
     if modo not in ("auto", "fixo"):
         modo = "fixo" if isinstance(valor.get("fixo"), str) and valor.get("fixo") else "auto"
@@ -584,7 +680,8 @@ def normalizar_config_modelo(valor) -> dict:
             bloco["esforco"] = str(item.get("esforco") or "") if "esforco" in item else None
             por[nivel] = bloco
     aviso = valor.get("aviso") if isinstance(valor.get("aviso"), str) else ""
-    return {"modo": modo, "fixo": str(valor.get("fixo") or ""), "porPeso": por, "aviso": aviso}
+    return {"modo": modo, "fixo": str(valor.get("fixo") or ""), "porPeso": por, "aviso": aviso,
+            "esforco": str(valor.get("esforco") or "")}
 
 
 def config_para_gravar(cfg: dict) -> dict:
@@ -597,6 +694,8 @@ def config_para_gravar(cfg: dict) -> dict:
         por[nivel] = item
     saida = {"modo": "fixo" if cfg.get("modo") == "fixo" else "auto",
              "fixo": cfg.get("fixo") or "", "porPeso": por}
+    if cfg.get("esforco"):
+        saida["esforco"] = cfg["esforco"]
     if cfg.get("aviso"):
         saida["aviso"] = cfg["aviso"]
     return saida
@@ -648,6 +747,7 @@ def atualizar_cache_lista(cache: dict, lane: str, modelos, agora: str = "") -> d
         "anteriores": dict((cache or {}).get("anteriores") or {}),
         "avisos": dict((cache or {}).get("avisos") or {}),
         "atualizado_em_por_lane": dict((cache or {}).get("atualizado_em_por_lane") or {}),
+        "esforcos": dict((cache or {}).get("esforcos") or {}),
     }
     if modelos:
         antiga = list(saida["listas"].get(lane) or [])
@@ -722,15 +822,32 @@ def _aviso_sumiu(lane: str, modelo: str, peso: str | None = None) -> str:
 AVISO_FIXO_VAZIO = "modo fixo sem modelo; a lane usa o automático"  # igual ao ModeloLane.avisoFixoVazio
 
 
+def _aviso_esforco(esforco: str, modelo: str, padrao: str) -> str:
+    return (f"o esforço {esforco} não vale para {modelo or 'o modelo padrão'}; "
+            f"usei o padrão{f' ({padrao})' if padrao else ''}")
+
+
+def _aviso_esforco_padrao(esforco: str, modelo: str) -> str:
+    return f"o esforço padrão {esforco} não vale para {modelo or 'o modelo padrão'}; o CLI usa o dele"
+
+
+def _esforco_valido(lane: str, modelo: str, esforco: str, cache: dict | None) -> bool:
+    aceitos = esforcos_aceitos(lane, modelo, cache)
+    return bool(aceitos) and esforco in aceitos
+
+
 def resolver_modelo(lane: str, effort: str, bruto, cache: dict | None = None) -> dict:
-    """Modelo, esforço, flags e aviso para este peso. Modelo sumido não é usado."""
-    cfg = normalizar_config_modelo(bruto) if bruto is not None else {
-        "modo": "auto", "fixo": "", "porPeso": {}, "aviso": ""}
+    """Modelo, esforço, flags e aviso para este peso. Modelo sumido não é usado.
+
+    Esforço (PRD de 29/10): o escolhido na tela vale mesmo com o modelo no padrão; no Fixo,
+    um esforço só vale para os três pesos. Vazio = o padrão do peso. Esforço que o modelo
+    não aceita (ou lane sem esforço) cai no padrão, com aviso: flag inválida nunca vai ao CLI."""
+    cfg = normalizar_config_modelo(bruto) if bruto is not None else normalizar_config_modelo(None)
     cache = cache or {}
     padrao = padrao_por_peso(lane).get(effort) or {"modelo": "", "esforco": ""}
     aviso = ""
     modo = cfg["modo"]
-    explicito = False
+    pedido = ""
     if modo == "fixo" and not cfg["fixo"]:
         # FRA-564: «Fixo» sem modelo roda no automático; o aviso deixa isso visível.
         aviso = AVISO_FIXO_VAZIO
@@ -740,30 +857,35 @@ def resolver_modelo(lane: str, effort: str, bruto, cache: dict | None = None) ->
             aviso = _aviso_sumiu(lane, cfg["fixo"])
         else:
             modelo = com_prefixo_modelo(lane, cfg["fixo"])
-            flags = montar_flags(lane, effort, modelo, padrao["esforco"], False)
-            return {"modelo": modelo, "esforco": padrao["esforco"], "esforco_explicito": False,
-                    "modo": "fixo", "aviso": "modelo fixo", "flags": flags}
-    bloco = (cfg["porPeso"] or {}).get(effort) or {}
-    modelo_cfg = (bloco.get("modelo") or "") if isinstance(bloco, dict) else ""
-    if modelo_cfg and modelo_sumiu(modelo_cfg, lane, cache):
+            pedido = cfg.get("esforco") or ""
+            aviso = "modelo fixo"
+    if modo != "fixo" or not cfg["fixo"] or aviso != "modelo fixo":
+        modo = "auto"
+        bloco = (cfg["porPeso"] or {}).get(effort) or {}
+        modelo_cfg = (bloco.get("modelo") or "") if isinstance(bloco, dict) else ""
+        if modelo_cfg and modelo_sumiu(modelo_cfg, lane, cache):
+            if not aviso:
+                aviso = _aviso_sumiu(lane, modelo_cfg, effort)
+            modelo_cfg = ""
+        modelo = com_prefixo_modelo(lane, modelo_cfg) if modelo_cfg else padrao["modelo"]
+        pedido = (bloco.get("esforco") or "") if isinstance(bloco, dict) else ""
         if not aviso:
-            aviso = _aviso_sumiu(lane, modelo_cfg, effort)
-        modelo_cfg = ""
-    if modelo_cfg:
-        modelo = com_prefixo_modelo(lane, modelo_cfg)
-        if isinstance(bloco, dict) and bloco.get("esforco") is not None:
-            esforco = bloco.get("esforco") or ""
-            explicito = True
+            aviso = cfg.get("aviso") or ""
+    esforco, explicito = padrao["esforco"], False
+    if pedido:
+        if _esforco_valido(lane, modelo, pedido, cache):
+            esforco, explicito = pedido, True
         else:
-            esforco = padrao["esforco"]
-    else:
-        modelo = padrao["modelo"]
-        esforco = padrao["esforco"]
-    if not aviso:
-        aviso = cfg.get("aviso") or ""
+            aviso = _aviso_esforco(pedido, modelo, padrao["esforco"])
+    if not explicito and esforco:
+        aceitos = esforcos_aceitos(lane, modelo, cache)
+        if aceitos and esforco not in aceitos:
+            # O padrão do peso também não vai ao CLI se o modelo não o aceita (revisão do PR #17).
+            aviso = _aviso_esforco_padrao(esforco, modelo)
+            esforco, explicito = "", True
     flags = montar_flags(lane, effort, modelo, esforco, explicito)
     return {"modelo": modelo, "esforco": esforco, "esforco_explicito": explicito,
-            "modo": "auto", "aviso": aviso, "flags": flags}
+            "modo": modo, "aviso": aviso, "flags": flags}
 
 
 def modelo_efetivo(lane: str, effort: str, arquivos=None, cache: dict | None = None) -> str:

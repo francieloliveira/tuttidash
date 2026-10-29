@@ -24,11 +24,14 @@ public enum CatalogoAgentes {
             public var modeloPadrao: String
             public var esforcos: [String]
             public var esforcoPadrao: String
+            /// `flag_esforco` do manifesto: vazio = o CLI não recebe esforço (mesmo critério do Python).
+            public var flagEsforco: [String]
 
             public init(papel: String, auto: Bool, modelos: [String], modeloPadrao: String,
-                        esforcos: [String], esforcoPadrao: String) {
+                        esforcos: [String], esforcoPadrao: String, flagEsforco: [String] = []) {
                 self.papel = papel; self.auto = auto; self.modelos = modelos
                 self.modeloPadrao = modeloPadrao; self.esforcos = esforcos; self.esforcoPadrao = esforcoPadrao
+                self.flagEsforco = flagEsforco
             }
         }
 
@@ -264,6 +267,7 @@ public enum CatalogoAgentes {
                      modelos: modelos,
                      modeloPadrao: padraoModelo.isEmpty ? (modelos.first ?? "padrao") : padraoModelo,
                      esforcos: esforcos,
-                     esforcoPadrao: padraoEsforco.isEmpty ? (esforcos.first ?? "") : padraoEsforco)
+                     esforcoPadrao: padraoEsforco.isEmpty ? (esforcos.first ?? "") : padraoEsforco,
+                     flagEsforco: (r["flag_esforco"] as? [String]) ?? [])
     }
 }
