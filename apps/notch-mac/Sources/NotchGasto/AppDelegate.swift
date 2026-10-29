@@ -38,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var entradaPainel = EntradaPainel.vazia
     private var execucoesPainel: [Execucao] = []
     private var ordinaisPainel: [String: Int] = [:]
+    /// Dados e hora do último `MontadorPainel.montar` (FRA-582): com os mesmos dados, não remonta.
+    private var ultimaMontagem: (dados: DadosPainel, em: Date)?
     /// `--foto <arquivo.png>`: depois da primeira leitura, desenha a própria janela num PNG
     /// (conferência de layout sem precisar de permissão de gravação de tela) e segue rodando.
     private var caminhoFoto: URL?
@@ -200,9 +202,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if self.modelo.usos != usos { self.modelo.usos = usos }
                 self.atualizarMenuUso(usos)
                 if tinhaAlerta != (self.modelo.alertaUso != nil) { self.controlador?.pilulaMudou() }
-                self.publicarPainel()
+                let snapshotMudou = self.publicarPainel()
                 self.atualizarMenuLanes()
-                self.controlador?.painelMudou()
+                if snapshotMudou { self.controlador?.painelMudou() }
             }
         }
     }
@@ -257,14 +259,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.entradaPainel = leitura.entrada
                 self.execucoesPainel = res.execucoes
                 self.ordinaisPainel = res.ordinais
-                self.publicarPainel()
+                let snapshotMudou = self.publicarPainel()
                 self.atualizarMenuLanes()
                 self.atualizarMenuRetomar(res.retomadas)
                 self.modelo.atualizadoEm = Date()
                 self.atualizarMenu(resumo)
                 self.fotografarSePedido()
                 // a altura do painel pode mudar com os dados
-                Task { @MainActor [weak self] in self?.controlador?.painelMudou() }
+                if snapshotMudou {
+                    Task { @MainActor [weak self] in self?.controlador?.painelMudou() }
+                }
                 if releitura { self.atualizar(forcar: forcarDeNovo, mostrarIndicador: comIndicador) }
             }
         }
@@ -428,11 +432,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Remonta o retrato com a última leitura e o uso das contas. Não grava estado.
-    private func publicarPainel() {
-        let snap = MontadorPainel.montar(entrada: entradaPainel, execucoes: execucoesPainel, usos: modelo.usos,
-                                        taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
-        if modelo.snapshot != snap { modelo.snapshot = snap }
+    /// FRA-582: com os mesmos dados e dentro de `PoliticaAtualizacao.validadePainel`, o snapshot
+    /// publicado continua valendo e o montador não roda. Devolve `true` só quando o snapshot mudou.
+    private func publicarPainel() -> Bool {
+        let dados = DadosPainel(entrada: entradaPainel, execucoes: execucoesPainel, usos: modelo.usos,
+                                taxaUsdBrl: modelo.config.taxaUsdBrl, ordinais: ordinaisPainel)
+        let agora = Date()
+        if let ultima = ultimaMontagem, ultima.dados == dados,
+           PoliticaAtualizacao.painelVale(montadoEm: ultima.em, agora: agora) {
+            return false
+        }
+        let snap = MontadorPainel.montar(entrada: dados.entrada, execucoes: dados.execucoes, usos: dados.usos,
+                                        agora: agora, taxaUsdBrl: dados.taxaUsdBrl, ordinais: dados.ordinais)
+        ultimaMontagem = (dados, agora)
+        let mudou = modelo.snapshot != snap
+        if mudou { modelo.snapshot = snap }
         if modelo.laneEmFoco == nil { modelo.laneEmFoco = snap.laneSugerida }
+        return mudou
     }
 
     /// Desativa a lane pelo `lanes_ctl.py`. Não escreve `enabled` e não cria PAUSE.
@@ -578,4 +594,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NavegacaoPainel.compartilhada.abrirAjustes()
         JanelaPainel.compartilhada.mostrar(modelo: modelo)
     }
+}
+
+/// Tudo o que `MontadorPainel.montar` recebe, menos o relógio (FRA-582).
+private struct DadosPainel: Equatable {
+    var entrada: EntradaPainel
+    var execucoes: [Execucao]
+    var usos: [UsoConta]
+    var taxaUsdBrl: Double?
+    var ordinais: [String: Int]
 }

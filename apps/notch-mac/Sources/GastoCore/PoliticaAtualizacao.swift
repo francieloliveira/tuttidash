@@ -5,6 +5,9 @@ import Foundation
 public struct PoliticaAtualizacao: Equatable, Sendable {
     /// Menor intervalo aceito para qualquer timer (evita polling agressivo).
     public static let intervaloMinimo: TimeInterval = 1
+    /// FRA-582: com os mesmos dados, o painel reaproveita o último snapshot até este prazo.
+    /// Depois remonta assim mesmo: batimento parado, "há X min" e o custo de hoje dependem do relógio.
+    public static let validadePainel: TimeInterval = 60
 
     /// Polling dos dados quando o FSEvents não sobe; com ele, a espera mínima entre leituras
     /// puxadas por logs e ledger (crescem a cada linha: não relê mais que o polling antigo).
@@ -52,6 +55,12 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
 
     /// A animação do ponto pulsando só roda com o painel expandido e visível.
     public func animarPonto(expandido: Bool) -> Bool { expandido }
+
+    /// FRA-582: o snapshot montado em `montadoEm`, com os mesmos dados, ainda vale em `agora`?
+    /// Relógio que voltou (agora antes de `montadoEm`) não vale: remonta.
+    public static func painelVale(montadoEm: Date, agora: Date) -> Bool {
+        (0..<validadePainel).contains(agora.timeIntervalSince(montadoEm))
+    }
 
     /// Dados antigos ao abrir o painel: nunca lidos ou lidos há `idadeAntiga` ou mais.
     /// Só aí a abertura relê com «atualizando…»; a leitura do timer não mostra indicador (FRA-583).
