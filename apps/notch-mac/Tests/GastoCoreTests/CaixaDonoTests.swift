@@ -66,7 +66,20 @@ final class CaixaDonoTests: XCTestCase {
         XCTAssertThrowsError(try CaixaDono.mutacoes(.liberar, item: item, ids: IdsCaixa()))
     }
 
-    func testExecutarParaNoPrimeiroErro() async throws {
+    func testOQueAconteceNuncaOmiteOEfeito() {
+        let vr: (String, String) -> String? = { lane, peso in "\(lane)-modelo · \(peso)" }
+        let b = CaixaDono.consequencia(.opcao(item.opcoes[1], comentario: ""), item: item, vaiRodar: vr)
+        XCTAssertTrue(b.contains("de alto para médio"), b)
+        XCTAssertTrue(b.contains("lane claude, que vai rodar em claude-modelo · medio"), b)
+        let c = CaixaDono.consequencia(.opcao(item.opcoes[2], comentario: ""), item: item, vaiRodar: vr)
+        XCTAssertTrue(c.contains("da lane claude para a lane codex") && c.contains("codex-modelo · alto"), c)
+        let a = CaixaDono.consequencia(.opcao(item.opcoes[0], comentario: ""), item: item)
+        XCTAssertTrue(a.contains("Comenta a sua decisão") && a.contains("sai da sua caixa") && a.contains("lane claude"), a)
+        XCTAssertTrue(CaixaDono.consequencia(.cancelar, item: item).contains("não são apagados"))
+        XCTAssertTrue(CaixaDono.consequencia(.responder("x", liberar: false), item: item).contains("continua esperando"))
+    }
+
+        func testExecutarParaNoPrimeiroErro() async throws {
         final class Falso: ClienteLinear, @unchecked Sendable {
             var feitas: [String] = []
             let falhaEm: Int

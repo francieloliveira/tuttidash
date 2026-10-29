@@ -22,7 +22,15 @@ PENDENCIA: <uma frase: o que o dono precisa decidir>
 OPCOES: A) <decisão> | B) <decisão> | C) <decisão>   (de 1 a 3; cada uma pode terminar com UMA ação entre
 colchetes, só destas: [esforco=baixo] [esforco=medio] [esforco=alto] [lane=<nome da lane>] [cancelar]; sem ação,
 a decisão vira só comentário. Nunca ofereça "manter", "esperar" ou "aguardar": não responder já é manter.)
-RECOMENDA: <a letra> — <por quê, em poucas palavras>
+RECOMENDA: <a letra> — <por quê, em uma frase>
+Regras de escrita dessas três linhas (o dono lê no app, sem abrir o card; vale SEMPRE):
+- Português simples, frases completas, sem jargão: nada de códigos de erro (E13), nomes de etiqueta
+  (needs:dono, lane:falhou), ids ou siglas sem dizer o que são. Diga a coisa pelo nome ("a lane parou porque…").
+- NUNCA omita detalhe que muda a decisão: o que já foi feito, o que está parado e por quê, quanto custa ou
+  quanto tempo leva quando souber (esforço alto, modelo, rodadas que já falharam), e o que se perde ou não
+  se perde (trabalho na branch, PR aberto).
+- Cada decisão diz o que acontece depois dela, numa frase ("Liberar: a lane roda o card de novo com o
+  esforço alto"). Se não souber um detalhe, diga que não sabe em vez de inventar.
 Na ÚLTIMA linha, exatamente uma destas:
 DECISAO: remover_needs      (a pendência não existe mais)
 DECISAO: manter

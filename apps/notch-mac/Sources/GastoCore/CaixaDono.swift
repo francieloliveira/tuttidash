@@ -207,6 +207,52 @@ public enum CaixaDono {
         }
     }
 
+    // MARK: O que acontece (texto do app, não do modelo: nunca omite o que a ação faz)
+
+    static func rotuloEsforco(_ e: String) -> String {
+        switch e { case "medio": return "médio"; case "": return "sem esforço definido"; default: return e }
+    }
+
+    /// Frase simples com tudo o que a decisão faz. `vaiRodar(lane, peso)` devolve «opus · high»,
+    /// ou nil quando não dá para saber.
+    public static func consequencia(_ decisao: Decisao, item: ItemCaixa,
+                                    vaiRodar: (String, String) -> String? = { _, _ in nil }) -> String {
+        func fila(lane: String, peso: String) -> String {
+            guard !lane.isEmpty else { return "Ele volta para a fila das lanes." }
+            if let vr = vaiRodar(lane, peso.isEmpty ? "medio" : peso) {
+                return "Ele volta para a fila da lane \(lane), que vai rodar em \(vr)."
+            }
+            return "Ele volta para a fila da lane \(lane)."
+        }
+        let libera = "O card sai da sua caixa."
+        switch decisao {
+        case let .opcao(op, _):
+            switch op.acao?.tipo {
+            case .esforco?:
+                let novo = op.acao?.valor ?? ""
+                return "Troca o esforço do card de \(rotuloEsforco(item.esforco)) para \(rotuloEsforco(novo)), "
+                    + "comenta a sua decisão no card e tira o card da sua caixa. " + fila(lane: item.lane, peso: novo)
+            case .lane?:
+                let nova = op.acao?.valor ?? ""
+                let de = item.lane.isEmpty ? "" : " da lane \(item.lane)"
+                return "Passa o card\(de) para a lane \(nova), comenta a sua decisão e tira o card da sua caixa. "
+                    + fila(lane: nova, peso: item.esforco)
+            case .cancelar?:
+                return consequencia(.cancelar, item: item, vaiRodar: vaiRodar)
+            case nil:
+                return "Comenta a sua decisão no card. \(libera) " + fila(lane: item.lane, peso: item.esforco)
+            }
+        case let .responder(_, solta):
+            return solta ? "Comenta o seu texto no card. \(libera) " + fila(lane: item.lane, peso: item.esforco)
+                         : "Só comenta o seu texto no card. Ele continua esperando por você."
+        case .liberar:
+            return "\(libera) Nada é comentado. " + fila(lane: item.lane, peso: item.esforco)
+        case .cancelar:
+            return "Move o card para Canceled e comenta isso nele. No próximo ciclo o vigia tira as etiquetas que "
+                + "seguram o card e as instruções de retomada. O worktree e a branch do card não são apagados."
+        }
+    }
+
     /// Texto como literal de string do GraphQL (o JSON escapa do mesmo jeito).
     static func lit(_ s: String) -> String {
         guard let d = try? JSONSerialization.data(withJSONObject: [s]), let t = String(data: d, encoding: .utf8),
