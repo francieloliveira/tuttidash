@@ -15,17 +15,21 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
     public var intervaloEstado: TimeInterval
     /// Releitura com o observador ativo: virada de dia e semana, limites que vencem, evento perdido.
     public var intervaloReserva: TimeInterval
+    /// Idade máxima de uma leitura do disco reaproveitada (FRA-580): mesmo sem arquivo
+    /// mudado, o ciclo relê tudo depois disso (janela de dias das retomadas, relógio torto).
+    public var idadeMaximaLeitura: TimeInterval
     /// Abrir o painel relê os dados quando a última leitura tem pelo menos esta idade (FRA-583).
     public var idadeAntiga: TimeInterval = 5
 
     public init(intervaloDados: TimeInterval = 30, intervaloUso: TimeInterval = 120,
                 intervaloReservaMouse: TimeInterval = 1, intervaloEstado: TimeInterval = 2,
-                intervaloReserva: TimeInterval = 300) {
+                intervaloReserva: TimeInterval = 300, idadeMaximaLeitura: TimeInterval = 300) {
         self.intervaloDados = max(intervaloDados, Self.intervaloMinimo)
         self.intervaloUso = max(intervaloUso, Self.intervaloMinimo)
         self.intervaloReservaMouse = max(intervaloReservaMouse, Self.intervaloMinimo)
         self.intervaloEstado = max(intervaloEstado, Self.intervaloMinimo)
         self.intervaloReserva = max(intervaloReserva, Self.intervaloMinimo)
+        self.idadeMaximaLeitura = max(idadeMaximaLeitura, Self.intervaloMinimo)
     }
 
     public static let padrao = PoliticaAtualizacao()

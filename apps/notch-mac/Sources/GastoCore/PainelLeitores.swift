@@ -262,9 +262,12 @@ public enum LeitorPainelDisco {
         let estado = EstadoLanes.ler(pasta: pasta)
         var titulos: [String: String] = [:]
         var provas: [ProvaBruta] = []
+        var pastasLane: [URL] = []
         for lane in estado.lanes {
             if let titulo = lane.titulo, !titulo.isEmpty { titulos[lane.card] = titulo }
-            if let bruta = provaDaLane(lane, pasta: pasta, agora: agora) { provas.append(bruta) }
+            guard let base = pastaLane(lane, pasta: pasta) else { continue }
+            pastasLane.append(base)
+            if let bruta = provaDaLane(lane, base: base, agora: agora) { provas.append(bruta) }
         }
         // Mesclar com o cache de títulos do dispatcher (FRA-563)
         let cacheTitulos = LeitorTitulosCache.ler(pasta: pasta)
@@ -303,14 +306,19 @@ public enum LeitorPainelDisco {
             medidas: medidas, planos: planos, strikes: strikes, decisao: decisao,
             provas: provas, simulador: simulador.flatMap { $0.isEmpty ? nil : $0 },
             instalacoes: instalacoes, limitesAte: limites, logTexto: logTexto,
-            fechamentos: fechamentos, textoModelo: modelos.texto, avisoModelo: modelos.aviso)
+            fechamentos: fechamentos, textoModelo: modelos.texto, avisoModelo: modelos.aviso,
+            pastasLane: pastasLane)
     }
 
-    static func provaDaLane(_ lane: EstadoLanes.LaneRodando, pasta: URL, agora: Date) -> ProvaBruta? {
+    /// Pasta `.lane` do worktree da lane (`worktree` no `lane-<lane>.json`).
+    static func pastaLane(_ lane: EstadoLanes.LaneRodando, pasta: URL) -> URL? {
         guard let dados = lerJSON(pasta.appendingPathComponent("lane-\(lane.lane).json")),
               let obj = (try? JSONSerialization.jsonObject(with: dados)) as? [String: Any],
               let worktree = JV.texto(obj["worktree"]) else { return nil }
-        let base = URL(fileURLWithPath: worktree).appendingPathComponent(".lane")
+        return URL(fileURLWithPath: worktree).appendingPathComponent(".lane")
+    }
+
+    static func provaDaLane(_ lane: EstadoLanes.LaneRodando, base: URL, agora: Date) -> ProvaBruta? {
         let fm = FileManager.default
         let finalizado = fm.fileExists(atPath: base.appendingPathComponent("finalized").path)
         let agenteSaiu = fm.fileExists(atPath: base.appendingPathComponent("exit_code").path)
