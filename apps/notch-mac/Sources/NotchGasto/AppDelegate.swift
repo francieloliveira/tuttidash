@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coletorUso = ColetorUso()
     private var timerUso: Timer?
     private var coletandoUso = false
+    private var observador: ObservadorArquivos?
     /// Última leitura do disco das lanes, para remontar o painel quando o uso das contas chega.
     private var entradaPainel = EntradaPainel.vazia
     private var execucoesPainel: [Execucao] = []
@@ -140,11 +141,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Primeira leitura: sem dado ainda conta como antigo. Com `--painel` a abertura já leu.
         atualizarSeAntigo()
-        // FRA-583: o timer relê em silêncio; o selo mostra a idade da leitura.
-        timer = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloDados, repeats: true) { [weak self] _ in
+        // FRA-581: as leituras vêm do observador de arquivos (sem FSEvents, ele mesmo faz o polling).
+        // Este timer só pega virada de dia/semana, limites que vencem e evento perdido.
+        // FRA-583: observador e timer releem em silêncio; o selo mostra a idade da leitura.
+        atualizarObservador(config: modelo.config)
+        timer = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloReserva, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.atualizar() }
         }
-        timer?.tolerance = 5
+        timer?.tolerance = 30
 
         atualizarUso(mostrarIndicador: true)
         timerUso = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloUso, repeats: true) { [weak self] _ in
@@ -246,6 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     CentralAvisos.compartilhada.ok(String(localized: "Dados atualizados"))
                 }
                 if self.modelo.config != cfg { self.modelo.config = cfg }
+                self.atualizarObservador(config: cfg)
                 if self.modelo.ledgerExiste != res.ledgerExiste { self.modelo.ledgerExiste = res.ledgerExiste }
                 if self.modelo.logsDirExiste != res.logsDirExiste { self.modelo.logsDirExiste = res.logsDirExiste }
                 if self.modelo.resumo != resumo { self.modelo.resumo = resumo }
@@ -267,6 +272,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if releitura { self.atualizar(forcar: forcarDeNovo, mostrarIndicador: comIndicador) }
             }
         }
+    }
+
+    /// Monta o observador com os caminhos da config; refaz só quando eles mudam (FRA-581).
+    private func atualizarObservador(config: Configuracao) {
+        let caminhos = modelo.politica.caminhosObservados(config)
+        if observador?.caminhos == caminhos { return }
+        observador?.parar()
+        let obs = ObservadorArquivos(caminhos: caminhos, fallback: modelo.politica.intervaloDados) { [weak self] in
+            Task { @MainActor in self?.atualizar() }
+        }
+        obs.iniciar()
+        observador = obs
     }
 
     private func fotografarSePedido() {
