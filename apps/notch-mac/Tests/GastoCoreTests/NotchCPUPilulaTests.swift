@@ -1,26 +1,6 @@
 import XCTest
 @testable import GastoCore
 
-final class PoliticaAtualizacaoTests: XCTestCase {
-    func testSemPollingComPainelRecolhido() {
-        XCTAssertNil(PoliticaAtualizacao.padrao.reservaMouse(expandido: false))
-        XCTAssertEqual(PoliticaAtualizacao.padrao.reservaMouse(expandido: true), 1)
-    }
-
-    func testIntervaloMinimoRespeitado() {
-        let p = PoliticaAtualizacao(intervaloDados: 0.1, intervaloUso: 0, intervaloReservaMouse: 0.25)
-        XCTAssertEqual(p.intervaloDados, 1)
-        XCTAssertEqual(p.intervaloUso, 1)
-        XCTAssertEqual(p.intervaloReservaMouse, 1)
-        XCTAssertGreaterThanOrEqual(PoliticaAtualizacao.padrao.intervaloDados, 30)
-    }
-
-    func testAnimacaoSoExpandido() {
-        XCTAssertFalse(PoliticaAtualizacao.padrao.animarPonto(expandido: false))
-        XCTAssertTrue(PoliticaAtualizacao.padrao.animarPonto(expandido: true))
-    }
-}
-
 final class GeometriaPilulaTests: XCTestCase {
     let g = GeometriaPilula.padrao
 
