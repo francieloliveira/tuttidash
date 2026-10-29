@@ -116,6 +116,10 @@ struct PilulaBarra: View {
                 .resizable().scaledToFit()
                 .frame(width: 13, height: 13)
                 .foregroundStyle(.white)
+                .overlay(alignment: .topTrailing) {
+                    // Build de teste (alpha): ponto laranja no ícone da barra de menus.
+                    if VersaoApp.atual.alpha { Circle().fill(PV.ambar).frame(width: 5, height: 5).offset(x: 2, y: -2) }
+                }
             if r.compacto {
                 Text(r.itens.isEmpty && modelo.snapshot != nil ? "0" : "\(r.rodando)")
                     .font(.system(size: 11, weight: .semibold).monospacedDigit())
@@ -151,6 +155,7 @@ struct PainelBarra: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            SeloVersao(compacto: true)
             HStack(spacing: 8) {
                 CirculoEstado(geral: modelo.snapshot?.geral, pulsar: false)
                 Text(modelo.snapshot?.rotuloGeral ?? "Lendo")

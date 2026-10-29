@@ -22,7 +22,7 @@ final class JanelaPainel: NSObject, NSWindowDelegate {
             let host = NSHostingController(rootView: PainelTela(modelo: modelo))
             host.sizingOptions = [.minSize]
             let w = NSWindow(contentViewController: host)
-            w.title = "TuttiDash"
+            w.title = "TuttiDash · \(VersaoApp.atual.texto)"
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             w.titlebarAppearsTransparent = true
             w.appearance = NSAppearance(named: .darkAqua)
