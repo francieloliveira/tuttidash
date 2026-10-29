@@ -1482,6 +1482,22 @@ class JuntaMainAntesDaRodada(unittest.TestCase):
         self.assertIn("Rodada de conflito", nota)
         self.assertIn("<<<<<<<", (self.wt / "card.txt").read_text(encoding="utf-8"))
 
+    def test_merge_pela_metade_nao_comeca_outro(self):
+        self._main_anda("card.txt", "da main\n")
+        d.juntar_main(self.wt)                      # deixa o conflito marcado
+        self._main_anda("c.txt", "c\n")             # a main anda de novo
+        linha, nota = d.juntar_main(self.wt)
+        self.assertIn("pela metade", linha)
+        self.assertIn("card.txt", linha)
+        self.assertIn("Rodada de conflito", nota)
+        self.assertFalse((self.wt / "c.txt").exists())
+
+    def test_excecao_nao_derruba_o_claim(self):
+        with mock.patch.object(d, "_juntar_main", side_effect=subprocess.TimeoutExpired("git", 180)):
+            linha, nota = d.juntar_main(self.wt)
+        self.assertIn("TimeoutExpired", linha)
+        self.assertEqual(nota, "")
+
     def test_fetch_falho_segue_a_rodada(self):
         self._git(self.wt, "remote", "set-url", "origin", str(self.origem) + "-nao-existe")
         head = self._git(self.wt, "rev-parse", "HEAD")

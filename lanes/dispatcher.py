@@ -966,11 +966,34 @@ def juntar_main(wt: Path) -> tuple[str, str]:
     que roda o que está na branch (FRA-581 parou 2x assim). Merge, nunca rebase: a
     branch pode já estar no GitHub. Devolve (linha para o comentário de claim, nota
     para o prompt da lane); ("", "") quando a branch já tem a main."""
+    try:
+        return _juntar_main(wt)
+    except Exception as exc:  # noqa: BLE001 — juntar a main nunca pode travar a fila
+        return f"- main não entrou ({type(exc).__name__}: {str(exc)[:120]}); a rodada segue com a branch como está\n", ""
+
+
+def _nota_conflito(main: str, lista: str) -> str:
+    return ("\n\n## Rodada de conflito (escrito pelo dispatcher)\n\n"
+            f"O `git merge origin/main` ({main}) neste worktree deu conflito em {lista} e o merge "
+            "ainda não foi concluído.\n\n"
+            "- Primeiro: resolva os marcadores mantendo o que a `main` trouxe e o que este card fez, "
+            "`git add` dos arquivos e `git commit --no-edit`.\n"
+            "- Depois siga o card normalmente.\n")
+
+
+def _juntar_main(wt: Path) -> tuple[str, str]:
     env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
 
     def git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["git", *args], cwd=wt, capture_output=True, text=True, env=env, timeout=180)
 
+    # Merge pela metade (rodada anterior ou `rebase_dirty` do vigia): não começa outro;
+    # a lane conclui o que já está marcado.
+    if git("rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0:
+        pendentes = git("diff", "--name-only", "--diff-filter=U").stdout.split()
+        lista = ", ".join(pendentes[:8]) or "nenhum arquivo marcado (falta só o commit)"
+        main = git("rev-parse", "--short", "MERGE_HEAD").stdout.strip()
+        return f"- merge da main pela metade no worktree ({lista}); a lane conclui nesta rodada\n", _nota_conflito(main, lista)
     if git("fetch", "-q", "origin", "main").returncode != 0:
         return "- main não buscada (fetch falhou); a rodada segue com a branch como está\n", ""
     if git("merge-base", "--is-ancestor", "origin/main", "HEAD").returncode == 0:
@@ -994,13 +1017,7 @@ def juntar_main(wt: Path) -> tuple[str, str]:
         erro = (out.stderr or out.stdout).strip().splitlines()[-1:] or ["?"]
         return f"- main não entrou: o merge falhou ({erro[0][:160]}); a branch ficou como estava\n", ""
     lista = ", ".join(conflitos[:8])
-    return (f"- main juntada com conflito em {lista}; a lane resolve nesta rodada\n",
-            "\n\n## Rodada de conflito (escrito pelo dispatcher)\n\n"
-            f"O dispatcher rodou `git merge origin/main` ({main}) neste worktree antes de você começar e "
-            f"deu conflito em {lista}.\n\n"
-            "- Primeiro: resolva os marcadores mantendo o que a `main` trouxe e o que este card fez, "
-            "`git add` dos arquivos e `git commit --no-edit`.\n"
-            "- Depois siga o card normalmente.\n")
+    return f"- main juntada com conflito em {lista}; a lane resolve nesta rodada\n", _nota_conflito(main, lista)
 
 
 def limit_text(lane: str, effort: str) -> str:
