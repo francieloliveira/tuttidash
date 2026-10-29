@@ -42,6 +42,10 @@ class VersaoDoBuild(unittest.TestCase):
         (self.wt / "a.txt").write_text("mexido\n")
         self.assertEqual(self.versao(), f"alpha branch-main-{self.sha}-sujo")
 
+    def test_arquivo_novo_nao_rastreado_e_alpha(self):
+        (self.wt / "Novo.swift").write_text("// entra no build\n")
+        self.assertEqual(self.versao(), f"alpha branch-main-{self.sha}-sujo")
+
     def test_branch_e_alpha_sem_o_prefixo(self):
         git(self.wt, "checkout", "-q", "-b", "dono/caixa-do-dono")
         (self.wt / "b.txt").write_text("b\n")

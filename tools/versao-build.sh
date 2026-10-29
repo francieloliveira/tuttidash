@@ -9,7 +9,7 @@ set -u
 d="${1:-.}"
 sha=$(git -C "$d" rev-parse --short=7 HEAD 2>/dev/null) || { echo "alpha dev"; exit 0; }
 main=$(git -C "$d" rev-parse --short=7 origin/main 2>/dev/null || true)
-sujo=$(git -C "$d" status --porcelain --untracked-files=no 2>/dev/null | grep -v '\.lane/' | head -1 || true)
+sujo=$(git -C "$d" status --porcelain 2>/dev/null | grep -v '\.lane/' | head -1 || true)
 if [ -n "$main" ] && [ "$sha" = "$main" ] && [ -z "$sujo" ]; then
   echo "main main-$sha"
   exit 0
