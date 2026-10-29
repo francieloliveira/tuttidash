@@ -9,12 +9,16 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
     public var intervaloDados: TimeInterval
     public var intervaloUso: TimeInterval
     public var intervaloReservaMouse: TimeInterval
+    /// Idade máxima de uma leitura do disco reaproveitada (FRA-580): mesmo sem arquivo
+    /// mudado, o ciclo relê tudo depois disso (janela de dias das retomadas, relógio torto).
+    public var idadeMaximaLeitura: TimeInterval
 
     public init(intervaloDados: TimeInterval = 30, intervaloUso: TimeInterval = 120,
-                intervaloReservaMouse: TimeInterval = 1) {
+                intervaloReservaMouse: TimeInterval = 1, idadeMaximaLeitura: TimeInterval = 300) {
         self.intervaloDados = max(intervaloDados, Self.intervaloMinimo)
         self.intervaloUso = max(intervaloUso, Self.intervaloMinimo)
         self.intervaloReservaMouse = max(intervaloReservaMouse, Self.intervaloMinimo)
+        self.idadeMaximaLeitura = max(idadeMaximaLeitura, Self.intervaloMinimo)
     }
 
     public static let padrao = PoliticaAtualizacao()

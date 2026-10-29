@@ -404,14 +404,9 @@ public struct EntradaPainel: Equatable, Sendable {
     public var textoModelo: [String: String] = [:]
     /// Aviso de modelo fixo ou de modelo que saiu da lista.
     public var avisoModelo: [String: String] = [:]
-    /// FRA-580: indica se a leitura do disco foi pulada.
-    public var pulouLeitura: Bool = false
-    public var leituraPulada: Bool = false
-    public var pulou: Bool = false
-    public var skipRead: Bool = false
-    public var skipped: Bool = false
-    public var leuDoDisco: Bool = true
-    public var ultimaModificacao: Date? = nil
+    /// Pastas `.lane` dos worktrees das lanes rodando (a prova mora lá). Entram no carimbo
+    /// da próxima leitura (FRA-580).
+    public var pastasLane: [URL] = []
 
     public static let vazia = EntradaPainel(
         heartbeat: nil, rodando: [], titulos: [:], habilitadas: nil, desligadasPeloUsuario: [],

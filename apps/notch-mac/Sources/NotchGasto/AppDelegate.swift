@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import GastoCore
+import os
 
 /// App de barra de menus. Arranca como accessory (só a pílula). Com o painel aberto,
 /// JanelaPainel pede .regular (Dock e Cmd-Tab) e volta a .accessory ao fechar (FRA-553).
@@ -9,6 +10,8 @@ import GastoCore
 /// O botão desativar do notch só chama `lanes_ctl.py disable` e não cria `PAUSE`.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// `log stream --level debug --predicate 'subsystem == "app.tuttidash.mac"'` mostra os ciclos sem leitura.
+    private static let log = Logger(subsystem: "app.tuttidash.mac", category: "leitura")
     private let modelo = ModeloNotch()
     private var controlador: ControladorNotch?
     private var barra: ControladorBarra?
@@ -21,14 +24,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var carregando = false
     /// Toggle de lane no meio de uma leitura: a leitura em curso ainda não viu o arquivo novo.
     private var leituraPendente = false
+    /// A leitura pendente veio de um pedido forçado («Atualizar agora», Ajustes).
+    private var forcarPendente = false
+    /// Última leitura completa do disco; o ciclo a reaproveita enquanto nada muda (FRA-580).
+    private var leituraDisco: LeituraDisco?
     private let coletorUso = ColetorUso()
     private var timerUso: Timer?
     private var coletandoUso = false
     /// Última leitura do disco das lanes, para remontar o painel quando o uso das contas chega.
     private var entradaPainel = EntradaPainel.vazia
-    /// FRA-580: carimbo da última modificação dos arquivos relevantes.
-    private var ultimaModificacaoArquivos: Date? = nil
-    private var forcarProximaLeitura: Bool = false
     private var execucoesPainel: [Execucao] = []
     private var ordinaisPainel: [String: Int] = [:]
     /// `--foto <arquivo.png>`: depois da primeira leitura, desenha a própria janela num PNG
@@ -58,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } }
         if PrimeiraAbertura.precisa() {
-            JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(); self?.atualizarUso() }
+            JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(forcar: true); self?.atualizarUso() }
         }
         let args = ProcessInfo.processInfo.arguments
         let fixo = args.contains("--expandido") || ProcessInfo.processInfo.environment["NOTCH_GASTO_EXPANDIDO"] == "1"
@@ -94,7 +98,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modelo.atualizarAgora = { [weak self] in
             guard let self else { return }
             self.avisarAoAtualizar = true
-            self.forcarProximaLeitura = true
             self.atualizar(forcar: true); self.atualizarUso()
         }
         modelo.abrirPainel = { [weak self] in
@@ -159,16 +162,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Dados
 
-    /// Ao abrir o painel: atualiza se a última leitura tem mais de 5 s.
+    /// Ao abrir o painel: relê o disco se a última leitura tem mais de 5 s.
     func atualizarSeAntigo() {
-        if let em = modelo.atualizadoEm, Date().timeIntervalSince(em) < 5 { return }
+        if let lida = leituraDisco?.lidaEm, Date().timeIntervalSince(lida) < 5 { return }
         atualizar(forcar: true)
     }
-
-    func atualizar(forcarLeitura: Bool) { atualizar(forcar: forcarLeitura) }
-    func atualizar(force: Bool) { atualizar(forcar: force) }
-    func atualizar(forceRead: Bool) { atualizar(forcar: forceRead) }
-    func atualizar(forcarRefresh: Bool) { atualizar(forcar: forcarRefresh) }
 
     /// Limites das contas: um GET por conta com credencial (nada é gravado nas credenciais).
     func atualizarUso() {
@@ -195,82 +193,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Sem `forcar`, reaproveita a última leitura do disco quando nenhum arquivo mudou (FRA-580).
+    /// O retrato é remontado mesmo assim: idade do batimento, «há X no card» e virada do dia
+    /// dependem do relógio, não do disco. Só é republicado se mudou.
     func atualizar(forcar: Bool = false) {
-        guard !carregando else { leituraPendente = true; return }
-        let forcarAgora = forcar || forcarProximaLeitura
-        if forcarAgora { forcarProximaLeitura = false }
-        // FRA-580: pula leitura se nada mudou
-        if !forcarAgora, let ultima = ultimaModificacaoArquivos, ultima == assinaturaArquivos() {
-            modelo.atualizadoEm = Date()
+        guard !carregando else {
+            leituraPendente = true
+            forcarPendente = forcarPendente || forcar
             return
         }
         carregando = true
         modelo.atualizando = true
         let carregador = self.carregador
+        let anterior = leituraDisco
+        let politica = modelo.politica
         fila.async { [weak self] in
             let cfg = Configuracao.resolver()
-            let res = carregador.carregar(config: cfg, forcar: forcarAgora)
+            let (leitura, pulou) = LeituraDisco.ler(config: cfg, carregador: carregador, anterior: anterior,
+                                                    forcar: forcar, politica: politica)
+            let res = leitura.resultado
             let resumo = Agregador.resumir(execucoes: res.execucoes, estado: res.estado,
                                            teto: cfg.tetoSemanalUSD, avisoPct: cfg.avisoPct)
-            let logDispatcher = cfg.logsDir.deletingLastPathComponent().appendingPathComponent("lanes-dispatcher.log")
-            let entrada = LeitorPainelDisco.ler(pasta: cfg.stateDir, logDispatcher: logDispatcher, logsDir: cfg.logsDir, forcar: forcarAgora)
-            let ledgerExiste = res.ledgerExiste, logsExiste = res.logsDirExiste
-            let retomadas = res.retomadas
-            let execucoes = res.execucoes
-            let ordinais = res.ordinais
             Task { @MainActor in
                 guard let self else { return }
+                if pulou { Self.log.debug("ciclo sem leitura do disco: nenhum arquivo mudou") }
                 self.carregando = false
                 self.modelo.atualizando = false
                 if self.avisarAoAtualizar {
                     self.avisarAoAtualizar = false
                     CentralAvisos.compartilhada.ok(String(localized: "Dados atualizados"))
                 }
-                self.modelo.config = cfg
-                self.modelo.ledgerExiste = ledgerExiste
-                self.modelo.logsDirExiste = logsExiste
+                if self.modelo.config != cfg { self.modelo.config = cfg }
+                if self.modelo.ledgerExiste != res.ledgerExiste { self.modelo.ledgerExiste = res.ledgerExiste }
+                if self.modelo.logsDirExiste != res.logsDirExiste { self.modelo.logsDirExiste = res.logsDirExiste }
                 if self.modelo.resumo != resumo { self.modelo.resumo = resumo }
-                if self.modelo.retomadas != retomadas { self.modelo.retomadas = retomadas }
-                self.entradaPainel = entrada
-                self.execucoesPainel = execucoes
-                self.ordinaisPainel = ordinais
-                self.ultimaModificacaoArquivos = self.assinaturaArquivos()
+                if self.modelo.retomadas != res.retomadas { self.modelo.retomadas = res.retomadas }
+                self.leituraDisco = leitura
+                self.entradaPainel = leitura.entrada
+                self.execucoesPainel = res.execucoes
+                self.ordinaisPainel = res.ordinais
                 self.publicarPainel()
                 self.atualizarMenuLanes()
-                self.atualizarMenuRetomar(retomadas)
+                self.atualizarMenuRetomar(res.retomadas)
                 self.modelo.atualizadoEm = Date()
                 self.atualizarMenu(resumo)
                 self.fotografarSePedido()
                 // a altura do painel pode mudar com os dados
                 Task { @MainActor [weak self] in self?.controlador?.painelMudou() }
                 if self.leituraPendente {
+                    let forcarDeNovo = self.forcarPendente
                     self.leituraPendente = false
-                    self.atualizar()
+                    self.forcarPendente = false
+                    self.atualizar(forcar: forcarDeNovo)
                 }
             }
         }
-    }
-
-    /// FRA-580: carimbo da última modificação dos arquivos relevantes.
-    private func assinaturaArquivos() -> Date {
-        let fm = FileManager.default
-        let cfg = modelo.config
-        var datas: [Date] = []
-        func coletar(_ url: URL) {
-            if let attrs = try? fm.attributesOfItem(atPath: url.path), let d = attrs[.modificationDate] as? Date {
-                datas.append(d)
-            }
-            var ehPasta: ObjCBool = false
-            if fm.fileExists(atPath: url.path, isDirectory: &ehPasta), ehPasta.boolValue {
-                if let itens = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.contentModificationDateKey], options: []) {
-                    for it in itens { coletar(it) }
-                }
-            }
-        }
-        coletar(cfg.stateDir)
-        coletar(cfg.logsDir)
-        coletar(cfg.ledger)
-        return datas.max() ?? .distantPast
     }
 
     private func fotografarSePedido() {
@@ -461,7 +438,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     self.modelo.avisoCtl = "lanes_ctl saiu com código \(resultado.codigo)."
                 }
-                self.atualizar()
+                self.atualizar(forcar: true)
             }
         }
     }
@@ -495,13 +472,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     self.modelo.avisoCtl = "lanes_ctl saiu com código \(processo.terminationStatus)."
                 }
-                self.atualizar()
+                self.atualizar(forcar: true)
             }
         }
     }
 
     @objc private func acaoPainel() { modelo.abrirPainel() }
-    @objc private func acaoAtualizar() { atualizar(); atualizarUso() }
+    @objc private func acaoAtualizar() { atualizar(forcar: true); atualizarUso() }
     @objc private func acaoConfig() { abrirConfig() }
     @objc private func acaoSair() { PresencaApp.sair() }
     @objc private func acaoTela(_ item: NSMenuItem) {

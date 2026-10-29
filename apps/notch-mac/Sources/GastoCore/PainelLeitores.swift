@@ -257,111 +257,17 @@ public enum LeitorPainelDisco {
     public static let caudaLog = 256 * 1024
     public static let caudaProva = 400 * 1024
 
-    // FRA-580: cache de leitura por assinatura de arquivos
-    private static var cacheLeitura: [String: (assinatura: Int, entrada: EntradaPainel)] = [:]
-    public static func limparCache() { cacheLeitura.removeAll() }
-    public static func limpar() { limparCache() }
-    public static func clearCache() { limparCache() }
-
-    public static func lerSeMudou(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date()) -> (entrada: EntradaPainel, mudou: Bool) {
-        let chave = pasta.path + "|" + logDispatcher.path + "|" + logsDir.path
-        let assinatura = LeitorPainelDisco.assinatura(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir)
-        let mudou = cacheLeitura[chave]?.assinatura != assinatura
-        let entrada = ler(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora)
-        return (entrada, mudou)
-    }
-    public static func lerComStatus(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date()) -> (entrada: EntradaPainel, mudou: Bool) {
-        return lerSeMudou(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora)
-    }
-    public static func lerCacheado(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date()) -> EntradaPainel {
-        return ler(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora)
-    }
-
-    public static func assinatura(pasta: URL, logDispatcher: URL, logsDir: URL) -> Int {
-        let fm = FileManager.default
-        var hasher = Hasher()
-        // pasta (stateDir): todos os arquivos
-        let stateFiles = (try? fm.contentsOfDirectory(at: pasta, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey], options: [])) ?? []
-        hasher.combine(stateFiles.count)
-        for u in stateFiles.sorted(by: { $0.path < $1.path }) {
-            hasher.combine(u.lastPathComponent)
-            if let v = try? u.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) {
-                hasher.combine(v.contentModificationDate?.timeIntervalSince1970)
-                hasher.combine(v.fileSize)
-            }
-        }
-        // logsDir
-        let logFiles = (try? fm.contentsOfDirectory(at: logsDir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey], options: [])) ?? []
-        hasher.combine(logFiles.count)
-        for u in logFiles.sorted(by: { $0.path < $1.path }) {
-            hasher.combine(u.lastPathComponent)
-            if let v = try? u.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) {
-                hasher.combine(v.contentModificationDate?.timeIntervalSince1970)
-                hasher.combine(v.fileSize)
-            }
-        }
-        // logDispatcher
-        if let attrs = try? fm.attributesOfItem(atPath: logDispatcher.path) {
-            hasher.combine((attrs[.modificationDate] as? Date)?.timeIntervalSince1970)
-            hasher.combine(attrs[.size] as? NSNumber)
-        } else {
-            hasher.combine(0)
-        }
-        return hasher.finalize()
-    }
-
-    public static func arquivosMudaram(pasta: URL, logDispatcher: URL, logsDir: URL) -> Bool {
-        let chave = pasta.path + "|" + logDispatcher.path + "|" + logsDir.path
-        guard let cached = cacheLeitura[chave] else { return true }
-        return cached.assinatura != assinatura(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir)
-    }
-    public static func precisaLer(pasta: URL, logDispatcher: URL, logsDir: URL) -> Bool {
-        return arquivosMudaram(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir)
-    }
-    public static func ultimaModificacao(pasta: URL, logDispatcher: URL, logsDir: URL) -> Date? {
-        return cacheLeitura[pasta.path + "|" + logDispatcher.path + "|" + logsDir.path]?.entrada.ultimaModificacao
-    }
-
     public static func ler(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date()) -> EntradaPainel {
-        return ler(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora, forcar: false)
-    }
-    public static func ler(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date(), forcar: Bool) -> EntradaPainel {
-        return lerInterno(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora, forcar: forcar)
-    }
-    public static func ler(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date(), force: Bool) -> EntradaPainel {
-        return lerInterno(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora, forcar: force)
-    }
-    public static func ler(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date(), forcarLeitura: Bool) -> EntradaPainel {
-        return lerInterno(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora, forcar: forcarLeitura)
-    }
-    public static func ler(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date(), forcarRefresh: Bool) -> EntradaPainel {
-        return lerInterno(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora, forcar: forcarRefresh)
-    }
-    public static func ler(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date(), forceRead: Bool) -> EntradaPainel {
-        return lerInterno(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir, agora: agora, forcar: forceRead)
-    }
-
-    private static func lerInterno(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date, forcar: Bool) -> EntradaPainel {
         let fm = FileManager.default
-        let chave = pasta.path + "|" + logDispatcher.path + "|" + logsDir.path
-        let assinatura = LeitorPainelDisco.assinatura(pasta: pasta, logDispatcher: logDispatcher, logsDir: logsDir)
-        if !forcar, let cached = cacheLeitura[chave], cached.assinatura == assinatura {
-            var e = cached.entrada
-            e.pulouLeitura = true
-            e.leituraPulada = true
-            e.pulou = true
-            e.skipRead = true
-            e.skipped = true
-            e.leuDoDisco = false
-            e.ultimaModificacao = Date()
-            return e
-        }
         let estado = EstadoLanes.ler(pasta: pasta)
         var titulos: [String: String] = [:]
         var provas: [ProvaBruta] = []
+        var pastasLane: [URL] = []
         for lane in estado.lanes {
             if let titulo = lane.titulo, !titulo.isEmpty { titulos[lane.card] = titulo }
-            if let bruta = provaDaLane(lane, pasta: pasta, agora: agora) { provas.append(bruta) }
+            guard let base = pastaLane(lane, pasta: pasta) else { continue }
+            pastasLane.append(base)
+            if let bruta = provaDaLane(lane, base: base, agora: agora) { provas.append(bruta) }
         }
         // Mesclar com o cache de títulos do dispatcher (FRA-563)
         let cacheTitulos = LeitorTitulosCache.ler(pasta: pasta)
@@ -394,29 +300,25 @@ public enum LeitorPainelDisco {
         let modelos = ModeloLane.textosPainel(rodando: estado.lanes, dados: config, cache: cache,
                                               agentes: CatalogoAgentes.carregar())
 
-        var entrada = EntradaPainel(
+        return EntradaPainel(
             heartbeat: estado.heartbeat, rodando: estado.lanes, titulos: titulos,
             habilitadas: habilitadas, desligadasPeloUsuario: desligadas, pausa: pausa,
             medidas: medidas, planos: planos, strikes: strikes, decisao: decisao,
             provas: provas, simulador: simulador.flatMap { $0.isEmpty ? nil : $0 },
             instalacoes: instalacoes, limitesAte: limites, logTexto: logTexto,
-            fechamentos: fechamentos, textoModelo: modelos.texto, avisoModelo: modelos.aviso)
-        entrada.pulouLeitura = false
-        entrada.leituraPulada = false
-        entrada.pulou = false
-        entrada.skipRead = false
-        entrada.skipped = false
-        entrada.leuDoDisco = true
-        entrada.ultimaModificacao = Date()
-        LeitorPainelDisco.cacheLeitura[chave] = (assinatura, entrada)
-        return entrada
+            fechamentos: fechamentos, textoModelo: modelos.texto, avisoModelo: modelos.aviso,
+            pastasLane: pastasLane)
     }
 
-    static func provaDaLane(_ lane: EstadoLanes.LaneRodando, pasta: URL, agora: Date) -> ProvaBruta? {
+    /// Pasta `.lane` do worktree da lane (`worktree` no `lane-<lane>.json`).
+    static func pastaLane(_ lane: EstadoLanes.LaneRodando, pasta: URL) -> URL? {
         guard let dados = lerJSON(pasta.appendingPathComponent("lane-\(lane.lane).json")),
               let obj = (try? JSONSerialization.jsonObject(with: dados)) as? [String: Any],
               let worktree = JV.texto(obj["worktree"]) else { return nil }
-        let base = URL(fileURLWithPath: worktree).appendingPathComponent(".lane")
+        return URL(fileURLWithPath: worktree).appendingPathComponent(".lane")
+    }
+
+    static func provaDaLane(_ lane: EstadoLanes.LaneRodando, base: URL, agora: Date) -> ProvaBruta? {
         let fm = FileManager.default
         let finalizado = fm.fileExists(atPath: base.appendingPathComponent("finalized").path)
         let agenteSaiu = fm.fileExists(atPath: base.appendingPathComponent("exit_code").path)
