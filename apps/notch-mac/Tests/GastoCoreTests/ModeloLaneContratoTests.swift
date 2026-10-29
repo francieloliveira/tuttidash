@@ -52,6 +52,8 @@ final class ModeloLaneContratoTests: XCTestCase {
             "                        (low, medium, high, xhigh, max)\n  --environment <id>  x\n"
         XCTAssertEqual(ListaModelos.esforcosDoHelp(texto), ["low", "medium", "high", "xhigh", "max"])
         XCTAssertEqual(ListaModelos.esforcosDoHelp("sem a flag"), [])
+        XCTAssertEqual(ListaModelos.esforcosDoHelp("--effort-mode (a, b)\n  --effort <n>  x (low, high)"), ["low", "high"])
+        XCTAssertEqual(ListaModelos.esforcosDoHelp("--effortless (a)"), [])
     }
 
     func testEsforcosDoCacheDoCodex() throws {
@@ -81,6 +83,23 @@ final class ModeloLaneContratoTests: XCTestCase {
         XCTAssertEqual(cfg.esforcoFixo, "medium")
         XCTAssertEqual(ModeloLane.paraGravar(cfg)["esforco"] as? String, "medium")
         XCTAssertNil(ModeloLane.paraGravar(ModeloLane.ler(["modo": "fixo", "fixo": "opus"]))["esforco"])
+    }
+
+    func testAjustarEsforcoQuandoOModeloMuda() throws {
+        let claude = try XCTUnwrap(agentes["claude"])
+        var cache = CacheModelos.vazio
+        cache.esforcos["claude"] = ["haiku": ["low", "medium"], "*": ["low", "medium", "high", "xhigh", "max"]]
+        var cfg = ConfigModelo.automatico
+        cfg.porPeso["alto"] = EscolhaPeso(modelo: "haiku", esforco: "xhigh", esforcoExplicito: true)
+        cfg.porPeso["medio"] = EscolhaPeso(modelo: "", esforco: "max", esforcoExplicito: true)
+        let (novo, aviso) = ModeloLane.ajustarEsforco(cfg, agente: claude, cache: cache)
+        XCTAssertEqual(novo.porPeso["alto"], EscolhaPeso(modelo: "haiku", esforco: "", esforcoExplicito: false))
+        XCTAssertEqual(novo.porPeso["medio"]?.esforco, "max", "opus aceita max")
+        XCTAssertNotNil(aviso)
+        var fixo = ConfigModelo(modo: .fixo, fixo: "haiku", porPeso: [:], aviso: "", esforcoFixo: "max")
+        fixo = ModeloLane.ajustarEsforco(fixo, agente: claude, cache: cache).0
+        XCTAssertEqual(fixo.esforcoFixo, "")
+        XCTAssertNil(ModeloLane.ajustarEsforco(novo, agente: claude, cache: cache).1, "sem mudança, sem aviso")
     }
 
     func testLaneSemEsforco() throws {

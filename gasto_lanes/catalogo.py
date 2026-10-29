@@ -577,7 +577,9 @@ def esforcos_aceitos(lane: str, modelo: str, cache: dict | None = None) -> list:
     return [str(x) for x in (rev.get("esforcos") or ())]
 
 
-_EFFORT_HELP = re.compile(r"--effort\b[^(]{0,200}\(([^)]*)\)", re.S)
+# `--effort` como palavra inteira (não `--effort-x`), com os níveis entre parênteses na mesma linha
+# ou na seguinte (o `claude --help` quebra a descrição).
+_EFFORT_HELP = re.compile(r"--effort(?![\w-])[^(\n]*(?:\n[^(\n-]*)?\(([^)]*)\)")
 
 
 def esforcos_do_help(texto: str) -> list:
@@ -599,7 +601,7 @@ def esforcos_cache_codex(dados) -> dict:
     if not isinstance(dados, dict) or not isinstance(dados.get("models"), list):
         return saida
     for m in dados["models"]:
-        if not isinstance(m, dict) or not isinstance(m.get("slug"), str):
+        if not isinstance(m, dict) or not isinstance(m.get("slug"), str) or not m["slug"].strip():
             continue
         if isinstance(m.get("visibility"), str) and m["visibility"] != "list":
             continue
@@ -825,6 +827,10 @@ def _aviso_esforco(esforco: str, modelo: str, padrao: str) -> str:
             f"usei o padrão{f' ({padrao})' if padrao else ''}")
 
 
+def _aviso_esforco_padrao(esforco: str, modelo: str) -> str:
+    return f"o esforço padrão {esforco} não vale para {modelo or 'o modelo padrão'}; o CLI usa o dele"
+
+
 def _esforco_valido(lane: str, modelo: str, esforco: str, cache: dict | None) -> bool:
     aceitos = esforcos_aceitos(lane, modelo, cache)
     return bool(aceitos) and esforco in aceitos
@@ -871,6 +877,12 @@ def resolver_modelo(lane: str, effort: str, bruto, cache: dict | None = None) ->
             esforco, explicito = pedido, True
         else:
             aviso = _aviso_esforco(pedido, modelo, padrao["esforco"])
+    if not explicito and esforco:
+        aceitos = esforcos_aceitos(lane, modelo, cache)
+        if aceitos and esforco not in aceitos:
+            # O padrão do peso também não vai ao CLI se o modelo não o aceita (revisão do PR #17).
+            aviso = _aviso_esforco_padrao(esforco, modelo)
+            esforco, explicito = "", True
     flags = montar_flags(lane, effort, modelo, esforco, explicito)
     return {"modelo": modelo, "esforco": esforco, "esforco_explicito": explicito,
             "modo": modo, "aviso": aviso, "flags": flags}

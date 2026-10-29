@@ -1,58 +1,335 @@
 {
   "nota": "Contrato entre o Python (gasto_lanes/catalogo.py resolver_modelo) e o Swift (ModeloLane.resolver): mesma config, mesmo peso, mesmo cache -> mesmo modelo, esforço e aviso. PRD de 29/10/2026.",
   "cache": {
-    "listas": {"claude": ["claude-opus-5-5", "opus", "sonnet"], "codex": ["gpt-5.6-luna", "gpt-mini"]},
+    "listas": {
+      "claude": [
+        "claude-opus-5-5",
+        "opus",
+        "sonnet"
+      ],
+      "codex": [
+        "gpt-5.6-luna",
+        "gpt-mini"
+      ]
+    },
     "anteriores": {},
     "esforcos": {
-      "claude": {"*": ["low", "medium", "high", "xhigh", "max"]},
-      "codex": {"gpt-5.6-luna": ["low", "medium", "high", "xhigh", "max"], "gpt-mini": ["low", "medium"]}
+      "claude": {
+        "haiku": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "*": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "codex": {
+        "gpt-5.6-luna": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "gpt-mini": [
+          "low",
+          "medium"
+        ]
+      }
     }
   },
   "casos": [
-    {"nome": "sem config vale o manifesto", "lane": "claude", "peso": "alto", "config": null,
-     "esperado": {"modelo": "opus", "esforco": "xhigh", "aviso": ""}},
-    {"nome": "esforço vale com o modelo no padrão", "lane": "claude", "peso": "alto",
-     "config": {"modo": "auto", "porPeso": {"alto": {"modelo": "", "esforco": "high"}}},
-     "esperado": {"modelo": "opus", "esforco": "high", "aviso": ""}},
-    {"nome": "modelo e esforço escolhidos", "lane": "claude", "peso": "alto",
-     "config": {"modo": "auto", "porPeso": {"alto": {"modelo": "opus", "esforco": "high"}}},
-     "esperado": {"modelo": "opus", "esforco": "high", "aviso": ""}},
-    {"nome": "esforço vazio é o padrão do peso", "lane": "claude", "peso": "medio",
-     "config": {"modo": "auto", "porPeso": {"medio": {"modelo": "", "esforco": ""}}},
-     "esperado": {"modelo": "opus", "esforco": "high", "aviso": ""}},
-    {"nome": "fixo antigo sem esforço usa o esforço do peso", "lane": "claude", "peso": "alto",
-     "config": {"modo": "fixo", "fixo": "sonnet"},
-     "esperado": {"modelo": "sonnet", "esforco": "xhigh", "aviso": "modelo fixo"}},
-    {"nome": "fixo com esforço único (alto)", "lane": "claude", "peso": "alto",
-     "config": {"modo": "fixo", "fixo": "sonnet", "esforco": "medium"},
-     "esperado": {"modelo": "sonnet", "esforco": "medium", "aviso": "modelo fixo"}},
-    {"nome": "fixo com esforço único (baixo)", "lane": "claude", "peso": "baixo",
-     "config": {"modo": "fixo", "fixo": "sonnet", "esforco": "medium"},
-     "esperado": {"modelo": "sonnet", "esforco": "medium", "aviso": "modelo fixo"}},
-    {"nome": "string antiga é fixo", "lane": "claude", "peso": "alto", "config": "opus",
-     "esperado": {"modelo": "opus", "esforco": "xhigh", "aviso": "modelo fixo"}},
-    {"nome": "esforço que o modelo não aceita cai no padrão", "lane": "claude", "peso": "alto",
-     "config": {"modo": "auto", "porPeso": {"alto": {"modelo": "opus", "esforco": "ultra"}}},
-     "esperado": {"modelo": "opus", "esforco": "xhigh", "aviso": "o esforço ultra não vale para opus; usei o padrão (xhigh)"}},
-    {"nome": "esforço do Claude vem do --help (max)", "lane": "claude", "peso": "medio",
-     "config": {"modo": "auto", "porPeso": {"medio": {"modelo": "", "esforco": "max"}}},
-     "esperado": {"modelo": "opus", "esforco": "max", "aviso": ""}},
-    {"nome": "Codex: esforço por modelo", "lane": "codex", "peso": "medio",
-     "config": {"modo": "fixo", "fixo": "gpt-5.6-luna", "esforco": "xhigh"},
-     "esperado": {"modelo": "gpt-5.6-luna", "esforco": "xhigh", "aviso": "modelo fixo"}},
-    {"nome": "Codex: modelo que não aceita o esforço", "lane": "codex", "peso": "medio",
-     "config": {"modo": "fixo", "fixo": "gpt-mini", "esforco": "high"},
-     "esperado": {"modelo": "gpt-mini", "esforco": "", "aviso": "o esforço high não vale para gpt-mini; usei o padrão"}},
-    {"nome": "OpenCode não recebe esforço", "lane": "opencode", "peso": "medio",
-     "config": {"modo": "auto", "porPeso": {"medio": {"modelo": "", "esforco": "high"}}},
-     "esperado": {"modelo": "opencode/deepseek-v4.1-flash-free", "esforco": "", "aviso": "o esforço high não vale para opencode/deepseek-v4.1-flash-free; usei o padrão"}},
-    {"nome": "Grok: só high", "lane": "grok", "peso": "medio",
-     "config": {"modo": "auto", "porPeso": {"medio": {"modelo": "", "esforco": "low"}}},
-     "esperado": {"modelo": "grok-4.7", "esforco": "high", "aviso": "o esforço low não vale para grok-4.7; usei o padrão (high)"}}
+    {
+      "nome": "sem config vale o manifesto",
+      "lane": "claude",
+      "peso": "alto",
+      "config": null,
+      "esperado": {
+        "modelo": "opus",
+        "esforco": "xhigh",
+        "aviso": ""
+      }
+    },
+    {
+      "nome": "esforço vale com o modelo no padrão",
+      "lane": "claude",
+      "peso": "alto",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "alto": {
+            "modelo": "",
+            "esforco": "high"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "opus",
+        "esforco": "high",
+        "aviso": ""
+      }
+    },
+    {
+      "nome": "modelo e esforço escolhidos",
+      "lane": "claude",
+      "peso": "alto",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "alto": {
+            "modelo": "opus",
+            "esforco": "high"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "opus",
+        "esforco": "high",
+        "aviso": ""
+      }
+    },
+    {
+      "nome": "esforço vazio é o padrão do peso",
+      "lane": "claude",
+      "peso": "medio",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "medio": {
+            "modelo": "",
+            "esforco": ""
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "opus",
+        "esforco": "high",
+        "aviso": ""
+      }
+    },
+    {
+      "nome": "fixo antigo sem esforço usa o esforço do peso",
+      "lane": "claude",
+      "peso": "alto",
+      "config": {
+        "modo": "fixo",
+        "fixo": "sonnet"
+      },
+      "esperado": {
+        "modelo": "sonnet",
+        "esforco": "xhigh",
+        "aviso": "modelo fixo"
+      }
+    },
+    {
+      "nome": "fixo com esforço único (alto)",
+      "lane": "claude",
+      "peso": "alto",
+      "config": {
+        "modo": "fixo",
+        "fixo": "sonnet",
+        "esforco": "medium"
+      },
+      "esperado": {
+        "modelo": "sonnet",
+        "esforco": "medium",
+        "aviso": "modelo fixo"
+      }
+    },
+    {
+      "nome": "fixo com esforço único (baixo)",
+      "lane": "claude",
+      "peso": "baixo",
+      "config": {
+        "modo": "fixo",
+        "fixo": "sonnet",
+        "esforco": "medium"
+      },
+      "esperado": {
+        "modelo": "sonnet",
+        "esforco": "medium",
+        "aviso": "modelo fixo"
+      }
+    },
+    {
+      "nome": "string antiga é fixo",
+      "lane": "claude",
+      "peso": "alto",
+      "config": "opus",
+      "esperado": {
+        "modelo": "opus",
+        "esforco": "xhigh",
+        "aviso": "modelo fixo"
+      }
+    },
+    {
+      "nome": "esforço que o modelo não aceita cai no padrão",
+      "lane": "claude",
+      "peso": "alto",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "alto": {
+            "modelo": "opus",
+            "esforco": "ultra"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "opus",
+        "esforco": "xhigh",
+        "aviso": "o esforço ultra não vale para opus; usei o padrão (xhigh)"
+      }
+    },
+    {
+      "nome": "esforço do Claude vem do --help (max)",
+      "lane": "claude",
+      "peso": "medio",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "medio": {
+            "modelo": "",
+            "esforco": "max"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "opus",
+        "esforco": "max",
+        "aviso": ""
+      }
+    },
+    {
+      "nome": "Codex: esforço por modelo",
+      "lane": "codex",
+      "peso": "medio",
+      "config": {
+        "modo": "fixo",
+        "fixo": "gpt-5.6-luna",
+        "esforco": "xhigh"
+      },
+      "esperado": {
+        "modelo": "gpt-5.6-luna",
+        "esforco": "xhigh",
+        "aviso": "modelo fixo"
+      }
+    },
+    {
+      "nome": "Codex: modelo que não aceita o esforço",
+      "lane": "codex",
+      "peso": "medio",
+      "config": {
+        "modo": "fixo",
+        "fixo": "gpt-mini",
+        "esforco": "high"
+      },
+      "esperado": {
+        "modelo": "gpt-mini",
+        "esforco": "",
+        "aviso": "o esforço high não vale para gpt-mini; usei o padrão"
+      }
+    },
+    {
+      "nome": "OpenCode não recebe esforço",
+      "lane": "opencode",
+      "peso": "medio",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "medio": {
+            "modelo": "",
+            "esforco": "high"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "opencode/deepseek-v4.1-flash-free",
+        "esforco": "",
+        "aviso": "o esforço high não vale para opencode/deepseek-v4.1-flash-free; usei o padrão"
+      }
+    },
+    {
+      "nome": "Grok: só high",
+      "lane": "grok",
+      "peso": "medio",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "medio": {
+            "modelo": "",
+            "esforco": "low"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "grok-4.7",
+        "esforco": "high",
+        "aviso": "o esforço low não vale para grok-4.7; usei o padrão (high)"
+      }
+    },
+    {
+      "nome": "padrão do peso que o modelo não aceita não vai ao CLI",
+      "lane": "claude",
+      "peso": "alto",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "alto": {
+            "modelo": "haiku"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "haiku",
+        "esforco": "",
+        "aviso": "o esforço padrão xhigh não vale para haiku; o CLI usa o dele"
+      }
+    },
+    {
+      "nome": "esforço que o modelo aceita passa mesmo com o padrão inválido",
+      "lane": "claude",
+      "peso": "alto",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "alto": {
+            "modelo": "haiku",
+            "esforco": "medium"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "haiku",
+        "esforco": "medium",
+        "aviso": ""
+      }
+    }
   ],
   "sem_cache": [
-    {"nome": "sem esforços no cache vale o manifesto (Claude até xhigh)", "lane": "claude", "peso": "medio",
-     "config": {"modo": "auto", "porPeso": {"medio": {"modelo": "", "esforco": "max"}}},
-     "esperado": {"modelo": "opus", "esforco": "high", "aviso": "o esforço max não vale para opus; usei o padrão (high)"}}
+    {
+      "nome": "sem esforços no cache vale o manifesto (Claude até xhigh)",
+      "lane": "claude",
+      "peso": "medio",
+      "config": {
+        "modo": "auto",
+        "porPeso": {
+          "medio": {
+            "modelo": "",
+            "esforco": "max"
+          }
+        }
+      },
+      "esperado": {
+        "modelo": "opus",
+        "esforco": "high",
+        "aviso": "o esforço max não vale para opus; usei o padrão (high)"
+      }
+    }
   ]
 }

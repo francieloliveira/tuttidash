@@ -44,6 +44,8 @@ class EsforcosDaFerramenta(unittest.TestCase):
                  "  --environment <environment_id>        Create a new cloud session\n")
         self.assertEqual(c.esforcos_do_help(texto), ["low", "medium", "high", "xhigh", "max"])
         self.assertEqual(c.esforcos_do_help("sem a flag"), [])
+        self.assertEqual(c.esforcos_do_help("--effort-mode (a, b)\n  --effort <n>  x (low, high)"), ["low", "high"])
+        self.assertEqual(c.esforcos_do_help("--effortless (a)"), [])
 
     def test_models_cache_do_codex(self):
         dados = {"models": [

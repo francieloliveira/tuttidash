@@ -175,7 +175,7 @@ public enum ModeloLane {
     /// O CLI da lane recebe esforço (lista do agente ou flag no manifesto). OpenCode: não.
     public static func temEsforco(_ agente: CatalogoAgentes.ModeloAgente?) -> Bool {
         guard let agente else { return false }
-        if !(agente.revisao?.esforcos ?? []).isEmpty { return true }
+        if !(agente.revisao?.flagEsforco ?? []).isEmpty { return true }
         return pesos.contains { !esforco(das: agente.flags($0)).isEmpty }
     }
 
@@ -192,6 +192,35 @@ public enum ModeloLane {
         }
         if let l = porLane["*"], !l.isEmpty { return l }
         return agente?.revisao?.esforcos ?? []
+    }
+
+    static func avisoEsforcoPadrao(_ esforco: String, modelo: String) -> String {
+        "o esforço padrão \(esforco) não vale para \(modelo.isEmpty ? "o modelo padrão" : modelo); o CLI usa o dele"
+    }
+
+    /// Esforço gravado que o modelo de agora não aceita volta ao padrão (seletor ou id digitado).
+    /// Devolve a config ajustada e o aviso para a tela; sem mudança, a mesma config e nil.
+    public static func ajustarEsforco(_ cfg: ConfigModelo, agente: CatalogoAgentes.ModeloAgente,
+                                      cache: CacheModelos) -> (ConfigModelo, String?) {
+        var saida = cfg
+        var aviso: String?
+        let padrao = padrao(agente)
+        for peso in pesos {
+            guard var escolha = saida.porPeso[peso], escolha.esforcoExplicito, !escolha.esforco.isEmpty else { continue }
+            let modelo = escolha.modelo.isEmpty ? (padrao[peso]?.modelo ?? "") : escolha.modelo
+            if !esforcosAceitos(lane: agente.nome, modelo: modelo, agente: agente, cache: cache).contains(escolha.esforco) {
+                aviso = aviso ?? "O esforço \(escolha.esforco) não vale para \(modelo); voltou ao padrão."
+                escolha.esforco = ""
+                escolha.esforcoExplicito = false
+                saida.porPeso[peso] = escolha
+            }
+        }
+        if !saida.esforcoFixo.isEmpty, !saida.fixo.isEmpty,
+           !esforcosAceitos(lane: agente.nome, modelo: saida.fixo, agente: agente, cache: cache).contains(saida.esforcoFixo) {
+            aviso = aviso ?? "O esforço \(saida.esforcoFixo) não vale para \(saida.fixo); voltou ao padrão."
+            saida.esforcoFixo = ""
+        }
+        return (saida, aviso)
     }
 
     static func avisoEsforco(_ esforco: String, modelo: String, padrao: String) -> String {
@@ -223,12 +252,20 @@ public enum ModeloLane {
         }
         r.esforco = base.esforco
         guard agente != nil else { return r }  // sem o manifesto não há como validar: vale o padrão
+        let aceitos = esforcosAceitos(lane: lane, modelo: r.modelo, agente: agente, cache: cache)
+        var explicito = false
         if !pedido.isEmpty {
-            if esforcosAceitos(lane: lane, modelo: r.modelo, agente: agente, cache: cache).contains(pedido) {
+            if aceitos.contains(pedido) {
                 r.esforco = pedido
+                explicito = true
             } else {
                 r.aviso = avisoEsforco(pedido, modelo: r.modelo, padrao: base.esforco)
             }
+        }
+        if !explicito, !r.esforco.isEmpty, !aceitos.isEmpty, !aceitos.contains(r.esforco) {
+            // O padrão do peso também não vai ao CLI se o modelo não o aceita (revisão do PR #17).
+            r.aviso = avisoEsforcoPadrao(r.esforco, modelo: r.modelo)
+            r.esforco = ""
         }
         return r
     }
@@ -283,7 +320,7 @@ public enum ModeloLane {
             let cfg = ler(bruto(lane: nome, em: dados))
             let emCurso = rodando.first { $0.lane == nome }
             let peso = emCurso?.effort ?? "medio"
-            let r = resolver(lane: nome, peso: peso, config: cfg, padrao: padrao, cache: cache)
+            let r = resolver(lane: nome, peso: peso, config: cfg, padrao: padrao, cache: cache, agente: agente)
             if texto[nome] == nil, emCurso != nil, !r.modelo.isEmpty {
                 texto[nome] = textoPainel(lane: nome, modelo: r.modelo, peso: peso)
             }

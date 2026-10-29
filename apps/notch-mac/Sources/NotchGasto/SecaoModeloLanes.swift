@@ -382,24 +382,11 @@ struct BlocoModeloLane: View {
         })
     }
 
-    /// Troca de modelo: esforço que o novo modelo não aceita volta ao padrão, com aviso na lane.
+    /// Troca de modelo: esforço que o novo modelo não aceita volta ao padrão (regra no GastoCore).
     private func ajustarEsforco(_ c: inout ConfigModelo, peso: String?) {
-        if let peso, var escolha = c.porPeso[peso], escolha.esforcoExplicito, !escolha.esforco.isEmpty {
-            let modelo = escolha.modelo.isEmpty ? (ModeloLane.padrao(agente)[peso]?.modelo ?? "") : escolha.modelo
-            let ok = ModeloLane.esforcosAceitos(lane: agente.nome, modelo: modelo, agente: agente, cache: cache)
-            if !ok.contains(escolha.esforco) {
-                avisoLocal = String(localized: "O esforço \(escolha.esforco) não vale para \(modelo); voltou ao padrão.")
-                escolha.esforco = ""
-                escolha.esforcoExplicito = false
-                c.porPeso[peso] = escolha
-            }
-        } else if peso == nil, !c.esforcoFixo.isEmpty {
-            let ok = ModeloLane.esforcosAceitos(lane: agente.nome, modelo: c.fixo, agente: agente, cache: cache)
-            if !ok.contains(c.esforcoFixo) {
-                avisoLocal = String(localized: "O esforço \(c.esforcoFixo) não vale para \(c.fixo); voltou ao padrão.")
-                c.esforcoFixo = ""
-            }
-        }
+        let (novo, aviso) = ModeloLane.ajustarEsforco(c, agente: agente, cache: cache)
+        c = novo
+        if let aviso { avisoLocal = aviso }
     }
 
     private var selecaoFixa: Binding<String> {
@@ -435,6 +422,10 @@ struct BlocoModeloLane: View {
     }
 
     private func gravar() {
+        // Também o id digitado: esforço que o modelo novo não aceita não fica gravado (revisão do PR #17).
+        var c = cfg
+        ajustarEsforco(&c, peso: nil)
+        cfg = c
         do {
             try modelo.definirModelo(agente.nome, cfg)
             base = cfg

@@ -239,13 +239,15 @@ public enum ListaModelos {
     }
 
     /// `claude --help`: os níveis entre parênteses depois de `--effort`.
+    /// Mesmo critério do `catalogo._EFFORT_HELP`: `--effort` como palavra inteira, com os níveis
+    /// entre parênteses na mesma linha ou na seguinte.
     public static func esforcosDoHelp(_ texto: String) -> [String] {
-        guard let faixa = texto.range(of: "--effort") else { return [] }
-        let resto = texto[faixa.upperBound...]
-        guard let abre = resto.firstIndex(of: "("), resto.distance(from: resto.startIndex, to: abre) <= 200,
-              let fecha = resto[abre...].firstIndex(of: ")") else { return [] }
+        let padrao = #"--effort(?![\w-])[^(\n]*(?:\n[^(\n-]*)?\(([^)]*)\)"#
+        guard let re = try? NSRegularExpression(pattern: padrao),
+              let m = re.firstMatch(in: texto, range: NSRange(texto.startIndex..., in: texto)),
+              let faixa = Range(m.range(at: 1), in: texto) else { return [] }
         var saida: [String] = []
-        let miolo = resto[resto.index(after: abre)..<fecha]
+        let miolo = texto[faixa]
         for parte in miolo.split(whereSeparator: { ",|/ \n\t".contains($0) }) {
             let tok = parte.trimmingCharacters(in: CharacterSet(charactersIn: "'\" "))
             if tok.range(of: "^[a-z][a-z0-9_-]{0,15}$", options: .regularExpression) != nil, !saida.contains(tok) {
