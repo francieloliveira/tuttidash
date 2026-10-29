@@ -28,10 +28,11 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
 
     public static let padrao = PoliticaAtualizacao()
 
-    /// O que o `ObservadorArquivos` vigia (FRA-581): o estado das lanes reage em segundos;
-    /// logs, log do dispatcher e ledger, no máximo uma vez por `intervaloDados`.
+    /// O que o `ObservadorArquivos` vigia (FRA-581): estado das lanes e arquivo de config reagem
+    /// em segundos; logs, log do dispatcher e ledger, no máximo uma vez por `intervaloDados`.
     public func caminhosObservados(_ cfg: Configuracao) -> [CaminhoObservado] {
         [CaminhoObservado(pasta: cfg.stateDir, intervaloMinimo: intervaloEstado),
+         CaminhoObservado(arquivo: cfg.arquivoConfig, intervaloMinimo: intervaloEstado),
          CaminhoObservado(pasta: cfg.logsDir, intervaloMinimo: intervaloDados),
          CaminhoObservado(arquivo: cfg.logDispatcher, intervaloMinimo: intervaloDados),
          CaminhoObservado(arquivo: cfg.ledger, intervaloMinimo: intervaloDados)]

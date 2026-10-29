@@ -30,7 +30,8 @@ final class PoliticaAtualizacaoTests: XCTestCase {
         XCTAssertEqual(minimo.intervaloReserva, 1)
     }
 
-    /// Estado das lanes reage em segundos; logs, log do dispatcher e ledger, no ritmo do polling antigo.
+    /// Estado das lanes e config reagem em segundos; logs, log do dispatcher e ledger, no ritmo do
+    /// polling antigo.
     func testCaminhosObservados() throws {
         let t = try PastaTemp()
         let cfg = Configuracao.resolver(ambiente: [:], home: t.url)
@@ -38,6 +39,7 @@ final class PoliticaAtualizacaoTests: XCTestCase {
         let c = p.caminhosObservados(cfg)
         XCTAssertEqual(c, [
             CaminhoObservado(pasta: cfg.stateDir, intervaloMinimo: p.intervaloEstado),
+            CaminhoObservado(arquivo: cfg.arquivoConfig, intervaloMinimo: p.intervaloEstado),
             CaminhoObservado(pasta: cfg.logsDir, intervaloMinimo: p.intervaloDados),
             CaminhoObservado(arquivo: cfg.logDispatcher, intervaloMinimo: p.intervaloDados),
             CaminhoObservado(arquivo: cfg.ledger, intervaloMinimo: p.intervaloDados),
