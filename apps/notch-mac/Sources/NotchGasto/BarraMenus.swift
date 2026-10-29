@@ -192,24 +192,8 @@ struct PainelBarra: View {
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
             }
-            if let ultima = ResumoBarra.ultimaLinha(modelo.snapshot?.logTexto ?? "") {
-                if ultima.lowercased().contains("fila vazia:") {
-                    // Mensagem do vigia quando não há cards prontos no Todo nem no Backlog.
-                    // Apresenta de forma amigável em vez da linha bruta do log.
-                    HStack(spacing: 6) {
-                        Image(systemName: "tray").font(.system(size: 11)).foregroundStyle(TemaPainel.amarelo)
-                        Text("Sem cards prontos no Todo nem no Backlog")
-                            .font(.system(size: 11)).foregroundStyle(TemaPainel.mudo)
-                            .lineLimit(2)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text(ultima)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(TemaPainel.mudo)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            if let m = MensagemLog.resumir(modelo.snapshot?.logTexto ?? "") {
+                LinhaMensagemBarra(mensagem: m)
             }
             HStack {
                 Button("Abrir painel") { fechar(); modelo.abrirPainel() }
@@ -224,5 +208,50 @@ struct PainelBarra: View {
         .background(LinearGradient(colors: [Color(hex: 0x14102A), Color(hex: 0x05070F)],
                                    startPoint: .top, endPoint: .bottom))
         .environment(\.colorScheme, .dark)
+    }
+}
+
+/// A última novidade do dispatcher/vigia em frase clara (`MensagemLog`), não a linha crua do log.
+private struct LinhaMensagemBarra: View {
+    let mensagem: MensagemBarra
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 7) {
+            Image(systemName: icone).font(.system(size: 11)).foregroundStyle(cor).padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(mensagem.texto).font(.sf(11)).foregroundStyle(TemaPainel.texto).lineLimit(2)
+                    if let q = mensagem.quando {
+                        Text("· " + Formato.ha(q, agora: Date())).font(.sf(10)).foregroundStyle(TemaPainel.mudo)
+                            .fixedSize()
+                    }
+                }
+                if let d = mensagem.detalhe {
+                    Text(d).font(.sf(10.5)).foregroundStyle(TemaPainel.mudo).lineLimit(2)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var icone: String {
+        switch mensagem.tipo {
+        case .trabalho: return "hammer"
+        case .entrega: return "checkmark.circle"
+        case .alerta: return "exclamationmark.triangle"
+        case .fila: return "tray"
+        case .info: return "info.circle"
+        }
+    }
+
+    private var cor: Color {
+        switch mensagem.tipo {
+        case .trabalho: return TemaPainel.ciano
+        case .entrega: return TemaPainel.verde
+        case .alerta: return TemaPainel.amarelo
+        case .fila: return TemaPainel.amarelo
+        case .info: return TemaPainel.mudo
+        }
     }
 }
