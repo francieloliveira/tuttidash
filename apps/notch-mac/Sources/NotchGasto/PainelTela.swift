@@ -75,6 +75,7 @@ struct BarraLateralPainel: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 28)
+            SeloVersao().padding(.horizontal, 14).padding(.top, 6)
             VStack(spacing: 1) {
                 ForEach(PaginaPainel.principais) { p in
                     ItemNavegacao(simbolo: p.simbolo, texto: p.titulo, selecionado: pagina == p, ns: selecao) { ir(p) }

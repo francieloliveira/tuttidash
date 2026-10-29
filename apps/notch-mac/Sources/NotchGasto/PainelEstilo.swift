@@ -238,6 +238,29 @@ struct CabecalhoCartao<Direita: View>: View {
     }
 }
 
+/// Versão do build no topo do app (29/10): «main-<sha>» discreto; num build de branch,
+/// «branch-…» em laranja com o selo ALPHA TEST.
+struct SeloVersao: View {
+    var versao: VersaoApp = .atual
+    var compacto = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if versao.alpha {
+                Text(verbatim: "ALPHA TEST").font(PV.fonte(compacto ? 9.5 : 10, .bold)).foregroundStyle(.black)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(PV.ambar))
+            }
+            Text(verbatim: versao.texto)
+                .font(.system(size: compacto ? 10 : 10.5, design: .monospaced))
+                .foregroundStyle(versao.alpha ? PV.ambar : PV.apagado)
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .help(versao.alpha ? String(localized: "Build de teste (fora da main do GitHub): \(versao.texto)")
+                           : String(localized: "Build da main do GitHub: \(versao.texto)"))
+    }
+}
+
 /// «Ver todas →».
 struct BotaoVer: View {
     var texto: String
