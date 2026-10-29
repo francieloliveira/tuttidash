@@ -258,7 +258,7 @@ def load_state() -> dict:
         st = json.loads(STATE_FILE.read_text())
     except Exception:  # noqa: BLE001
         st = {}
-    for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases"):
+    for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases", "bloqueios", "removidas_pelo_vigia"):
         st.setdefault(k, {})
     return st
 
@@ -539,6 +539,65 @@ def stop_note(ci: dict, text: str, count: int, reason: str) -> str | None:
 def decision(text: str) -> str:
     m = re.search(r"^DECIS[ÃA]O:\s*(\w+)", text, re.M | re.I)
     return m.group(1).lower() if m else "manter"
+
+
+RETOMADA_RE = re.compile(r"^> ⛔ \*\*Retomada \d+[^\n]*\n> \(instru[çc][ãa]o da parada anterior[^\n]*(?:\n|$)\n*", re.M)
+
+
+def limpar_retomadas(desc: str) -> tuple[str, list[str]]:
+    """Tira da descrição os blocos que o `stop_note` pôs no topo. Devolve (descrição nova,
+    blocos tirados). O resto do texto fica como estava."""
+    tirados = [m.group(0).rstrip("\n") for m in RETOMADA_RE.finditer(desc or "")]
+    return (RETOMADA_RE.sub("", desc or "") if tirados else (desc or "")), tirados
+
+
+def set_description(ci: dict, text: str) -> None:
+    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
+           {"id": ci["id"], "i": {"description": text}})
+
+
+def expirar_retomadas(issues: list[dict], st: dict, diary: list[str]) -> None:
+    """PRD 29/10, mudança 2: a instrução da triagem expira quando o dono libera o card.
+
+    Liberar = `needs:dono` sumiu (dono ou `recheck_needs`), ou `lane:falhou` sumiu sem ter
+    sido o vigia (o `voltar_fila` tira a label logo depois de escrever a instrução, e aí ela
+    vale). Na liberação o vigia tira os blocos de Retomada da descrição, cita o texto num
+    comentário e zera o contador de paradas do card. Sem o zero, a 1ª falha depois da
+    liberação já contava como a 4ª e chamava o dono sem triagem (FRA-581, 29/10)."""
+    vigiadas = (OWNER_LABEL, "lane:falhou")
+    st.setdefault("bloqueios", {})
+    st.setdefault("removidas_pelo_vigia", {})
+    vistos: set[str] = set()
+    for ci in issues:
+        ident = ci["identifier"]
+        vistos.add(ident)
+        atuais = labels_of(ci) & set(vigiadas)
+        antes = set(st["bloqueios"].get(ident, []))
+        sumiram = antes - atuais
+        pelo_vigia = {lb for lb in sumiram if f"{ident}|{lb}" in st["removidas_pelo_vigia"]}
+        liberado = OWNER_LABEL in sumiram or ("lane:falhou" in sumiram and "lane:falhou" not in pelo_vigia)
+        for lb in sumiram:
+            st["removidas_pelo_vigia"].pop(f"{ident}|{lb}", None)
+        if atuais:
+            st["bloqueios"][ident] = sorted(atuais)
+        else:
+            st["bloqueios"].pop(ident, None)
+        if not liberado:
+            continue
+        if ident in st["stops"]:
+            st["stops"][ident]["motivos"] = {}
+        nova, tirados = limpar_retomadas(ci.get("description") or "")
+        if not tirados:
+            continue
+        set_description(ci, nova)
+        ci["description"] = nova
+        comment(ci["id"], "[Triagem] Card liberado pelo dono: tirei da descrição a instrução de retomada, "
+                          "que valia para a parada anterior. Texto tirado (se ainda valer, cole de volta):\n\n"
+                          + "\n\n".join(tirados))
+        diary.append(f"Triagem · {ident} liberado → {len(tirados)} instrução(ões) de retomada tirada(s)")
+    for ident in list(st["bloqueios"]):
+        if ident not in vistos:
+            st["bloqueios"].pop(ident, None)
 
 
 # ---------- 0/1. merge + instalação no aparelho ----------
@@ -842,6 +901,7 @@ def handle_stops(ci: dict, label: str, st: dict, diary: list[str]) -> bool:
         if note:
             prepend_description(ci, note)
         remove_label(ci["id"], label)
+        st.setdefault("removidas_pelo_vigia", {})[f"{ci['identifier']}|{label}"] = datetime.now().isoformat(timespec="seconds")
         diary.append(f"Triagem · {ci['identifier']} {label} ({count}x: {reason}) → de volta à fila"
                      + (" com a instrução no topo da descrição" if note else ""))
     return True
@@ -1819,6 +1879,7 @@ def main() -> int:
         step("instalar main", install_main_if_pending, st, diary)
         step("mergeado e não Done", merged_not_done, st, diary)
         issues = project_issues()
+        step("retomadas", expirar_retomadas, issues, st, diary)
         for ci in issues:
             if runs >= MAX_RUNS_PER_TICK:
                 break
