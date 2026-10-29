@@ -585,6 +585,8 @@ def atualizar_listas_modelos() -> None:
         agora = dt.datetime.now().isoformat(timespec="seconds")
         for lane in pendentes:
             cache = catalogo.atualizar_cache_lista(cache, lane, catalogo.buscar_modelos(lane), agora)
+            # PRD 29/10: esforços aceitos que a ferramenta informa (Claude: --help; Codex: por modelo).
+            cache = catalogo.atualizar_cache_esforcos(cache, lane, catalogo.buscar_esforcos(lane))
         catalogo.gravar_cache_modelos(CACHE_MODELOS, cache)
         for lane in reconciliar_modelos_sumidos():
             log(f"modelo da lane {lane} saiu da lista; voltei ao automático")
