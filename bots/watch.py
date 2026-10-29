@@ -1051,29 +1051,21 @@ def opencode_call(p: str, modelo: str | None = None, cwd: Path | None = None) ->
 
 
 # ---------- ordem dos modelos do vigia (FRA-532, decisão de 23/10/2026 20h33) ----------
-# Local primeiro (Ollama, triagem local), depois opencode free, Claude só por último. Cada tarefa tem a
+# Local primeiro (Ollama), depois opencode free, Claude só por último. Cada tarefa tem a
 # sua ordem nos Ajustes (`watch.ordem_*`, lista ou texto com vírgulas); etapa desconhecida é ignorada.
 ORDEM_PADRAO = {
     "needs": ["ollama", "opencode", "claude"],
-    "paradas": ["local", "opencode", "claude"],
+    "paradas": ["opencode", "claude"],
     "revisao": ["escolhido", "fallback", "opencode-go", "claude"],
 }
-ETAPAS_VALIDAS = {"needs": {"ollama", "opencode", "claude"}, "paradas": {"local", "opencode", "claude"}}
+ETAPAS_VALIDAS = {"needs": {"ollama", "opencode", "claude"}, "paradas": {"opencode", "claude"}}
 ETAPAS_APELIDOS: dict = {}
 ANALISES_LOG = HOME / "Library" / "Logs" / "TranscentIA" / "vigia-analises.jsonl"
-# Triagem local da prova vermelha (FRA-565): um script qualquer que lê {"texto": …} no stdin e
-# devolve {"ambiente": p, "codigo": p, "modelo": "<nome>"} (código 2 = indisponível). O TuttiDash
-# não traz modelo; quem tiver um aponta `triagem_local.script` para ele.
-TRIAGEM_LOCAL_SCRIPTS = ("~/.transcentia/tools/triagem-local",)
-TRIAGEM_LOCAL_PYTHON_ACHADO = (LANES_DIR / "triagem-local-python",)
-TRIAGEM_LOCAL_PYTHONS = ("/opt/homebrew/bin/python3.11", "python3")
-TRIAGEM_LINHA_RE = re.compile(r"error|fail|timed? ?out|simulator|lock|crash|signal|killed|no space|denied|"
-                           r"unable to|could not|não foi possível|connection|network|limit", re.I)
 ESFORCOS = ("alto", "medio", "baixo")
 
 
 class Pular(Exception):
-    """Etapa que não se aplica agora (conta no limite, triagem local em dúvida): passa para a próxima sem erro."""
+    """Etapa que não se aplica agora (conta no limite): passa para a próxima sem erro."""
 
 
 def ordem(tarefa: str) -> list[str]:
@@ -1210,81 +1202,7 @@ def analisar_needs(ci: dict, p: str) -> tuple[str, str]:
     return text, quem
 
 
-# --- paradas: triagem local -> opencode -> Claude
-def _tl(chave: str, padrao):
-    """`triagem_local.<chave>` da config."""
-    return _cfg(f"triagem_local.{chave}", padrao)
-
-
-def triagem_local_script() -> Path | None:
-    conf = str(_tl("script", "") or "").strip()
-    for c in ([conf] if conf else []) + list(TRIAGEM_LOCAL_SCRIPTS):
-        p = Path(os.path.expanduser(c))
-        if p.exists():
-            return p
-    return None
-
-
-def triagem_local_pythons() -> list[str]:
-    conf = str(_tl("python", "auto") or "auto")
-    if conf != "auto":
-        return [os.path.expanduser(conf)]
-    vistos: list[str] = []
-    for achado in TRIAGEM_LOCAL_PYTHON_ACHADO:
-        try:
-            vistos.append(achado.read_text().strip())
-        except OSError:
-            pass
-    for c in TRIAGEM_LOCAL_PYTHONS:
-        c = os.path.expanduser(c)
-        if (os.sep not in c or Path(c).exists()) and c not in vistos:
-            vistos.append(c)
-    return [v for v in vistos if v]
-
-
-def triagem_local_call(texto: str) -> dict:
-    """{'ambiente': p, 'codigo': p, 'modelo': nome} do script local; RuntimeError se indisponível."""
-    script = triagem_local_script()
-    if script is None:
-        raise RuntimeError("sem script de triagem local (triagem_local.script)")
-    ultimo = "nenhum Python com as dependências da triagem local"
-    for py in triagem_local_pythons():
-        try:
-            r = subprocess.run([py, str(script)], input=json.dumps({"texto": texto}), capture_output=True,
-                               text=True, timeout=int(_tl("timeout_s", 240)))
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            ultimo = str(exc)[:160]
-            continue
-        if r.returncode == 2:
-            ultimo = (r.stderr or "sem dependências").strip()[-160:]
-            continue
-        if r.returncode != 0:
-            raise RuntimeError(f"triagem local saiu com {r.returncode}: {(r.stderr or r.stdout).strip()[-160:]}")
-        out = json.loads(r.stdout.strip().splitlines()[-1])
-        return {"ambiente": float(out["ambiente"]), "codigo": float(out["codigo"]), "modelo": out.get("modelo", "?")}
-    raise RuntimeError(f"triagem local indisponível ({ultimo})")
-
-
-def triagem_local_entrada(label: str, reason: str, tail: str) -> tuple[str, str]:
-    """(texto para a triagem local, linha de evidência). Só as linhas de erro/ambiente do fim do log."""
-    linhas = [re.sub(r"\s+", " ", l.strip())[:160] for l in tail.splitlines() if TRIAGEM_LINHA_RE.search(l)][-24:]
-    return f"{label}: {reason}\n" + "\n".join(linhas), (linhas[-1] if linhas else "")
-
-
-def texto_triagem_local(label: str, reason: str, r: dict, limiar: float, evidencia: str) -> str:
-    ev = re.sub(r"[`{}\\\[\]\"]", "", evidencia)[:140]
-    return "\n".join([
-        f"[Triagem] Diagnóstico automático ({label})",
-        f"Triagem local ({r['modelo']}): ambiente {r['ambiente']:.2f}, código {r['codigo']:.2f} (limiar {limiar:.2f}).",
-        f"Causa provável: o ambiente da máquina (simulador, cache, disco, lock de build, rede ou teste instável), "
-        f"não a mudança feita. Motivo registrado: «{reason[:120]}».",
-    ] + ([f"Evidência no log: {ev}"] if ev else []) + [
-        "O trabalho da branch pode ser aproveitado; basta a lane rodar de novo.",
-        f"INSTRUCAO: a parada anterior ({reason[:60]}) foi do ambiente; rode a prova de novo antes de mexer no código.",
-        "DECISAO: voltar_fila",
-    ])
-
-
+# --- paradas: opencode -> Claude (a triagem local saiu em 29/10/2026)
 def analisar_parada(ci: dict, label: str, st: dict, cid: str, count: int, reason: str) -> tuple[str, str]:
     log_name, tail = lane_log_tail(ci["identifier"])
     dica: list[str] = []
@@ -1297,20 +1215,6 @@ def analisar_parada(ci: dict, label: str, st: dict, cid: str, count: int, reason
             reason=reason, desc=(ci.get("description") or "")[:4000], comments=fmt_comments(ci, 4, 1200),
             log_name=log_name, log_tail=log_tail, known_errors=known_errors())
 
-    def local() -> tuple[str, str]:
-        if not cfg_bool("triagem_local.ativo", True):
-            raise Pular("triagem local desligada nos Ajustes")
-        if count > 1:
-            raise Pular("parada repetida pelo mesmo motivo: precisa ler o código")
-        texto, evid = triagem_local_entrada(label, reason, tail)
-        r = triagem_local_call(texto)
-        limiar = float(_tl("limiar", 0.8))
-        if r["ambiente"] < limiar:
-            dica.append(f"(Triagem local: ambiente {r['ambiente']:.2f}, código {r['codigo']:.2f}; "
-                        f"abaixo do limiar {limiar:.2f}, então leia o código.)")
-            raise Pular(f"triagem local em dúvida ou código (ambiente {r['ambiente']:.2f} < {limiar:.2f})")
-        return texto_triagem_local(label, reason, r, limiar, evid), f"local/{r['modelo']}"
-
     def opencode() -> tuple[str, str]:
         modelo = modelo_opencode_por_peso(ci)
         return formato_triagem(opencode_call(montar(), modelo, REPOS["app"]["dir"]), decisoes), modelo
@@ -1322,7 +1226,7 @@ def analisar_parada(ci: dict, label: str, st: dict, cid: str, count: int, reason
                         modelo=modelo, esforco="medium")
         return formato_triagem(out, decisoes), f"claude/{modelo}"
 
-    fns = {"local": local, "opencode": opencode, "claude": claude}
+    fns = {"opencode": opencode, "claude": claude}
     text, quem, _ = encadear("parada", ci["identifier"], [(e, fns[e]) for e in ordem("paradas")])
     return text, quem
 

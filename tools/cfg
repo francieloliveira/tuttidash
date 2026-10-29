@@ -89,10 +89,6 @@ DEFAULTS = {
     # Privacidade por modelo do OpenCode (gasto_lanes/privacidade.py, 21/10/2026). Desde 23/10/2026 20h20
     # treino/registro de uso não bloqueia (lanes e revisão); exigir_sem_treino=True volta a regra de 21/10.
     "privacidade": {"exigir_sem_treino": False, "max_retencao_dias": 30, "max_idade_dias": 7, "intervalo_h": 24, "excecoes": {}},
-    # Triagem local da prova vermelha (melhoria 4, 21/10/2026): ambiente x código. `script` lê
-    # {"texto": …} no stdin e devolve {"ambiente": p, "codigo": p, "modelo": …}; sem script, desligada.
-    "triagem_local": {"ativo": True, "limiar": 0.8, "python": "auto", "timeout_s": 240,
-                      "script": "~/.transcentia/tools/triagem-local"},
 }
 
 

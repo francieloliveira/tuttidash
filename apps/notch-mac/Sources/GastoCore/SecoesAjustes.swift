@@ -79,7 +79,6 @@ extension CatalogoAjustes {
             CampoAjuste("watch.card_pedidos_triagem", String(localized: "Card de pedidos da triagem"), .textoOpcional, "",
                         ajuda: String(localized: "Onde o vigia deixa os pedidos de cards novos.")),
             CampoAjuste("watch.pedido_triagem_intervalo_s", String(localized: "Pedir cards à triagem no máximo a cada (s)"), n(600, 604_800), "14400"),
-            CampoAjuste("triagem_local.timeout_s", String(localized: "Tempo máximo da triagem (s)"), n(30, 3600), "240"),
             CampoAjuste("bots_chave.intervalo_s", String(localized: "A chave confere a cada (s)"), n(60, 86_400), "600"),
             CampoAjuste("bots_chave.modo_forcado", String(localized: "Quem cuida dos bots"), .escolha(["auto", "vigia", "grokbot"]), "auto",
                         ajuda: String(localized: "Automático decide pela % de uso da conta."),
@@ -157,9 +156,6 @@ extension CatalogoAjustes {
                 GrupoAjustes(String(localized: "Modelo de cada revisor"),
                              ajuda: String(localized: "A lista de modelos se atualiza sozinha uma vez por dia."),
                              campos: revisao.filter { $0.chave.split(separator: ".").count == 4 }),
-                GrupoAjustes(String(localized: "Prova vermelha"), campos: [
-                    campo("triagem_local.ativo", ajuda: String(localized: "Quando a prova falha, a triagem local diz se foi o código ou o ambiente.")),
-                ]),
             ]),
             SecaoAjustes(id: .automacao, nome: String(localized: "Automação"), simbolo: "bolt.horizontal.circle",
                          subtitulo: String(localized: "Quem cuida das lanes e os agentes que rodam sozinhos"), grupos: [
@@ -180,10 +176,6 @@ extension CatalogoAjustes {
                 GrupoAjustes(String(localized: "Privacidade dos modelos"), ajuda: String(localized: "Desde 23/10/2026, modelo free que registra ou treina com o uso pode receber código nas lanes e na revisão."), campos: [
                     c("privacidade.exigir_sem_treino"), c("privacidade.max_retencao_dias"), c("privacidade.max_idade_dias"), c("privacidade.intervalo_h"),
                 ], recolhido: true),
-                GrupoAjustes(String(localized: "Triagem local"), ajuda: String(localized: "Um script seu lê o resumo do log e diz se a falha foi do ambiente. Sem script, fica desligada."), campos: [
-                    c("triagem_local.limiar"), c("triagem_local.timeout_s"), c("triagem_local.script"),
-                    campo("triagem_local.python", ajuda: String(localized: "\"auto\" procura um Python.")),
-                ], recolhido: true),
                 GrupoAjustes(String(localized: "TuttiChave"), ajuda: String(localized: "Quando o uso do Grok Bot passa do limite, o vigia assume."), campos: [
                     campo("bots_chave.limite_pct", ajuda: String(localized: "Acima disto a chave passa as lanes para o vigia.")),
                     c("bots_chave.intervalo_s"),
@@ -193,7 +185,7 @@ extension CatalogoAjustes {
                     c("watch.max_runs_per_tick"), c("watch.max_tarefas_por_lane"), c("watch.claude_budget_usd"),
                     c("watch.claude_timeout_s"), c("watch.card_pedidos_triagem"), c("watch.pedido_triagem_intervalo_s"),
                 ], recolhido: true),
-                GrupoAjustes(String(localized: "Ordem dos modelos do vigia"), ajuda: String(localized: "Local primeiro (Ollama, triagem local), depois opencode free, Claude por último. Quem fez cada análise aparece no log do painel."), campos: [
+                GrupoAjustes(String(localized: "Ordem dos modelos do vigia"), ajuda: String(localized: "Local primeiro (Ollama), depois opencode free, Claude por último. Quem fez cada análise aparece no log do painel."), campos: [
                     c("watch.ordem_needs"), c("watch.ordem_paradas"), c("watch.ordem_revisao"), c("watch.adaptador_fallback"),
                 ], recolhido: true),
                 GrupoAjustes(String(localized: "Agendamentos"), ajuda: String(localized: "Mudar um intervalo recarrega só aquele serviço."),

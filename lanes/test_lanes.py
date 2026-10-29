@@ -664,61 +664,12 @@ class FalsoVermelho(unittest.TestCase):
         self.assertEqual(d.causa_de("algo novo"), "outra")
 
 
-class TriagemLocal(unittest.TestCase):
-    """Melhoria 4: a triagem local roteia a prova vermelha; indisponível, nada muda."""
+class SemTriagemLocal(unittest.TestCase):
+    """A triagem local saiu do TuttiDash em 29/10: prova vermelha vai direto para lane:falhou."""
 
-    def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        (self.tmp / ".lane").mkdir()
-        (self.tmp / ".lane" / "proof.log").write_text(
-            "[prova] A: 1ª tentativa SKIP_PREFLIGHT=1\n189 | let e = error: x\nCoreSimulator timed out\n"
-            "** TEST FAILED **\n", encoding="utf-8")
-        self.antigo = (d.TRIAGEM_SCRIPT_PADRAO, d.TRIAGEM_LOG, d._cfg)
-        self.addCleanup(self.restaura)
-        d.TRIAGEM_LOG = self.tmp / "triagem.jsonl"
-        # FRA-532: o teste de "triagem indisponível" escrevia no log real do dispatcher e o painel
-        # mostrava o aviso a cada rodada de testes, como se a triagem tivesse caído.
-        antigo_log = d.LOG_FILE
-        self.addCleanup(setattr, d, "LOG_FILE", antigo_log)
-        d.LOG_FILE = self.tmp / "dispatcher.log"
-        d._cfg = lambda k, p: p
-
-    def restaura(self):
-        d.TRIAGEM_SCRIPT_PADRAO, d.TRIAGEM_LOG, d._cfg = self.antigo
-
-    def script(self, corpo: str) -> None:
-        f = self.tmp / "triagem-falsa"
-        f.write_text("import sys,json\nsys.stdin.read()\n" + corpo, encoding="utf-8")
-        d.TRIAGEM_SCRIPT_PADRAO = f
-
-    def test_texto_nao_tem_trecho_de_codigo(self):
-        t = d.triagem_texto(self.tmp, "65")
-        self.assertIn("código de saída da prova: 65", t)
-        self.assertIn("CoreSimulator timed out", t)
-        self.assertNotIn("189 |", t)
-
-    def test_ambiente_acima_do_limiar(self):
-        self.script('print(json.dumps({"ambiente": 0.91, "codigo": 0.09, "modelo": "t"}))')
-        r = d.triagem_local(self.tmp, {"card": "X-1", "lane": "claude"}, "65")
-        self.assertEqual(r["decisao"], "ambiente")
-        self.assertTrue(d.TRIAGEM_LOG.exists())
-
-    def test_codigo_ou_baixa_confianca(self):
-        self.script('print(json.dumps({"ambiente": 0.6, "codigo": 0.4, "modelo": "t"}))')
-        self.assertEqual(d.triagem_local(self.tmp, {}, "65")["decisao"], "codigo")
-
-    def test_indisponivel_devolve_none(self):
-        self.script("sys.exit(2)")
-        self.assertIsNone(d.triagem_local(self.tmp, {}, "65"))
-        d.TRIAGEM_SCRIPT_PADRAO = self.tmp / "nao-existe"
-        self.assertIsNone(d.triagem_local(self.tmp, {}, "65"))
-
-    def test_linha_do_comentario(self):
-        s = d.triagem_linha({"ambiente": 0.2, "codigo": 0.8, "limiar": 0.8, "modelo": "base"}, False)
-        self.assertIn("ambiente 0.20", s)
-        self.assertEqual(d.triagem_linha(None, False), "")
-
+    def test_dispatcher_nao_tem_mais_triagem_local(self):
+        for nome in ("triagem_local", "triagem_texto", "triagem_linha", "TRIAGEM_SCRIPT_PADRAO", "TRIAGEM_LOG"):
+            self.assertFalse(hasattr(d, nome), nome)
 
 class PrivacidadeDasLanes(unittest.TestCase):
     """Privacidade das lanes do OpenCode: desde 23/10/2026 20h20 treino/registro de uso não bloqueia."""

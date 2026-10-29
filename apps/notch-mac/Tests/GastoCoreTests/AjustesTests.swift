@@ -32,15 +32,14 @@ final class AjustesTests: XCTestCase {
     func testAbaBotsERevisao() throws {
         let chaves = CatalogoAjustes.abas().flatMap(\.campos).map(\.chave)
         for k in ["revisores.pr.agente", "revisores.pr.independente", "revisores.pr.reserva",
-                  "watch.reconferir_needs_max_s", "triagem_local.ativo", "triagem_local.limiar"] {
+                  "watch.reconferir_needs_max_s"] {
             XCTAssertTrue(chaves.contains(k), k)
         }
         let t = try PastaTemp()
         let m = ModeloAjustes(home: t.url)
         XCTAssertEqual(m.texto(campo("revisores.pr.agente")), "claude")
         XCTAssertNotNil(m.validar(campo("revisores.pr.agente"), "cursor"), "sem `revisao` no manifesto, não revisa")
-        XCTAssertNil(m.validar(campo("triagem_local.limiar"), "0.85"))
-        XCTAssertNotNil(m.validar(campo("triagem_local.limiar"), "1.5"))
+        XCTAssertFalse(chaves.contains { $0.hasPrefix("triagem_local.") }, "a triagem local saiu em 29/10")
     }
 
     func testRevisoresVemDoCatalogo() {

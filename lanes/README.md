@@ -58,10 +58,5 @@ e a lane rodava de novo em opus. Quatro mudanças, todas sem dependência de pro
    com mais folga abaixo de `folga_pct`, pela medida do dispatcher). Adaptador do
    codex em `--sandbox read-only`; se falhar, revisa o Claude. Vereditos em
    `~/Library/Logs/TranscentIA/revisor-vereditos.jsonl`.
-4. **Triagem local** (`triagem_local.script`, chamada pelo dispatcher na prova
-   vermelha): "ambiente ou código?". O script é seu (o TuttiDash não traz modelo):
-   lê `{"texto": …}` no stdin e devolve uma linha JSON
-   `{"ambiente": p, "codigo": p, "modelo": "<nome>"}`; código 2 = indisponível.
-   Ambiente ≥ `triagem_local.limiar` repete a prova uma vez, sem lane e sem token.
-   Sem script, o fluxo segue como antes. Leituras em
-   `~/Library/Logs/TranscentIA/triagem-local.jsonl` (material para ajustar o seu modelo).
+4. **Triagem local**: saiu em 29/10/2026. Nas 16 provas vermelhas que avaliou, nunca
+   acertou uma falha de ambiente. A prova vermelha vai direto para `lane:falhou` e para a triagem do vigia.

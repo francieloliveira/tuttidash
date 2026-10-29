@@ -1062,7 +1062,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
             f"worktree com `git checkout -B {card['branchName']} origin/main` e devolva o card à fila")
     lane_dir = wt / ".lane"
     if lane_dir.exists():
-        for f in ("exit_code", "result.json", "finalized", "triagem_reprova"):
+        for f in ("exit_code", "result.json", "finalized", "triagem_reprova"):  # triagem_reprova: rodadas antigas
             (lane_dir / f).unlink(missing_ok=True)
         archive_old_proofs(lane_dir, ident)
     lane_dir.mkdir(exist_ok=True)
@@ -1989,120 +1989,6 @@ def proof_failures(wt: Path) -> str:
     return "\n".join(f"  - `{h[:200]}`" for h in hits[-10:])
 
 
-# --- Triagem local da prova vermelha (melhoria 4, 21/10/2026; FRA-565) --------
-# Um script local (`triagem_local.script`) lê o resumo do log e diz se a causa provável
-# é o AMBIENTE (simulador, cache, disco, lock, teste instável) ou o CÓDIGO. Contrato:
-# stdin {"texto": …} -> uma linha JSON {"ambiente": p, "codigo": p, "modelo": "<nome>"};
-# código 2 = indisponível. Ambiente com probabilidade >= `triagem_local.limiar`: a prova
-# roda de novo uma vez, sem lane e sem token. Código, confiança baixa ou sem script:
-# segue como antes (lane:falhou). Toda leitura vai para TRIAGEM_LOG (material de ajuste
-# de quem tiver um modelo próprio). O TuttiDash não traz modelo.
-TRIAGEM_SCRIPT_PADRAO = Path.home() / ".transcentia" / "tools" / "triagem-local"
-TRIAGEM_LOG = LOG_DIR / "triagem-local.jsonl"
-TRIAGEM_LINHA_RE = re.compile(r"error|fail|Executed \d+|SUCCEEDED|abortado|timed? ?out|simulator|"
-                              r"lock|crash|signal|killed|no space|denied|unable to|could not|"
-                              r"não foi possível|connection|network", re.I)
-
-
-TRIAGEM_PYTHON_ACHADO = STATE_DIR / "triagem-local-python"
-# `triagem_local.python: auto` procura um Python nestes lugares (o 1º que responder fica
-# gravado em TRIAGEM_PYTHON_ACHADO e é tentado primeiro nas próximas vezes).
-TRIAGEM_PYTHONS = ("/opt/homebrew/bin/python3.11", "/opt/homebrew/bin/python3.12",
-                   "/usr/local/bin/python3.11", "/opt/homebrew/bin/python3", "python3")
-
-
-def triagem_script() -> Path:
-    conf = str(_cfg("triagem_local.script", "") or "").strip()
-    return Path(os.path.expanduser(conf)) if conf else TRIAGEM_SCRIPT_PADRAO
-
-
-def triagem_pythons() -> list[str]:
-    conf = str(_cfg("triagem_local.python", "auto"))
-    if conf not in ("", "auto"):
-        return [os.path.expanduser(conf)]
-    vistos: list[str] = []
-    try:
-        vistos.append(TRIAGEM_PYTHON_ACHADO.read_text().strip())
-    except OSError:
-        pass
-    for c in TRIAGEM_PYTHONS:
-        c = os.path.expanduser(c)
-        if (os.sep not in c or Path(c).exists()) and c not in vistos:
-            vistos.append(c)
-    return [v for v in vistos if v]
-
-
-def triagem_texto(wt: Path, rc: str) -> str:
-    """Entrada da triagem local: código de saída + linhas de resumo do log. Independe do
-    EVIDENCIA_RE, para a triagem não herdar o erro que deve pegar."""
-    linhas = []
-    for b in proof_attempts(wt):
-        for l in b:
-            t = l.strip()
-            if not t or TRECHO_RE.match(l):
-                continue
-            if ATTEMPT_MARK in t or TRIAGEM_LINHA_RE.search(t):
-                linhas.append(t[:160])
-    return f"código de saída da prova: {rc}\n" + "\n".join(linhas[-24:])
-
-
-def triagem_local(wt: Path, st: dict, rc: str) -> Optional[dict]:
-    """{'ambiente': p, 'codigo': p, 'decisao': 'ambiente'|'codigo', ...} ou None (desligada,
-    sem script, sem dependências, erro). Nunca derruba o fechamento."""
-    script = triagem_script()
-    if not _cfg("triagem_local.ativo", True) or not script.exists():
-        return None
-    texto = triagem_texto(wt, rc)
-    t0 = time.time()
-    out = None
-    for py in triagem_pythons():
-        try:
-            out = subprocess.run([py, str(script)], input=json.dumps({"texto": texto}),
-                                 capture_output=True, text=True, timeout=int(_cfg("triagem_local.timeout_s", 240)),
-                                 env=dict(os.environ, PATH=TOOL_PATH))
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            log(f"triagem local indisponível em {py}: {exc}")
-            out = None
-            continue
-        if out.returncode == 2:
-            continue  # sem dependências neste interpretador: tenta o próximo
-        if out.returncode == 0:
-            try:
-                TRIAGEM_PYTHON_ACHADO.write_text(py)
-            except OSError:
-                pass
-        break
-    if out is None or out.returncode != 0:
-        msg = (out.stderr or out.stdout).strip()[-240:] if out is not None else "nenhum interpretador"
-        log(f"triagem local indisponível ({msg}); a prova segue sem triagem")
-        return None
-    try:
-        r = json.loads(out.stdout.strip().splitlines()[-1])
-        amb = float(r["ambiente"])
-    except (ValueError, KeyError, IndexError, TypeError):
-        log(f"triagem local respondeu fora do formato: {out.stdout.strip()[-200:]}")
-        return None
-    limiar = float(_cfg("triagem_local.limiar", 0.8))
-    r.update(decisao="ambiente" if amb >= limiar else "codigo", limiar=limiar, s=round(time.time() - t0, 1))
-    try:
-        TRIAGEM_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with TRIAGEM_LOG.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"ts": now(), "card": st.get("card"), "lane": st.get("lane"),
-                                 "projeto": projeto().nome, "rc": rc, "texto": texto, **r},
-                                ensure_ascii=False) + "\n")
-    except OSError:
-        pass
-    return r
-
-
-def triagem_linha(tri: Optional[dict], repetiu: bool) -> str:
-    if not tri:
-        return ""
-    s = (f"- Triagem local: ambiente {tri['ambiente']:.2f} · código {float(tri.get('codigo', 0)):.2f} "
-         f"(limiar {tri['limiar']:.2f}, modelo `{tri.get('modelo', '?')}`)")
-    return s + ("; já tinha repetido a prova por ambiente nesta rodada\n" if repetiu else "\n")
-
-
 def finalize(st: dict) -> Optional[str]:
     """Fecha o card. None = ainda não (a prova do dispatcher está rodando)."""
     wt = Path(st["worktree"])
@@ -2185,27 +2071,16 @@ def finalize(st: dict) -> Optional[str]:
         return stop(st, "a prova foi barrada 4 vezes pelo preflight (Mac ocupado)",
                     f"- log da prova: `{wt / '.lane' / 'proof.log'}`\n")
     if proof_rc != "0" or veredito == "vermelho":
-        # Falha: código de saída não-zero OU evidência forte na última tentativa
-        # (mesmo com código 0). Antes de devolver o card, a triagem local diz se foi ambiente.
-        reprova = lane_dir / "triagem_reprova"
-        repetiu = reprova.exists()
-        tri = triagem_local(wt, st, proof_rc)
-        if tri and tri["decisao"] == "ambiente" and not repetiu:
-            reprova.write_text(json.dumps(tri, ensure_ascii=False))
-            archive_old_proofs(lane_dir, st["card"])
-            log(f"lane:{st['lane']} {st['card']}: a triagem local leu falha de ambiente "
-                f"({tri['ambiente']:.2f} ≥ {tri['limiar']:.2f}); a prova roda de novo, sem lane")
-            return None
+        # Falha: código de saída não-zero OU evidência forte na última tentativa (mesmo com código 0).
         return fail(st, f"a prova do dispatcher falhou ({', '.join(suites)}, código {proof_rc})",
-                    f"- resumo:\n{proof_failures(wt)}\n{triagem_linha(tri, repetiu)}"
+                    f"- resumo:\n{proof_failures(wt)}\n"
                     f"- log completo: `{wt / '.lane' / 'proof.log'}`\n", causa="prova-vermelha")
     if veredito != "verde":
         # Exit 0 com log vazio, 0 testes, ou suíte sem a linha do E22 não é DONE.
         return fail(st, "a prova não contou Executed N tests, with 0 failures (N>0) em cada suíte",
                     f"- log completo: `{wt / '.lane' / 'proof.log'}`\n", causa="prova-sem-contagem")
-    repetida = " (repetida após triagem local: ambiente)" if (lane_dir / "triagem_reprova").exists() else ""
     res = dict(res, verification=f"dispatcher: {projeto().prova.replace('{suite}', '')}"
-                                 f"{' '.join(suites)} → verde{repetida}"
+                                 f"{' '.join(suites)} → verde"
                                  + (f"; agente: {res['verification']}" if res.get("verification") else ""))
     barrado = motivo_para_nao_enviar(wt)
     if barrado:
