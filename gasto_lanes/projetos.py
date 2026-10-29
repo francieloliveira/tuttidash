@@ -18,6 +18,7 @@ Formato (lista de objetos):
        "worktrees": "~/Developer/meu-app-worktrees",
        "prova": "./scripts/testar.sh {suite}",
        "prova_tentativas": 2,
+       "suites": ["tests.test_parser"],
        "protegidos": ["docs/contratos/*", "scripts/release.sh"],
        "copiar_para_worktree": ["AGENTS.md"],
        "antes_do_push": "bash tools/checar-publicacao.sh"}
@@ -37,6 +38,9 @@ Regras:
     agente pediu em `.lane/result.json`. Default `python3 {suite}`.
   - `prova_tentativas`: 1 (padrão) roda a prova uma vez; 2 repete a segunda vez
     sem `SKIP_PREFLIGHT` (para scripts de prova com um preflight caro).
+  - `suites`: suítes padrão quando a lane não lista nenhuma válida no
+    `result.json`. Sem a chave, vale `TranscentIATests` (projeto iOS). Cada
+    projeto declara a sua; texto velho de outro projeto nunca entra aqui.
   - `copiar_para_worktree`: arquivos que ficam fora do git no `repo` (ex.: um
     `AGENTS.md` gerado na máquina) e que cada worktree de lane precisa. São
     caminhos relativos; o dispatcher copia os que existem e nunca sobrescreve.
@@ -82,11 +86,11 @@ class Projeto:
     """Um projeto que o dispatcher pode trabalhar."""
 
     __slots__ = ("id", "nome", "ativo", "padrao", "repo", "github", "worktrees",
-                 "prova", "prova_tentativas", "protegidos", "copiar_para_worktree", "antes_do_push")
+                 "prova", "prova_tentativas", "suites", "protegidos", "copiar_para_worktree", "antes_do_push")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
                  repo: str = "", worktrees: str = "", github: str = "", prova: str = "python3 {suite}",
-                 prova_tentativas: int = 1, protegidos=None, copiar_para_worktree=None,
+                 prova_tentativas: int = 1, suites=None, protegidos=None, copiar_para_worktree=None,
                  antes_do_push: str = ""):
         self.id = id
         self.nome = nome or id
@@ -98,6 +102,7 @@ class Projeto:
             Path(str(self.repo) + "-worktrees") if repo else Path(""))
         self.prova = prova or "python3 {suite}"
         self.prova_tentativas = max(1, int(prova_tentativas or 1))
+        self.suites = [str(s) for s in (suites or []) if str(s).strip()]
         self.protegidos = list(protegidos) if protegidos else list(PROTEGIDOS_PADRAO)
         self.copiar_para_worktree = [str(c) for c in (copiar_para_worktree or []) if str(c).strip()]
         self.antes_do_push = str(antes_do_push or "").strip()
@@ -166,6 +171,7 @@ def _do_registro(bruto: dict) -> list:
             worktrees=str(item.get("worktrees") or ""),
             prova=str(item.get("prova") or "python3 {suite}"),
             prova_tentativas=item.get("prova_tentativas") or 1,
+            suites=item.get("suites") if isinstance(item.get("suites"), list) else None,
             protegidos=prot if isinstance(prot, list) else None,
             copiar_para_worktree=copiar if isinstance(copiar, list) else None,
             antes_do_push=str(item.get("antes_do_push") or "")))
@@ -271,4 +277,5 @@ if __name__ == "__main__":  # conferência à mão: python3 -m gasto_lanes.proje
         print(f"  repo      {p.repo}")
         print(f"  worktrees {p.worktrees}")
         print(f"  prova     {p.prova} (tentativas={p.prova_tentativas})")
+        print(f"  suites    {p.suites or ['TranscentIATests']}")
     print("padrão:", padrao().id)

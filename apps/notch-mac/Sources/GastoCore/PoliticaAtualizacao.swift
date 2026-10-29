@@ -12,6 +12,8 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
     public var intervaloDados: TimeInterval
     public var intervaloUso: TimeInterval
     public var intervaloReservaMouse: TimeInterval
+    /// Abrir o painel relê os dados quando a última leitura tem pelo menos esta idade (FRA-583).
+    public var idadeAntiga: TimeInterval = 5
 
     public init(intervaloDados: TimeInterval = 30, intervaloUso: TimeInterval = 120,
                 intervaloReservaMouse: TimeInterval = 1) {
@@ -35,5 +37,12 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
     /// Relógio que voltou (agora antes de `montadoEm`) não vale: remonta.
     public static func painelVale(montadoEm: Date, agora: Date) -> Bool {
         (0..<validadePainel).contains(agora.timeIntervalSince(montadoEm))
+    }
+
+    /// Dados antigos ao abrir o painel: nunca lidos ou lidos há `idadeAntiga` ou mais.
+    /// Só aí a abertura relê com «atualizando…»; a leitura do timer não mostra indicador (FRA-583).
+    public func dadosAntigos(atualizadoEm: Date?, agora: Date) -> Bool {
+        guard let atualizadoEm else { return true }
+        return agora.timeIntervalSince(atualizadoEm) >= idadeAntiga
     }
 }
