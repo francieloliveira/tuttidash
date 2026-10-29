@@ -67,7 +67,7 @@ enum PV {
 
 /// Páginas da barra lateral.
 enum PaginaPainel: String, CaseIterable, Identifiable {
-    case dashboard, lanes, builds, entregas, testes, custos, ajustes
+    case dashboard, lanes, builds, entregas, testes, custos, esperando, ajustes
 
     var id: String { rawValue }
     /// Páginas da lista de cima; Ajustes fica abaixo do divisor, com sub-seções.
@@ -81,6 +81,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
         case .entregas: return "Entregas"
         case .testes: return "Testes"
         case .custos: return "Custos"
+        case .esperando: return "Esperando você"
         case .ajustes: return "Ajustes"
         }
     }
@@ -93,6 +94,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
         case .entregas: return "Cards fechados e o que está instalado nos aparelhos"
         case .testes: return "Provas em curso, fila do lock e histórico"
         case .custos: return "Gasto conhecido, uso das contas e cards mais caros"
+        case .esperando: return "Cards que precisam de uma decisão sua, com a pendência resumida"
         case .ajustes: return "Tudo o que o TuttiDash e as lanes usam, num lugar só"
         }
     }
@@ -105,6 +107,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
         case .entregas: return "truck.box"
         case .testes: return "checkmark.circle"
         case .custos: return "gauge.with.dots.needle.33percent"
+        case .esperando: return "bell.badge"
         case .ajustes: return "gearshape"
         }
     }

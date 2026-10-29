@@ -49,6 +49,7 @@ struct PainelTela: View {
         case .entregas: PaginaEntregas(modelo: modelo)
         case .testes: PaginaTestes(modelo: modelo)
         case .custos: PaginaCustos(modelo: modelo)
+        case .esperando: PaginaEsperando()
         case .ajustes:
             if let s = CatalogoAjustes.secoes().first(where: { $0.id == nav.secao }) { PaginaAjustes(secao: s) }
         }
@@ -242,32 +243,36 @@ struct CabecalhoPainel: View {
                 .help("Atualizar agora")
             }
             .padding(.leading, 4)
-            // Mock: não há central de notificações. O ponto vermelho acende quando há alerta.
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: "bell").font(.system(size: 19)).foregroundStyle(PV.icone)
-                if !(modelo.snapshot?.alertasPainel.isEmpty ?? true) {
-                    Circle().fill(PV.vermelhoPonto).frame(width: 8, height: 8)
-                        .overlay(Circle().strokeBorder(PV.fundo, lineWidth: 1.5))
-                        .offset(x: 1, y: -1)
+            // Caixa do dono (PRD de 29/10): o sino mostra as respostas em aberto e abre «Esperando você».
+            // Sem resposta em aberto, o ponto vermelho dos outros alertas do painel fica como antes.
+            Button { comAnimacao { NavegacaoPainel.compartilhada.pagina = .esperando } } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "bell").font(.system(size: 19)).foregroundStyle(PV.icone)
+                    if caixa.abertas > 0 {
+                        Text("\(caixa.abertas)").font(PV.fonte(10.5, .bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 5).frame(minWidth: 17, minHeight: 17)
+                            .background(Capsule().fill(PV.vermelhoPonto))
+                            .overlay(Capsule().strokeBorder(PV.fundo, lineWidth: 1.5))
+                            .offset(x: 9, y: -7)
+                    } else if !(modelo.snapshot?.alertasPainel.isEmpty ?? true) {
+                        Circle().fill(PV.vermelhoPonto).frame(width: 8, height: 8)
+                            .overlay(Circle().strokeBorder(PV.fundo, lineWidth: 1.5))
+                            .offset(x: 1, y: -1)
+                    }
                 }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
             }
-            .frame(width: 44, height: 44)
+            .buttonStyle(Pressionavel())
             .padding(.leading, 5)
-            .help("Notificações: em breve")
-            // FRA-528: o app não tem conta logada. O selo mostra quantos cards esperam por você.
-            HStack(spacing: 8) {
-                Circle().fill(esperando > 0 ? PV.ambar : PV.verde).frame(width: 8, height: 8)
-                Text("Esperando você: \(esperando)").font(PV.fonte(13.5, .semibold)).foregroundStyle(.white)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(PV.lateral))
-            .padding(.leading, 12)
             .padding(.trailing, 5)
-            .help("Cards que o dispatcher passou para você (\(modelo.config.rotuloDono ?? "needs:..."))")
+            .help(caixa.abertas > 0 ? String(localized: "\(caixa.abertas) resposta(s) em aberto: abrir Esperando você")
+                                     : String(localized: "Nada esperando por você"))
+            .onAppear { caixa.iniciar() }
         }
         .padding(.horizontal, 22)
         .frame(height: 60)
     }
 
-    private var esperando: Int { modelo.snapshot?.esperandoVoce ?? 0 }
+    @ObservedObject private var caixa = EstadoCaixa.compartilhada
 }

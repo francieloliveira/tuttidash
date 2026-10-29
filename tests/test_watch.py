@@ -1,5 +1,6 @@
 """Funções puras do vigia (bots/watch.py): sem rede, sem Linear, sem gh."""
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -400,6 +401,91 @@ class ComentariosMaisRecentesTest(unittest.TestCase):
         pr = {"body": "dispatcher: x → verde", "headRefOid": "e445dea0000"}
         self.assertTrue(watch.proof_passed(ci, pr))
         self.assertIsNone(watch.em_ordem(None))
+
+
+class CaixaDoDonoTest(unittest.TestCase):
+    """PRD de 29/10: a caixa do dono (pendência, decisões e limpeza de cancelados)."""
+
+    ANALISE = ("[Triagem] Conferência da etiqueta needs:dono\nA rodada foi cancelada.\n"
+               "PENDENCIA: escolher o esforço antes de rodar de novo\n"
+               "OPCOES: A) Liberar em opus high | B) Reclassificar como médio e liberar [esforco=medio] | "
+               "C) Manter parado | D) passar ao codex [lane=codex]\n"
+               "RECOMENDA: A — o card é grande e high já foi testado\nDECISAO: manter")
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.calls = []
+        nomes = ["CAIXA_ARQUIVO", "remove_label", "set_description", "comment", "LABEL_IDS", "IDS_LINEAR"]
+        antes = {n: getattr(watch, n) for n in nomes}
+        self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
+        watch.CAIXA_ARQUIVO = self.tmp / "caixa-dono.json"
+        watch.remove_label = lambda i, n: self.calls.append(("remove", n))
+        watch.set_description = lambda ci, t: self.calls.append(("desc", t))
+        watch.comment = lambda i, b: self.calls.append(("comment", b))
+        watch.LABEL_IDS = {watch.OWNER_LABEL: "lab-dono", "lane:falhou": "lab-f", "lane:parada": "lab-p"}
+        watch.IDS_LINEAR = {"esforco": {"medio": "lab-medio"}, "lanes": {"codex": "lab-codex"}}
+
+    def _card(self, ident="FRA-1", labels=(), comentarios=(), desc="corpo"):
+        return {"id": "id-" + ident, "identifier": ident, "title": "Título", "url": "https://linear.app/x/" + ident,
+                "description": desc, "labels": {"nodes": [{"name": n, "parent": None} for n in labels]},
+                "comments": {"nodes": [{"id": str(i), "body": b, "createdAt": f"2026-10-29T10:0{i}:00Z"}
+                                       for i, b in enumerate(comentarios)]}}
+
+    def test_analise_vira_pendencia_e_opcoes(self):
+        a = watch.caixa_da_analise(self.ANALISE)
+        self.assertEqual(a["pendencia"], "escolher o esforço antes de rodar de novo")
+        self.assertEqual([o["letra"] for o in a["opcoes"]], ["A", "B", "D"], "«manter parado» não é opção")
+        self.assertEqual(a["opcoes"][1]["acao"], {"tipo": "esforco", "valor": "medio"})
+        self.assertEqual(a["opcoes"][2]["acao"], {"tipo": "lane", "valor": "codex"})
+        self.assertIsNone(a["opcoes"][0]["acao"])
+        self.assertEqual(a["recomenda"], "A")
+        self.assertIn("high já foi testado", a["porque"])
+
+    def test_analise_sem_formato_e_acao_fora_da_lista(self):
+        self.assertEqual(watch.caixa_da_analise("[Triagem] texto livre\nDECISAO: manter"),
+                         {"pendencia": "", "opcoes": [], "recomenda": "", "porque": ""})
+        a = watch.caixa_da_analise("OPCOES: A) apagar a branch [apagar] | B) ok [lane=inventada]\nRECOMENDA: A")
+        self.assertEqual(a["opcoes"], [])
+        self.assertEqual(a["recomenda"], "", "recomendada que não existe nas opções")
+
+    def test_escreve_a_caixa_com_o_motivo_e_a_analise(self):
+        st = {"caixa_analise": {"FRA-1": dict(watch.caixa_da_analise(self.ANALISE), imp="abc", quem="ollama/x")}}
+        c1 = self._card("FRA-1", ["needs:dono", "alto", "claude"],
+                        ["▶️ lane assumiu", "✋ **lane:claude** parou e precisa do dono.\n\n**Motivo:** rebase negado\n\nfim"])
+        c2 = self._card("FRA-2", ["alto"])
+        dados = watch.escrever_caixa([c1, c2], st, agora=1_000_000.0)
+        lido = json.loads(watch.CAIXA_ARQUIVO.read_text(encoding="utf-8"))
+        self.assertEqual(lido, dados)
+        self.assertEqual([i["card"] for i in dados["itens"]], ["FRA-1"])
+        item = dados["itens"][0]
+        self.assertEqual((item["origem"], item["motivo"]), ("lane", "rebase negado"))
+        self.assertEqual((item["esforco"], item["lane"], item["pergunta_id"]), ("alto", "claude", "FRA-1:abc"))
+        self.assertEqual(item["recomenda"], "A")
+        self.assertEqual(dados["ids"]["dono"], "lab-dono")
+        self.assertEqual(dados["ids"]["esforco"], {"medio": "lab-medio"})
+        watch.escrever_caixa([c2], st, agora=1_000_100.0)
+        self.assertEqual(json.loads(watch.CAIXA_ARQUIVO.read_text(encoding="utf-8"))["itens"], [])
+        self.assertNotIn("FRA-1", st["caixa_desde"], "saiu da caixa, sai o «desde»")
+
+    def test_sem_analise_sai_o_motivo_cru(self):
+        c = self._card("FRA-3", ["needs:dono"], ["[Triagem] 3ª parada pelo mesmo motivo (x). dono, preciso de você"])
+        item = watch.escrever_caixa([c], {}, agora=5.0)["itens"][0]
+        self.assertEqual(item["origem"], "triagem")
+        self.assertEqual((item["pendencia"], item["opcoes"]), ("", []))
+
+    def test_cancelado_com_pendencia_e_limpo_uma_vez(self):
+        bloco = watch.stop_note({"description": ""}, "[Triagem] x\nINSTRUCAO: faça rebase.\nDECISAO: voltar_fila", 2, "r")
+        st = {"stops": {"FRA-4": {"vistos": [], "motivos": {"r": 3}}}, "caixa_analise": {"FRA-4": {}}}
+        c = self._card("FRA-4", ["needs:dono", "lane:falhou", "alto"], desc=bloco + "corpo")
+        watch.limpar_cancelados([c], st, [])
+        self.assertEqual([x for x in self.calls if x[0] == "remove"], [("remove", "needs:dono"), ("remove", "lane:falhou")])
+        self.assertIn(("desc", "corpo"), self.calls)
+        self.assertNotIn("FRA-4", st["stops"])
+        self.assertIn("FRA-4", st["cancelados_limpos"])
+        self.assertIn("Card cancelado", [x for x in self.calls if x[0] == "comment"][0][1])
+        self.calls.clear()
+        watch.limpar_cancelados([self._card("FRA-4", ["alto"], desc="corpo")], st, [])
+        self.assertEqual(self.calls, [], "sem pendência, nada a limpar")
 
 
 class CardFilesLaneInfraTest(unittest.TestCase):

@@ -70,10 +70,12 @@ struct PaginaLanes: View {
                     cartaoPagina("Parou · retomar", direita: {
                         Text("últimos 7 dias").font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
                     }) {
-                        if modelo.retomadas.isEmpty {
+                        // Card cancelado não é retomado (caixa do dono, 29/10): o vigia já limpou as pendências.
+                        let retomadas = modelo.retomadas.filter { !EstadoCaixa.compartilhada.arquivo.cancelados.contains($0.card) }
+                        if retomadas.isEmpty {
                             Text("Nenhuma lane parou sem fechar o card.").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
                         } else {
-                            ForEach(Array(modelo.retomadas.enumerated()), id: \.offset) { _, r in
+                            ForEach(Array(retomadas.enumerated()), id: \.offset) { _, r in
                                 HStack(spacing: 10) {
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(spacing: 6) {

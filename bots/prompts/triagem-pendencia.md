@@ -16,6 +16,13 @@ Em até 8 linhas: qual era a pendência, se ela ainda existe e, se existir, o qu
 (uma frase, com o card e uma descrição curta ao lado do número).
 Se a pendência for só texto velho no card (repo/prova antigos, diferentes do cadastro do projeto em `projetos`),
 diga isso e peça a atualização do texto em vez de manter o bloqueio.
+Se a pendência AINDA existir, escreva também estas três linhas, cada uma numa linha só (a caixa do dono, no app,
+mostra exatamente isto e o dono decide com um clique):
+PENDENCIA: <uma frase: o que o dono precisa decidir>
+OPCOES: A) <decisão> | B) <decisão> | C) <decisão>   (de 1 a 3; cada uma pode terminar com UMA ação entre
+colchetes, só destas: [esforco=baixo] [esforco=medio] [esforco=alto] [lane=<nome da lane>] [cancelar]; sem ação,
+a decisão vira só comentário. Nunca ofereça "manter", "esperar" ou "aguardar": não responder já é manter.)
+RECOMENDA: <a letra> — <por quê, em poucas palavras>
 Na ÚLTIMA linha, exatamente uma destas:
 DECISAO: remover_needs      (a pendência não existe mais)
 DECISAO: manter
