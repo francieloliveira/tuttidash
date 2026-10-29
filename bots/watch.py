@@ -1604,8 +1604,17 @@ def medidas_contas() -> dict:
         return {}
 
 
+def cli_instalado(cli: str) -> str | None:
+    """CLI no PATH que o vigia usa para rodar os agentes (PATH_ENV), não no do processo.
+
+    Sob o launchd do app o PATH do processo é só /usr/bin:/bin:/usr/sbin:/sbin: com
+    `shutil.which` puro nenhum CLI aparecia e toda revisão dava «nenhum revisor
+    disponível» (PRs #7 a #10, 28–29/10), embora o `sh` rodasse os CLIs com PATH_ENV."""
+    return shutil.which(cli, path=PATH_ENV)
+
+
 def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None = None,
-                     instalado=shutil.which, so_sozinho: bool = False) -> tuple[str, str]:
+                     instalado=None, so_sozinho: bool = False) -> tuple[str, str]:
     """(agente revisor, observação).
 
     Candidatos: os agentes do catálogo com `revisao` e CLI instalado. O preferido dos
@@ -1614,6 +1623,7 @@ def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None 
     aprovar sozinho (confirmação de uma segunda opinião). Sem nenhum, o preferido (ou o
     primeiro que aprova sozinho) com a observação "mesmo fornecedor"."""
     conf = conf or conf_revisor()
+    instalado = instalado or cli_instalado
     nomes = [a for a in revisores_catalogo() if instalado(AGENTES.get(a, {}).get("cli") or a)
              and privacidade_ok(a, str((conf.get(a) or {}).get("modelo") or ""))[0]]
     if so_sozinho:
@@ -1720,7 +1730,7 @@ def adaptador_fallback() -> str:
 def ordem_revisao(revisor: str, conf: dict, so_sozinho: bool = False, instalado=None) -> list[str]:
     """Quem tenta revisar, em ordem: `escolhido` (o revisor de hoje), `fallback` (watch.adaptador_fallback)
     e os agentes listados em `watch.ordem_revisao`. Só quem revisa, tem o CLI e passa na privacidade."""
-    instalado = instalado or shutil.which  # na hora da chamada (o teste troca o shutil.which)
+    instalado = instalado or cli_instalado  # na hora da chamada (o teste troca o shutil.which)
     fb = adaptador_fallback()
     out: list[str] = []
     for e in ordem("revisao"):

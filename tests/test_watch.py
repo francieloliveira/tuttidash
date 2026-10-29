@@ -326,6 +326,18 @@ class RetomadaExpiraTest(unittest.TestCase):
         self.assertEqual(st["stops"]["FRA-1"]["motivos"], {})
 
 
+class CliNoPathDoVigiaTest(unittest.TestCase):
+    """Sob o launchd o PATH do processo não tem os CLIs; a busca usa PATH_ENV."""
+
+    def test_procura_no_path_env(self):
+        vistos = []
+        antes = watch.shutil.which
+        self.addCleanup(setattr, watch.shutil, "which", antes)
+        watch.shutil.which = lambda c, path=None: vistos.append(path) or "/x/" + c
+        self.assertEqual(watch.cli_instalado("claude"), "/x/claude")
+        self.assertEqual(vistos, [watch.PATH_ENV])
+
+
 class CardFilesLaneInfraTest(unittest.TestCase):
     """result.json e .lane/ não contam como arquivo do card (conflito falso de 11/10)."""
 
@@ -792,7 +804,7 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         conf = watch.conf_revisor()
         antes = watch.shutil.which
         self.addCleanup(setattr, watch.shutil, "which", antes)
-        watch.shutil.which = lambda c: "/bin/" + c
+        watch.shutil.which = lambda c, path=None: "/bin/" + c
         self.assertEqual(watch.revisar("x", self.tmp, "t", "opencode-go", conf), ("[Revisor] ok", "opencode"))
         self.assertEqual(tentou, ["opencode-go", "opencode"])
         tentou.clear()
