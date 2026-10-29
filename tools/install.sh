@@ -4,7 +4,6 @@
 #                               seguidores de log com hora (carimbo, seguir-com-hora) e rodapé
 #                               com barra de progresso (rodape.py),
 #                               medir-estresse, bots-chave, lanepct-auto (+ build do lanepct),
-#                               (a triagem local da prova é um script seu: triagem_local.script),
 #                               o catálogo de agentes (agents.d/ + catalogo.py),
 #                               vigia dos bots (watch.py, prompts, instalar.sh) e os launchd
 #                               com.transcentia.bots.watch / .chave pelos lançadores com nome.
@@ -49,9 +48,6 @@ done
 # Build pessoal (FRA-565): módulo opcional fora do repositório aberto, ao lado do catálogo.
 PRIVADO_PY="$ROOT/apps/notch-mac/Privado/python/gasto_privado.py"
 [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$B/gasto_privado.py"
-# Script da triagem local do build pessoal (triagem_local.script aponta para cá).
-PRIVADO_TL="$ROOT/apps/notch-mac/Privado/tools/triagem-local"
-[ -f "$PRIVADO_TL" ] && install -m 755 "$PRIVADO_TL" "$T/triagem-local"
 LANES_DIR="$HOME/.transcentia/lanes"
 if [ -d "$LANES_DIR" ]; then
   # Só o que já está em paridade com o repo. lane_view.py tem

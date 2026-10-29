@@ -143,10 +143,6 @@ public enum CatalogoAjustes {
                 CampoAjuste("privacidade.max_retencao_dias", String(localized: "OpenCode: com a regra de 21/10, aceitar retenção de até (dias; 0 = só retenção zero)"), n(0, 365), "30"),
                 CampoAjuste("privacidade.max_idade_dias", String(localized: "OpenCode: bloquear se a conferência de privacidade tiver mais de (dias)"), n(1, 60), "7"),
                 CampoAjuste("privacidade.intervalo_h", String(localized: "OpenCode: conferir a privacidade a cada (h)"), n(1, 168), "24"),
-                CampoAjuste("triagem_local.ativo", String(localized: "Triagem local na prova vermelha"), .booleano, "true"),
-                CampoAjuste("triagem_local.limiar", String(localized: "Repetir a prova quando ambiente ≥"), d(0.5, 0.99), "0.8"),
-                CampoAjuste("triagem_local.script", String(localized: "Script da triagem local"), .caminho(deveExistir: false, opcional: true), "~/.transcentia/tools/triagem-local"),
-                CampoAjuste("triagem_local.python", String(localized: "Python da triagem local (auto = procura um)"), .texto, "auto"),
             ], nota: String(localized: "O revisor não é uma lane: o dispatcher não o enxerga e o painel não o lista. Estes ajustes valem para qualquer projeto do cadastro.")),
             AbaAjustes(nome: String(localized: "Máquina e testes"), simbolo: "cpu", campos: [
                 CampoAjuste("preflight.external_nvme", String(localized: "Disco NVMe externo (opcional)"), .caminho(deveExistir: true, opcional: true), ""),

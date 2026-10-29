@@ -710,7 +710,7 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         self.cfg = {}
         self.chamadas = []
         self.comentarios = []
-        nomes = ["_cfg", "agent_paused", "local_call", "opencode_call", "run_agent", "triagem_local_call", "lane_log_tail",
+        nomes = ["_cfg", "agent_paused", "local_call", "opencode_call", "run_agent", "lane_log_tail",
                  "comment", "remove_label", "add_label", "prepend_description", "prompt", "known_errors",
                  "PANEL_LOG", "ANALISES_LOG", "SHADOW_NEEDS_LOG", "run_revisor", "privacidade_ok", "LOG_FILE"]
         antes = {n: getattr(watch, n) for n in nomes}
@@ -738,7 +738,6 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         watch.local_call = nao("ollama")
         watch.opencode_call = nao("opencode")
         watch.run_agent = nao("claude")
-        watch.triagem_local_call = nao("local")
 
     def painel(self) -> str:
         return (self.tmp / "painel.log").read_text() if (self.tmp / "painel.log").exists() else ""
@@ -746,13 +745,15 @@ class VigiaLocalPrimeiro(unittest.TestCase):
     # ---- ordem
     def test_ordem_padrao_e_configuravel(self):
         self.assertEqual(watch.ordem("needs"), ["ollama", "opencode", "claude"])
-        self.assertEqual(watch.ordem("paradas"), ["local", "opencode", "claude"])
+        self.assertEqual(watch.ordem("paradas"), ["opencode", "claude"])
+        self.cfg["watch.ordem_paradas"] = "local, opencode, claude"
+        self.assertEqual(watch.ordem("paradas"), ["opencode", "claude"], "a triagem local saiu: «local» é ignorado")
         self.cfg["watch.ordem_needs"] = "opencode, OLLAMA, inventado, opencode"
         self.assertEqual(watch.ordem("needs"), ["opencode", "ollama"])
         self.cfg["watch.ordem_paradas"] = ["opencode"]
         self.assertEqual(watch.ordem("paradas"), ["opencode"])
         self.cfg["watch.ordem_paradas"] = ""
-        self.assertEqual(watch.ordem("paradas"), ["local", "opencode", "claude"], "vazio volta ao padrão")
+        self.assertEqual(watch.ordem("paradas"), ["opencode", "claude"], "vazio volta ao padrão")
 
     # ---- etiqueta do dono
     def test_needs_ollama_e_o_principal_e_o_opencode_fica_na_sombra(self):
@@ -797,16 +798,7 @@ class VigiaLocalPrimeiro(unittest.TestCase):
     def st(self):
         return {"stops": {}, "analise_falhas": {}}
 
-    def test_parada_triagem_local_confiante_no_ambiente_devolve_a_fila(self):
-        watch.triagem_local_call = lambda texto: {"ambiente": 0.93, "codigo": 0.07, "modelo": "ptbr-v2"}
-        self.assertTrue(watch.handle_stops(dict(self.CI), "lane:parada", self.st(), []))
-        self.assertIn(("remove", "lane:parada"), self.chamadas)
-        self.assertIn("Triagem local (ptbr-v2): ambiente 0.93", self.comentarios[0])
-        self.assertIn("_Análise: local/ptbr-v2._", self.comentarios[0])
-        self.assertNotIn("opencode", self.chamadas)
-
-    def test_parada_triagem_local_em_duvida_vai_ao_opencode_do_peso_com_a_dica(self):
-        watch.triagem_local_call = lambda texto: {"ambiente": 0.4, "codigo": 0.6, "modelo": "ptbr-v2"}
+    def test_parada_vai_ao_opencode_do_peso(self):
         self.cfg["lanes.modelo.opencode"] = {"modo": "auto", "porPeso": {"alto": {"modelo": "opencode/nemotron-3-ultra-free"}}}
         visto = {}
 
@@ -817,27 +809,19 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         ci = dict(self.CI, labels={"nodes": [{"name": "alto"}]})
         watch.handle_stops(ci, "lane:falhou", self.st(), [])
         self.assertEqual(visto["modelo"], "opencode/nemotron-3-ultra-free")
-        self.assertIn("Triagem local", visto["p"])
         self.assertIn("_Análise: opencode/nemotron-3-ultra-free._", self.comentarios[0])
 
-    def test_parada_triagem_local_indisponivel_vai_ao_opencode(self):
+    def test_parada_vai_primeiro_ao_opencode(self):
         watch.opencode_call = lambda p, modelo=None, cwd=None: "[Triagem] D\nDECISAO: chamar_dono"
         watch.handle_stops(dict(self.CI), "lane:parada", self.st(), [])
-        self.assertEqual(self.chamadas[0], "local")
         self.assertIn(("add", watch.OWNER_LABEL), self.chamadas)
-
-    def test_parada_repetida_pula_a_triagem_local(self):
-        st = self.st()
-        st["stops"]["FRA-9"] = {"vistos": [], "motivos": {"motivo não registrado": 1}}
-        watch.opencode_call = lambda p, modelo=None, cwd=None: "[Triagem] D\nDECISAO: voltar_fila"
-        watch.handle_stops(dict(self.CI), "lane:parada", st, [])
-        self.assertNotIn("local", self.chamadas)
+        self.assertFalse(hasattr(watch, "triagem_local_call"))
 
     def test_parada_claude_no_limite_nao_bloqueia_e_conta_falha(self):
         watch.agent_paused = lambda: True
         st = self.st()
         self.assertTrue(watch.handle_stops(dict(self.CI), "lane:parada", st, []))
-        self.assertEqual(self.chamadas, ["local", "opencode"])
+        self.assertEqual(self.chamadas, ["opencode"])
         self.assertEqual(sum(st["analise_falhas"].values()), 1)
         self.assertIn("análise da parada falhou", self.painel())
 
