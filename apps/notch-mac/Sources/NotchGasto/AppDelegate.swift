@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var carregando = false
     /// Toggle de lane no meio de uma leitura: a leitura em curso ainda não viu o arquivo novo.
     private var leituraPendente = false
+    /// A releitura pendente veio de um pedido manual: o indicador segue aceso até ela acabar.
+    private var indicadorPendente = false
     private let coletorUso = ColetorUso()
     private var timerUso: Timer?
     private var coletandoUso = false
@@ -56,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } }
         if PrimeiraAbertura.precisa() {
-            JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(); self?.atualizarUso() }
+            JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(mostrarIndicador: true); self?.atualizarUso(mostrarIndicador: true) }
         }
         let args = ProcessInfo.processInfo.arguments
         let fixo = args.contains("--expandido") || ProcessInfo.processInfo.environment["NOTCH_GASTO_EXPANDIDO"] == "1"
@@ -92,11 +94,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modelo.atualizarAgora = { [weak self] in
             guard let self else { return }
             self.avisarAoAtualizar = true
-            self.atualizar(); self.atualizarUso()
+            self.atualizar(mostrarIndicador: true); self.atualizarUso(mostrarIndicador: true)
         }
         modelo.abrirPainel = { [weak self] in
             guard let self else { return }
             JanelaPainel.compartilhada.mostrar(modelo: self.modelo)
+            self.atualizarSeAntigo()
         }
         modelo.desativarLane = { [weak self] lane in self?.desativar(lane) }
         modelo.ativarLane = { [weak self] lane in self?.ativar(lane) }
@@ -127,16 +130,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if PreferenciaNotch.mostrar() { ligarNotch(fixo: fixo) }
         criarItemStatus()
 
-        atualizar()
+        // Primeira leitura: sem dado ainda conta como antigo. Com `--painel` a abertura já leu.
+        atualizarSeAntigo()
         // FRA-581: as leituras vêm do observador de arquivos (sem FSEvents, ele mesmo faz o polling).
         // Este timer só pega virada de dia/semana, limites que vencem e evento perdido.
+        // FRA-583: observador e timer releem em silêncio; o selo mostra a idade da leitura.
         atualizarObservador(config: modelo.config)
         timer = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloReserva, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.atualizar() }
         }
         timer?.tolerance = 30
 
-        atualizarUso()
+        atualizarUso(mostrarIndicador: true)
         timerUso = Timer.scheduledTimer(withTimeInterval: modelo.politica.intervaloUso, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.atualizarUso() }
         }
@@ -159,17 +164,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Dados
 
-    /// Ao abrir o painel: atualiza se a última leitura tem mais de 5 s.
+    /// Ao abrir o painel (janela ou notch): relê com «atualizando…» se os dados são antigos.
+    /// Com uma leitura já em curso, só acende o indicador: ela traz o dado novo.
     func atualizarSeAntigo() {
-        if let em = modelo.atualizadoEm, Date().timeIntervalSince(em) < 5 { return }
-        atualizar()
+        guard modelo.politica.dadosAntigos(atualizadoEm: modelo.atualizadoEm, agora: Date()) else { return }
+        if carregando { modelo.atualizando = true; return }
+        atualizar(mostrarIndicador: true)
     }
 
     /// Limites das contas: um GET por conta com credencial (nada é gravado nas credenciais).
-    func atualizarUso() {
+    /// `mostrarIndicador` só em pedido do usuário (FRA-583); o timer mede em silêncio.
+    func atualizarUso(mostrarIndicador: Bool = false) {
+        // Medição em curso: o pedido manual espera por ela, com o indicador aceso até o fim.
+        if mostrarIndicador { modelo.medindoUso = true }
         guard !coletandoUso else { return }
         coletandoUso = true
-        modelo.medindoUso = true
         let cfg = modelo.config
         let coletor = coletorUso
         Task { [weak self] in
@@ -190,10 +199,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func atualizar() {
-        guard !carregando else { leituraPendente = true; return }
+    /// `mostrarIndicador` só em «Atualizar agora» e ao abrir o painel com dados antigos (FRA-583).
+    /// Timer, Ajustes salvos e ações de lane releem sem indicador.
+    func atualizar(mostrarIndicador: Bool = false) {
+        if mostrarIndicador { modelo.atualizando = true }
+        guard !carregando else {
+            // A leitura em curso começou antes do pedido: relê no fim, com o indicador se pedido.
+            leituraPendente = true
+            if mostrarIndicador { indicadorPendente = true }
+            return
+        }
         carregando = true
-        modelo.atualizando = true
         let carregador = self.carregador
         fila.async { [weak self] in
             let cfg = Configuracao.resolver()
@@ -208,8 +224,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 guard let self else { return }
                 self.carregando = false
-                self.modelo.atualizando = false
-                if self.avisarAoAtualizar {
+                let releitura = self.leituraPendente, comIndicador = self.indicadorPendente
+                self.leituraPendente = false
+                self.indicadorPendente = false
+                // Pedido manual à espera da releitura: indicador e aviso ficam para o fim dela.
+                if !comIndicador { self.modelo.atualizando = false }
+                if self.avisarAoAtualizar, !comIndicador {
                     self.avisarAoAtualizar = false
                     CentralAvisos.compartilhada.ok(String(localized: "Dados atualizados"))
                 }
@@ -230,10 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.fotografarSePedido()
                 // a altura do painel pode mudar com os dados
                 Task { @MainActor [weak self] in self?.controlador?.painelMudou() }
-                if self.leituraPendente {
-                    self.leituraPendente = false
-                    self.atualizar()
-                }
+                if releitura { self.atualizar(mostrarIndicador: comIndicador) }
             }
         }
     }
@@ -478,7 +495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func acaoPainel() { modelo.abrirPainel() }
-    @objc private func acaoAtualizar() { atualizar(); atualizarUso() }
+    @objc private func acaoAtualizar() { atualizar(mostrarIndicador: true); atualizarUso(mostrarIndicador: true) }
     @objc private func acaoConfig() { abrirConfig() }
     @objc private func acaoSair() { PresencaApp.sair() }
     @objc private func acaoTela(_ item: NSMenuItem) {

@@ -1409,6 +1409,88 @@ class LimiteEmTodasAsLanes(unittest.TestCase):
         return wt
 
 
+class JuntaMainAntesDaRodada(unittest.TestCase):
+    """PRD 29/10, mudança 1: a branch do card recebe a origin/main antes de cada rodada."""
+
+    def _git(self, cwd: Path, *args: str) -> str:
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    def setUp(self):
+        raiz = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, raiz, True)
+        self.origem = raiz / "origem.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.origem)], check=True)
+        self.dono = raiz / "dono"
+        subprocess.run(["git", "clone", "-q", str(self.origem), str(self.dono)], check=True, capture_output=True)
+        for wt in (self.dono,):
+            self._git(wt, "config", "user.email", "t@example.com")
+            self._git(wt, "config", "user.name", "t")
+        self._git(self.dono, "checkout", "-q", "-b", "main")
+        (self.dono / "a.txt").write_text("a\n", encoding="utf-8")
+        self._git(self.dono, "add", "a.txt")
+        self._git(self.dono, "commit", "-q", "-m", "i")
+        self._git(self.dono, "push", "-q", "origin", "main")
+        self.wt = raiz / "wt"
+        subprocess.run(["git", "clone", "-q", str(self.origem), str(self.wt)], check=True, capture_output=True)
+        self._git(self.wt, "config", "user.email", "t@example.com")
+        self._git(self.wt, "config", "user.name", "t")
+        self._git(self.wt, "checkout", "-q", "-b", "card")
+        (self.wt / ".lane").mkdir()
+        (self.wt / "card.txt").write_text("card\n", encoding="utf-8")
+        self._git(self.wt, "add", "card.txt")
+        self._git(self.wt, "commit", "-q", "-m", "card")
+
+    def _main_anda(self, nome: str = "b.txt", texto: str = "b\n") -> None:
+        (self.dono / nome).write_text(texto, encoding="utf-8")
+        self._git(self.dono, "add", nome)
+        self._git(self.dono, "commit", "-q", "-m", "main andou")
+        self._git(self.dono, "push", "-q", "origin", "main")
+
+    def test_branch_em_dia_nao_ganha_commit(self):
+        head = self._git(self.wt, "rev-parse", "HEAD")
+        self.assertEqual(d.juntar_main(self.wt), ("", ""))
+        self.assertEqual(self._git(self.wt, "rev-parse", "HEAD"), head)
+
+    def test_branch_atrasada_recebe_a_main(self):
+        self._main_anda()
+        linha, nota = d.juntar_main(self.wt)
+        self.assertIn("main juntada na branch", linha)
+        self.assertEqual(nota, "")
+        self.assertTrue((self.wt / "b.txt").exists())
+        self._git(self.wt, "merge-base", "--is-ancestor", "origin/main", "HEAD")
+
+    def test_worktree_sujo_nao_e_tocado(self):
+        self._main_anda()
+        (self.wt / "card.txt").write_text("mexido\n", encoding="utf-8")
+        head = self._git(self.wt, "rev-parse", "HEAD")
+        linha, nota = d.juntar_main(self.wt)
+        self.assertIn("mudança sem commit", linha)
+        self.assertIn("Main atrasada", nota)
+        self.assertEqual(self._git(self.wt, "rev-parse", "HEAD"), head)
+        self.assertEqual((self.wt / "card.txt").read_text(encoding="utf-8"), "mexido\n")
+
+    def test_lane_nao_conta_como_sujeira(self):
+        self._main_anda()
+        (self.wt / ".lane" / "result.json").write_text("{}", encoding="utf-8")
+        linha, _nota = d.juntar_main(self.wt)
+        self.assertIn("main juntada na branch", linha)
+
+    def test_conflito_fica_marcado_para_a_lane(self):
+        self._main_anda("card.txt", "da main\n")
+        linha, nota = d.juntar_main(self.wt)
+        self.assertIn("conflito em card.txt", linha)
+        self.assertIn("Rodada de conflito", nota)
+        self.assertIn("<<<<<<<", (self.wt / "card.txt").read_text(encoding="utf-8"))
+
+    def test_fetch_falho_segue_a_rodada(self):
+        self._git(self.wt, "remote", "set-url", "origin", str(self.origem) + "-nao-existe")
+        head = self._git(self.wt, "rev-parse", "HEAD")
+        linha, nota = d.juntar_main(self.wt)
+        self.assertIn("fetch falhou", linha)
+        self.assertEqual(nota, "")
+        self.assertEqual(self._git(self.wt, "rev-parse", "HEAD"), head)
+
+
 class FilaDoTodo(unittest.TestCase):
     """(d) Lane ociosa sobe do Todo o card pronto de maior prioridade.
     Bloqueio, BLOQUEADA e needs:dono ficam. A lane segue a de menor %."""

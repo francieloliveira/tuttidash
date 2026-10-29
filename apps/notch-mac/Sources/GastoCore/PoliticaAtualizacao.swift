@@ -15,6 +15,8 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
     public var intervaloEstado: TimeInterval
     /// Releitura com o observador ativo: virada de dia e semana, limites que vencem, evento perdido.
     public var intervaloReserva: TimeInterval
+    /// Abrir o painel relê os dados quando a última leitura tem pelo menos esta idade (FRA-583).
+    public var idadeAntiga: TimeInterval = 5
 
     public init(intervaloDados: TimeInterval = 30, intervaloUso: TimeInterval = 120,
                 intervaloReservaMouse: TimeInterval = 1, intervaloEstado: TimeInterval = 2,
@@ -46,4 +48,11 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
 
     /// A animação do ponto pulsando só roda com o painel expandido e visível.
     public func animarPonto(expandido: Bool) -> Bool { expandido }
+
+    /// Dados antigos ao abrir o painel: nunca lidos ou lidos há `idadeAntiga` ou mais.
+    /// Só aí a abertura relê com «atualizando…»; a leitura do timer não mostra indicador (FRA-583).
+    public func dadosAntigos(atualizadoEm: Date?, agora: Date) -> Bool {
+        guard let atualizadoEm else { return true }
+        return agora.timeIntervalSince(atualizadoEm) >= idadeAntiga
+    }
 }
