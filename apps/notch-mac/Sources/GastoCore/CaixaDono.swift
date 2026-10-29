@@ -36,16 +36,18 @@ public struct ItemCaixa: Equatable, Sendable, Identifiable {
     public var porque: String
     public var esforco: String
     public var lane: String
+    /// Outras etiquetas que seguram o card (`lane:falhou`, `lane:parada`).
+    public var outrasTravas: [String]
     public var id: String { card }
 
     public init(card: String, issueId: String, titulo: String = "", url: String = "", desde: Date? = nil,
                 origem: String = "dono", motivo: String = "", perguntaId: String = "", pendencia: String = "",
                 opcoes: [OpcaoCaixa] = [], recomenda: String = "", porque: String = "",
-                esforco: String = "", lane: String = "") {
+                esforco: String = "", lane: String = "", outrasTravas: [String] = []) {
         self.card = card; self.issueId = issueId; self.titulo = titulo; self.url = url; self.desde = desde
         self.origem = origem; self.motivo = motivo; self.perguntaId = perguntaId.isEmpty ? card : perguntaId
         self.pendencia = pendencia; self.opcoes = opcoes; self.recomenda = recomenda; self.porque = porque
-        self.esforco = esforco; self.lane = lane
+        self.esforco = esforco; self.lane = lane; self.outrasTravas = outrasTravas
     }
 }
 
@@ -106,7 +108,8 @@ public enum CaixaDono {
                                    desde: iso.date(from: t(d, "desde")), origem: t(d, "origem").isEmpty ? "dono" : t(d, "origem"),
                                    motivo: t(d, "motivo"), perguntaId: t(d, "pergunta_id"), pendencia: t(d, "pendencia"),
                                    opcoes: opcoes, recomenda: t(d, "recomenda"), porque: t(d, "porque"),
-                                   esforco: t(d, "esforco"), lane: t(d, "lane")))
+                                   esforco: t(d, "esforco"), lane: t(d, "lane"),
+                                   outrasTravas: (d["outras_travas"] as? [String]) ?? []))
         }
         let ids = (obj["ids"] as? [String: Any]) ?? [:]
         func mapa(_ v: Any?) -> [String: String] { ((v as? [String: Any]) ?? [:]).compactMapValues { $0 as? String } }
@@ -213,15 +216,19 @@ public enum CaixaDono {
         switch e { case "medio": return "médio"; case "": return "sem esforço definido"; default: return e }
     }
 
-    /// Frase simples com tudo o que a decisão faz. `vaiRodar(lane, peso)` devolve «opus · high»,
-    /// ou nil quando não dá para saber.
+    /// Frase simples com tudo o que a decisão faz. `vaiRodar(lane, peso)` devolve «opus · high»
+    /// (peso vazio = o esforço padrão da config), ou nil quando não dá para saber.
     public static func consequencia(_ decisao: Decisao, item: ItemCaixa,
                                     vaiRodar: (String, String) -> String? = { _, _ in nil }) -> String {
+        func travas() -> String? {
+            guard !item.outrasTravas.isEmpty else { return nil }
+            let nomes = item.outrasTravas.map { $0 == "lane:falhou" ? "a marca de que a lane falhou" : "a marca de que a lane parou" }
+            return "Ele ainda tem \(nomes.joined(separator: " e ")) e só volta para a fila quando a triagem ou você tirar."
+        }
         func fila(lane: String, peso: String) -> String {
+            if let t = travas() { return t }
             guard !lane.isEmpty else { return "Ele volta para a fila das lanes." }
-            if let vr = vaiRodar(lane, peso.isEmpty ? "medio" : peso) {
-                return "Ele volta para a fila da lane \(lane), que vai rodar em \(vr)."
-            }
+            if let vr = vaiRodar(lane, peso) { return "Ele volta para a fila da lane \(lane), que vai rodar em \(vr)." }
             return "Ele volta para a fila da lane \(lane)."
         }
         let libera = "O card sai da sua caixa."
@@ -230,19 +237,26 @@ public enum CaixaDono {
             switch op.acao?.tipo {
             case .esforco?:
                 let novo = op.acao?.valor ?? ""
-                return "Troca o esforço do card de \(rotuloEsforco(item.esforco)) para \(rotuloEsforco(novo)), "
-                    + "comenta a sua decisão no card e tira o card da sua caixa. " + fila(lane: item.lane, peso: novo)
+                let troca = novo == item.esforco ? "Mantém o esforço \(rotuloEsforco(novo)), "
+                    : "Troca o esforço do card de \(rotuloEsforco(item.esforco)) para \(rotuloEsforco(novo)), "
+                return troca + "comenta a sua decisão no card e tira o card da sua caixa. " + fila(lane: item.lane, peso: novo)
             case .lane?:
                 let nova = op.acao?.valor ?? ""
+                if nova == item.lane {
+                    return "Mantém a lane \(nova), comenta a sua decisão e tira o card da sua caixa. " + fila(lane: nova, peso: item.esforco)
+                }
                 let de = item.lane.isEmpty ? "" : " da lane \(item.lane)"
                 return "Passa o card\(de) para a lane \(nova), comenta a sua decisão e tira o card da sua caixa. "
                     + fila(lane: nova, peso: item.esforco)
             case .cancelar?:
-                return consequencia(.cancelar, item: item, vaiRodar: vaiRodar)
+                return "Move o card para Canceled, comenta a sua decisão e tira o card da sua caixa agora. No próximo "
+                    + "ciclo o vigia limpa o que ainda segurar o card. O worktree e a branch do card não são apagados."
             case nil:
                 return "Comenta a sua decisão no card. \(libera) " + fila(lane: item.lane, peso: item.esforco)
             }
-        case let .responder(_, solta):
+        case let .responder(texto, solta):
+            let vazio = texto.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if solta && vazio { return consequencia(.liberar, item: item, vaiRodar: vaiRodar) }
             return solta ? "Comenta o seu texto no card. \(libera) " + fila(lane: item.lane, peso: item.esforco)
                          : "Só comenta o seu texto no card. Ele continua esperando por você."
         case .liberar:

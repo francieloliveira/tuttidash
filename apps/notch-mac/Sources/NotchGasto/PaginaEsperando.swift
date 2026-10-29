@@ -28,6 +28,29 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
     private var avisoPedido: Set<String> = []
 
     var abertas: Int { CaixaDono.abertas(arquivo.itens, respondidas: respondidas) }
+
+    /// Catálogo, config e cache de modelos, lidos quando a caixa muda (não a cada desenho da tela).
+    private var agentes: [String: CatalogoAgentes.ModeloAgente] = [:]
+    private var dadosConfig: [String: Any] = [:]
+    private var cacheModelos: CacheModelos = .vazio
+
+    private func carregarContexto() {
+        agentes = Dictionary(CatalogoAgentes.carregar().map { ($0.nome, $0) }, uniquingKeysWith: { a, _ in a })
+        dadosConfig = Configuracao.lerArquivo()
+        cacheModelos = ListaModelos.ler(ListaModelos.arquivoCache())
+    }
+
+    /// «opus · high»: o que a lane roda neste peso, pela mesma regra do dispatcher.
+    /// Peso vazio = `lanes.effort_default` da config (como o dispatcher).
+    func vaiRodar(_ lane: String, _ peso: String) -> String? {
+        guard let agente = agentes[lane] else { return nil }
+        let padrao = (Configuracao.valor("lanes.effort_default", em: dadosConfig) as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "medio"
+        let r = ModeloLane.resolver(lane: lane, peso: peso.isEmpty ? padrao : peso,
+                                    config: ModeloLane.ler(ModeloLane.bruto(lane: lane, em: dadosConfig)),
+                                    padrao: ModeloLane.padrao(agente), cache: cacheModelos, agente: agente)
+        let modelo = r.modelo.isEmpty ? "o modelo padrão do CLI" : r.modelo
+        return r.esforco.isEmpty ? modelo : "\(modelo) · \(r.esforco)"
+    }
     var itens: [ItemCaixa] { arquivo.itens }
 
     func iniciar() {
@@ -45,6 +68,7 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
         guard data != dataArquivo else { return }
         dataArquivo = data
         arquivoExiste = data != nil
+        carregarContexto()
         let novo = CaixaDono.ler(url)
         arquivo = novo
         let atuais = Set(novo.itens.map(\.perguntaId))
@@ -133,19 +157,8 @@ struct PaginaEsperando: View {
 
     private var atual: ItemCaixa? { caixa.itens.first { $0.card == caixa.selecionado } ?? caixa.itens.first }
 
-    /// «opus · high»: o que a lane roda neste peso, pela mesma regra do dispatcher.
-    private func vaiRodar(_ lane: String, _ peso: String) -> String? {
-        guard let agente = CatalogoAgentes.carregar().first(where: { $0.nome == lane }) else { return nil }
-        let r = ModeloLane.resolver(lane: lane, peso: peso,
-                                    config: ModeloLane.ler(ModeloLane.bruto(lane: lane, em: Configuracao.lerArquivo())),
-                                    padrao: ModeloLane.padrao(agente), cache: ListaModelos.ler(ListaModelos.arquivoCache()),
-                                    agente: agente)
-        let modelo = r.modelo.isEmpty ? "o modelo padrão do CLI" : r.modelo
-        return r.esforco.isEmpty ? modelo : "\(modelo) · \(r.esforco)"
-    }
-
     private func oQueAcontece(_ d: CaixaDono.Decisao, _ item: ItemCaixa) -> String {
-        CaixaDono.consequencia(d, item: item, vaiRodar: vaiRodar)
+        CaixaDono.consequencia(d, item: item, vaiRodar: caixa.vaiRodar)
     }
 
     var body: some View {

@@ -1390,6 +1390,8 @@ def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> 
                       "recomenda": an.get("recomenda") or "", "porque": an.get("porque") or "",
                       "analise": an.get("quem") or "",
                       "esforco": next((e for e in ESFORCOS if e in nomes), ""),
+                      # Outras etiquetas que seguram o card: liberar o dono não o devolve à fila sozinho.
+                      "outras_travas": [lb for lb in ("lane:falhou", "lane:parada") if lb in nomes],
                       "lane": next((l for l in catalogo.lanes_por_prioridade() if l in nomes), "")})
     for ident in list(st["caixa_desde"]):
         if ident not in vistos:

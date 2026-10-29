@@ -79,7 +79,21 @@ final class CaixaDonoTests: XCTestCase {
         XCTAssertTrue(CaixaDono.consequencia(.responder("x", liberar: false), item: item).contains("continua esperando"))
     }
 
-        func testExecutarParaNoPrimeiroErro() async throws {
+    func testOQueAconteceCasosDaRevisao() {
+        XCTAssertEqual(CaixaDono.consequencia(.responder("  ", liberar: true), item: item),
+                       CaixaDono.consequencia(.liberar, item: item), "sem texto, «responder e liberar» só libera")
+        let cancelar = OpcaoCaixa(letra: "C", texto: "Cancelar", acao: AcaoCaixa(tipo: .cancelar, valor: ""))
+        let c = CaixaDono.consequencia(.opcao(cancelar, comentario: ""), item: item)
+        XCTAssertTrue(c.contains("comenta a sua decisão") && c.contains("sai da sua caixa") == false && c.contains("tira o card da sua caixa agora"), c)
+        let mesmo = OpcaoCaixa(letra: "A", texto: "x", acao: AcaoCaixa(tipo: .esforco, valor: "alto"))
+        XCTAssertTrue(CaixaDono.consequencia(.opcao(mesmo, comentario: ""), item: item).hasPrefix("Mantém o esforço alto"))
+        var preso = item
+        preso.outrasTravas = ["lane:falhou"]
+        let l = CaixaDono.consequencia(.liberar, item: preso, vaiRodar: { _, _ in "x" })
+        XCTAssertTrue(l.contains("a marca de que a lane falhou") && !l.contains("volta para a fila da lane"), l)
+    }
+
+    func testExecutarParaNoPrimeiroErro() async throws {
         final class Falso: ClienteLinear, @unchecked Sendable {
             var feitas: [String] = []
             let falhaEm: Int
