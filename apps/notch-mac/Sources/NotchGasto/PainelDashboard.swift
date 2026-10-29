@@ -638,7 +638,7 @@ struct DetalheLane: View {
             if let texto = linha.textoModelo {
                 Text(texto).font(PV.fonte(12, .semibold)).lineLimit(1)
             }
-            if let aviso = linha.avisoModelo {
+            if let aviso = linha.avisoModelo, aviso != "modelo fixo" {
                 Text(aviso).font(PV.fonte(11.5, .semibold))
                     .foregroundStyle(Color(hex: 0xFF8DA3))
                     .lineLimit(2)

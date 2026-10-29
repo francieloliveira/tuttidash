@@ -188,7 +188,7 @@ struct PainelBarra: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
             }
             if let ultima = ResumoBarra.ultimaLinha(modelo.snapshot?.logTexto ?? "") {
-                if ultima.lowercased().contains("fila vazia") {
+                if ultima.lowercased().contains("fila vazia:") {
                     // Mensagem do vigia quando não há cards prontos no Todo nem no Backlog.
                     // Apresenta de forma amigável em vez da linha bruta do log.
                     HStack(spacing: 6) {
