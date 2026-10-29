@@ -958,6 +958,51 @@ def prepare_worktree(branch: str, identifier: str) -> Path:
     return wt
 
 
+def juntar_main(wt: Path) -> tuple[str, str]:
+    """Traz a `origin/main` para a branch do card antes de cada rodada (PRD 29/10, mudança 1).
+
+    Sem isto o worktree reaproveitado fica congelado na main da primeira rodada: os
+    consertos que o dono faz na main (ex.: `scripts/testar.sh`) não chegam à prova,
+    que roda o que está na branch (FRA-581 parou 2x assim). Merge, nunca rebase: a
+    branch pode já estar no GitHub. Devolve (linha para o comentário de claim, nota
+    para o prompt da lane); ("", "") quando a branch já tem a main."""
+    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=wt, capture_output=True, text=True, env=env, timeout=180)
+
+    if git("fetch", "-q", "origin", "main").returncode != 0:
+        return "- main não buscada (fetch falhou); a rodada segue com a branch como está\n", ""
+    if git("merge-base", "--is-ancestor", "origin/main", "HEAD").returncode == 0:
+        return "", ""
+    antes = git("rev-parse", "--short", "HEAD").stdout.strip()
+    main = git("rev-parse", "--short", "origin/main").stdout.strip()
+    sujos = [l for l in git("status", "--porcelain", "--untracked-files=no").stdout.splitlines()
+             if l.strip() and ".lane/" not in l]
+    if sujos:
+        return ("- main não entrou: o worktree tem mudança sem commit\n",
+                "\n\n## Main atrasada (escrito pelo dispatcher)\n\n"
+                f"A `origin/main` ({main}) andou e não entrou nesta branch porque o worktree tem mudança "
+                "sem commit. Termine e commite o trabalho; o dispatcher junta a main na próxima rodada.\n")
+    out = git("merge", "--no-edit", "origin/main")
+    if out.returncode == 0:
+        depois = git("rev-parse", "--short", "HEAD").stdout.strip()
+        return f"- main juntada na branch: {antes} → {depois} (main {main})\n", ""
+    conflitos = git("diff", "--name-only", "--diff-filter=U").stdout.split()
+    if not conflitos:
+        git("merge", "--abort")
+        erro = (out.stderr or out.stdout).strip().splitlines()[-1:] or ["?"]
+        return f"- main não entrou: o merge falhou ({erro[0][:160]}); a branch ficou como estava\n", ""
+    lista = ", ".join(conflitos[:8])
+    return (f"- main juntada com conflito em {lista}; a lane resolve nesta rodada\n",
+            "\n\n## Rodada de conflito (escrito pelo dispatcher)\n\n"
+            f"O dispatcher rodou `git merge origin/main` ({main}) neste worktree antes de você começar e "
+            f"deu conflito em {lista}.\n\n"
+            "- Primeiro: resolva os marcadores mantendo o que a `main` trouxe e o que este card fez, "
+            "`git add` dos arquivos e `git commit --no-edit`.\n"
+            "- Depois siga o card normalmente.\n")
+
+
 def limit_text(lane: str, effort: str) -> str:
     """Limite da execução no comentário do claim: grok tem turnos; claude e opencode,
     teto em US$ (no opencode o CLI não trava — o gasto monitora depois da rodada)."""
@@ -970,6 +1015,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     card = linear(QUERY_ISSUE, {"id": issue["id"]})["issue"]
     ident = card["identifier"]
     wt = prepare_worktree(card["branchName"], ident)
+    linha_main, nota_main = juntar_main(wt)
     lane_dir = wt / ".lane"
     if lane_dir.exists():
         for f in ("exit_code", "result.json", "finalized", "triagem_reprova"):
@@ -989,6 +1035,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     prompt = (template.replace("{{CARD}}", ident).replace("{{LANE}}", lane)
               .replace("{{BRANCH}}", card["branchName"]).replace("{{WORKTREE}}", str(wt)))
     prompt += resume_note(wt)
+    prompt += nota_main
     prompt_file = lane_dir / "prompt.md"
     prompt_file.write_text(prompt, encoding="utf-8")
 
@@ -1017,6 +1064,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
         f"▶️ **lane:{lane}** assumiu o card ({now()}).\n\n"
         f"- esforço `{effort}` → `{flags}`, {limit_text(lane, effort)}, timeout {LANE_TIMEOUT_MIN} min\n"
         f"- branch `{card['branchName']}`, worktree local\n"
+        + linha_main
         + (f"- lane escolhida pela medida: {measure}\n" if measure else "") +
         f"- o agente não fala com Linear/GitHub; o dispatcher fecha o card ao final"})
 
