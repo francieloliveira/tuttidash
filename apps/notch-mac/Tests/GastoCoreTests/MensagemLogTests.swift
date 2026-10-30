@@ -46,6 +46,13 @@ final class MensagemLogTests: XCTestCase {
             ("vigia: conflito: FRA-5 PR #7 DIRTY → main juntada no worktree (conflito em app)", .alerta, "PR #7 de FRA-5 tem conflito com a main"),
             ("vigia: needs FRA-443: análise feita por ollama/qwen2.5-coder:7b", .info, "FRA-443 analisado: a decisão está em Esperando você"),
             ("vigia: worktree fora da pasta de branches: /private/tmp/pr19 (detached d7996cf); o lugar é /x", .alerta, "Checkout fora da pasta de branches: /private/tmp/pr19"),
+            ("vigia: conta Claude sem cota mensal de gasto; vigia tenta de novo às 04:48 (para voltar antes, suba o limite em claude.ai/settings/usage)", .alerta, "Claude sem cota mensal de gasto"),
+            ("vigia: conta Claude no limite de uso; vigia pausa a IA até 22:44 e tenta de novo (paradas e revisões ficam pendentes, não perdidas)", .alerta, "Claude no limite até 22:44"),
+            ("vigia: conta Claude saiu do limite; vigia volta a analisar paradas e revisar PRs", .info, "Claude voltou"),
+            ("vigia: PR #23: segunda opinião APROVADO guardada; esperando a confirmação do Claude (sem cota até 22:44)", .info, "PR #23 aprovado na segunda opinião; falta a confirmação do Claude"),
+            ("vigia: PR #23: revisão espera o Claude (sem cota); a segunda opinião roda quando ele voltar", .info, "PR #23 espera o Claude"),
+            ("vigia: PR #22 sem card está APROVADO há 6 h; o vigia não mergeia PR sem card: mergeie à mão", .alerta, "PR #22 aprovado e sem card: mergeie à mão"),
+            ("vigia: PR #22 sem card está sem APROVADO há 7 h; revise ou mergeie à mão", .alerta, "PR #22 sem card e sem aprovação há 7 h"),
             ("lane:grok livre → fila vazia: precisa de card pronto (In Progress com lane ou x)", .fila, "Sem cards prontos no Todo nem no Backlog"),
         ]
         for (msg, tipo, trecho) in casos {

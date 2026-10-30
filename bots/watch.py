@@ -219,6 +219,8 @@ FILE_RE = re.compile(r"((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:swift|plist|jso
 EMPTY_QUEUE_PANEL_S = _cfg("watch.fila_vazia_painel_s", 3600)   # aviso de fila vazia no painel, no máximo 1/h
 STOP_ANALYSIS_TRIES = 3          # tentativas de analisar a mesma parada antes de desistir e avisar
 AGENT_LIMIT_PAUSE_S = 30 * 60    # conta Claude no limite: vigia não chama IA por 30 min
+# Limite MENSAL de gasto não volta em 30 min: o vigia tenta de novo só a cada 6 h e avisa uma vez por pausa.
+AGENT_MONTHLY_PAUSE_S = _cfg("watch.pausa_limite_mensal_s", 6 * 3600)
 NEEDS_RECHECK_S = _cfg("watch.reconferir_needs_s", 30 * 60)
 INSTALL_SESSION = "instalar-aparelho"
 INSTALL_SCRIPT = STATE_DIR / "instalar.sh"
@@ -506,28 +508,45 @@ def prompt(name: str) -> str:
 
 LIMIT_FILE = STATE_DIR / "limite-agente"
 LIMIT_RE = re.compile(r"(hit your|reached your)[^|\n]{0,60}limit|rate.?limit|usage limit", re.I)
+MONTHLY_RE = re.compile(r"monthly (spend|usage|spending) limit", re.I)
+
+
+def ler_pausa() -> tuple[float, bool]:
+    """(até quando, se é o limite mensal). (0, False) sem pausa gravada."""
+    try:
+        linhas = LIMIT_FILE.read_text().split()
+        return float(linhas[0]), "mensal" in linhas[1:]
+    except (OSError, ValueError, IndexError):
+        return 0.0, False
 
 
 def agent_paused() -> bool:
     """True enquanto a conta Claude está no limite (sem chamar IA para não gastar ciclos à toa)."""
-    try:
-        until = float(LIMIT_FILE.read_text())
-    except (OSError, ValueError):
+    until, mensal = ler_pausa()
+    if not until:
         return False
     if until > time.time():
         return True
     LIMIT_FILE.unlink(missing_ok=True)
-    panel("conta Claude saiu do limite; vigia volta a analisar paradas e revisar PRs")
+    if mensal:
+        log("pausa do limite mensal acabou; o vigia tenta o Claude de novo")
+    else:
+        panel("conta Claude saiu do limite; vigia volta a analisar paradas e revisar PRs")
     return False
 
 
 def note_agent_failure(exc: Exception) -> None:
     """Falha do `claude -p` por limite de uso pausa a IA do vigia e avisa no painel."""
     if LIMIT_RE.search(str(exc)) and not agent_paused():
-        until = time.time() + AGENT_LIMIT_PAUSE_S
-        LIMIT_FILE.write_text(str(until))
-        panel(f"conta Claude no limite de uso; vigia pausa a IA até {datetime.fromtimestamp(until):%H:%M} "
-              "e tenta de novo (paradas e revisões ficam pendentes, não perdidas)")
+        mensal = bool(MONTHLY_RE.search(str(exc)))
+        until = time.time() + (AGENT_MONTHLY_PAUSE_S if mensal else AGENT_LIMIT_PAUSE_S)
+        LIMIT_FILE.write_text(f"{until}{' mensal' if mensal else ''}")
+        if mensal:
+            panel(f"conta Claude sem cota mensal de gasto; vigia tenta de novo às {datetime.fromtimestamp(until):%H:%M} "
+                  "(para voltar antes, suba o limite em claude.ai/settings/usage)")
+        else:
+            panel(f"conta Claude no limite de uso; vigia pausa a IA até {datetime.fromtimestamp(until):%H:%M} "
+                  "e tenta de novo (paradas e revisões ficam pendentes, não perdidas)")
 
 
 def run_agent(text: str, cwd: Path, tag: str, agente: str | None = None, modelo: str = "opus", esforco: str | None = None,
@@ -1943,7 +1962,58 @@ def registrar_veredito(reg: dict) -> None:
         pass
 
 
-def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> None:
+def quem_confirma(lane: str, conf: dict) -> list[str]:
+    """Quem aprova sozinho e pode rodar agora (Claude em pausa de limite não conta). Sem IA nem rede."""
+    conf_rev, _ = escolher_revisor(lane, conf, so_sozinho=True)
+    return [a for a in ordem_revisao(conf_rev, conf, so_sozinho=True)
+            if not (a == "claude" and agent_paused())]
+
+
+def avisar_espera_confirmacao(pr: dict, st: dict, guardada: bool) -> None:
+    """Uma linha no painel por head enquanto a revisão espera quem confirma."""
+    avisados = st.setdefault("espera_confirmacao", {})
+    head = pr["headRefOid"]
+    if head in avisados:
+        return
+    avisados[head] = time.time()
+    ate, mensal = ler_pausa()
+    quando = (f"sem cota mensal; nova tentativa às {datetime.fromtimestamp(ate):%H:%M}" if mensal
+              else f"sem cota até {datetime.fromtimestamp(ate):%H:%M}") if ate else "sem cota"
+    if guardada:
+        panel(f"PR #{pr['number']}: segunda opinião APROVADO guardada; esperando a confirmação do Claude ({quando})")
+    else:
+        panel(f"PR #{pr['number']}: revisão espera o Claude ({quando}); a segunda opinião roda quando ele voltar")
+
+
+def limpar_revisoes_fechadas(st: dict, heads_abertos: set[str]) -> None:
+    """Segundas opiniões e avisos de espera só valem para heads de PR aberto."""
+    for chave in ("segundas_opinioes", "espera_confirmacao", "sem_revisao"):
+        d = st.get(chave) or {}
+        for h in [h for h in d if h.split("|")[0] not in heads_abertos]:
+            del d[h]
+
+
+def avisar_pr_sem_card(pr: dict, st: dict, agora: float | None = None) -> None:
+    """PR sem card não entra no merge automático (merge_ready anda pelos cards): depois de
+    REVIEW_WAIT_MAX_S aberto, avisa o dono no painel uma vez por head."""
+    if card_of(pr["title"], pr["headRefName"]):
+        return
+    agora = time.time() if agora is None else agora
+    head = pr["headRefOid"]
+    sem = st.setdefault("sem_revisao", {})
+    desde = sem.setdefault(head, agora)
+    if agora - desde < REVIEW_WAIT_MAX_S or sem.get(head + "|avisado"):
+        return
+    sem[head + "|avisado"] = agora
+    horas = int((agora - desde) // 3600)
+    if st["reviewed"].get(head) == "APROVADO":
+        panel(f"PR #{pr['number']} sem card está APROVADO há {horas} h; o vigia não mergeia PR sem card: mergeie à mão")
+    else:
+        panel(f"PR #{pr['number']} sem card está sem APROVADO há {horas} h; revise ou mergeie à mão")
+
+
+def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> bool | None:
+    """Revisa o head do PR. False = não rodou IA (esperando quem confirma)."""
     rdir = repo["dir"]
     sh(["git", "fetch", "--quiet", "origin"], cwd=rdir, timeout=180)
     card = card_of(pr["title"], pr["headRefName"])
@@ -1965,13 +2035,26 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> Non
                         "pré-review (mesmo fornecedor).") if mesmo else "",
         )
     tag = f"revisor-{key}-{pr['number']}"
-    text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf)
+    head = pr["headRefOid"]
+    guardadas = st.setdefault("segundas_opinioes", {})
+    if papel(revisor, conf) == "segunda_opiniao" and not quem_confirma(lane, conf):
+        # Ninguém pode confirmar agora (Claude sem cota): nem chama a segunda opinião, que seria jogada fora.
+        avisar_espera_confirmacao(pr, st, guardada=head in guardadas)
+        return False
+    if head in guardadas and papel(revisor, conf) == "segunda_opiniao":
+        # Head já aprovado na segunda opinião: vai direto para a confirmação, sem revisar de novo.
+        text, revisor = TAG_REVISOR + " REVISOR: APROVADO", guardadas[head]["revisor"]
+    else:
+        text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf)
+        if text.startswith(TAG_REVISOR) and papel(revisor, conf) == "segunda_opiniao" and veredito_de(text) == "APROVADO":
+            guardadas[head] = {"revisor": revisor, "quando": time.time(), "pr": pr["number"]}
+            save_state(st)  # uma falha da confirmação não apaga a segunda opinião
+            registrar_veredito({"repo": key, "pr": pr["number"], "head": head[:7], "card": card,
+                                "autor": lane, "revisor": revisor, "obs": "segunda opinião, não publicada",
+                                "veredito": "APROVADO"})
     extra = obs
     if text.startswith(TAG_REVISOR) and papel(revisor, conf) == "segunda_opiniao" and veredito_de(text) == "APROVADO":
         # Segunda opinião só bloqueia; aprovar exige um revisor que aprova sozinho.
-        registrar_veredito({"repo": key, "pr": pr["number"], "head": pr["headRefOid"][:7], "card": card,
-                            "autor": lane, "revisor": revisor, "obs": "segunda opinião, não publicada",
-                            "veredito": "APROVADO"})
         primeiro = revisor
         conf_rev, obs2 = escolher_revisor(lane, conf, so_sozinho=True)
         text, revisor = revisar(montar(conf_rev), rdir, tag + "-confirma", conf_rev, conf, so_sozinho=True)
@@ -2136,10 +2219,15 @@ def main() -> int:
         step("caixa do dono", caixa_do_ciclo, atuais, st, diary)
         step("worktrees", avisar_worktrees_fora, st, diary)
         step("fila", keep_lanes_busy, atuais, st, diary)
+        heads_abertos: set[str] = set()
         for key, repo in REPOS.items():
+            prs_abertos = open_prs(repo)
+            heads_abertos |= {p["headRefOid"] for p in prs_abertos}
+            for pr in prs_abertos:
+                avisar_pr_sem_card(pr, st)
             if runs >= MAX_RUNS_PER_TICK:
-                break
-            for pr in open_prs(repo):
+                continue
+            for pr in prs_abertos:
                 if runs >= MAX_RUNS_PER_TICK:
                     break
                 if not revisao_pode_tentar(st, pr["headRefOid"]):
@@ -2149,13 +2237,15 @@ def main() -> int:
                     continue
                 runs += 1
                 try:
-                    review_pr(key, repo, pr, st, diary)
+                    if review_pr(key, repo, pr, st, diary) is False:
+                        runs -= 1  # só esperou quem confirma: não gastou IA, não conta no ciclo
                 except Exception as exc:  # noqa: BLE001
                     log(f"revisão PR #{pr['number']} falhou: {exc}")
                     if agent_paused():
                         continue  # limite da conta: não marca, revisa quando a conta voltar
                     st["reviewed"][pr["headRefOid"]] = f"erro {datetime.now():%m-%d %H:%M}"
                     st.setdefault("erros_revisao", {})[pr["headRefOid"]] = time.time()
+        limpar_revisoes_fechadas(st, heads_abertos)
     except Exception as exc:  # noqa: BLE001
         log(f"tick falhou: {exc}")
     finally:

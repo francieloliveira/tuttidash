@@ -96,6 +96,27 @@ public enum MensagemLog {
         if let g = casar(#"^auto: (FRA-\d+) → lane:(\S+)"#, msg) {
             return (.info, "\(g[0]) vai para \(nome(g[1]))")
         }
+        if msg.contains("conta Claude sem cota mensal") {
+            return (.alerta, "Claude sem cota mensal de gasto: revisões e análises paradas")
+        }
+        if let g = casar(#"conta Claude no limite de uso; vigia pausa a IA até (\d{1,2}:\d{2})"#, msg) {
+            return (.alerta, "Claude no limite até \(g[0]): revisões e análises em pausa")
+        }
+        if msg.contains("conta Claude saiu do limite") {
+            return (.info, "Claude voltou: revisões e análises retomadas")
+        }
+        if let g = casar(#"^vigia: PR #(\d+): segunda opinião APROVADO guardada"#, msg) {
+            return (.info, "PR #\(g[0]) aprovado na segunda opinião; falta a confirmação do Claude")
+        }
+        if let g = casar(#"^vigia: PR #(\d+): revisão espera o Claude"#, msg) {
+            return (.info, "PR #\(g[0]) espera o Claude para ser revisado")
+        }
+        if let g = casar(#"^vigia: PR #(\d+) sem card está APROVADO"#, msg) {
+            return (.alerta, "PR #\(g[0]) aprovado e sem card: mergeie à mão")
+        }
+        if let g = casar(#"^vigia: PR #(\d+) sem card está sem APROVADO há (\d+) h"#, msg) {
+            return (.alerta, "PR #\(g[0]) sem card e sem aprovação há \(g[1]) h")
+        }
         if let g = casar(#"^vigia: worktree fora da pasta de branches: (\S+)"#, msg) {
             return (.alerta, "Checkout fora da pasta de branches: \(g[0])")
         }
