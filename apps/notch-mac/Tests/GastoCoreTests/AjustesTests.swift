@@ -31,36 +31,42 @@ final class AjustesTests: XCTestCase {
 
     func testAbaBotsERevisao() throws {
         let chaves = CatalogoAjustes.abas().flatMap(\.campos).map(\.chave)
-        for k in ["revisores.pr.agente", "revisores.pr.independente", "revisores.pr.reserva",
+        for k in ["revisores.pr.lane", "revisores.pr.independente", "revisores.pr.reserva",
                   "watch.reconferir_needs_max_s"] {
             XCTAssertTrue(chaves.contains(k), k)
         }
         let t = try PastaTemp()
         let m = ModeloAjustes(home: t.url)
-        XCTAssertEqual(m.texto(campo("revisores.pr.agente")), "claude")
-        XCTAssertNotNil(m.validar(campo("revisores.pr.agente"), "cursor"), "sem `revisao` no manifesto, não revisa")
+        XCTAssertEqual(m.texto(campo("revisores.pr.lane")), "claude")
+        XCTAssertNotNil(m.validar(campo("revisores.pr.lane"), "cursor"), "sem `revisao` no manifesto, não revisa")
         XCTAssertFalse(chaves.contains { $0.hasPrefix("triagem_local.") }, "a triagem local saiu em 29/10")
     }
 
     func testRevisoresVemDoCatalogo() {
-        let sozinho = CatalogoAgentes.ModeloAgente.Revisao(papel: "sozinho", auto: true, modelos: ["a", "b"],
-                                                            modeloPadrao: "a", esforcos: ["high"], esforcoPadrao: "high")
-        let segunda = CatalogoAgentes.ModeloAgente.Revisao(papel: "segunda_opiniao", auto: false, modelos: [],
-                                                            modeloPadrao: "padrao", esforcos: [], esforcoPadrao: "")
         let lidos = CatalogoAgentes.carregar(caminhos: [URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().appendingPathComponent("../../../../agents.d").standardizedFileURL])
         XCTAssertNotNil(lidos.first { $0.nome == "grok" }?.revisao, "o manifesto do repo traz `revisao`")
         XCTAssertNil(lidos.first { $0.nome == "cursor" }?.revisao)
         var x = lidos.first { $0.nome == "claude" }!
-        x.nome = "x"; x.revisao = sozinho
+        x.nome = "x"; x.revisao = CatalogoAgentes.ModeloAgente.Revisao(papel: "sozinho", auto: true, modelos: ["a"],
+                                                                        modeloPadrao: "a", esforcos: ["high"], esforcoPadrao: "high")
         var y = x
-        y.nome = "y"; y.revisao = segunda
+        y.nome = "y"; y.revisao = CatalogoAgentes.ModeloAgente.Revisao(papel: "segunda_opiniao", auto: false, modelos: [],
+                                                                        modeloPadrao: "padrao", esforcos: [], esforcoPadrao: "")
         let campos = CatalogoAjustes.camposRevisao(agentes: [x, y])
         let chaves = campos.map(\.chave)
-        XCTAssertTrue(chaves.contains("revisores.pr.x.esforco"))
-        XCTAssertFalse(chaves.contains("revisores.pr.y.esforco"), "sem esforços no manifesto, sem campo")
-        XCTAssertEqual(campos.first { $0.chave == "revisores.pr.y.papel" }?.padrao, "segunda_opiniao")
-        XCTAssertEqual(campos.first { $0.chave == "revisores.pr.agente" }?.tipo, .escolha(["x", "y"]))
+        // Apenas os 3 campos simplificados, nada por agente
+        XCTAssertEqual(chaves, ["revisores.pr.lane", "revisores.pr.independente", "revisores.pr.reserva"])
+        // O seletor de lane lista os agentes que revisam
+        guard case let .escolha(ops) = campos.first { $0.chave == "revisores.pr.lane" }?.tipo else {
+            return XCTFail("lane não é uma lista de escolha")
+        }
+        XCTAssertEqual(ops, ["x", "y"])
+        XCTAssertEqual(campos.first { $0.chave == "revisores.pr.lane" }?.padrao, "x")
+        // Não há mais campos de modelo/esforço/papel por agente
+        XCTAssertFalse(chaves.contains { $0.hasSuffix(".modelo") })
+        XCTAssertFalse(chaves.contains { $0.hasSuffix(".esforco") })
+        XCTAssertFalse(chaves.contains { $0.hasSuffix(".papel") })
     }
 
     func testValidacao() throws {

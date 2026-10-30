@@ -151,6 +151,7 @@ struct PaginaAjustes: View {
         case .linearLeitura: BlocoLinearLeitura(modelo: estado.modelo)
         case .manifestos: BlocoManifestos()
         case .ferramentas: SecaoFerramentas()
+        case .revisaoAtual: BlocoRevisaoAtual(modelo: estado.modelo)
         }
     }
 }

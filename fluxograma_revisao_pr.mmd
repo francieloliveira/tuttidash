@@ -1,0 +1,32 @@
+flowchart TD
+    A[PR pronto para revisão] --> B{Lane revisora configurada?}
+    
+    B -->|Não| C[PR não entra na fila automática]
+    B -->|Sim| D[Identificar lane revisora]
+    
+    D --> E[Obter modelo e esforço da lane revisora]
+    E --> F{Autor do PR é o mesmo fornecedor da lane?}
+    
+    F -->|Sim| G[Pular esta lane para revisão]
+    F -->|Não| H[Chamar revisor da lane revisora]
+    
+    H --> I{Revisor reserva ativado?}
+    
+    I -->|Não| J[Fim: revisão atribuída]
+    I -->|Sim| K[Buscar lane reserva: mesmo esforço]
+    
+    K --> L{Lane reserva com mesmo esforço disponível?}
+    L -->|Sim| M[Atribuir lane reserva]
+    L -->|Não| N[Buscar lane reserva: esforço padrão ou acima]
+    
+    N --> O{Lane reserva com esforço ≥ padrão disponível?}
+    O -->|Sim| M
+    O -->|Não| P[Sem revisor reserva]
+    
+    M --> J
+    P --> J
+    
+    style A fill:#f9f,stroke:#333
+    style J fill:#bfb,stroke:#333
+    style C fill:#fcc,stroke:#333
+    style P fill:#ffd,stroke:#333

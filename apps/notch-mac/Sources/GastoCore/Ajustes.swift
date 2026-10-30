@@ -64,43 +64,24 @@ public enum CatalogoAjustes {
         return FontesUso.todas.flatMap(\.camposAjuste).filter { vistos.insert($0.chave).inserted }
     }
 
-    /// Revisor dos PRs: a lista sai do catálogo de agentes (quem tem `revisao` no
-    /// manifesto), então adicionar um revisor = 1 JSON em agents.d, sem mexer aqui.
-    static func camposRevisao(agentes: [CatalogoAgentes.ModeloAgente] = CatalogoAgentes.carregar(),
-                              cache: CacheModelos = ListaModelos.ler(ListaModelos.arquivoCache())) -> [CampoAjuste] {
-        let d = { (a: Double, b: Double) in TipoCampo.numero(min: a, max: b, inteiro: false) }
+    /// Revisor dos PRs: a lista de lanes candidatas sai do catálogo de agentes
+    /// (quem tem `revisao` no manifesto). Modelo e esforço são herdados da lane
+    /// escolhida, não configurados à mão.
+    static func camposRevisao(agentes: [CatalogoAgentes.ModeloAgente] = CatalogoAgentes.carregar()) -> [CampoAjuste] {
         let revisores = agentes.filter { $0.revisao != nil && $0.cli != nil }
         let nomes = revisores.isEmpty ? ["claude"] : revisores.map(\.nome)
-        var campos = [
-            CampoAjuste("revisores.pr.agente", String(localized: "Revisor dos PRs"), .escolha(nomes),
-                        nomes.contains("claude") ? "claude" : nomes[0]),
+        let rotulos = Dictionary(uniqueKeysWithValues: revisores.map { ($0.nome, $0.rotulo) })
+        return [
+            CampoAjuste("revisores.pr.lane", String(localized: "Lane revisora de PR"), .escolha(nomes),
+                        nomes.contains("claude") ? "claude" : nomes[0],
+                        ajuda: String(localized: "Modelo e esforço vêm desta lane."),
+                        rotulos: rotulos),
             CampoAjuste("revisores.pr.independente", String(localized: "Nunca revisar com o mesmo fornecedor que escreveu o PR"), .booleano, "true"),
-            CampoAjuste("revisores.pr.reserva", String(localized: "Revisor reserva (auto = a conta com mais folga)"), .escolha(["auto"] + nomes), "auto",
-                        rotulos: ["auto": String(localized: "Automático (a conta com mais folga)")]),
-            CampoAjuste("revisores.pr.folga_pct", String(localized: "Usar a reserva só abaixo de (% da conta)"), d(1, 100), "85"),
-            CampoAjuste("revisores.pr.teto_usd", String(localized: "Teto por revisão no Claude (US$)"), d(0.5, 100), "4"),
+            CampoAjuste("revisores.pr.reserva", String(localized: "Revisor reserva"), .escolha(["auto"] + nomes), "auto",
+                        ajuda: String(localized: "Automático escolhe outra lane com mesmo esforço, ou esforço padrão ou acima."),
+                        rotulos: Dictionary(uniqueKeysWithValues: [("auto", String(localized: "Automático (mesmo esforço, ou acima)"))] +
+                                                                  revisores.map { ($0.nome, $0.rotulo) })),
         ]
-        for a in revisores {
-            guard let r = a.revisao else { continue }
-            let base = "revisores.pr.\(a.nome)"
-            // FRA-524: a lista vem da lista dinâmica do FRA-521 (cache diário), somada à do manifesto.
-            var ops: [String] = []
-            for m in [r.modeloPadrao] + (cache.listas[a.nome] ?? []) + r.modelos where !ops.contains(m) { ops.append(m) }
-            if ops.count <= 1 {
-                campos.append(CampoAjuste("\(base).modelo", String(localized: "\(a.rotulo): modelo na revisão"), .texto, r.modeloPadrao,
-                                          ajuda: String(localized: "\"padrao\" usa o modelo do próprio CLI."), rotulos: ["padrao": String(localized: "Padrão da ferramenta")]))
-            } else {
-                campos.append(CampoAjuste("\(base).modelo", String(localized: "\(a.rotulo): modelo na revisão"), .escolha(ops), r.modeloPadrao,
-                                          ajuda: String(localized: "Lista que se atualiza sozinha uma vez por dia."), rotulos: ["padrao": String(localized: "Padrão da ferramenta")]))
-            }
-            if !r.esforcos.isEmpty {
-                campos.append(CampoAjuste("\(base).esforco", String(localized: "\(a.rotulo): esforço na revisão"), .escolha(r.esforcos), r.esforcoPadrao, rotulos: CatalogoAjustes.nomesEsforco))
-            }
-            campos.append(CampoAjuste("\(base).papel", String(localized: "\(a.rotulo): papel (sozinho aprova; segunda opinião só bloqueia)"),
-                                      .escolha(["sozinho", "segunda_opiniao"]), r.papel,
-                                      rotulos: ["sozinho": String(localized: "Sozinho (aprova)"), "segunda_opiniao": String(localized: "Segunda opinião (só bloqueia)")]))
-        }
-        return campos
     }
 
     public static func abas() -> [AbaAjustes] {

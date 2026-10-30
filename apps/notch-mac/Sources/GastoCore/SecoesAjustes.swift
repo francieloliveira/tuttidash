@@ -12,7 +12,7 @@ public enum IdSecaoAjustes: String, CaseIterable, Identifiable, Sendable {
 /// Blocos prontos (telas próprias que já existiam) que entram num grupo.
 public enum BlocoAjustes: Sendable, Equatable {
     case lanesHabilitadas, modeloLanes, projetos, contas, quemCuida, agentesSegundoPlano,
-         jobsAgendados, linear, linearLeitura, manifestos, ferramentas
+         jobsAgendados, linear, linearLeitura, manifestos, ferramentas, revisaoAtual
 
     /// Chaves do config que o bloco edita com controle próprio (contam como alcançáveis).
     public var chaves: [String] {
@@ -107,9 +107,6 @@ extension CatalogoAjustes {
     public static func secoes() -> [SecaoAjustes] {
         let c = { (k: String) in campo(k) }
         let esf = nomesEsforco
-        let revisao = camposRevisao()
-        let principaisRevisor = ["revisores.pr.agente", "revisores.pr.independente", "revisores.pr.reserva"]
-        let revisor3 = revisao.filter { $0.chave.split(separator: ".").count == 3 }
         return [
             SecaoAjustes(id: .geral, nome: String(localized: "Geral"), simbolo: "gearshape",
                          subtitulo: String(localized: "Quando o TuttiDash abre e o que cada lane mostra"), grupos: [
@@ -151,11 +148,11 @@ extension CatalogoAjustes {
             SecaoAjustes(id: .revisao, nome: String(localized: "Revisão"), simbolo: "checkmark.seal",
                          subtitulo: String(localized: "Quem revisa os PRs antes do merge"), grupos: [
                 GrupoAjustes(String(localized: "Revisor dos PRs"),
-                             ajuda: String(localized: "O revisor lê os PRs de qualquer projeto antes do merge."),
-                             campos: revisor3.filter { principaisRevisor.contains($0.chave) }),
-                GrupoAjustes(String(localized: "Modelo de cada revisor"),
-                             ajuda: String(localized: "A lista de modelos se atualiza sozinha uma vez por dia."),
-                             campos: revisao.filter { $0.chave.split(separator: ".").count == 4 }),
+                             ajuda: String(localized: "Escolha a lane que revisará os PRs. Modelo e esforço vêm dela automaticamente."),
+                             campos: [c("revisores.pr.lane"), c("revisores.pr.independente"), c("revisores.pr.reserva")]),
+                GrupoAjustes(String(localized: "Modelo e esforço da lane revisora"),
+                             ajuda: String(localized: "Lidos da lane selecionada. Não é preciso configurar à mão."),
+                             blocos: [.revisaoAtual]),
             ]),
             SecaoAjustes(id: .automacao, nome: String(localized: "Automação"), simbolo: "bolt.horizontal.circle",
                          subtitulo: String(localized: "Quem cuida das lanes e os agentes que rodam sozinhos"), grupos: [
@@ -172,7 +169,6 @@ extension CatalogoAjustes {
                 ], recolhido: true),
                 GrupoAjustes(String(localized: "Ferramentas (agents.d)"),
                              ajuda: String(localized: "Cada ferramenta tem um manifesto próprio. Só leitura aqui."), blocos: [.manifestos], recolhido: true),
-                GrupoAjustes(String(localized: "Revisor: limites"), campos: revisor3.filter { !principaisRevisor.contains($0.chave) }, recolhido: true),
                 GrupoAjustes(String(localized: "Privacidade dos modelos"), ajuda: String(localized: "Desde 23/10/2026, modelo free que registra ou treina com o uso pode receber código nas lanes e na revisão."), campos: [
                     c("privacidade.exigir_sem_treino"), c("privacidade.max_retencao_dias"), c("privacidade.max_idade_dias"), c("privacidade.intervalo_h"),
                 ], recolhido: true),

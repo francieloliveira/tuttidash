@@ -165,19 +165,16 @@ final class SecoesAjustesTests: XCTestCase {
         XCTAssertEqual(try cfg("lanes.enabled", home: t.url), #"["claude"]"#, "enabled não pode ser tocado")
     }
 
-    func testRevisaoUsaListaDinamicaDeModelos() {
-        let lidos = CatalogoAgentes.carregar(caminhos: [URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().appendingPathComponent("../../../../agents.d").standardizedFileURL])
-        var codex = lidos.first { $0.nome == "claude" }!
-        codex.nome = "codex"
-        codex.revisao = CatalogoAgentes.ModeloAgente.Revisao(papel: "sozinho", auto: true, modelos: ["gpt-5"],
-                                                             modeloPadrao: "padrao", esforcos: ["high"], esforcoPadrao: "high")
-        let cache = CacheModelos(atualizadoEm: "2026-10-23", listas: ["codex": ["gpt-5", "gpt-5.5-codex"]], anteriores: [:])
-        let campos = CatalogoAjustes.camposRevisao(agentes: [codex], cache: cache)
-        guard case let .escolha(ops) = campos.first(where: { $0.chave == "revisores.pr.codex.modelo" })?.tipo else {
-            return XCTFail("modelo do revisor não é uma lista")
-        }
-        XCTAssertTrue(ops.contains("gpt-5.5-codex"))
-        XCTAssertEqual(campos.first { $0.chave == "revisores.pr.codex.modelo" }?.nomeValor("padrao"), "Padrão da ferramenta")
+    func testRevisaoCamposSimplificados() {
+        let campos = CatalogoAjustes.camposRevisao()
+        let chaves = campos.map(\.chave)
+        XCTAssertTrue(chaves.contains("revisores.pr.lane"))
+        XCTAssertTrue(chaves.contains("revisores.pr.independente"))
+        XCTAssertTrue(chaves.contains("revisores.pr.reserva"))
+        XCTAssertFalse(chaves.contains { $0.hasSuffix(".modelo") })
+        XCTAssertFalse(chaves.contains { $0.hasSuffix(".esforco") })
+        XCTAssertFalse(chaves.contains { $0.hasSuffix(".papel") })
+        // Padrão: a primeira lane com revisão (claude no catálogo do repo)
+        XCTAssertEqual(campos.first { $0.chave == "revisores.pr.lane" }?.padrao, "claude")
     }
 }

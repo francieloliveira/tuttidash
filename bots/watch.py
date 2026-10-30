@@ -1737,7 +1737,7 @@ def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
 ADAPTADOR_FALLBACK = str(_cfg("watch.adaptador_fallback", "opencode") or "opencode")
 MEDIDA_CACHE = LANES_DIR / "medida-cache.json"
 REVISOR_VEREDITOS = HOME / "Library" / "Logs" / "TranscentIA" / "revisor-vereditos.jsonl"
-REVISOR_PADRAO = {"agente": "claude", "independente": True, "reserva": "auto", "folga_pct": 85, "teto_usd": 4}
+REVISOR_PADRAO = {"lane": "claude", "independente": True, "reserva": "auto", "folga_pct": 85, "teto_usd": 4}
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
@@ -1752,20 +1752,16 @@ def revisores_catalogo() -> tuple:
 
 
 def conf_revisor() -> dict:
-    """Ajustes do revisor (`revisores.pr.*`) com os padrões do código e de cada manifesto."""
+    """Ajustes do revisor (`revisores.pr.*`) com os padrões do código."""
     c = _cfg("revisores.pr", {}) or {}
     out = dict(REVISOR_PADRAO)
     out.update({k: v for k, v in c.items() if not isinstance(v, dict) and v not in (None, "")})
-    for a in revisores_catalogo():
-        m = manifesto_revisao(a) or {}
-        base = {"modelo": m.get("modelo_padrao") or "padrao", "esforco": m.get("esforco_padrao") or "",
-                "papel": m.get("papel", "sozinho")}
-        out[a] = {**base, **{k: v for k, v in (c.get(a) or {}).items() if v not in (None, "")}}
     return out
 
 
 def papel(agente: str, conf: dict) -> str:
-    return "segunda_opiniao" if (conf.get(agente) or {}).get("papel") == "segunda_opiniao" else "sozinho"
+    m = manifesto_revisao(agente) or {}
+    return "segunda_opiniao" if m.get("papel") == "segunda_opiniao" else "sozinho"
 
 
 def fornecedor(agente: str) -> str:
@@ -1789,6 +1785,21 @@ def cli_instalado(cli: str) -> str | None:
     return shutil.which(cli, path=PATH_ENV)
 
 
+_ESFORCO_ORDEM = {"baixo": 1, "medio": 2, "alto": 3,
+                  "low": 1, "medium": 2, "high": 3, "xhigh": 4}
+
+
+def esforco_agente(agente: str) -> str:
+    """Esforço padrão do agente no manifesto (vazio se não houver)."""
+    m = manifesto_revisao(agente) or {}
+    return m.get("esforco_padrao") or ""
+
+
+def esforco_maior_igual(e1: str, e2: str) -> bool:
+    """True se e1 >= e2 na escala baixo < medio < alto."""
+    return _ESFORCO_ORDEM.get(e1, 0) >= _ESFORCO_ORDEM.get(e2, 0)
+
+
 def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None = None,
                      instalado=None, so_sozinho: bool = False) -> tuple[str, str]:
     """(agente revisor, observação).
@@ -1804,7 +1815,7 @@ def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None 
              and privacidade_ok(a, str((conf.get(a) or {}).get("modelo") or ""))[0]]
     if so_sozinho:
         nomes = [a for a in nomes if papel(a, conf) == "sozinho"]
-    pref = conf.get("agente")
+    pref = conf.get("lane")
     indep = bool(conf.get("independente", True)) and autor in AGENTES
 
     def serve(a: str) -> bool:
@@ -1825,6 +1836,17 @@ def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None 
         cands = [a for a in nomes if serve(a) and (manifesto_revisao(a) or {}).get("auto", True)]
     else:
         cands = [a for a in nomes if a == reserva and serve(a)]
+
+    # Revisor reserva: tenta mesmo esforço da lane revisora, depois esforço >= padrão.
+    esf_revisora = esforco_agente(pref) if pref else ""
+    mesmo_esforco = [a for a in cands if esforco_agente(a) == esf_revisora]
+    if mesmo_esforco:
+        cands = mesmo_esforco
+    elif esf_revisora:
+        acima = [a for a in cands if esforco_maior_igual(esforco_agente(a), esf_revisora)]
+        if acima:
+            cands = acima
+
     livres = [a for a in cands if pct(a) is None or pct(a) < folga]
     livres.sort(key=lambda a: (50.0 if pct(a) is None else pct(a), a))
     if livres:
