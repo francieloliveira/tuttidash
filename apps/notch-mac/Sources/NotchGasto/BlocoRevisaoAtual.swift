@@ -22,13 +22,6 @@ struct BlocoRevisaoAtual: View {
         agente?.revisao?.modeloPadrao ?? String(localized: "não definido")
     }
 
-    private var esforcoRevisao: String {
-        guard let e = agente?.revisao?.esforcoPadrao, !e.isEmpty else {
-            return String(localized: "não definido")
-        }
-        return CatalogoAjustes.nomesEsforco[e] ?? e
-    }
-
     var body: some View {
         Section {
             if laneSelecionada.isEmpty {
@@ -41,9 +34,8 @@ struct BlocoRevisaoAtual: View {
                 LabeledContent(String(localized: "Modelo na revisão")) {
                     Text(modeloRevisao).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
                 }
-                LabeledContent(String(localized: "Esforço na revisão")) {
-                    Text(esforcoRevisao).textSelection(.enabled)
-                }
+                Text(String(localized: "Esforço: definido pela task do card (não pela lane)."))
+                    .font(.caption2).foregroundStyle(.secondary)
                 if agente?.revisao?.auto == true {
                     Text(String(localized: "Pode ser usado como revisor reserva automático."))
                         .font(.caption2).foregroundStyle(.secondary)
@@ -53,7 +45,7 @@ struct BlocoRevisaoAtual: View {
                 }
             }
         } header: {
-            Text(String(localized: "Modelo e esforço da lane revisora")).font(.headline).foregroundStyle(.white)
+            Text(String(localized: "Modelo da lane revisora")).font(.headline).foregroundStyle(.white)
         }
     }
 }

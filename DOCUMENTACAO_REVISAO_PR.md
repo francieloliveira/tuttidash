@@ -40,7 +40,7 @@ O Revisor Reserva é opcional e, quando automático, segue regras de fallback de
 |------|--------|
 | Seleção | O usuário escolhe **uma lane** como revisora de PR. |
 | Modelo | Herdado da lane revisora. Não é selecionável nesta tela. |
-| Esforço | Herdado da lane revisora. Não é selecionável nesta tela. |
+| Esforço | **Vem da task/card do PR** (etiqueta de esforço no Linear), não da lane. |
 | Atualização de modelos | Consome a listagem de modelos que as lanes já populam. Não há busca externa agendada ("uma vez por dia"). |
 | Exclusão de autor | Nunca chama o mesmo fornecedor/usuário que escreveu o PR. |
 
@@ -63,11 +63,11 @@ O sistema tenta encontrar uma lane de reserva nesta ordem de prioridade:
 
 | Prioridade | Critério de busca |
 |------------|-------------------|
-| **1ª tentativa** | Outra lane disponível com o **mesmo nível de esforço** do revisor padrão. |
-| **2ª tentativa** | Lane com **esforço padrão ou acima** (maior ou igual ao esforço do revisor padrão). |
+| **1ª tentativa** | Outra lane disponível com o **mesmo nível de esforço da task/card** do PR. |
+| **2ª tentativa** | Lane com **esforço igual ou acima** do esforço da task. |
 | **Resultado final** | Se nenhuma lane estiver disponível após as duas tentativas, **não há revisor reserva** para esse PR. |
 
-> Exemplo prático: se a lane revisora tem esforço *Médio*, o sistema primeiro busca outra lane *Médio* disponível. Se não houver, busca qualquer lane com esforço *Médio, Alto ou Acima*.
+> Exemplo prático: se a task do PR tem esforço *Médio*, o sistema primeiro busca outra lane com esforço *Médio* disponível. Se não houver, busca qualquer lane com esforço *Médio, Alto ou Acima*.
 
 ### 4.5 Casos extremos
 

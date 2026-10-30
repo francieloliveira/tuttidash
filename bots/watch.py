@@ -1789,19 +1789,9 @@ _ESFORCO_ORDEM = {"baixo": 1, "medio": 2, "alto": 3,
                   "low": 1, "medium": 2, "high": 3, "xhigh": 4}
 
 
-def esforco_agente(agente: str) -> str:
-    """Esforço padrão do agente no manifesto (vazio se não houver)."""
-    m = manifesto_revisao(agente) or {}
-    return m.get("esforco_padrao") or ""
-
-
-def esforco_maior_igual(e1: str, e2: str) -> bool:
-    """True se e1 >= e2 na escala baixo < medio < alto."""
-    return _ESFORCO_ORDEM.get(e1, 0) >= _ESFORCO_ORDEM.get(e2, 0)
-
-
 def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None = None,
-                     instalado=None, so_sozinho: bool = False) -> tuple[str, str]:
+                     instalado=None, so_sozinho: bool = False,
+                     esforco_tarefa: str | None = None) -> tuple[str, str]:
     """(agente revisor, observação).
 
     Candidatos: os agentes do catálogo com `revisao` e CLI instalado. O preferido dos
@@ -1837,13 +1827,15 @@ def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None 
     else:
         cands = [a for a in nomes if a == reserva and serve(a)]
 
-    # Revisor reserva: tenta mesmo esforço da lane revisora, depois esforço >= padrão.
-    esf_revisora = esforco_agente(pref) if pref else ""
-    mesmo_esforco = [a for a in cands if esforco_agente(a) == esf_revisora]
+    # Revisor reserva: tenta mesmo esforço da task, depois esforço >= da task.
+    esf_tarefa = esforco_tarefa or ""
+    mesmo_esforco = [a for a in cands if (manifesto_revisao(a) or {}).get("esforco_padrao") == esf_tarefa]
     if mesmo_esforco:
         cands = mesmo_esforco
-    elif esf_revisora:
-        acima = [a for a in cands if esforco_maior_igual(esforco_agente(a), esf_revisora)]
+    elif esf_tarefa:
+        acima = [a for a in cands
+                 if _ESFORCO_ORDEM.get((manifesto_revisao(a) or {}).get("esforco_padrao") or "", 0)
+                 >= _ESFORCO_ORDEM.get(esf_tarefa, 0)]
         if acima:
             cands = acima
 
@@ -1856,14 +1848,15 @@ def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None 
     return (nomes[0] if nomes else ADAPTADOR_FALLBACK), "mesmo fornecedor"
 
 
-def comando_revisao(agente: str, conf: dict, ctx: dict) -> tuple[list[str], str | None]:
-    """(argv, texto para o stdin) a partir do manifesto. `ctx` traz prompt, saida, settings, mcp."""
+def comando_revisao(agente: str, conf: dict, ctx: dict, esforco: str | None = None) -> tuple[list[str], str | None]:
+    """(argv, texto para o stdin) a partir do manifesto. `ctx` traz prompt, saida, settings, mcp.
+    `esforco` vem da task do card (não da lane)."""
     m = manifesto_revisao(agente)
     if not m:
         raise RuntimeError(f"{agente} não tem `revisao` no manifesto")
     c = conf.get(agente) or {}
     modelo = str(c.get("modelo") or "")
-    esforco = str(c.get("esforco") or "")
+    esforco = str(esforco or c.get("esforco") or "")
     vals = {**ctx, "modelo": modelo, "esforco": esforco, "teto": str(conf.get("teto_usd") or CLAUDE_BUDGET_USD)}
     flags: list[str] = []
     if modelo and modelo not in ("padrao", "padrão", "default"):
@@ -1888,7 +1881,8 @@ def limpar_saida(out: str) -> str:
     return normalizar_tag((out[i:] if i >= 0 else out).strip(), TAG_REVISOR)
 
 
-def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict) -> str:
+def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
+                esforco: str | None = None) -> str:
     """Revisão só leitura em qualquer agente com `revisao` no manifesto."""
     RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
     m = manifesto_revisao(agente) or {}
@@ -1901,7 +1895,7 @@ def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict) -> str
     if not mcp.exists():
         mcp.write_text('{"mcpServers":{}}')
     argv, entrada = comando_revisao(agente, conf, {"prompt": texto, "saida": saida, "settings": settings,
-                                                    "mcp": str(mcp)})
+                                                    "mcp": str(mcp)}, esforco=esforco)
     started = time.time()
     try:
         out = sh(argv, cwd=cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada)
@@ -1915,8 +1909,7 @@ def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict) -> str
         os.unlink(settings)
         os.unlink(saida)
     (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(out)
-    c = conf.get(agente) or {}
-    log(f"agente {tag} [{agente}/{c.get('modelo') or 'padrao'}/{c.get('esforco') or '-'}]: "
+    log(f"agente {tag} [{agente}/{manifesto_revisao(agente) or {} }.get('modelo_padrao','padrao')}/{esforco or '-'}]: "
         f"{int(time.time() - started)} s, {len(out)} chars")
     return limpar_saida(out)
 
@@ -1945,7 +1938,8 @@ def ordem_revisao(revisor: str, conf: dict, so_sozinho: bool = False, instalado=
     return out
 
 
-def revisar(texto: str, cwd: Path, tag: str, revisor: str, conf: dict, so_sozinho: bool = False) -> tuple[str, str]:
+def revisar(texto: str, cwd: Path, tag: str, revisor: str, conf: dict, so_sozinho: bool = False,
+            esforco: str | None = None) -> tuple[str, str]:
     """Roda a revisão na ordem de `ordem_revisao`; Claude no limite é pulado. (texto, quem revisou)."""
     erros: list[str] = []
     for a in ordem_revisao(revisor, conf, so_sozinho):
@@ -1953,7 +1947,7 @@ def revisar(texto: str, cwd: Path, tag: str, revisor: str, conf: dict, so_sozinh
             erros.append("claude: conta no limite")
             continue
         try:
-            out = run_revisor(a, texto, cwd, tag, conf)
+            out = run_revisor(a, texto, cwd, tag, conf, esforco=esforco)
         except Exception as exc:  # noqa: BLE001
             log(f"{tag}: revisor {a} falhou ({str(exc)[:160]}); tento o próximo")
             erros.append(f"{a}: {str(exc)[:80]}")
@@ -2043,7 +2037,8 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
     stat = sh(["git", "diff", "--stat", f"origin/main...origin/{pr['headRefName']}"], cwd=rdir)[-4000:]
     lane = lane_of(ci)
     conf = conf_revisor()
-    revisor, obs = escolher_revisor(lane, conf)
+    esforco = esforco_do_card(ci) if ci else "medio"
+    revisor, obs = escolher_revisor(lane, conf, esforco_tarefa=esforco)
 
     def montar(rev: str) -> str:
         mesmo = lane in AGENTES and fornecedor(rev) == fornecedor(lane)
@@ -2067,7 +2062,7 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         # Head já aprovado na segunda opinião: vai direto para a confirmação, sem revisar de novo.
         text, revisor = TAG_REVISOR + " REVISOR: APROVADO", guardadas[head]["revisor"]
     else:
-        text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf)
+        text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf, esforco=esforco)
         if text.startswith(TAG_REVISOR) and papel(revisor, conf) == "segunda_opiniao" and veredito_de(text) == "APROVADO":
             guardadas[head] = {"revisor": revisor, "quando": time.time(), "pr": pr["number"]}
             save_state(st)  # uma falha da confirmação não apaga a segunda opinião
@@ -2079,7 +2074,8 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         # Segunda opinião só bloqueia; aprovar exige um revisor que aprova sozinho.
         primeiro = revisor
         conf_rev, obs2 = escolher_revisor(lane, conf, so_sozinho=True)
-        text, revisor = revisar(montar(conf_rev), rdir, tag + "-confirma", conf_rev, conf, so_sozinho=True)
+        text, revisor = revisar(montar(conf_rev), rdir, tag + "-confirma", conf_rev, conf, so_sozinho=True,
+                                esforco=esforco)
         extra = f"confirmou a aprovação de {primeiro}" + (f"; {obs2}" if obs2 else "")
     if not text.startswith(TAG_REVISOR):
         sha = pr["headRefOid"]
