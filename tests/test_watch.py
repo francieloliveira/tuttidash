@@ -950,3 +950,65 @@ class VigiaLocalPrimeiro(unittest.TestCase):
             watch.revisar("x", self.tmp, "t", "opencode-go", conf)
         self.assertNotIn("claude", tentou)
 
+
+
+class WorktreesForaDaPastaTest(unittest.TestCase):
+    """Regra do dono (29/10): `<repo>` é a main; todo outro checkout fica na pasta de branches."""
+    PORCELAIN = """worktree /Users/x/Developer/tuttidash
+HEAD a746ee7aaaa
+branch refs/heads/main
+
+worktree /private/tmp/pr19
+HEAD d7996cfbbbb
+detached
+
+worktree /Users/x/Developer/tuttidash-branches/fra-407
+HEAD e0914ddcccc
+branch refs/heads/dono/fra-407
+
+worktree /Users/x/Developer/outra-pasta/fra-9
+HEAD 1111111dddd
+branch refs/heads/fra-9
+"""
+
+    def test_ler_porcelain(self):
+        lista = watch.ler_worktrees(self.PORCELAIN)
+        self.assertEqual([w["path"] for w in lista][1], "/private/tmp/pr19")
+        self.assertEqual(lista[0]["branch"], "main")
+        self.assertEqual(lista[1]["branch"], "")
+
+    def test_so_main_e_branches_ficam_de_fora(self):
+        lista = watch.ler_worktrees(self.PORCELAIN)
+        fora = watch.worktrees_fora(lista, Path("/Users/x/Developer/tuttidash"),
+                                    Path("/Users/x/Developer/tuttidash-branches"))
+        self.assertEqual([w["path"] for w in fora], ["/private/tmp/pr19", "/Users/x/Developer/outra-pasta/fra-9"])
+
+    def test_avisa_uma_vez_por_dia_e_esquece_o_que_sumiu(self):
+        class P:
+            repo = Path(tempfile.mkdtemp())
+            worktrees = Path("/Users/x/Developer/tuttidash-branches")
+        porcelain = self.PORCELAIN.replace("/Users/x/Developer/tuttidash\n", f"{P.repo}\n", 1)
+        orig_projeto, orig_sh, orig_panel = watch.projeto, watch.sh, watch.panel
+        linhas = []
+        watch.projeto = lambda: P
+        watch.sh = lambda *a, **k: porcelain
+        watch.panel = linhas.append
+        try:
+            st = {}
+            watch.avisar_worktrees_fora(st, [], agora=1000.0)
+            self.assertEqual(len(linhas), 2)
+            self.assertIn("worktree fora da pasta de branches: /private/tmp/pr19 (detached d7996cf)", linhas[0])
+            watch.avisar_worktrees_fora(st, [], agora=2000.0)
+            self.assertEqual(len(linhas), 2, "não repete no mesmo dia")
+            porcelain = porcelain.split("\nworktree /private/tmp/pr19")[0] + "\n"
+            watch.sh = lambda *a, **k: porcelain
+            watch.avisar_worktrees_fora(st, [], agora=3000.0)
+            self.assertEqual(list(st["worktrees_avisados"]), [], "o que sumiu sai do estado")
+        finally:
+            watch.projeto, watch.sh, watch.panel = orig_projeto, orig_sh, orig_panel
+
+    def test_revisor_nao_cria_worktree(self):
+        deny = watch.READ_ONLY_SETTINGS["permissions"]["deny"]
+        self.assertIn("Bash(git worktree:*)", deny)
+        self.assertIn("Bash(git clone:*)", deny)
+        self.assertIn("Não crie worktree", watch.prompt("revisor"))
