@@ -111,6 +111,18 @@ GROK_TOOLS = ["run_terminal_command", "read_file", "search_replace", "write", "l
               "grep", "todo_write", "get_command_or_subagent_output",
               "kill_command_or_subagent", "monitor"]
 LANE_TIMEOUT_MIN = 90
+# FRA-443 — freios acumulados por card. Decisão do dono Franciel em 28/10/2026.
+# D1 tentativas, em qualquer lane. D2 gasto acumulado em US$. D3 tempo acumulado em min.
+# D4: comentário do revisor com MARCA_AJUSTE_OLLIE conta 1 tentativa.
+# D5: só estes freios; o verificador do aceite é o card seguinte.
+# D6: estouro aplica FREIO_LABEL e o comentário traz tentativas, gasto e tempo.
+# Nenhum número desta tabela foi escolhido pela lane. Ideia de freio por card;
+# o código é novo e não foi copiado de outro projeto.
+TENTATIVAS_MAX = {"baixo": 3, "medio": 3, "alto": 5}
+ORCAMENTO_ACUMULADO_USD = {"baixo": 8, "medio": 20, "alto": 40}
+TEMPO_ACUMULADO_MIN = {"baixo": 120, "medio": 270, "alto": 360}
+FREIO_LABEL = linear_ids.FALHOU
+MARCA_AJUSTE_OLLIE = "REVISOR: AJUSTES"
 
 # Contramedida de 11/10 (FRA-306 cortado pelo limite de 5 h no turno 107, lanes 11 h paradas).
 # Folga mínima na conta para assumir um card, pela janela que mais aperta (lanepct).
@@ -141,7 +153,8 @@ PROOF_TIMEOUT_MIN = 150
 PROOF_DEFAULT_SUITES = ["TranscentIATests"]
 # Log do agente sem saída nova por este tempo: a lane parou em silêncio (FRA-515).
 LOG_PARADO_S = 10 * 60
-# Duas falhas da opencode tiram o card dessa lane. Ela não volta a assumi-lo.
+# Teto antigo, só da opencode (2). O freio que vale agora é TENTATIVAS_MAX (FRA-443).
+# O número continua no arquivo `opencode-strikes.json` (`max`) para o que já estava gravado.
 STRIKES_OPENCODE = 2
 # FRA-269: medida de uso das contas (mesma fonte do app de notch). Renova o token
 # vencido sozinho (claude -p / grok -p) e mede de novo; sai 3 se continuar vencido.
@@ -279,6 +292,7 @@ query Candidatos($project: ID!, $state: ID!) {
       history(last: 15) {
         nodes { createdAt actor { name } botActor { name } toState { id } }
       }
+      comments(last: 30) { nodes { id body } }
     }
   }
 }
@@ -845,6 +859,46 @@ def pick_lane(measures: dict, candidates, spend: Optional[dict] = None) -> tuple
 LEDGER_FILE = Path.home() / ".transcentia" / "tools" / "ledger.jsonl"
 
 
+def _iter_ledger(ledger: Path):
+    """Registros JSON do ledger. Arquivo ausente ou linha inválida não derruba o ciclo."""
+    try:
+        fh = ledger.open(encoding="utf-8")
+    except OSError:
+        return
+    with fh:
+        for raw in fh:
+            try:
+                r = json.loads(raw)
+            except ValueError:
+                continue
+            if isinstance(r, dict):
+                yield r
+
+
+def _custo_conhecido(valor) -> Optional[float]:
+    """US$ conhecido. Zero, ausente ou bool não conta — nunca vira «grátis»."""
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor <= 0:
+        return None
+    return float(valor)
+
+
+def _duracao_ms(reg: dict) -> float:
+    """Duração medida; sem ela, a estimativa do parser. As duas não se somam."""
+    for chave in ("duracao_ms", "duracao_estimada_ms"):
+        valor = reg.get(chave)
+        if isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor <= 0:
+            continue
+        return float(valor)
+    return 0.0
+
+
+def _id_do_log(log_path: str) -> str:
+    nome = Path(log_path or "").name
+    if nome.endswith(".jsonl"):
+        return nome[: -len(".jsonl")]
+    return nome
+
+
 def week_spend(ledger: Path = LEDGER_FILE, hoje: Optional[dt.date] = None) -> dict:
     """Gasto conhecido (custo_usd) da semana ISO por lane, lido do ledger do gasto.
     Fallback de peso quando nenhuma candidata tem medida de quota (FRA-371)."""
@@ -852,24 +906,43 @@ def week_spend(ledger: Path = LEDGER_FILE, hoje: Optional[dt.date] = None) -> di
     iso = hoje.isocalendar()
     semana = f"{iso[0]}-W{iso[1]:02d}"
     out: dict = {}
-    try:
-        fh = ledger.open(encoding="utf-8")
-    except OSError:
-        return out
-    with fh:
-        for raw in fh:
-            try:
-                r = json.loads(raw)
-            except ValueError:
-                continue
-            if not isinstance(r, dict) or r.get("semana") != semana:
-                continue
-            c = r.get("custo_usd")
-            if isinstance(c, bool) or not isinstance(c, (int, float)) or c <= 0:
-                continue  # zero/ausente = desconhecido, nunca "grátis"
-            lane = r.get("lane") or "?"
-            out[lane] = out.get(lane, 0.0) + float(c)
+    for r in _iter_ledger(ledger):
+        if r.get("semana") != semana:
+            continue
+        c = _custo_conhecido(r.get("custo_usd"))
+        if c is None:
+            continue  # zero/ausente = desconhecido, nunca "grátis"
+        lane = r.get("lane") or "?"
+        out[lane] = out.get(lane, 0.0) + c
     return out
+
+
+def _esforco_freio(effort: str) -> str:
+    return effort if effort in TENTATIVAS_MAX else EFFORT_DEFAULT
+
+
+def resumo_freio(n: int, effort: str, gasto: float, tempo: float) -> str:
+    """Linha única do comentário: tentativas, gasto e tempo contra o teto do esforço."""
+    nivel = _esforco_freio(effort)
+    return (f"tentativas: {n} de {TENTATIVAS_MAX[nivel]}; "
+            f"gasto: US$ {gasto:.2f} de {ORCAMENTO_ACUMULADO_USD[nivel]:g}; "
+            f"tempo: {int(round(tempo))} de {TEMPO_ACUMULADO_MIN[nivel]} min")
+
+
+def causa_estouro(n: int, effort: str, gasto: float, tempo: float) -> Optional[str]:
+    """None se o card cabe. Senão o que estourou, junto se for mais de um.
+
+    O teto é inclusivo: chegar em N, em US$ Y ou em B min já para.
+    """
+    nivel = _esforco_freio(effort)
+    partes = []
+    if n >= TENTATIVAS_MAX[nivel]:
+        partes.append("tentativas")
+    if gasto >= ORCAMENTO_ACUMULADO_USD[nivel]:
+        partes.append("gasto")
+    if tempo >= TEMPO_ACUMULADO_MIN[nivel]:
+        partes.append("tempo")
+    return "+".join(partes) if partes else None
 
 
 # --- Claim ------------------------------------------------------------------
@@ -1490,6 +1563,7 @@ CAUSAS = (
     ("prova morreu", "prova-morta"),
     ("preflight", "preflight"),
     ("passou de", "prova-timeout"),
+    ("freio do card", "freio-card"),
 )
 
 
@@ -1539,25 +1613,123 @@ def strikes_do_card(identifier: str) -> int:
         return 0
 
 
-def registrar_falha_opencode(st: dict, motivo: str) -> int:
-    """Conta uma falha da opencode neste card. Outras lanes não entram no strike."""
-    if st.get("lane") != "opencode":
+def _publicar_topo(dados: dict, ident: str, card: dict, effort: str) -> None:
+    dados["cards"][ident] = card
+    nivel = _esforco_freio(effort)
+    dados["max"] = TENTATIVAS_MAX[nivel]
+    dados["strikes"] = int(card.get("n") or 0)
+    dados["motivos"] = [f"{ident}: {m}" for m in card.get("motivos") or [] if isinstance(m, str)]
+    gravar_strikes(dados)
+
+
+def registrar_tentativa(st: dict, motivo: str) -> int:
+    """Conta uma tentativa deste card, em qualquer lane. A mesma `log` não conta de novo."""
+    ident = st.get("card") or ""
+    if not ident:
         return 0
     dados = ler_strikes()
-    cards = dados.setdefault("cards", {})
-    ident = st.get("card") or ""
-    atual = cards.get(ident)
-    card = atual if isinstance(atual, dict) else {"n": 0, "motivos": []}
-    card["n"] = int(card.get("n", 0)) + 1
-    motivos = [m for m in (card.get("motivos") or []) if isinstance(m, str)]
+    card = _bloco_card(dados, ident)
+    chave = st.get("log") or ""
+    chaves = [x for x in (card.get("chaves") or []) if isinstance(x, str)]
+    if chave and chave in chaves:
+        return int(card.get("n") or 0)
+    if chave:
+        chaves.append(chave)
+        card["chaves"] = chaves[-20:]
+    card["n"] = int(card.get("n") or 0) + 1
+    motivos = [m for m in card.get("motivos") or [] if isinstance(m, str)]
     motivos.append((motivo or "")[:180])
     card["motivos"] = motivos[-6:]
-    cards[ident] = card
-    dados["cards"] = cards
-    dados["max"] = STRIKES_OPENCODE
-    dados["strikes"] = card["n"]
-    dados["motivos"] = [f"{ident}: {m}" for m in card["motivos"]]
-    gravar_strikes(dados)
+    effort = _esforco_freio(st.get("effort") or card.get("esforco") or EFFORT_DEFAULT)
+    card["esforco"] = effort
+    _publicar_topo(dados, ident, card, effort)
+    return card["n"]
+
+
+def registrar_falha_opencode(st: dict, motivo: str) -> int:
+    """Nome antigo. Conta uma tentativa do card em qualquer lane (FRA-443)."""
+    return registrar_tentativa(st, motivo)
+
+
+def _lembrar_sessao(st: dict) -> None:
+    """Guarda os minutos desta rodada no estado, uma vez por log."""
+    ident = st.get("card") or ""
+    log_id = _id_do_log(st.get("log") or "")
+    if not ident or not log_id or st.get("started") is None:
+        return
+    marca = st.get("agora")
+    marca = time.time() if marca is None else float(marca)
+    decorrido = (marca - float(st["started"])) / 60.0
+    if decorrido <= 0:
+        return
+    dados = ler_strikes()
+    card = _bloco_card(dados, ident)
+    rodadas = card.get("rodadas_min")
+    if not isinstance(rodadas, dict):
+        rodadas = {}
+    anterior = rodadas.get(log_id)
+    if (isinstance(anterior, bool) or not isinstance(anterior, (int, float))
+            or decorrido > float(anterior)):
+        rodadas[log_id] = round(decorrido, 2)
+    card["rodadas_min"] = rodadas
+    soma = sum(float(v) for v in rodadas.values()
+               if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0)
+    card["tempo_min"] = round(soma, 2)
+    effort = _esforco_freio(st.get("effort") or card.get("esforco") or EFFORT_DEFAULT)
+    _publicar_topo(dados, ident, card, effort)
+
+
+def _anotar_medidas(ident: str, effort: str, gasto: float, tempo: float) -> None:
+    if not ident:
+        return
+    dados = ler_strikes()
+    card = _bloco_card(dados, ident)
+    nivel = _esforco_freio(effort or card.get("esforco") or EFFORT_DEFAULT)
+    card["gasto_usd"] = round(float(gasto), 4)
+    card["tempo_min"] = round(float(tempo), 2)
+    card["esforco"] = nivel
+    card["resumo"] = resumo_freio(int(card.get("n") or 0), nivel, gasto, card["tempo_min"])
+    _publicar_topo(dados, ident, card, nivel)
+
+
+def comentarios_de(issue: dict) -> list:
+    bruto = issue.get("comments")
+    if isinstance(bruto, dict):
+        nodes = bruto.get("nodes") or []
+    elif isinstance(bruto, list):
+        nodes = bruto
+    else:
+        nodes = []
+    return [n for n in nodes if isinstance(n, dict)]
+
+
+def registrar_ajustes_ollie(identifier: str, comentarios: list, effort: str = EFFORT_DEFAULT) -> int:
+    """Cada comentário novo com pedido de ajuste do revisor soma 1 (D4). O mesmo id não repete."""
+    if not identifier:
+        return 0
+    dados = ler_strikes()
+    card = _bloco_card(dados, identifier)
+    vistos = [x for x in (card.get("ajustes") or []) if isinstance(x, str)]
+    novos = 0
+    for comentario in comentarios or []:
+        corpo = comentario.get("body") or ""
+        if MARCA_AJUSTE_OLLIE not in corpo:
+            continue
+        cid = str(comentario.get("id") or "")
+        if not cid or cid in vistos:
+            continue
+        vistos.append(cid)
+        novos += 1
+        motivos = [m for m in card.get("motivos") or [] if isinstance(m, str)]
+        motivos.append("revisor pediu ajustes")
+        card["motivos"] = motivos[-6:]
+    if not novos:
+        return int(card.get("n") or 0)
+    card["ajustes"] = vistos[-30:]
+    card["n"] = int(card.get("n") or 0) + novos
+    nivel = _esforco_freio(effort)
+    card["esforco"] = nivel
+    _publicar_topo(dados, identifier, card, nivel)
     return card["n"]
 
 
@@ -1574,9 +1746,108 @@ def limpar_strike_do_card(identifier: str) -> None:
     gravar_strikes(dados)
 
 
-def card_banido_da_lane(lane: str, identifier: str) -> bool:
-    """2 falhas na opencode: este card não volta para essa lane."""
-    return lane == "opencode" and bool(identifier) and strikes_do_card(identifier) >= STRIKES_OPENCODE
+def _bloco_card(dados: dict, identifier: str) -> dict:
+    cards = dados.setdefault("cards", {})
+    atual = cards.get(identifier)
+    if not isinstance(atual, dict):
+        atual = {"n": 0, "motivos": []}
+    if not isinstance(atual.get("motivos"), list):
+        atual["motivos"] = []
+    cards[identifier] = atual
+    return atual
+
+
+def _numero_guardado(card: dict, chave: str) -> float:
+    valor = card.get(chave)
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor < 0:
+        return 0.0
+    return float(valor)
+
+
+def gasto_do_card(identifier: str, ledger: Optional[Path] = None) -> float:
+    """US$ acumulado do card: o que o ledger soma, ou o que o estado já guardou — o maior."""
+    alvo = (identifier or "").upper()
+    vivo = 0.0
+    if alvo:
+        for reg in _iter_ledger(LEDGER_FILE if ledger is None else ledger):
+            if str(reg.get("card") or "").upper() != alvo:
+                continue
+            custo = _custo_conhecido(reg.get("custo_usd"))
+            if custo is not None:
+                vivo += custo
+    card = (ler_strikes().get("cards") or {}).get(identifier) or {}
+    guardado = _numero_guardado(card, "gasto_usd") if isinstance(card, dict) else 0.0
+    return max(vivo, guardado)
+
+
+def tempo_do_card_min(identifier: str, ledger: Optional[Path] = None,
+                      sessao: Optional[dict] = None, agora: Optional[float] = None) -> float:
+    """Minutos acumulados do card. Cada log entra uma vez: o ledger vence o que o
+    dispatcher guardou; a rodada ainda aberta soma pelo relógio se o log não está lá."""
+    alvo = (identifier or "").upper()
+    por_id: dict = {}
+    if alvo:
+        for reg in _iter_ledger(LEDGER_FILE if ledger is None else ledger):
+            if str(reg.get("card") or "").upper() != alvo:
+                continue
+            dur = _duracao_ms(reg) / 60000.0
+            chave = reg.get("id")
+            if dur > 0 and chave:
+                por_id[str(chave)] = dur
+    card = (ler_strikes().get("cards") or {}).get(identifier) or {}
+    rodadas = card.get("rodadas_min") if isinstance(card, dict) else None
+    if isinstance(rodadas, dict):
+        for chave, valor in rodadas.items():
+            if chave in por_id:
+                continue
+            if isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor <= 0:
+                continue
+            por_id[str(chave)] = float(valor)
+    if sessao:
+        log_id = _id_do_log(sessao.get("log") or "")
+        if log_id and sessao.get("started") is not None:
+            marca = agora if agora is not None else sessao.get("agora")
+            marca = time.time() if marca is None else float(marca)
+            decorrido = (marca - float(sessao["started"])) / 60.0
+            if decorrido > por_id.get(log_id, 0):
+                por_id[log_id] = decorrido
+    _espelhar_tempos(identifier, por_id)
+    return sum(por_id.values())
+
+
+def _espelhar_tempos(identifier: str, por_id: dict) -> None:
+    """Grava no estado os minutos já unidos (ledger + rodadas), se mudaram."""
+    if not identifier:
+        return
+    dados = ler_strikes()
+    card = _bloco_card(dados, identifier)
+    novo = {str(k): round(float(v), 2) for k, v in por_id.items() if float(v) > 0}
+    total = round(sum(novo.values()), 2)
+    atual = card.get("rodadas_min") if isinstance(card.get("rodadas_min"), dict) else {}
+    if atual == novo and _numero_guardado(card, "tempo_min") == total:
+        return
+    card["rodadas_min"] = novo
+    card["tempo_min"] = total
+    _publicar_topo(dados, identifier, card, card.get("esforco") or EFFORT_DEFAULT)
+
+
+def causa_do_card(identifier: str, effort: str, sessao: Optional[dict] = None,
+                  agora: Optional[float] = None) -> Optional[str]:
+    if not identifier:
+        return None
+    return causa_estouro(strikes_do_card(identifier), effort,
+                         gasto_do_card(identifier),
+                         tempo_do_card_min(identifier, sessao=sessao, agora=agora))
+
+
+def card_banido_da_lane(lane: str, identifier: str, effort: str = "") -> bool:
+    """True quando o card estourou tentativas, gasto ou tempo (FRA-443).
+
+    O freio é do card, em qualquer lane. `lane` fica na assinatura porque a fila
+    já chamava assim; o teto não muda com a lane.
+    """
+    del lane
+    return causa_do_card(identifier, effort or EFFORT_DEFAULT) is not None
 
 
 def tirar_label_da_lane(issue_id: str, lane: str) -> None:
@@ -1589,27 +1860,96 @@ def tirar_label_da_lane(issue_id: str, lane: str) -> None:
         log(f"lane:{lane} não removeu a label do card {issue_id}: {exc}")
 
 
+def _corpo_freio(lane: str, motivo: str, resumo: str, extra: str, st: Optional[dict]) -> str:
+    st = st or {}
+    linhas = (f"⛔ **lane:{lane}** parou por freio do card: {motivo}.\n\n"
+              f"- {resumo}\n"
+              f"{linha_causa('freio-card')}")
+    if st.get("log"):
+        linhas += f"- log: `{st['log']}`\n"
+    if st.get("worktree"):
+        linhas += f"- worktree: `{st['worktree']}` (não foi apagado)\n"
+        linhas += f"{resume_line(st)}{pending_lines(st)}"
+    else:
+        linhas += "- o worktree não foi apagado\n"
+    linhas += f"{extra or ''}\n"
+    linhas += (f"O dispatcher não assume este card de novo enquanto o freio estiver estourado "
+               f"(label `{FREIO_LABEL}`).")
+    return linhas
+
+
+def publicar_freio(issue_id: str, lane: str, ident: str, effort: str, motivo: str,
+                   extra: str = "", st: Optional[dict] = None) -> str:
+    """Aplica lane:falhou e comenta os totais. O mesmo resumo não gera outro comentário."""
+    nivel = _esforco_freio(effort)
+    n = strikes_do_card(ident)
+    gasto = gasto_do_card(ident)
+    tempo = tempo_do_card_min(ident, sessao=st, agora=(st or {}).get("agora"))
+    _anotar_medidas(ident, nivel, gasto, tempo)
+    resumo = resumo_freio(n, nivel, gasto, tempo)
+    dados = ler_strikes()
+    card = _bloco_card(dados, ident) if ident else {}
+    ja = bool(ident) and card.get("aviso") == resumo
+    aplicar_label(issue_id, LABEL_LANE_FALHOU_ID, FREIO_LABEL)
+    if not ja and issue_id:
+        linear(MUT_COMMENT, {"id": issue_id, "body": _corpo_freio(lane, motivo, resumo, extra, st)})
+        if ident:
+            card["aviso"] = resumo
+            _publicar_topo(dados, ident, card, nivel)
+    return f"lane:falhou ({motivo})"
+
+
 def fail(st: dict, motivo: str, extra: str = "", causa: str = "") -> str:
-    if st.get("lane") == "opencode":
-        n = registrar_falha_opencode(st, motivo)
-        if n >= STRIKES_OPENCODE:
-            # A 2ª falha tira o card da opencode sem `lane:falhou`, para outra lane pegar.
-            tirar_label_da_lane(st["issue_id"], "opencode")
-            linear(MUT_COMMENT, {"id": st["issue_id"], "body":
-                f"⛔ **lane:opencode** falhou {n} vezes neste card: {motivo}.\n\n"
-                f"{linha_causa(causa or causa_de(motivo))}"
-                f"- o card sai da lane opencode e volta à fila, sem `lane:falhou`\n"
-                f"- log: `{st['log']}`\n- worktree: `{st['worktree']}`\n"
-                f"{resume_line(st)}{pending_lines(st)}{extra}\n"
-                f"Outra lane pode assumir. A opencode não pega este card de novo."})
-            return f"saiu da opencode após {n} falhas ({motivo})"
-    aplicar_label(st["issue_id"], LABEL_LANE_FALHOU_ID, linear_ids.FALHOU)
+    ident = st.get("card") or ""
+    n = registrar_tentativa(st, motivo)
+    _lembrar_sessao(st)
+    effort = _esforco_freio(st.get("effort") or EFFORT_DEFAULT)
+    gasto = gasto_do_card(ident)
+    tempo = tempo_do_card_min(ident, sessao=st, agora=st.get("agora"))
+    _anotar_medidas(ident, effort, gasto, tempo)
+    if causa_estouro(n, effort, gasto, tempo):
+        return publicar_freio(st.get("issue_id") or "", st.get("lane") or "", ident, effort,
+                              motivo, extra, st)
+    aplicar_label(st["issue_id"], LABEL_LANE_FALHOU_ID, FREIO_LABEL)
+    resumo = resumo_freio(n, effort, gasto, tempo)
     linear(MUT_COMMENT, {"id": st["issue_id"], "body":
         f"⛔ **lane:{st['lane']}** terminou sem fechar o card: {motivo}.\n\n"
         f"{linha_causa(causa or causa_de(motivo))}"
+        f"- {resumo}\n"
         f"- log: `{st['log']}`\n- worktree: `{st['worktree']}`\n{resume_line(st)}{pending_lines(st)}{extra}\n"
-        f"Para voltar à fila: corrigir a causa e remover a label `lane:falhou`."})
+        f"Para voltar à fila: corrigir a causa e remover a label `{FREIO_LABEL}`."})
     return f"lane:falhou ({motivo})"
+
+
+def freio_da_sessao_aberta(st: dict, agora: Optional[float] = None) -> Optional[str]:
+    """Causa do freio se a rodada em andamento já passou do teto; None se ainda cabe."""
+    return causa_do_card(st.get("card") or "", st.get("effort") or EFFORT_DEFAULT, sessao=st, agora=agora)
+
+
+def retirar_travados(auto: list, per_lane: dict, real: bool) -> list:
+    """Tira da fila o card que já estourou o freio. Em modo real, aplica a label e comenta."""
+    linhas = []
+
+    def trava(it: dict, lane_nome: str) -> bool:
+        ident = it.get("identifier") or ""
+        effort = it.get("_effort") or EFFORT_DEFAULT
+        if real:
+            registrar_ajustes_ollie(ident, comentarios_de(it), effort)
+        causa = causa_do_card(ident, effort)
+        if not causa:
+            return False
+        n = strikes_do_card(ident)
+        resumo = resumo_freio(n, effort, gasto_do_card(ident), tempo_do_card_min(ident))
+        linhas.append(f"lane:{lane_nome} freio {ident}: {resumo}")
+        if real:
+            publicar_freio(it.get("id") or "", lane_nome, ident, effort, f"freio do card ({causa})")
+        return True
+
+    if auto:
+        auto[:] = [it for it in auto if not trava(it, AUTO_LANE)]
+    for lane in list(per_lane):
+        per_lane[lane] = [it for it in per_lane[lane] if not trava(it, lane)]
+    return linhas
 
 
 def card_ja_comecou(st: dict) -> bool:
@@ -2001,6 +2341,12 @@ def finalize(st: dict) -> Optional[str]:
     prot = touched_protected(g["lane_files"])
     if prot:
         return fail(st, f"tocou caminho protegido ({', '.join(prot)}); nada foi enviado")
+    if code == "freio":
+        try:
+            detalhe = (wt / ".lane" / "freio.txt").read_text(encoding="utf-8").strip()
+        except OSError:
+            detalhe = ""
+        return fail(st, detalhe or "freio do card", causa="freio-card")
     if code.lstrip("-").isdigit() and (code != "0" or not res or res.get("status") not in ("done", "needs_dono")):
         until = account_limit(st["log"], st["lane"])
         if until:
@@ -2106,8 +2452,6 @@ def finalize(st: dict) -> Optional[str]:
         f"DONE {g['sha']}\n\n{res.get('summary', '')}\n\nPR: {pr}\n\n"
         f"```json\n{json.dumps(meta, ensure_ascii=False, indent=2)}\n```"})
     mudar_estado(st["issue_id"], STATE_IN_REVIEW_ID)
-    if st.get("lane") == "opencode":
-        limpar_strike_do_card(st["card"])
     return f"In Review ({pr})"
 
 
@@ -2147,12 +2491,17 @@ def watch(lane: str, st: dict) -> None:
         st["window_ok"] = _show_in_lanes_window(lane, st["session"], st["card"])
         save_state(lane, st)
     if not exit_file.exists():
-        reason = razao_sem_exit(st)
+        freio = freio_da_sessao_aberta(st)
+        reason = freio or razao_sem_exit(st)
         if not reason:
             return
         # Motivo gravado ANTES de matar: o runner não sobrescreve exit_code existente.
         exit_file.parent.mkdir(exist_ok=True)
-        exit_file.write_text(reason)
+        if freio:
+            (exit_file.parent / "freio.txt").write_text(f"freio do card ({freio})", encoding="utf-8")
+            exit_file.write_text("freio")
+        else:
+            exit_file.write_text(reason)
         kill_lane_tree(st["session"])
         matar_prova(wt)
         stop_file.unlink(missing_ok=True)
@@ -2218,7 +2567,7 @@ def spread_auto(auto: list, measures: dict, candidates, busy, per_lane: dict,
     for it in sorted(auto, key=sort_key):
         effort = it.get("_effort") or EFFORT_DEFAULT
         fit_run = [l for l in ok if fill[l] == 0 and not headroom_block(l, effort, measures)
-                   and not card_banido_da_lane(l, it.get("identifier", ""))]
+                   and not card_banido_da_lane(l, it.get("identifier", ""), it.get("_effort") or "")]
         if not fit_run:
             continue
         lane = fit_run[0]
@@ -2231,7 +2580,7 @@ def spread_auto(auto: list, measures: dict, candidates, busy, per_lane: dict,
             continue
         effort = it.get("_effort") or EFFORT_DEFAULT
         fit_wait = [l for l in ok if fill[l] < max_per_lane
-                    and not card_banido_da_lane(l, it.get("identifier", ""))]
+                    and not card_banido_da_lane(l, it.get("identifier", ""), it.get("_effort") or "")]
         if not fit_wait:
             out.append((it, None))
             continue
@@ -2501,21 +2850,16 @@ def run(real: bool, verbose: bool) -> int:
         # continua sendo a de menor % (assign_auto_lanes / pick_lane).
         fila_linhas = (subir_do_todo(auto, per_lane, lanes_on, running_lanes, limited, proj.id)
                        if real else [])
+        freio_linhas = retirar_travados(auto, per_lane, real)
         cands = (lanes_on if real else set(LANES)) - set(limited)
         auto_lines = assign_auto_lanes(auto, per_lane, cands, real, busy=running_lanes,
                                        max_per_lane=MAX_PER_LANE)
         lines, to_claim = [], []
         lines.extend(fila_linhas)
+        lines.extend(freio_linhas)
         measures: Optional[dict] = None
         for lane in LANES:
             queue = sorted(per_lane[lane], key=sort_key)
-            banidos = [i for i in queue if card_banido_da_lane(lane, i["identifier"])]
-            if banidos:
-                queue = [i for i in queue if i not in banidos]
-                for it in banidos:
-                    lines.append(f"lane:{lane} pula {it['identifier']}: 2 falhas, card fora desta lane")
-                    if real:
-                        tirar_label_da_lane(it["id"], lane)
             running = load_state(lane)
             if running:
                     espera = [i["identifier"] for i in queue]
