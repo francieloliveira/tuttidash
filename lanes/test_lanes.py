@@ -1137,13 +1137,16 @@ class ProvaE22(unittest.TestCase):
 
 
 class StrikesDaOpencode(unittest.TestCase):
-    """(a) 2 falhas na opencode tiram o card dessa lane, sem lane:falhou na segunda."""
+    """FRA-443: um contador por card, em qualquer lane. O teto é o do esforço (D1)."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.antes = (d.STATE_DIR, d.linear)
+        self.antes = (d.STATE_DIR, d.linear, d.LEDGER_FILE)
         d.STATE_DIR = self.tmp
+        self.ledger = self.tmp / "ledger.jsonl"
+        self.ledger.write_text("", encoding="utf-8")
+        d.LEDGER_FILE = self.ledger
         self.calls = []
 
         def falso(query, variables):
@@ -1151,38 +1154,172 @@ class StrikesDaOpencode(unittest.TestCase):
             return {}
 
         d.linear = falso
-        self.addCleanup(lambda: (setattr(d, "STATE_DIR", self.antes[0]), setattr(d, "linear", self.antes[1])))
+        self.addCleanup(lambda: (
+            setattr(d, "STATE_DIR", self.antes[0]),
+            setattr(d, "linear", self.antes[1]),
+            setattr(d, "LEDGER_FILE", self.antes[2]),
+        ))
 
-    def st(self, lane="opencode"):
-        return {"lane": lane, "card": "FRA-9", "issue_id": "id-9", "log": "l", "worktree": "w"}
+    def st(self, lane="opencode", card="FRA-9", log="l", effort="medio"):
+        return {"lane": lane, "card": card, "issue_id": f"id-{card}", "log": log,
+                "worktree": "w", "effort": effort,
+                "started": 1_700_000_000, "agora": 1_700_000_060}
 
-    def test_duas_falhas_tiram_o_card_da_lane(self):
-        primeira = d.fail(self.st(), "a prova do dispatcher falhou (A, código 1)")
+    def corpos(self):
+        return [v.get("body", "") for q, v in self.calls if "commentCreate" in q]
+
+    def test_abaixo_do_limite_marca_lane_falhou_e_nao_tira_a_lane(self):
+        primeira = d.fail(self.st(log="rodada-1"), "a prova do dispatcher falhou (A, código 1)")
         self.assertIn("lane:falhou", primeira)
         self.assertEqual(d.strikes_do_card("FRA-9"), 1)
         self.assertFalse(any("issueRemoveLabel" in q for q, _v in self.calls))
         self.calls.clear()
-        segunda = d.fail(self.st(), "a prova do dispatcher falhou (A, código 1)")
-        self.assertIn("saiu da opencode", segunda)
-        self.assertNotIn("lane:falhou", segunda)
+        segunda = d.fail(self.st(log="rodada-2"), "a prova do dispatcher falhou (A, código 1)")
+        self.assertIn("lane:falhou", segunda)
         self.assertEqual(d.strikes_do_card("FRA-9"), 2)
-        self.assertTrue(any("issueRemoveLabel" in q and v.get("label") == d.LABEL_LANE_IDS["opencode"]
-                            for q, v in self.calls))
-        self.assertFalse(any(v.get("label") == d.LABEL_LANE_FALHOU_ID for _q, v in self.calls))
+        self.assertFalse(any("parou por freio" in c for c in self.corpos()))
+        self.assertFalse(any("issueRemoveLabel" in q for q, _v in self.calls))
+        self.assertTrue(any(v.get("label") == d.LABEL_LANE_FALHOU_ID for _q, v in self.calls))
 
-    def test_outra_lane_nao_entra_no_strike(self):
-        d.fail(self.st("claude"), "agente saiu com código 1 (x)")
-        self.assertEqual(d.strikes_do_card("FRA-9"), 0)
+    def test_qualquer_lane_entra_no_contador(self):
+        d.fail(self.st("claude", log="claude-1"), "agente saiu com código 1 (x)")
+        self.assertEqual(d.strikes_do_card("FRA-9"), 1)
 
-    def test_card_banido_nao_volta_para_a_opencode_mesmo_com_pct_menor(self):
-        d.registrar_falha_opencode(self.st(), "falha 1")
-        d.registrar_falha_opencode(self.st(), "falha 2")
+    def test_a_mesma_rodada_nao_conta_duas_vezes(self):
+        d.registrar_falha_opencode(self.st(log="mesmo-log"), "falha")
+        d.registrar_falha_opencode(self.st(log="mesmo-log"), "falha de novo")
+        self.assertEqual(d.strikes_do_card("FRA-9"), 1)
+
+    def test_abaixo_do_limite_a_menor_porcentagem_ainda_vence(self):
+        d.registrar_falha_opencode(self.st(log="a"), "falha 1")
+        d.registrar_falha_opencode(self.st(log="b"), "falha 2")
         medidas = {"claude": (80, "5 h"), "opencode": (10, "5 h")}
         card = {"identifier": "FRA-9", "_effort": "medio"}
         out = d.spread_auto([card], medidas, ["claude", "opencode"], set(), {})
-        self.assertEqual(out[0][1], "claude")
-        so_opencode = d.spread_auto([card], medidas, ["opencode"], set(), {})
-        self.assertIsNone(so_opencode[0][1])
+        self.assertEqual(out[0][1], "opencode")
+
+    def test_no_limite_nenhuma_lane_assume(self):
+        for i in range(3):
+            d.registrar_falha_opencode(self.st(log=f"n-{i}"), f"falha {i}")
+        medidas = {"claude": (80, "5 h"), "opencode": (10, "5 h")}
+        card = {"identifier": "FRA-9", "_effort": "medio"}
+        out = d.spread_auto([card], medidas, ["claude", "opencode"], set(), {})
+        self.assertIsNone(out[0][1])
+        self.assertTrue(d.card_banido_da_lane("claude", "FRA-9", "medio"))
+        self.assertTrue(d.card_banido_da_lane("opencode", "FRA-9", "medio"))
+
+    def test_alto_ainda_cabe_com_tres_falhas(self):
+        for i in range(3):
+            d.registrar_falha_opencode(self.st(card="FRA-460", log=f"alto-{i}", effort="alto"), "falha")
+        self.assertFalse(d.card_banido_da_lane("codex", "FRA-460", "alto"))
+        self.assertEqual(d.strikes_do_card("FRA-460"), 3)
+
+    def test_arquivo_antigo_continua_sendo_lido(self):
+        (self.tmp / "opencode-strikes.json").write_text(json.dumps({
+            "strikes": 2, "max": 2,
+            "cards": {"FRA-9": {"n": 2, "motivos": ["prova antiga"]}},
+        }), encoding="utf-8")
+        self.assertEqual(d.strikes_do_card("FRA-9"), 2)
+        d.registrar_falha_opencode(self.st(log="novo"), "de novo")
+        self.assertEqual(d.strikes_do_card("FRA-9"), 3)
+        dados = json.loads((self.tmp / "opencode-strikes.json").read_text(encoding="utf-8"))
+        self.assertIn("prova antiga", dados["cards"]["FRA-9"]["motivos"])
+
+    def test_constantes_sao_as_da_decisao(self):
+        self.assertEqual(d.TENTATIVAS_MAX, {"baixo": 3, "medio": 3, "alto": 5})
+        self.assertEqual(d.ORCAMENTO_ACUMULADO_USD, {"baixo": 8, "medio": 20, "alto": 40})
+        self.assertEqual(d.TEMPO_ACUMULADO_MIN, {"baixo": 120, "medio": 270, "alto": 360})
+        self.assertEqual(d.FREIO_LABEL, "lane:falhou")
+        self.assertEqual(d.HEADROOM_PCT, {"baixo": 90, "medio": 80, "alto": 60})
+        self.assertEqual(d.HEADROOM_PCT_LONGA, {"baixo": 95, "medio": 90, "alto": 85})
+        self.assertEqual(d.BUDGET_USD, {"baixo": 3, "medio": 8, "alto": 20})
+        self.assertEqual(d.LANE_TIMEOUT_MIN, 90)
+        texto = Path(d.__file__).read_text(encoding="utf-8")
+        self.assertIn("28/10/2026", texto)
+        self.assertIn("Franciel", texto)
+
+    def test_limite_de_tentativas_em_qualquer_lane(self):
+        for lane in ("claude", "grok", "codex", "opencode"):
+            self.assertIn(lane, d.LANES)
+        for lane, ident in (("claude", "FRA-443"), ("grok", "FRA-444"),
+                            ("codex", "FRA-445"), ("opencode", "FRA-446")):
+            self.calls.clear()
+            saida = ""
+            for i in range(3):
+                saida = d.fail(self.st(lane, ident, f"{ident}-{i}"),
+                               "a prova do dispatcher falhou (A, código 1)")
+            self.assertIn("lane:falhou", saida)
+            self.assertEqual(d.strikes_do_card(ident), 3)
+            self.assertTrue(any("tentativas: 3 de 3" in c and "gasto:" in c and "tempo:" in c
+                                for c in self.corpos()))
+            self.assertTrue(any("parou por freio" in c for c in self.corpos()))
+            self.assertTrue(any(v.get("label") == d.LABEL_LANE_FALHOU_ID for _q, v in self.calls))
+            self.assertFalse(any("issueRemoveLabel" in q for q, _v in self.calls))
+
+    def test_alto_so_freia_na_quinta(self):
+        for i in range(4):
+            self.calls.clear()
+            d.fail(self.st("claude", "FRA-447", f"alto-{i}", "alto"), "agente saiu com código 1 (x)")
+            self.assertFalse(any("parou por freio" in c for c in self.corpos()))
+        self.calls.clear()
+        d.fail(self.st("claude", "FRA-447", "alto-4", "alto"), "agente saiu com código 1 (x)")
+        self.assertTrue(any("tentativas: 5 de 5" in c for c in self.corpos()))
+        self.assertTrue(any("parou por freio" in c for c in self.corpos()))
+
+    def test_orcamento_acumulado_para_o_card(self):
+        self.ledger.write_text("\n".join([
+            json.dumps({"id": "FRA-450-claude-20261028-120000", "card": "FRA-450",
+                        "lane": "claude", "custo_usd": 5.0, "duracao_ms": 60_000,
+                        "semana": "2026-W44"}),
+            json.dumps({"id": "FRA-450-claude-20261028-130000", "card": "FRA-450",
+                        "lane": "claude", "custo_usd": 4.0, "duracao_ms": 60_000,
+                        "semana": "2026-W44"}),
+        ]) + "\n", encoding="utf-8")
+        wt = self.tmp / "wt-450"
+        wt.mkdir()
+        (wt / "arquivo").write_text("fica", encoding="utf-8")
+        st = self.st("claude", "FRA-450", "FRA-450-claude-20261028-140000.jsonl", "baixo")
+        st["worktree"] = str(wt)
+        saida = d.fail(st, "a prova do dispatcher falhou (A, código 1)")
+        self.assertIn("lane:falhou", saida)
+        self.assertTrue(any("parou por freio" in c and "US$ 9.00 de 8" in c for c in self.corpos()))
+        self.assertEqual((wt / "arquivo").read_text(encoding="utf-8"), "fica")
+        dados = json.loads((self.tmp / "opencode-strikes.json").read_text(encoding="utf-8"))
+        self.assertEqual(dados["cards"]["FRA-450"]["gasto_usd"], 9.0)
+
+    def test_tempo_acumulado_soma_ledger_e_relogio(self):
+        self.ledger.write_text(json.dumps({
+            "id": "FRA-451-claude-20261028-100000", "card": "FRA-451", "lane": "claude",
+            "custo_usd": 1.0, "duracao_ms": 100 * 60 * 1000, "semana": "2026-W44",
+        }) + "\n", encoding="utf-8")
+        st = self.st("grok", "FRA-451", "FRA-451-grok-20261028-120000.jsonl", "baixo")
+        st["started"] = 1_700_000_000
+        st["agora"] = 1_700_000_000 + 21 * 60
+        saida = d.fail(st, "a prova do dispatcher falhou (A, código 1)")
+        self.assertIn("lane:falhou", saida)
+        self.assertTrue(any("parou por freio" in c and "tempo: 121 de 120" in c for c in self.corpos()))
+
+    def test_ajuste_do_revisor_conta_uma_vez(self):
+        comentarios = [
+            {"id": "c1", "body": "[Revisor] REVISOR: AJUSTES · head `abc1234`"},
+            {"id": "c1", "body": "[Revisor] REVISOR: AJUSTES · head `abc1234`"},
+            {"id": "c2", "body": "[Revisor] REVISOR: APROVADO · head `abc1234`"},
+        ]
+        self.assertEqual(d.registrar_ajustes_ollie("FRA-448", comentarios, "baixo"), 1)
+        mais = comentarios + [{"id": "c3", "body": "REVISOR: AJUSTES no head novo"}]
+        self.assertEqual(d.registrar_ajustes_ollie("FRA-448", mais, "baixo"), 2)
+        self.assertEqual(d.strikes_do_card("FRA-448"), 2)
+
+    def test_tres_ajustes_no_baixo_estouram_o_freio_antes_de_assumir(self):
+        comentarios = [{"id": f"c{i}", "body": "REVISOR: AJUSTES"} for i in range(3)]
+        issue = {"identifier": "FRA-449", "id": "id-449", "_effort": "baixo",
+                 "comments": {"nodes": comentarios}}
+        auto, por_lane = [issue], {}
+        linhas = d.retirar_travados(auto, por_lane, True)
+        self.assertEqual(auto, [])
+        self.assertTrue(linhas)
+        self.assertTrue(any("tentativas: 3 de 3" in c and "parou por freio" in c for c in self.corpos()))
+        self.assertTrue(any(v.get("label") == d.LABEL_LANE_FALHOU_ID for _q, v in self.calls))
 
 
 class ProvaPresa(unittest.TestCase):

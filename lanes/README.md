@@ -60,3 +60,26 @@ e a lane rodava de novo em opus. Quatro mudanças, todas sem dependência de pro
    `~/Library/Logs/TranscentIA/revisor-vereditos.jsonl`.
 4. **Triagem local**: saiu em 29/10/2026. Nas 16 provas vermelhas que avaliou, nunca
    acertou uma falha de ambiente. A prova vermelha vai direto para `lane:falhou` e para a triagem do vigia.
+
+## Freios por card (FRA-443)
+
+Decisão do dono Franciel em 28/10/2026. O teto de uma execução não mudou
+(`BUDGET_USD`, `LANE_TIMEOUT_MIN`, `HEADROOM_PCT`). O que passou a valer é o
+acumulado do card, em qualquer lane:
+
+| Esforço | Tentativas | Gasto acumulado | Tempo acumulado |
+| --- | --- | --- | --- |
+| baixo | 3 | US$ 8 | 120 min |
+| médio | 3 | US$ 20 | 270 min |
+| alto | 5 | US$ 40 | 360 min |
+
+Um só contador, no arquivo que já existia (`opencode-strikes.json`, campo
+`cards`). A leitura do formato antigo continua. Cada card guarda tentativas
+(`n`), `gasto_usd`, `tempo_min` e o `resumo`. Estourou: label `lane:falhou` e
+comentário `tentativas: N de M; gasto: US$ X de Y; tempo: A de B min`. O
+worktree não é apagado. A fila não assume o card de novo enquanto o freio
+estiver estourado. Chegar em In Review não zera o acumulado.
+
+Pedido de ajuste do revisor (`REVISOR: AJUSTES`) conta 1 tentativa, uma vez
+por id de comentário. A prioridade entre as lanes e a folga por esforço não
+mudam. O verificador do aceite do card não entra aqui.
