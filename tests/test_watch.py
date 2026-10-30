@@ -1012,3 +1012,155 @@ branch refs/heads/fra-9
         self.assertIn("Bash(git worktree:*)", deny)
         self.assertIn("Bash(git clone:*)", deny)
         self.assertIn("Não crie worktree", watch.prompt("revisor"))
+
+
+class SegundaOpiniaoGuardadaTest(unittest.TestCase):
+    """PRD 29/10: a segunda opinião APROVADO vale para o head até ele mudar; sem quem confirme,
+    o vigia nem chama a segunda opinião. A regra de merge (APROVADO publicado) não muda."""
+
+    PR = {"number": 23, "headRefOid": "711e004aaaa", "title": "Menu da barra", "headRefName": "x/menu",
+          "mergeStateStatus": "CLEAN"}
+
+    def setUp(self):
+        nomes = ("sh", "card_of", "issue", "conf_revisor", "escolher_revisor", "revisar", "papel",
+                 "quem_confirma", "save_state", "registrar_veredito", "panel", "prompt", "comment",
+                 "agent_paused", "LIMIT_FILE")
+        velhos = {n: getattr(watch, n) for n in nomes}
+        self.addCleanup(lambda: [setattr(watch, n, f) for n, f in velhos.items()])
+        self.chamadas, self.linhas = [], []
+        watch.sh = lambda *a, **k: ""
+        watch.card_of = lambda t, b: None
+        watch.issue = lambda c: None
+        watch.conf_revisor = lambda: {"opencode": {"papel": "segunda_opiniao"}}
+        watch.escolher_revisor = lambda lane, conf, so_sozinho=False, **k: ("claude" if so_sozinho else "opencode", "")
+        watch.papel = lambda a, conf: "segunda_opiniao" if a == "opencode" else "sozinho"
+        watch.save_state = lambda st: None
+        watch.registrar_veredito = lambda reg: None
+        watch.panel = self.linhas.append
+        watch.prompt = lambda nome: "{number}{repo_slug}{title}{branch}{sha}{sha7}{merge_state}{card}{card_desc}" \
+                                    "{card_comments}{stat}{protected}{lane}{known_errors}{same_model}"
+        watch.comment = lambda *a: None
+        watch.LIMIT_FILE = Path(tempfile.mkdtemp()) / "limite-agente"  # nunca o arquivo real do Mac
+        self.st = {"reviewed": {}}
+
+    def revisar_falso(self, respostas):
+        def revisar(texto, cwd, tag, revisor, conf, so_sozinho=False):
+            self.chamadas.append((revisor, so_sozinho))
+            r = respostas.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r, revisor
+        watch.revisar = revisar
+
+    def rodar(self):
+        return watch.review_pr("app", {"dir": ".", "slug": "dono/repo"}, self.PR, self.st, [])
+
+    def test_aprovado_fica_guardado_mesmo_se_a_confirmacao_falha(self):
+        watch.quem_confirma = lambda lane, conf: ["claude"]
+        self.revisar_falso(["[Revisor] REVISOR: APROVADO · head `711e004`", RuntimeError("limite")])
+        with self.assertRaises(RuntimeError):
+            self.rodar()
+        self.assertIn("711e004aaaa", self.st["segundas_opinioes"])
+        # Próximo ciclo: só a confirmação roda; o opencode não revisa de novo.
+        self.chamadas.clear()
+        self.revisar_falso(["[Revisor] REVISOR: APROVADO · head `711e004`\n\nok"])
+        watch.sh = lambda *a, **k: ""
+        self.rodar()
+        self.assertEqual(self.chamadas, [("claude", True)])
+        self.assertEqual(self.st["reviewed"]["711e004aaaa"], "APROVADO")
+
+    def test_sem_quem_confirme_nem_chama_a_segunda_opiniao(self):
+        watch.quem_confirma = lambda lane, conf: []
+        self.revisar_falso([])
+        self.assertIs(self.rodar(), False)
+        self.assertIs(self.rodar(), False)
+        self.assertEqual(self.chamadas, [])
+        self.assertEqual(len(self.linhas), 1, "avisa uma vez por head")
+        self.assertIn("PR #23: revisão espera o Claude", self.linhas[0])
+        self.assertNotIn("711e004aaaa", self.st["reviewed"], "não marca o head: revisa quando o Claude voltar")
+
+    def test_guardada_e_sem_quem_confirme_avisa_que_esta_guardada(self):
+        watch.quem_confirma = lambda lane, conf: []
+        self.st["segundas_opinioes"] = {"711e004aaaa": {"revisor": "opencode", "quando": 1.0, "pr": 23}}
+        self.revisar_falso([])
+        self.assertIs(self.rodar(), False)
+        self.assertIn("segunda opinião APROVADO guardada", self.linhas[0])
+
+    def test_ajustes_da_segunda_opiniao_nao_fica_guardado(self):
+        watch.quem_confirma = lambda lane, conf: ["claude"]
+        self.revisar_falso(["[Revisor] REVISOR: AJUSTES · head `711e004`\n\nbug"])
+        self.rodar()
+        self.assertNotIn("711e004aaaa", self.st.get("segundas_opinioes", {}))
+        self.assertEqual(self.st["reviewed"]["711e004aaaa"], "AJUSTES")
+        self.assertEqual(self.chamadas, [("opencode", False)])
+
+    def test_head_novo_pede_segunda_opiniao_de_novo_e_limpeza(self):
+        watch.quem_confirma = lambda lane, conf: ["claude"]
+        self.st["segundas_opinioes"] = {"velho": {"revisor": "opencode", "quando": 1.0, "pr": 23}}
+        self.revisar_falso(["[Revisor] REVISOR: AJUSTES · head `711e004`"])
+        self.rodar()
+        self.assertEqual(self.chamadas, [("opencode", False)])
+        self.st["sem_revisao"] = {"velho": 1.0, "velho|avisado": 2.0, "711e004aaaa": 3.0}
+        watch.limpar_revisoes_fechadas(self.st, {"711e004aaaa"})
+        self.assertEqual(self.st["segundas_opinioes"], {})
+        self.assertEqual(self.st["sem_revisao"], {"711e004aaaa": 3.0})
+
+
+class LimiteMensalTest(unittest.TestCase):
+    def setUp(self):
+        velhos = (watch.LIMIT_FILE, watch.panel, watch.log)
+        self.addCleanup(lambda: setattr(watch, "LIMIT_FILE", velhos[0]) or setattr(watch, "panel", velhos[1])
+                        or setattr(watch, "log", velhos[2]))
+        watch.LIMIT_FILE = Path(tempfile.mkdtemp()) / "limite-agente"
+        self.linhas = []
+        watch.panel = self.linhas.append
+        watch.log = lambda m: None
+
+    def test_mensal_pausa_6h_e_avisa_diferente(self):
+        exc = RuntimeError("claude -p (1): | You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage")
+        watch.note_agent_failure(exc)
+        ate, mensal = watch.ler_pausa()
+        self.assertTrue(mensal)
+        self.assertGreater(ate - watch.time.time(), watch.AGENT_MONTHLY_PAUSE_S - 60)
+        self.assertTrue(watch.agent_paused())
+        self.assertIn("sem cota mensal de gasto", self.linhas[0])
+        watch.note_agent_failure(exc)
+        self.assertEqual(len(self.linhas), 1, "um aviso por pausa")
+
+    def test_limite_comum_continua_30_min(self):
+        watch.note_agent_failure(RuntimeError("You've hit your usage limit"))
+        ate, mensal = watch.ler_pausa()
+        self.assertFalse(mensal)
+        self.assertLess(ate - watch.time.time(), watch.AGENT_LIMIT_PAUSE_S + 5)
+        self.assertIn("pausa a IA até", self.linhas[0])
+
+    def test_pausa_antiga_sem_marcador_ainda_le(self):
+        watch.LIMIT_FILE.write_text(str(watch.time.time() + 100))
+        self.assertEqual(watch.ler_pausa()[1], False)
+        self.assertTrue(watch.agent_paused())
+
+
+class PrSemCardTest(unittest.TestCase):
+    def setUp(self):
+        velho = watch.panel
+        self.addCleanup(lambda: setattr(watch, "panel", velho))
+        self.linhas = []
+        watch.panel = self.linhas.append
+
+    def test_avisa_depois_de_6h_uma_vez(self):
+        pr = {"number": 22, "headRefOid": "3a8ed4c", "title": "Revisor não cria worktree", "headRefName": "x/wt"}
+        st = {"reviewed": {"3a8ed4c": "APROVADO"}}
+        watch.avisar_pr_sem_card(pr, st, agora=0.0)
+        watch.avisar_pr_sem_card(pr, st, agora=watch.REVIEW_WAIT_MAX_S - 1)
+        self.assertEqual(self.linhas, [])
+        watch.avisar_pr_sem_card(pr, st, agora=watch.REVIEW_WAIT_MAX_S)
+        watch.avisar_pr_sem_card(pr, st, agora=watch.REVIEW_WAIT_MAX_S * 2)
+        self.assertEqual(len(self.linhas), 1)
+        self.assertIn("PR #22 sem card está APROVADO há 6 h", self.linhas[0])
+
+    def test_pr_com_card_fica_com_o_merge_ready(self):
+        pr = {"number": 9, "headRefOid": "h", "title": "FRA-9 algo", "headRefName": "x/fra-9"}
+        st = {"reviewed": {}}
+        watch.avisar_pr_sem_card(pr, st, agora=10 ** 9)
+        self.assertEqual(self.linhas, [])
+        self.assertNotIn("sem_revisao", st)
