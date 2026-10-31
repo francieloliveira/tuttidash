@@ -19,7 +19,10 @@ final class NavegacaoPainel: ObservableObject {
     }
 }
 
-/// Uma seção de Ajustes (FRA-531): cabeçalho com o que a seção faz, busca, e os grupos.
+// MARK: - Página
+
+/// Uma seção de Ajustes (FRA-531). O título e a busca ficam no cabeçalho da janela
+/// (`CabecalhoPainel`): aqui só entram os grupos, para não repetir o cabeçalho duas vezes.
 /// Em «Avançado» cada grupo começa recolhido e a chave técnica aparece embaixo do campo.
 struct PaginaAjustes: View {
     let secao: SecaoAjustes
@@ -28,31 +31,23 @@ struct PaginaAjustes: View {
     @State private var abertos: Set<String> = []
     private var aoSalvar: () -> Void { NavegacaoPainel.compartilhada.aoSalvar }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: DS.e4) {
-            HStack(alignment: .center, spacing: DS.e3) {
-                IconeCartao(simbolo: secao.simbolo, tamanho: 40, tamanhoIcone: 19)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(secao.nome).font(PV.fonte(20, .semibold)).foregroundStyle(PV.texto)
-                    Text(secao.subtitulo).font(PV.fonte(13)).foregroundStyle(PV.mudo)
-                }
-                Spacer(minLength: DS.e4)
-                CampoBuscaAjustes(texto: $nav.busca)
-            }
-            .padding(.horizontal, DS.e5).padding(.top, DS.e3)
+    private var buscando: Bool {
+        !nav.busca.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
-            if nav.busca.trimmingCharacters(in: .whitespaces).isEmpty {
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.e3) {
+            if buscando {
+                ResultadosBusca(termo: nav.busca, estado: estado, aoSalvar: aoSalvar)
+            } else {
                 Form {
                     ForEach(secao.grupos) { g in grupo(g) }
                 }
                 .formStyle(.grouped)
                 .scrollDisabled(true)
                 .scrollContentBackground(.hidden)
-            } else {
-                ResultadosBusca(termo: nav.busca, estado: estado, aoSalvar: aoSalvar)
             }
-            Text(String(localized: "As mudanças são gravadas na hora. Nos campos de texto, aperte Enter para gravar."))
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, DS.e5 + 4).padding(.bottom, DS.e3)
+            rodape
         }
         .frame(maxWidth: 760, alignment: .leading)
         .frame(maxWidth: .infinity)
@@ -60,110 +55,180 @@ struct PaginaAjustes: View {
         .transition(.opacity.combined(with: .offset(y: 6)))
     }
 
-    private func temTitulo(_ b: BlocoAjustes) -> Bool { b == .quemCuida || b == .modeloLanes || b == .lanesHabilitadas }
+    private var rodape: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "info.circle").font(.system(size: 10.5))
+            Text(String(localized: "As mudanças são gravadas na hora. Nos campos de texto, aperte Enter para gravar."))
+                .font(PV.fonte(11.5))
+        }
+        .foregroundStyle(PV.apagado)
+        .padding(.horizontal, 30)
+        .padding(.bottom, DS.e2)
+    }
 
     @ViewBuilder
     private func grupo(_ g: GrupoAjustes) -> some View {
         let aberto = !g.recolhido || abertos.contains(g.id)
         if g.recolhido {
             Section {
-                linhaRecolhivel(g, aberto: aberto)
-                if aberto {
-                    ForEach(g.campos) { c in LinhaCampoAjuste(campo: c, estado: estado, aoSalvar: aoSalvar, mostrarChave: secao.mostraChaves) }
+                LinhaGrupoRecolhivel(grupo: g, aberto: aberto, estado: estado, aoSalvar: aoSalvar) {
+                    comAnimacao(DS.suave) {
+                        if abertos.contains(g.id) { abertos.remove(g.id) } else { abertos.insert(g.id) }
+                    }
                 }
+                if aberto { conteudo(g) }
             }
-            if aberto { ForEach(Array(g.blocos.enumerated()), id: \.offset) { _, b in bloco(b) } }
-        } else if g.campos.isEmpty && g.blocos.contains(where: temTitulo) {
-            ForEach(Array(g.blocos.enumerated()), id: \.offset) { _, b in bloco(b) }
-        } else if g.campos.isEmpty {
-            Section {} header: { cabecalho(g, recolhivel: false, aberto: true) }
-            ForEach(Array(g.blocos.enumerated()), id: \.offset) { _, b in bloco(b) }
         } else {
             Section {
-                ForEach(g.campos) { c in LinhaCampoAjuste(campo: c, estado: estado, aoSalvar: aoSalvar, mostrarChave: secao.mostraChaves) }
-            } header: { cabecalho(g, recolhivel: false, aberto: true) }
-            ForEach(Array(g.blocos.enumerated()), id: \.offset) { _, b in bloco(b) }
+                conteudo(g)
+            } header: {
+                CabecalhoGrupo(grupo: g, estado: estado, aoSalvar: aoSalvar)
+            }
         }
     }
 
-    /// Linha clicável de um grupo de «Avançado»: abre e fecha com animação.
-    private func linhaRecolhivel(_ g: GrupoAjustes, aberto: Bool) -> some View {
-        HStack(alignment: .center, spacing: DS.e3) {
-            Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(PV.mudo)
-                .rotationEffect(.degrees(aberto ? 90 : 0))
-                .frame(width: 12)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(g.nome).font(PV.fonte(13.5, .semibold)).foregroundStyle(PV.texto)
-                if let a = g.ajuda { Text(a).font(.caption).foregroundStyle(.secondary).lineLimit(aberto ? nil : 1) }
-            }
-            Spacer()
-            if aberto && !g.campos.isEmpty {
-                Button(String(localized: "Restaurar padrão")) { estado.restaurar(g.campos, aoSalvar: aoSalvar) }
-                    .buttonStyle(.link)
-            } else if !g.campos.isEmpty {
-                Text(String(localized: "\(g.campos.count) opções")).font(.caption).foregroundStyle(PV.apagado)
-            }
+    /// Campos e blocos do grupo, na ordem do catálogo. Os blocos entram no mesmo cartão
+    /// (`embutido`): o cabeçalho do grupo é o único título da seção.
+    @ViewBuilder
+    private func conteudo(_ g: GrupoAjustes) -> some View {
+        ForEach(g.campos) { c in
+            LinhaCampoAjuste(campo: c, estado: estado, aoSalvar: aoSalvar, mostrarChave: secao.mostraChaves)
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            comAnimacao(DS.suave) { if abertos.contains(g.id) { abertos.remove(g.id) } else { abertos.insert(g.id) } }
-        }
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(g.nome)
-    }
-
-    private func cabecalho(_ g: GrupoAjustes, recolhivel: Bool, aberto: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            if recolhivel {
-                Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(PV.mudo)
-                    .rotationEffect(.degrees(aberto ? 90 : 0))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(g.nome).font(.headline).foregroundStyle(.white)
-                if let a = g.ajuda, !recolhivel { Text(a).font(.caption).foregroundStyle(.secondary) }
-            }
-            Spacer()
-            if !g.campos.isEmpty && aberto {
-                Button(String(localized: "Restaurar padrão")) { estado.restaurar(g.campos, aoSalvar: aoSalvar) }
-                    .buttonStyle(.link)
-                    .help(String(localized: "Volta os campos deste grupo ao padrão"))
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard recolhivel else { return }
-            comAnimacao(DS.suave) { if abertos.contains(g.id) { abertos.remove(g.id) } else { abertos.insert(g.id) } }
-        }
-        .accessibilityAddTraits(recolhivel ? .isButton : [])
+        ForEach(Array(g.blocos.enumerated()), id: \.offset) { _, b in bloco(b) }
     }
 
     @ViewBuilder
     private func bloco(_ b: BlocoAjustes) -> some View {
         switch b {
-        case .lanesHabilitadas: SecaoLanesHabilitadas()
-        case .modeloLanes: SecaoModeloLanes(modelo: estado.modelo, aoSalvar: aoSalvar)
-        case .projetos: SecaoProjetos(estado: EstadoProjetos(modelo: estado.modelo))
-        case .contas: SecaoContas(modelo: estado.modelo, aoSalvar: aoSalvar)
-        case .quemCuida: SecaoGestaoLanes(estado: EstadoGestaoLanes(modelo: estado.modelo), aoSalvar: aoSalvar)
-        case .agentesSegundoPlano: SecaoAgendas(estado: EstadoAgendas(modelo: estado.modelo))
+        case .lanesHabilitadas: SecaoLanesHabilitadas(embutido: true)
+        case .modeloLanes: SecaoModeloLanes(modelo: estado.modelo, aoSalvar: aoSalvar, embutido: true)
+        case .projetos: SecaoProjetos(estado: EstadoProjetos(modelo: estado.modelo), embutido: true)
+        case .contas: SecaoContas(modelo: estado.modelo, aoSalvar: aoSalvar, embutido: true)
+        case .quemCuida: SecaoGestaoLanes(estado: EstadoGestaoLanes(modelo: estado.modelo), aoSalvar: aoSalvar, embutido: true)
+        case .agentesSegundoPlano: SecaoAgendas(estado: EstadoAgendas(modelo: estado.modelo), embutido: true)
         case .linear: AbaLinear(estado: EstadoLinear(modelo: estado.modelo), aoSalvar: aoSalvar, embutido: true)
         case .jobsAgendados: BlocoJobs(modelo: estado.modelo)
         case .linearLeitura: BlocoLinearLeitura(modelo: estado.modelo)
         case .manifestos: BlocoManifestos()
-        case .ferramentas: SecaoFerramentas()
+        case .ferramentas: SecaoFerramentas(embutido: true)
         case .revisaoAtual: BlocoRevisaoAtual(modelo: estado.modelo)
         }
     }
 }
 
+// MARK: - Cabeçalhos dos grupos
+
+/// Cabeçalho de um grupo aberto: título, explicação e «Restaurar padrão» quando há campos.
+private struct CabecalhoGrupo: View {
+    let grupo: GrupoAjustes
+    @ObservedObject var estado: EstadoAjustes
+    var aoSalvar: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(grupo.nome).font(PV.fonte(15, .semibold)).foregroundStyle(PV.texto)
+                if let ajuda = grupo.ajuda {
+                    Text(ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: DS.e4)
+            if !grupo.campos.isEmpty {
+                Button { estado.restaurar(grupo.campos, aoSalvar: aoSalvar) } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.counterclockwise").font(.system(size: 10, weight: .semibold))
+                        Text(String(localized: "Restaurar padrão"))
+                    }
+                    .font(PV.fonte(11.5))
+                    .foregroundStyle(PV.mudo)
+                }
+                .buttonStyle(.plain)
+                .help(String(localized: "Volta os campos deste grupo ao padrão"))
+            }
+        }
+        .padding(.bottom, 3)
+    }
+}
+
+/// Linha de um grupo de «Avançado»: abre e fecha com animação. O clique fica só na
+/// parte do título, para não disparar junto com o botão «Restaurar padrão».
+private struct LinhaGrupoRecolhivel: View {
+    let grupo: GrupoAjustes
+    let aberto: Bool
+    @ObservedObject var estado: EstadoAjustes
+    var aoSalvar: () -> Void
+    var alternar: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: DS.e3) {
+            Button(action: alternar) {
+                HStack(alignment: .center, spacing: DS.e3) {
+                    ZStack {
+                        Circle().fill(PV.campo).frame(width: 24, height: 24)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(aberto ? PV.azul : PV.mudo)
+                            .rotationEffect(.degrees(aberto ? 90 : 0))
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(grupo.nome).font(PV.fonte(13.5, .semibold)).foregroundStyle(PV.texto)
+                        if let ajuda = grupo.ajuda {
+                            Text(ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                                .lineLimit(aberto ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: DS.e4)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(grupo.nome)
+            .accessibilityAddTraits(.isButton)
+
+            if aberto && !grupo.campos.isEmpty {
+                Button(String(localized: "Restaurar padrão")) { estado.restaurar(grupo.campos, aoSalvar: aoSalvar) }
+                    .buttonStyle(.link)
+                    .font(PV.fonte(11.5))
+            } else if !grupo.campos.isEmpty {
+                Text(String(localized: "\(grupo.campos.count) opções"))
+                    .font(PV.fonte(11)).foregroundStyle(PV.apagado)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// Subtítulo dentro de um cartão de grupo (ex.: «Contas de uso» dentro de «Lanes ligadas»).
+struct SubtituloAjuste: View {
+    var texto: String
+    var ajuda: String?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(texto).font(PV.fonte(12.5, .semibold)).foregroundStyle(PV.texto2)
+            if let ajuda {
+                Text(ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 1)
+    }
+}
+
+// MARK: - Busca
+
 /// Campo de busca dos Ajustes (nome, explicação ou chave).
 struct CampoBuscaAjustes: View {
     @Binding var texto: String
+    var largura: CGFloat = 260
+    var altura: CGFloat = 32
     @FocusState private var foco: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(PV.mudo)
+            Image(systemName: "magnifyingglass").foregroundStyle(foco ? PV.azul : PV.mudo)
             TextField(String(localized: "Buscar nos Ajustes"), text: $texto)
                 .textFieldStyle(.plain).focused($foco)
             if !texto.isEmpty {
@@ -172,7 +237,7 @@ struct CampoBuscaAjustes: View {
             }
         }
         .font(PV.fonte(13))
-        .padding(.horizontal, 10).frame(width: 260, height: 32)
+        .padding(.horizontal, 10).frame(width: largura, height: altura)
         .background(RoundedRectangle(cornerRadius: DS.raioP + 1).fill(PV.campo))
         .overlay(RoundedRectangle(cornerRadius: DS.raioP + 1).strokeBorder(foco ? PV.azul.opacity(0.7) : PV.campoBorda, lineWidth: 1))
         .animation(DS.anim(DS.suave), value: foco)
@@ -190,23 +255,43 @@ struct ResultadosBusca: View {
         let secoes = Dictionary(uniqueKeysWithValues: CatalogoAjustes.secoes().map { ($0.id, $0.nome) })
         Form {
             if r.isEmpty {
-                Section { Text(String(localized: "Nada encontrado para «\(termo)».")).foregroundStyle(.secondary) }
+                Section {
+                    HStack(spacing: DS.e3) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 15)).foregroundStyle(PV.apagado)
+                        Text(String(localized: "Nada encontrado para «\(termo)»."))
+                            .font(PV.fonte(13)).foregroundStyle(PV.mudo)
+                    }
+                    .padding(.vertical, 8)
+                }
             } else {
                 Section {
                     ForEach(r) { item in
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: DS.e2) {
                             Button {
                                 NavegacaoPainel.compartilhada.busca = ""
                                 NavegacaoPainel.compartilhada.abrirAjustes(item.secao)
                             } label: {
-                                Text("\(secoes[item.secao] ?? "") › \(item.grupo)").font(.caption).foregroundStyle(PV.azul)
+                                HStack(spacing: 5) {
+                                    Image(systemName: "arrow.turn.down.right")
+                                        .font(.system(size: 9, weight: .semibold))
+                                    Text("\(secoes[item.secao] ?? "") › \(item.grupo)")
+                                        .font(PV.fonte(11.5))
+                                }
+                                .foregroundStyle(PV.azul)
                             }
                             .buttonStyle(.plain)
-                            LinhaCampoAjuste(campo: item.campo, estado: estado, aoSalvar: aoSalvar, mostrarChave: item.secao == .avancado)
+                            LinhaCampoAjuste(campo: item.campo, estado: estado, aoSalvar: aoSalvar,
+                                            mostrarChave: item.secao == .avancado)
                         }
+                        .padding(.vertical, 3)
                     }
                 } header: {
-                    Text(String(localized: "\(r.count) resultado(s)")).font(.headline).foregroundStyle(.white)
+                    HStack {
+                        Text(String(localized: "\(r.count) resultado(s)"))
+                            .font(PV.fonte(15, .semibold)).foregroundStyle(PV.texto)
+                        Spacer()
+                    }
+                    .padding(.bottom, 3)
                 }
             }
         }
@@ -216,12 +301,18 @@ struct ResultadosBusca: View {
     }
 }
 
-/// Campo com rótulo, valor em pt-BR, faixa válida e ajuda curta. Mostra ✓ ao gravar e ! no erro.
+// MARK: - Linha de campo
+
+/// Campo com rótulo e ajuda à esquerda e o controle alinhado à direita, numa coluna só.
+/// Mostra ✓ ao gravar e ! no erro. Campos de texto têm a moldura do app, para ficar claro
+/// que são editáveis (no formulário nativo eles se confundiam com o valor em leitura).
 struct LinhaCampoAjuste: View {
     let campo: CampoAjuste
     @ObservedObject var estado: EstadoAjustes
     var aoSalvar: () -> Void
     var mostrarChave = false
+
+    @FocusState private var focado: Bool
 
     private var texto: Binding<String> {
         Binding(get: { estado.textos[campo.chave] ?? campo.padrao },
@@ -234,21 +325,61 @@ struct LinhaCampoAjuste: View {
 
     private var pendente: Bool { estado.pendente(campo) }
 
+    private var ehNumero: Bool {
+        if case .numero = campo.tipo { return true }
+        return false
+    }
+
+    private var ehCaminho: Bool {
+        if case .caminho = campo.tipo { return true }
+        return false
+    }
+
+    private var fonteCampo: Font {
+        if ehCaminho { return .system(size: 11.5, design: .monospaced) }
+        if ehNumero { return .system(size: 12.5, design: .monospaced) }
+        return PV.fonte(12.5)
+    }
+
+    private let larguraControle: CGFloat = 272
+    private let larguraColuna: CGFloat = 296
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: DS.e2) {
-                controle
-                IndicadorAcao(estado: estado.retorno[campo.chave] ?? .ocioso)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: DS.e4) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(campo.rotulo)
+                        .font(PV.fonte(13)).foregroundStyle(PV.texto)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !ajuda.isEmpty {
+                        Text(ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if mostrarChave {
+                        Text(verbatim: campo.chave)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(PV.apagado).textSelection(.enabled)
+                    }
+                }
+                Spacer(minLength: DS.e4)
+                HStack(spacing: DS.e2) {
+                    controle
+                    IndicadorAcao(estado: estado.retorno[campo.chave] ?? .ocioso)
+                }
+                .frame(width: larguraColuna, alignment: .trailing)
             }
             if pendente {
                 Text(String(localized: "Não gravado ainda. Aperte Enter para gravar."))
-                    .font(.caption).foregroundStyle(PV.ambar)
+                    .font(PV.fonte(11.5)).foregroundStyle(PV.ambar)
                     .transition(.opacity)
             }
-            if !ajuda.isEmpty { Text(ajuda).font(.caption).foregroundStyle(.secondary) }
-            if mostrarChave { Text(verbatim: campo.chave).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(PV.apagado).textSelection(.enabled) }
-            if let e = estado.erros[campo.chave] { Label(e, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(PV.vermelho) }
+            if let e = estado.erros[campo.chave] {
+                Label(e, systemImage: "exclamationmark.triangle.fill")
+                    .font(PV.fonte(11.5)).foregroundStyle(PV.vermelho)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .padding(.vertical, 1)
         .animation(DS.anim(DS.suave), value: pendente)
         .animation(DS.anim(DS.suave), value: estado.retorno[campo.chave])
     }
@@ -261,6 +392,8 @@ struct LinhaCampoAjuste: View {
                 get: { texto.wrappedValue == "true" },
                 set: { texto.wrappedValue = $0 ? "true" : "false"; estado.aplicar(campo, aoSalvar: aoSalvar) }))
                 .toggleStyle(.switch)
+                .labelsHidden()
+                .frame(width: larguraControle, alignment: .trailing)
         case let .escolha(ops):
             let lista = ops.contains(texto.wrappedValue) ? ops : [texto.wrappedValue] + ops
             Picker(campo.rotulo, selection: Binding(
@@ -268,22 +401,48 @@ struct LinhaCampoAjuste: View {
                 set: { texto.wrappedValue = $0; estado.aplicar(campo, aoSalvar: aoSalvar) })) {
                 ForEach(lista, id: \.self) { Text(campo.nomeValor($0)).tag($0) }
             }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: larguraControle, alignment: .trailing)
         default:
-            TextField(campo.rotulo, text: texto, prompt: Text(campo.padrao.isEmpty ? String(localized: "padrão") : campo.padrao))
+            TextField(campo.rotulo, text: texto,
+                      prompt: Text(campo.padrao.isEmpty ? String(localized: "padrão") : campo.padrao))
+                .textFieldStyle(.plain)
+                .labelsHidden()
+                .font(fonteCampo)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 9)
+                .frame(width: larguraControle, height: 30)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(PV.campo))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(focado ? PV.azul.opacity(0.75) : PV.campoBorda, lineWidth: 1))
+                .focused($focado)
                 .onSubmit { estado.aplicar(campo, aoSalvar: aoSalvar) }
+                .animation(DS.anim(DS.suave), value: focado)
         }
     }
 }
+
+// MARK: - Blocos só de leitura
 
 /// Agendas que o app instala (agendas.jobs): só leitura, o resto sai de Intervalos.
 struct BlocoJobs: View {
     let modelo: ModeloAjustes
     var body: some View {
-        Section(String(localized: "Serviços agendados")) {
+        VStack(alignment: .leading, spacing: DS.e2) {
+            SubtituloAjuste(texto: String(localized: "Serviços agendados"))
             ForEach(GerenciadorAgendas(config: modelo.dados).trabalhos) { t in
-                LabeledContent(t.nome, value: String(localized: "padrão a cada \(t.intervaloPadrao) s"))
+                HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
+                    Text(t.nome).font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                    Spacer(minLength: DS.e3)
+                    Text(String(localized: "padrão a cada \(t.intervaloPadrao) s"))
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundStyle(PV.mudo)
+                }
+                .padding(.vertical, 1)
             }
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -307,11 +466,20 @@ struct BlocoLinearLeitura: View {
         return "\(v)"
     }
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: DS.e2) {
             ForEach(CatalogoAjustes.chavesLinearLeitura, id: \.self) { k in
-                LabeledContent(nome(k)) { Text(valor(k)).textSelection(.enabled).lineLimit(1).truncationMode(.middle) }
+                HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
+                    Text(nome(k)).font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                    Spacer(minLength: DS.e3)
+                    Text(valor(k))
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundStyle(PV.mudo)
+                        .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                }
+                .padding(.vertical, 1)
             }
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -323,15 +491,22 @@ struct BlocoManifestos: View {
             .first { FileManager.default.fileExists(atPath: $0.path) }
     }
     var body: some View {
-        Section {
+        VStack(spacing: DS.e2) {
             ForEach(agentes, id: \.nome) { a in
-                HStack {
+                HStack(spacing: DS.e3) {
+                    Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(PV.mudo)
                     Text(ClarezaCota.titulo(nome: a.nome, rotulo: a.rotulo))
-                    Spacer()
-                    Button(String(localized: "Abrir manifesto")) { if let u = url(a.nome) { NSWorkspace.shared.open(u) } }
-                        .disabled(url(a.nome) == nil)
+                        .font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                    Spacer(minLength: DS.e3)
+                    Button(String(localized: "Abrir manifesto")) {
+                        if let u = url(a.nome) { NSWorkspace.shared.open(u) }
+                    }
+                    .font(PV.fonte(11.5))
+                    .disabled(url(a.nome) == nil)
                 }
+                .padding(.vertical, 1)
             }
         }
+        .padding(.vertical, 2)
     }
 }

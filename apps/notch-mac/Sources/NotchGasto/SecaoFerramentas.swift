@@ -42,31 +42,50 @@ final class EstadoFerramentas: ObservableObject {
 
 struct SecaoFerramentas: View {
     @StateObject private var estado = EstadoFerramentas()
+    /// Dentro de Ajustes o cabeçalho do grupo já diz «Ferramentas e logins»: aqui ficam só as linhas.
+    var embutido = false
 
     var body: some View {
-        Section {
-            if let e = estado.erro {
-                Text(e).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+        Group {
+            if embutido {
+                conteudo
+                rodape
+            } else {
+                Section {
+                    conteudo
+                } header: {
+                    Text(String(localized: "Ferramentas e logins"))
+                } footer: {
+                    rodape
+                }
             }
-            ForEach(estado.lista) { f in
-                LinhaFerramenta(f: f, estado: estado)
-            }
-            HStack {
-                if estado.conferindo { ProgressView().controlSize(.small) }
-                Spacer()
-                Button(String(localized: "Conferir de novo")) { estado.conferir() }
-                    .disabled(estado.conferindo)
-            }
-        } header: {
-            Text(String(localized: "Ferramentas e logins"))
-        } footer: {
-            Text(String(localized: "Instalar e Entrar abrem o Terminal com o comando oficial. Ele mostra o comando e só roda depois do Enter. Para os agentes, Entrar abre o CLI: na primeira vez ele pede o login."))
-                .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear { estado.conferir() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             estado.conferir()
         }
+    }
+
+    @ViewBuilder
+    private var conteudo: some View {
+        if let e = estado.erro {
+            Text(e).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+        }
+        ForEach(estado.lista) { f in
+            LinhaFerramenta(f: f, estado: estado)
+        }
+        HStack {
+            if estado.conferindo { ProgressView().controlSize(.small) }
+            Spacer()
+            Button(String(localized: "Conferir de novo")) { estado.conferir() }
+                .disabled(estado.conferindo)
+        }
+    }
+
+    private var rodape: some View {
+        Text(String(localized: "Instalar e Entrar abrem o Terminal com o comando oficial. Ele mostra o comando e só roda depois do Enter. Para os agentes, Entrar abre o CLI: na primeira vez ele pede o login."))
+            .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

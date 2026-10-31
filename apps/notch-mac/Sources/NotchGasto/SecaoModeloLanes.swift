@@ -40,37 +40,55 @@ final class EstadoListaModelos: ObservableObject {
 struct SecaoModeloLanes: View {
     let modelo: ModeloAjustes
     var aoSalvar: () -> Void
+    /// Embutido nos Ajustes: o título e a explicação vêm do grupo, não de outro Section.
+    var embutido = false
     @StateObject private var listas = EstadoListaModelos()
     @State private var agentes: [CatalogoAgentes.ModeloAgente] = []
     @State private var externas: [String: ConfigModelo] = [:]
     @State private var erro: String?
 
     var body: some View {
-        Section {
-            if listas.atualizando {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(String(localized: "Atualizando a lista de modelos…")).font(.caption).foregroundStyle(.secondary)
+        Group {
+            if embutido {
+                conteudo
+            } else {
+                Section {
+                    conteudo
+                } header: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(localized: "Modelo de cada lane")).font(.headline).foregroundStyle(.white)
+                        Text(String(localized: "No automático, cada peso de card usa um modelo e um esforço. No fixo, a lane usa sempre o mesmo modelo e o mesmo esforço. Modelos e esforços vêm das ferramentas e atualizam ao abrir os Ajustes. Mudanças valem no próximo card; a lane em andamento não muda."))
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-            }
-            ForEach(agentes, id: \.nome) { agente in
-                BlocoModeloLane(agente: agente, lista: listas.cache.listas[agente.nome] ?? [],
-                                cache: listas.cache, motivo: listas.motivos[agente.nome],
-                                imposta: externas[agente.nome], modelo: modelo, aoSalvar: aoSalvar)
-            }
-            if let erro {
-                Text(erro).font(.caption).foregroundStyle(.red)
-            }
-        } header: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: "Modelo de cada lane")).font(.headline).foregroundStyle(.white)
-                Text(String(localized: "No automático, cada peso de card usa um modelo e um esforço. No fixo, a lane usa sempre o mesmo modelo e o mesmo esforço. Modelos e esforços vêm das ferramentas e atualizam ao abrir os Ajustes. Mudanças valem no próximo card; a lane em andamento não muda."))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .onAppear(perform: abrir)
         .onChange(of: listas.cache) { _, novo in reconciliar(novo) }
+    }
+
+    @ViewBuilder
+    private var conteudo: some View {
+        if agentes.isEmpty {
+            // No modo embutido não há cabeçalho próprio: sem nenhuma linha a view fica vazia
+            // e não recebe `onAppear` — era assim que o bloco sumia dos Ajustes.
+            Color.clear.frame(height: 1)
+        }
+        if listas.atualizando {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(String(localized: "Atualizando a lista de modelos…")).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        ForEach(agentes, id: \.nome) { agente in
+            BlocoModeloLane(agente: agente, lista: listas.cache.listas[agente.nome] ?? [],
+                            cache: listas.cache, motivo: listas.motivos[agente.nome],
+                            imposta: externas[agente.nome], modelo: modelo, aoSalvar: aoSalvar)
+        }
+        if let erro {
+            Text(erro).font(.caption).foregroundStyle(.red)
+        }
     }
 
     private var pedidos: [ListaModelos.Pedido] {
@@ -193,7 +211,7 @@ struct BlocoModeloLane: View {
                 Text(erro).font(.caption).foregroundStyle(.red)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
         .onChange(of: imposta) { _, novo in
             guard let novo else { return }
             let preenchida = Self.preencher(novo, agente)

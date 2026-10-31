@@ -100,7 +100,13 @@ struct AbaLinear: View {
         let itens = EscolhasLinear.itens(c, times: estado.times, opcoes: estado.opcoes)
         let atual = Configuracao.valor(c.chave, em: estado.modelo.dados).map { "\($0)" } ?? ""
         let selecionado = itens.first { (c.porNome ? $0.nome : $0.id) == atual }
-        return VStack(alignment: .leading, spacing: 2) {
+        return HStack(alignment: .top, spacing: DS.e4) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(c.titulo).font(PV.fonte(13)).foregroundStyle(PV.texto)
+                Text(c.ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: DS.e4)
             Picker(c.titulo, selection: Binding<ItemLinear?>(
                 get: { selecionado },
                 set: { if let i = $0 { estado.escolher(c, i, aoSalvar: aoSalvar) } })) {
@@ -110,9 +116,12 @@ struct AbaLinear: View {
                 }
                 ForEach(itens) { i in Text(i.nome).tag(Optional(i)) }
             }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 272, alignment: .trailing)
             .disabled(itens.isEmpty)
-            Text(c.ajuda).font(.caption).foregroundStyle(.secondary)
         }
+        .padding(.vertical, 1)
     }
 
     private var fluxoToken: some View {
@@ -129,12 +138,52 @@ struct AbaLinear: View {
 
     var body: some View {
         Group {
-            if embutido { secoes } else { Form { secoes }.formStyle(.grouped) }
+            if embutido { conteudo } else { Form { secoes }.formStyle(.grouped) }
         }
         .id(estado.versao)
         .task {
             if !estado.tokenConferido { await estado.conferirToken() }
             if estado.temToken && !estado.conectado { await estado.conectar() }
+        }
+    }
+
+    /// Embutido nos Ajustes: um cartão só, sem Section dentro de Section.
+    @ViewBuilder private var conteudo: some View {
+        if !estado.conectado {
+            Text(String(localized: "Conecte o Linear para escolher os projetos e as colunas."))
+                .font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+            if !estado.tokenConferido {
+                ProgressView().controlSize(.small)
+            } else if estado.temToken {
+                Button(String(localized: "Conectar o Linear")) { Task { await estado.conectar() } }
+                    .buttonStyle(.borderedProminent)
+            } else if estado.mostrarToken {
+                fluxoToken
+            } else {
+                Button(String(localized: "Conectar o Linear")) { estado.mostrarToken = true }
+                    .buttonStyle(.borderedProminent)
+            }
+            if estado.carregando { ProgressView().controlSize(.small) }
+            if let e = estado.erro { Text(e).font(PV.fonte(11.5)).foregroundStyle(PV.vermelho) }
+        } else {
+            HStack(spacing: DS.e3) {
+                Label(String(localized: "Conectado a \(estado.workspace ?? "Linear")"),
+                      systemImage: "checkmark.circle.fill")
+                    .font(PV.fonte(12.5)).foregroundStyle(PV.verde)
+                Spacer(minLength: DS.e3)
+                Button(String(localized: "Recarregar")) { Task { await estado.conectar() } }
+                Button(String(localized: "Desconectar")) { estado.esquecerToken() }
+            }
+            if let e = estado.erro { Text(e).font(PV.fonte(11.5)).foregroundStyle(PV.vermelho) }
+
+            SubtituloAjuste(texto: String(localized: "Colunas do quadro"),
+                            ajuda: String(localized: "Sem escolha, valem as colunas com o nome padrão (Todo, In Progress, In Review) no time de cada projeto."))
+            if estado.timeDasColunas == nil {
+                Text(String(localized: "Cadastre o projeto em Lanes › Projetos: as colunas vêm do time dele."))
+                    .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+            }
+            ForEach(CampoLinear.colunas()) { linha($0) }
+            linha(CampoLinear.etiqueta())
         }
     }
 

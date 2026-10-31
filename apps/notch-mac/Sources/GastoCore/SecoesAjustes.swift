@@ -126,8 +126,11 @@ extension CatalogoAjustes {
                 GrupoAjustes(String(localized: "Projetos"),
                              ajuda: String(localized: "Cada projeto do Linear ligado ao repositório do GitHub em que as lanes trabalham."),
                              blocos: [.projetos]),
-                GrupoAjustes(String(localized: "Lanes ligadas"), blocos: [.lanesHabilitadas]),
-                GrupoAjustes(String(localized: "Modelo de cada lane"), blocos: [.modeloLanes]),
+                GrupoAjustes(String(localized: "Lanes ligadas"), ajuda: ClarezaCota.ajudaLanesLigadas,
+                             blocos: [.lanesHabilitadas]),
+                GrupoAjustes(String(localized: "Modelo de cada lane"),
+                             ajuda: String(localized: "No automático, cada peso de card usa um modelo e um esforço. No fixo, a lane usa sempre o mesmo modelo e o mesmo esforço. Modelos e esforços vêm das ferramentas e atualizam ao abrir os Ajustes. Mudanças valem no próximo card; a lane em andamento não muda."),
+                             blocos: [.modeloLanes]),
                 GrupoAjustes(String(localized: "Quanto cada card pode gastar"), ajuda: String(localized: "Teto em dólar por card, pelo esforço do card."), campos: [
                     campo("lanes.budget_usd.baixo", rotulo: String(localized: "Card de esforço baixo (US$)")),
                     campo("lanes.budget_usd.medio", rotulo: String(localized: "Card de esforço médio (US$)")),

@@ -23,29 +23,38 @@ struct BlocoRevisaoAtual: View {
     }
 
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: DS.e2) {
             if laneSelecionada.isEmpty {
                 Text(String(localized: "Selecione uma lane revisora acima."))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
             } else {
-                LabeledContent(String(localized: "Lane revisora")) {
-                    Text(agente?.rotulo ?? laneSelecionada).textSelection(.enabled)
+                HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
+                    Text(String(localized: "Lane revisora"))
+                        .font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                    Spacer(minLength: DS.e3)
+                    Text(agente?.rotulo ?? laneSelecionada)
+                        .font(PV.fonte(12.5)).foregroundStyle(PV.texto)
+                        .textSelection(.enabled)
                 }
-                LabeledContent(String(localized: "Modelo na revisão")) {
-                    Text(modeloRevisao).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
+                    Text(String(localized: "Modelo na revisão"))
+                        .font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                    Spacer(minLength: DS.e3)
+                    Text(modeloRevisao)
+                        .font(.system(size: 12, design: .monospaced)).foregroundStyle(PV.texto)
+                        .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
                 }
                 Text(String(localized: "Esforço: definido pela task do card (não pela lane)."))
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
                 if agente?.revisao?.auto == true {
                     Text(String(localized: "Pode ser usado como revisor reserva automático."))
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
                 } else {
                     Text(String(localized: "Não entra na reserva automática (auto desligado no manifesto)."))
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
                 }
             }
-        } header: {
-            Text(String(localized: "Modelo da lane revisora")).font(.headline).foregroundStyle(.white)
         }
+        .padding(.vertical, 2)
     }
 }
