@@ -23,6 +23,7 @@ final class RegistroFalso: RegistroAgentes {
 final class LaunchdFalso: SistemaAgendas {
     var arquivos: [String: Data] = [:]
     var carregados: Set<String> = []
+    var desativados: Set<String> = []
     var chamadas: [[String]] = []
     var registro: RegistroFalso?
     var uid: UInt32 { 501 }
@@ -40,6 +41,11 @@ final class LaunchdFalso: SistemaAgendas {
             return carregados.contains(label) ? (0, "state = not running") : (113, "")
         case "bootout": carregados.remove(label); return (0, "")
         case "bootstrap": carregados.insert(label); return (0, "")
+        case "print-disabled":
+            let texto = desativados.sorted().map { "\"\($0)\" => disabled" }.joined(separator: "\n")
+            return (0, texto)
+        case "enable": desativados.remove(label); return (0, "")
+        case "disable": desativados.insert(label); return (0, "")
         default: return (0, "")
         }
     }
@@ -141,6 +147,31 @@ final class AgentesDoAppTests: XCTestCase {
         }
         XCTAssertEqual(r.status(d.plist), .naoRegistrado)
         XCTAssertNoThrow(try a.desligar(d))
+    }
+
+    func testChaveDesligadaNaoReativaEApontaOBundle() throws {
+        let r = RegistroFalso()
+        let s = LaunchdFalso(); s.registro = r
+        let chave = AgentesDoApp.todos.first { $0.antigo == "com.transcentia.bots.chave" }!
+        let agente = "/Applications/TuttiDash.app/Contents/MacOS/tuttidash-agente"
+        let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 1, esperar: { _ in },
+                             integridade: IntegridadeFixa(.ok), agenteBundle: agente)
+        let original: [String: Any] = [
+            "Label": chave.antigo,
+            "ProgramArguments": ["/usr/bin/python3", "/tmp/casa-agentes/.transcentia/tools/bots-chave"],
+            "Disabled": true,
+        ]
+        let dados = try PropertyListSerialization.data(fromPropertyList: original, format: .xml, options: 0)
+        s.arquivos[a.legadoURL(chave.antigo).path] = dados
+        s.desativados.insert(chave.antigo)
+        XCTAssertEqual(a.migrar(chave), .mantidoDesligado)
+        XCTAssertEqual(r.status(chave.plist), .naoRegistrado)
+        XCTAssertFalse(s.chamadas.contains { $0.first == "enable" || $0.first == "bootstrap" || $0.first == "bootout" })
+        XCTAssertFalse(s.carregados.contains(chave.novo))
+        let novo = try XCTUnwrap(s.arquivos[a.legadoURL(chave.antigo).path])
+        let obj = try XCTUnwrap(PropertyListSerialization.propertyList(from: novo, options: [], format: nil) as? [String: Any])
+        XCTAssertEqual(obj["ProgramArguments"] as? [String], [agente, "chave"])
+        XCTAssertEqual(obj["Disabled"] as? Bool, true)
     }
 
     func testMapaDeLabels() {

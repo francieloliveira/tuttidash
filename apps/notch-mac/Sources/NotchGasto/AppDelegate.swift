@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Agentes passam a viver dentro do app (SMAppService); reverte sozinho se falhar.
         // Se uma tentativa já foi revertida, não tenta de novo a cada abertura (evita bootout repetido).
         if !UserDefaults.standard.bool(forKey: "agentesSMAppServiceRevertido") { Task.detached(priority: .utility) {
+            let home = FileManager.default.homeDirectoryForCurrentUser
             let veredito = IntegridadeControle.atual()
             if !veredito.confere {
                 let detalhe = veredito.aviso ?? "integridade: divergencia"
@@ -66,17 +67,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     CentralAvisos.compartilhada.erro(String(localized: "Integridade do plano de controle"), detalhe)
                 }
             }
-            let a = AgentesDoApp(registro: RegistroSMAppService())
-            let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/TranscentIA/tuttidash-agentes.log")
+            // Hash divergente não aposenta cópia nem registra agente: o estado anterior fica.
+            let ap = AposentadoriaControle.aplicar(home: home, confere: veredito.confere,
+                                                   aviso: veredito.aviso ?? "integridade: divergencia")
+            let agente = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/tuttidash-agente").path
+            let a = AgentesDoApp(registro: RegistroSMAppService(), agenteBundle: agente)
+            let log = home.appendingPathComponent("Library/Logs/TranscentIA/tuttidash-agentes.log")
+            var reverteu = false
             for l in AgentesDoApp.todos {
                 let r = a.migrar(l)
                 // Divergência de integridade não gruda a flag: o aviso continua e a migração
                 // volta a ser tentada quando a âncora e a assinatura conferirem.
-                if case .revertido = r { UserDefaults.standard.set(true, forKey: "agentesSMAppServiceRevertido") }
+                if case .revertido = r {
+                    reverteu = true
+                    UserDefaults.standard.set(true, forKey: "agentesSMAppServiceRevertido")
+                }
                 let linha = "\(Date()) \(l.novo): \(r) status=\(a.registro.status(l.plist))\n"
                 if let h = try? FileHandle(forWritingTo: log) { h.seekToEndOfFile(); h.write(Data(linha.utf8)); try? h.close() }
                 else { try? linha.write(to: log, atomically: true, encoding: .utf8) }
             }
+            if case .aposentadas(let avisos) = ap {
+                let bloco = avisos.joined(separator: "\n") + "\n"
+                if let h = try? FileHandle(forWritingTo: log) { h.seekToEndOfFile(); h.write(Data(bloco.utf8)); try? h.close() }
+                else { try? bloco.write(to: log, atomically: true, encoding: .utf8) }
+            }
+            // O launchd voltou ao plist antigo: as cópias aposentadas voltam junto.
+            if reverteu, case .aposentadas = ap { AposentadoriaControle.restaurar(home: home) }
         } }
         if PrimeiraAbertura.precisa() {
             JanelaPrimeiraAbertura.compartilhada.mostrar { [weak self] in self?.atualizar(forcar: true, mostrarIndicador: true); self?.atualizarUso(mostrarIndicador: true) }

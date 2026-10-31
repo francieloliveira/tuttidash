@@ -11,7 +11,7 @@ public protocol RegistroAgentes: AnyObject {
 }
 
 public enum ResultadoMigracao: Equatable, Sendable {
-    case jaNoApp, migrado, semLegado, revertido(String), integridade(String)
+    case jaNoApp, migrado, semLegado, revertido(String), integridade(String), mantidoDesligado
 }
 
 /// Um agente do app: Label novo (SMAppService) e o Label antigo do plist solto que ele substitui.
@@ -38,12 +38,16 @@ public final class AgentesDoApp {
     /// Confirmação extra antes de apagar o plist solto (o dispatcher exige heartbeat em modo real).
     let confirmar: (AgenteApp, Date) -> Bool
     let integridade: FonteIntegridade
+    /// Binário do bundle. Quando a chave antiga está desligada, o plist solto passa a
+    /// apontar para ele sem `enable` e sem `bootstrap`.
+    public let agenteBundle: String?
 
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, sistema: SistemaAgendas = SistemaReal(),
                 registro: RegistroAgentes, tentativas: Int = 15,
                 esperar: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
                 confirmar: ((AgenteApp, Date) -> Bool)? = nil,
-                integridade: FonteIntegridade = IntegridadeAoVivo()) {
+                integridade: FonteIntegridade = IntegridadeAoVivo(),
+                agenteBundle: String? = nil) {
         self.home = home; self.sistema = sistema; self.registro = registro
         self.tentativas = tentativas; self.esperar = esperar
         let h = home
@@ -51,6 +55,7 @@ public final class AgentesDoApp {
             a != AgentesDoApp.dispatcher || AgentesDoApp.heartbeatReal(home: h, desde: desde)
         }
         self.integridade = integridade
+        self.agenteBundle = agenteBundle
     }
 
     /// heartbeat.json do dispatcher: gravado depois de `desde` e com dry_run=false.
@@ -83,13 +88,47 @@ public final class AgentesDoApp {
         if sistema.existe(legadoURL(a.antigo)) { try? mover(legadoURL(a.antigo), reservaURL(a.antigo)) }
     }
 
+    /// Chave desligada no launchd ou com `Disabled` no plist. Migrar não chama enable.
+    private func desligada(_ label: String) -> Bool {
+        let (_, texto) = sistema.launchctl(["print-disabled", dominio])
+        if StatusAgente.desativado(label, printDisabled: texto) { return true }
+        guard let dados = sistema.ler(legadoURL(label)),
+              let obj = try? PropertyListSerialization.propertyList(from: dados, options: [], format: nil) as? [String: Any]
+        else { return false }
+        if let b = obj["Disabled"] as? Bool { return b }
+        return false
+    }
+
+    /// Troca o programa do plist solto pelo agente do bundle. Não carrega o serviço.
+    private func apontarParaBundle(_ a: AgenteApp) {
+        guard let agente = agenteBundle, agente.hasPrefix("/"), !agente.contains(".transcentia"), !agente.contains("..") else { return }
+        let papel: String
+        switch a.antigo {
+        case "com.transcentia.bots.watch": papel = "vigia"
+        case "com.transcentia.bots.chave": papel = "chave"
+        case "com.transcentia.lanes.dispatcher": papel = "dispatcher"
+        default: return
+        }
+        let url = legadoURL(a.antigo)
+        guard let dados = sistema.ler(url),
+              var obj = (try? PropertyListSerialization.propertyList(from: dados, options: [], format: nil)) as? [String: Any] else { return }
+        obj["ProgramArguments"] = [agente, papel]
+        guard let novo = try? PropertyListSerialization.data(fromPropertyList: obj, format: .xml, options: 0) else { return }
+        try? sistema.escrever(novo, em: url, modo: 0o644)
+    }
+
     /// Troca o plist solto (Label antigo) pelo agente do app (Label novo). Nunca roda os dois ao mesmo
     /// tempo: o antigo sai do launchd antes de registrar o novo. O plist solto só é apagado depois que
     /// o novo carregou e foi confirmado (heartbeat real no dispatcher); senão volta ao plist solto.
+    /// Chave desligada só troca o programa para o bundle: não chama enable nem bootstrap.
     public func migrar(_ a: AgenteApp) -> ResultadoMigracao {
         let veredito = integridade.veredito()
         if !veredito.confere { return .integridade(veredito.aviso ?? "integridade: divergencia") }
         if registro.status(a.plist) == .ativo && carregado(a.novo).0 { aposentarAntigo(a); return .jaNoApp }
+        if desligada(a.antigo) {
+            apontarParaBundle(a)
+            return .mantidoDesligado
+        }
         guard sistema.existe(legadoURL(a.antigo)) else { return .semLegado }
         _ = sistema.launchctl(["bootout", "\(dominio)/\(a.antigo)"])
         for _ in 0..<5 where carregado(a.antigo).0 { esperar(1) }   // bootout é assíncrono
