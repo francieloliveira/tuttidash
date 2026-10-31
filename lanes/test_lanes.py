@@ -1858,5 +1858,85 @@ class CacheDeTitulos(unittest.TestCase):
         self.assertEqual(json.loads(self.arquivo.read_text(encoding="utf-8")), {"FRA-9": "Nove"})
 
 
+class CaminhoNonAsciiProtegido(unittest.TestCase):
+    """FRA-596: `core.quotepath` cita `relatório.docx` e o fnmatch não casava."""
+
+    def test_relatorio_docx_protegido_bloqueia(self):
+        import unicodedata
+
+        def git(*args, cwd):
+            subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+        def nfc(caminho: str) -> str:
+            return unicodedata.normalize("NFC", caminho)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            git("init", "-q", "-b", "main", cwd=repo)
+            git("config", "user.email", "t@t", cwd=repo)
+            git("config", "user.name", "t", cwd=repo)
+            git("config", "core.quotepath", "true", cwd=repo)
+            (repo / "app.swift").write_text("um\n", encoding="utf-8")
+            git("add", "-A", cwd=repo)
+            git("commit", "-qm", "inicial", cwd=repo)
+            base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
+                                  capture_output=True, text=True).stdout.strip()
+            git("checkout", "-q", "-b", "lane", cwd=repo)
+            pasta = repo / "docs" / "arquivo"
+            pasta.mkdir(parents=True)
+            (pasta / "relatório.docx").write_text("x\n", encoding="utf-8")
+            git("add", "-A", cwd=repo)
+            git("commit", "-qm", "lane mexe no relatorio", cwd=repo)
+            git("update-ref", "refs/remotes/origin/main", "main", cwd=repo)
+            d.projetos._resetar_cache()
+            d.projetos._CACHE["lista"] = [d.projetos.Projeto(
+                id="app", nome="App", repo=str(repo), protegidos=["docs/arquivo/*"])]
+            try:
+                g = d.git_summary(repo, base)
+                tocados = d.touched_protected(g["lane_files"])
+                escapado = d.touched_protected(['"docs/arquivo/relat\\303\\263rio.docx"'])
+            finally:
+                d.projetos._resetar_cache()
+        self.assertTrue(g["lane_files"], "o diff tem que ver o arquivo da lane")
+        self.assertTrue(all("\\303" not in f and not f.startswith('"') for f in g["lane_files"]))
+        self.assertEqual(escapado, [],
+                         "o escape octal continua sem casar o glob: por isso o diff não pode devolvê-lo")
+        self.assertEqual([nfc(p) for p in tocados], ["docs/arquivo/relatório.docx"])
+
+
+class SuitesEstritas(unittest.TestCase):
+    """FRA-596: a prova não executa caminho, flag nem nome fora da lista do projeto."""
+
+    def setUp(self):
+        d.projetos._resetar_cache()
+        self.addCleanup(d.projetos._resetar_cache)
+
+    def _projeto(self, suites):
+        d.projetos._CACHE["lista"] = [d.projetos.Projeto(
+            id="x", nome="X", repo="~/x", suites=suites)]
+
+    def test_caminho_fora_do_worktree_e_rejeitado(self):
+        self._projeto([])
+        self.assertEqual(d.proof_suites({"tests": ["../../tmp/x"]}), d.PROOF_DEFAULT_SUITES)
+        self.assertEqual(d.proof_suites({"tests": ["../../tmp/x", "FooTests"]}), ["FooTests"])
+        for ruim in ["../../tmp/x", "../x", "..", "a/b", "foo-bar", "foo bar", "FooTests;rm", "-n"]:
+            with self.subTest(ruim=ruim):
+                self.assertNotIn(ruim, d.proof_suites({"tests": [ruim]}))
+
+    def test_nome_valido_passa_quando_o_projeto_nao_declara(self):
+        self._projeto([])
+        self.assertEqual(d.proof_suites({"tests": ["GastoCoreTests"]}), ["GastoCoreTests"])
+        self.assertEqual(d.proof_suites({"tests": ["tests.test_parser"]}), ["tests.test_parser"])
+
+    def test_projeto_com_suites_exige_a_lista(self):
+        self._projeto(["tests.test_parser", "FooTests"])
+        self.assertEqual(d.proof_suites({"tests": ["FooTests"]}), ["FooTests"])
+        self.assertEqual(d.proof_suites({"tests": ["OutraSuite"]}), ["tests.test_parser", "FooTests"])
+        self.assertEqual(d.proof_suites({"tests": ["../../tmp/x"]}), ["tests.test_parser", "FooTests"])
+        self.assertEqual(d.proof_suites({"tests": ["foo-bar"]}), ["tests.test_parser", "FooTests"])
+        self.assertNotIn("../../tmp/x", d.proof_suites({"tests": ["../../tmp/x", "FooTests"]}))
+
+
 if __name__ == "__main__":
     unittest.main()
