@@ -31,7 +31,7 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
   quota API, so TuttiDash does not show their limits. The reading engine is pluggable (`FonteUso`, see
   `apps/notch-mac/README.md`).
 - **It never renews or rewrites another tool's credentials.** It reads logs, its own state and its own config.
-  The Linear API key lives in the macOS Keychain.
+  The Linear API key lives in the app Keychain (data protection). Scripts do not read it.
 
 ## Requirements
 
@@ -49,12 +49,15 @@ cd tuttidash
 # 1. Tools into ~/.transcentia, without background jobs yet
 tools/install.sh --sem-launchd
 
-# 2. Linear API key in the Keychain (you will be prompted for it)
-security add-generic-password -s linear-transcentia-lanes -a "$USER" -w
-
-# 3. The app
+# 2. The app
 cd apps/notch-mac && ./build.sh && open build/TuttiDash.app
 ```
+
+In the app, *Ajustes › Contas*, paste a Linear API key used only by TuttiDash.
+It stays in the app Keychain (data protection), never in a file and never in the
+login-keychain item `linear-transcentia-lanes`. The dispatcher and the watcher
+call a local proxy and do not receive the key. To rotate: create a new key in
+Linear › Settings › API, paste it in the app, then revoke the old key.
 
 Then configure, in the app (*Ajustes*) or in `~/Library/Application Support/TuttiDash/config.json`
 (start from [`config.example.json`](config.example.json)):

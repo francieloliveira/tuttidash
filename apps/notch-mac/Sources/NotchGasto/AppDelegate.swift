@@ -51,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // O dispatcher/vigia/chave só trabalham enquanto este PID estiver vivo.
         PresencaDoApp.marcarAberta()
+        // O proxy lê o token no Keychain do app e não o devolve aos scripts (FRA-607).
+        Task.detached(priority: .utility) { ServicoProxyLinear.compartilhado.ligar() }
         EstadoCaixa.compartilhada.iniciar()  // caixa do dono: contador do sino e aviso do macOS
         NSApp.setActivationPolicy(.accessory)
         Configuracao.copiarPastaAntiga()
@@ -162,6 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// «Sair» encerra o trabalho automático junto com o app. Fechar o painel não.
     func applicationWillTerminate(_ notification: Notification) {
+        ServicoProxyLinear.compartilhado.parar()
         PresencaDoApp.pararTudo()
     }
 

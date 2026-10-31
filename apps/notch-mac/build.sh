@@ -49,6 +49,9 @@ else
   echo "AVISO: agents.d/ não encontrado em $AGENTS_D (o app cai no registry embutido)"
 fi
 
+echo "==> proxy do Linear (o app sobe o processo; a chave entra pelo stdin)"
+cp "$HERE/../../gasto_lanes/proxy_linear.py" "$APP/Contents/Resources/proxy_linear.py"
+
 echo "==> textos (Localizable.xcstrings -> en/pt-BR)"
 xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$APP/Contents/Resources"
 # FRA-524: o app é só em pt-BR. Com o en.lproj no bundle, um Mac em inglês misturava os dois idiomas.

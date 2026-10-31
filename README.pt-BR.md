@@ -30,7 +30,7 @@ trabalhar de um desenvolvedor, e isso aparece. [Read in English](README.md).
   oficial de cota, então o TuttiDash não mostra esses limites. O motor de leitura aceita outras fontes
   (`FonteUso`, veja `apps/notch-mac/README.md`).
 - **Ele nunca renova nem regrava a credencial de outra ferramenta.** Lê logs, o próprio estado e a própria
-  config. A chave da API do Linear fica no Keychain do macOS.
+  config. A chave da API do Linear fica no Keychain do app (proteção de dados). Os scripts não a leem.
 
 ## Requisitos
 
@@ -48,12 +48,15 @@ cd tuttidash
 # 1. Ferramentas em ~/.transcentia, ainda sem nada rodando em segundo plano
 tools/install.sh --sem-launchd
 
-# 2. Chave da API do Linear no Keychain (o comando pede a chave)
-security add-generic-password -s linear-transcentia-lanes -a "$USER" -w
-
-# 3. O app
+# 2. O app
 cd apps/notch-mac && ./build.sh && open build/TuttiDash.app
 ```
+
+No app, *Ajustes › Contas*, cole uma chave da API do Linear usada só pelo TuttiDash.
+Ela fica no Keychain do app (proteção de dados), nunca no arquivo e nunca no item
+`linear-transcentia-lanes` do login. O dispatcher e o vigia pedem um proxy local e
+não recebem a chave. Para trocar: crie outra em Linear › Settings › API, cole no
+app e revogue a antiga.
 
 Depois configure, no app (*Ajustes*) ou em `~/Library/Application Support/TuttiDash/config.json`
 (partindo do [`config.example.json`](config.example.json)):

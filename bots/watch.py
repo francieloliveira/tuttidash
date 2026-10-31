@@ -86,8 +86,6 @@ LOG_FILE = HOME / "Library" / "Logs" / "TranscentIA" / "bots-watch.log"
 RUN_LOG_DIR = HOME / "Library" / "Logs" / "TranscentIA" / "bots"
 PATH_ENV = f"/opt/homebrew/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-LINEAR_API = "https://api.linear.app/graphql"
-KEYCHAIN_SERVICE = _cfg("linear.keychain_service", "linear-transcentia-lanes")
 # Projeto que o vigia consulta no Linear. Vem do cadastro `projetos`; sem a
 # chave na config vale o iOS, como antes. Lido a cada ciclo.
 def projeto_linear():
@@ -163,6 +161,7 @@ try:
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
+    import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
 except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
     sys.exit(f"{_falta.name} não encontrado ao lado do watch.py — "
              "rode tools/install.sh para instalar o catálogo de agentes e projetos")
@@ -319,33 +318,15 @@ def save_state(st: dict) -> None:
 
 
 # ---------- Linear ----------
-def linear_key() -> str:
-    out = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-                         capture_output=True, text=True, check=False)
-    if out.returncode != 0 or not out.stdout.strip():
-        raise RuntimeError("chave do Linear não encontrada no Keychain")
-    return out.stdout.strip()
-
-
 def linear(query: str, variables: dict) -> dict:
-    body = json.dumps({"query": query, "variables": variables}).encode()
-    req = urllib.request.Request(LINEAR_API, data=body, method="POST",
-                                 headers={"Content-Type": "application/json", "Authorization": linear_key()})
+    """Pede a consulta ao proxy local. O token não passa por este processo."""
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Linear HTTP {exc.code}: {exc.read()[:300]!r}") from None
-    if data.get("errors"):
-        raise RuntimeError(f"Linear: {data['errors'][0].get('message')}")
-    return data["data"]
+        return proxy_linear.executar_consulta(query, variables)
+    except proxy_linear.ErroProxy as exc:
+        raise RuntimeError(str(exc)) from None
 
 
-ISSUE_FIELDS = """id identifier title description url priority sortOrder startedAt createdAt updatedAt dueDate estimate
-      branchName assignee{ id name } parent{ identifier }
-      state{ id name type } labels{ nodes{ id name parent{ name } } } project{ id name }
-      comments(first:30, orderBy: createdAt){ nodes{ id body createdAt } }
-      inverseRelations(first:30){ nodes{ type issue{ identifier state{ type } } } }"""
+ISSUE_FIELDS = proxy_linear.ISSUE_FIELDS
 
 
 def em_ordem(ci: dict | None) -> dict | None:
@@ -362,16 +343,14 @@ def em_ordem(ci: dict | None) -> dict | None:
 
 def issue(ident: str) -> dict | None:
     try:
-        return em_ordem(linear(f"query($id:String!){{ issue(id:$id){{ {ISSUE_FIELDS} }} }}", {"id": ident})["issue"])
+        return em_ordem(linear(proxy_linear.consulta("issue"), {"id": ident})["issue"])
     except RuntimeError as exc:
         log(f"issue {ident}: {exc}")
         return None
 
 
 def project_issues(state_names: list[str] | None = None) -> list[dict]:
-    flt = "project:{ id:{ eq:$p } }, state:{ type:{ nin:[\"completed\",\"canceled\"] } }"
-    q = f"""query($p:ID!, $after:String){{ issues(first:100, after:$after, filter:{{ {flt} }})
-          {{ pageInfo{{ hasNextPage endCursor }} nodes{{ {ISSUE_FIELDS} }} }} }}"""
+    q = proxy_linear.consulta("issues_projeto")
     nodes: list[dict] = []
     after = None
     # Board grande não pode sumir depois dos 100 primeiros. O teto de 10 páginas
@@ -393,27 +372,24 @@ def labels_of(ci: dict) -> set[str]:
 
 
 def comment(issue_id: str, body: str) -> None:
-    linear("mutation($i:CommentCreateInput!){ commentCreate(input:$i){ success } }",
-           {"i": {"issueId": issue_id, "body": body}})
+    linear(proxy_linear.consulta("comentar_vigia"), {"i": {"issueId": issue_id, "body": body}})
 
 
 def add_label(issue_id: str, name: str) -> None:
     if not LABEL_IDS.get(name):
         log(f"linear: etiqueta «{name}» sem id; não apliquei")
         return
-    linear("mutation($id:String!,$l:String!){ issueAddLabel(id:$id, labelId:$l){ success } }",
-           {"id": issue_id, "l": LABEL_IDS[name]})
+    linear(proxy_linear.consulta("adicionar_etiqueta_vigia"), {"id": issue_id, "l": LABEL_IDS[name]})
 
 
 def remove_label(issue_id: str, name: str) -> None:
     if not LABEL_IDS.get(name):
         return
-    linear("mutation($id:String!,$l:String!){ issueRemoveLabel(id:$id, labelId:$l){ success } }",
-           {"id": issue_id, "l": LABEL_IDS[name]})
+    linear(proxy_linear.consulta("remover_etiqueta_vigia"), {"id": issue_id, "l": LABEL_IDS[name]})
 
 
 def prepend_description(ci: dict, text: str) -> None:
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
+    linear(proxy_linear.consulta("atualizar_issue"),
            {"id": ci["id"], "i": {"description": text + (ci.get("description") or "")}})
 
 
@@ -421,18 +397,17 @@ def set_state(issue_id: str, state_id: str) -> None:
     if not state_id:
         log("linear: estado sem id; não mudei o card")
         return
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
-           {"id": issue_id, "i": {"stateId": state_id}})
+    linear(proxy_linear.consulta("atualizar_issue"), {"id": issue_id, "i": {"stateId": state_id}})
 
 
 def diary_append(lines: list[str]) -> None:
     if not lines or not DIARY_DOC_ID:
         return
     try:
-        doc = linear("query($id:String!){ document(id:$id){ content } }", {"id": DIARY_DOC_ID})["document"]
+        doc = linear(proxy_linear.consulta("ler_documento"), {"id": DIARY_DOC_ID})["document"]
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         block = f"\n\n### {stamp} BRT — vigia dos bots (por evento)\n\n" + "\n".join(f"- {l}" for l in lines)
-        linear("mutation($id:String!,$i:DocumentUpdateInput!){ documentUpdate(id:$id,input:$i){ success } }",
+        linear(proxy_linear.consulta("atualizar_documento"),
                {"id": DIARY_DOC_ID, "i": {"content": (doc.get("content") or "") + block}})
     except RuntimeError as exc:
         log(f"diário: {exc}")
@@ -442,7 +417,7 @@ def known_errors() -> str:
     if not KNOWN_ERRORS_DOC_ID:
         return "(sem lista de erros conhecidos: linear.erros_conhecidos_doc_id vazio)"
     try:
-        doc = linear("query($id:String!){ document(id:$id){ content } }", {"id": KNOWN_ERRORS_DOC_ID})["document"]
+        doc = linear(proxy_linear.consulta("ler_documento"), {"id": KNOWN_ERRORS_DOC_ID})["document"]
         return (doc.get("content") or "")[:12000]
     except RuntimeError as exc:
         log(f"erros conhecidos: {exc}")
@@ -450,8 +425,7 @@ def known_errors() -> str:
 
 
 def done_state_id(team_issue: dict) -> str | None:
-    q = """query($id:String!){ issue(id:$id){ team{ states{ nodes{ id type name } } } } }"""
-    nodes = linear(q, {"id": team_issue["id"]})["issue"]["team"]["states"]["nodes"]
+    nodes = linear(proxy_linear.consulta("estados_do_card"), {"id": team_issue["id"]})["issue"]["team"]["states"]["nodes"]
     for n in nodes:
         if n["type"] == "completed" and n["name"].lower() == "done":
             return n["id"]
@@ -693,8 +667,7 @@ def limpar_retomadas(desc: str) -> tuple[str, list[str]]:
 
 
 def set_description(ci: dict, text: str) -> None:
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
-           {"id": ci["id"], "i": {"description": text}})
+    linear(proxy_linear.consulta("atualizar_issue"), {"id": ci["id"], "i": {"description": text}})
 
 
 def expirar_retomadas(issues: list[dict], st: dict, diary: list[str]) -> None:
@@ -1491,17 +1464,14 @@ def estado_cancelado_id(st: dict) -> str:
     time_id = linear_ids.time_do_projeto(lambda q, v: linear(q, v), projeto_linear())
     if not time_id:
         return ""
-    nos = ((linear("query($id:String!){ team(id:$id){ states{ nodes{ id type } } } }", {"id": time_id})
+    nos = ((linear(proxy_linear.consulta("estados_time_tipo"), {"id": time_id})
             .get("team") or {}).get("states") or {}).get("nodes") or []
     st["estado_cancelado_id"] = next((n["id"] for n in nos if n.get("type") == "canceled"), "")
     return st["estado_cancelado_id"]
 
 
 def cancelados_recentes() -> list[dict]:
-    flt = ("project:{ id:{ eq:$p } }, state:{ type:{ eq:\"canceled\" } }, "
-           "updatedAt:{ gt:\"-P7D\" }")
-    q = f"""query($p:ID!){{ issues(first:50, filter:{{ {flt} }}){{ nodes{{ {ISSUE_FIELDS} }} }} }}"""
-    return [em_ordem(n) for n in linear(q, {"p": projeto_linear()})["issues"]["nodes"]]
+    return [em_ordem(n) for n in linear(proxy_linear.consulta("cancelados"), {"p": projeto_linear()})["issues"]["nodes"]]
 
 
 def limpar_cancelados(cancelados: list[dict], st: dict, diary: list[str]) -> None:
@@ -1737,7 +1707,7 @@ def viewer_linear(st: dict) -> str:
     if st.get("viewer_id"):
         return str(st["viewer_id"])
     try:
-        viewer = (linear("query{ viewer{ id } }", {}).get("viewer") or {})
+        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
         st["viewer_id"] = viewer.get("id") or ""
     except RuntimeError as exc:
         log(f"fila: não li o viewer do Linear ({exc})")

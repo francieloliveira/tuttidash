@@ -143,9 +143,8 @@ public struct ServicoLinear: Sendable {
     }
 }
 
-/// Item do Keychain que o dispatcher e o vigia leem (`linear.keychain_service`), gravado e lido
-/// pelo `/usr/bin/security` (FRA-568). Assim o item fica confiável para o `security` dos scripts
-/// e não abre aviso de permissão quando eles leem; o token nunca vai na linha de comando.
+/// Item antigo do `security` (FRA-568). O app só lê uma vez para trazer o token ao
+/// Keychain protegido e depois apaga. Não grava mais: qualquer processo lia sem prompt.
 public protocol ChaveiroScripts: Sendable {
     func ler(servico: String) -> String?
     func gravar(_ segredo: String, servico: String, conta: String) throws
@@ -156,8 +155,8 @@ public struct ChaveiroSecurity: ChaveiroScripts {
     public init() {}
 
     @discardableResult
-    private func rodar(_ args: [String], entrada: String? = nil) -> (codigo: Int32, saida: String) {
-        let r = Subprocesso.rodar("/usr/bin/security", args, entrada: entrada)
+    private func rodar(_ args: [String]) -> (codigo: Int32, saida: String) {
+        let r = Subprocesso.rodar("/usr/bin/security", args)
         return (r.codigo, r.texto)
     }
 
@@ -167,16 +166,10 @@ public struct ChaveiroSecurity: ChaveiroScripts {
         return r.codigo == 0 && !v.isEmpty ? v : nil
     }
 
+    /// Aposentado (FRA-607): gravar aqui deixava o token legível por qualquer processo.
     public func gravar(_ segredo: String, servico: String, conta: String) throws {
-        // `security -i` lê o comando da entrada: o segredo não aparece no `ps`.
-        guard !segredo.isEmpty, !(segredo + servico + conta).contains(where: { "\"\\\n\r".contains($0) }) else {
-            throw ErroLinear.resposta(String(localized: "token com caractere inválido"))
-        }
-        apagar(servico: servico)
-        let r = rodar(["-i"], entrada: "add-generic-password -U -a \"\(conta)\" -s \"\(servico)\" -w \"\(segredo)\"\n")
-        guard r.codigo == 0, ler(servico: servico) == segredo else {
-            throw ErroLinear.resposta(String(localized: "não foi possível gravar no Keychain"))
-        }
+        _ = (segredo, servico, conta)
+        throw ErroLinear.resposta(String(localized: "o item do security está aposentado"))
     }
 
     public func apagar(servico: String) {
@@ -184,41 +177,84 @@ public struct ChaveiroSecurity: ChaveiroScripts {
     }
 }
 
-/// Token do Linear num lugar só (FRA-568): o item que os scripts leem. O item antigo do app
-/// (`app.tuttidash.mac`, conta `linear`) só é lido para migrar e depois apagado.
+/// Token dedicado do dispatcher e do vigia (FRA-607). Fica no Keychain do app, com
+/// proteção de dados e access group. Os scripts não leem o token: pedem o proxy.
 public struct TokenLinear: Sendable {
-    public static let conta = "linear"
-    public static let servicoPadrao = "linear-transcentia-lanes"
+    /// Conta antiga do app, antes do item dedicado.
+    public static let contaAntiga = "linear"
+    /// Conta só do dispatcher, do vigia e das chamadas do app ao Linear.
+    public static let conta = "linear-dispatcher"
+    public static let servicoSecurityAposentado = "linear-transcentia-lanes"
     public let cofre: Cofre
-    public let servico: String
+    public let cofreAntigo: Cofre
+    public let servicoSecurity: String
     public let chaveiro: ChaveiroScripts
-    public init(cofre: Cofre = Cofre(),
-                servico: String = Configuracao.valor("linear.keychain_service", em: Configuracao.lerArquivo())
-                    .map { "\($0)" }.flatMap { $0.isEmpty ? nil : $0 } ?? TokenLinear.servicoPadrao,
+
+    public init(cofre: Cofre? = nil, cofreAntigo: Cofre? = nil, servicoSecurity: String? = nil,
                 chaveiro: ChaveiroScripts = ChaveiroSecurity()) {
-        self.cofre = cofre; self.servico = servico; self.chaveiro = chaveiro
+        self.cofre = cofre ?? Cofre(servico: Cofre.servicoPadrao, migrarLegado: false,
+                                    protecaoDeDados: true, grupo: AtributosChaveiro.grupoLinear)
+        self.cofreAntigo = cofreAntigo ?? Cofre(servico: Cofre.servicoPadrao)
+        self.servicoSecurity = servicoSecurity ?? Self.servicoSecurityConfigurado()
+        self.chaveiro = chaveiro
+    }
+
+    /// Atributos do item dedicado: proteção de dados e access group. Não é o serviço do `security`.
+    public static func atributos(servico: String = Cofre.servicoPadrao, conta: String = TokenLinear.conta) -> [String: Any] {
+        AtributosChaveiro.item(servico: servico, conta: conta, grupo: AtributosChaveiro.grupoLinear,
+                               protecaoDeDados: true)
+    }
+
+    public static func servicoSecurityConfigurado() -> String {
+        let bruto = Configuracao.valor("linear.keychain_service", em: Configuracao.lerArquivo()).map { "\($0)" } ?? ""
+        let nome = bruto.trimmingCharacters(in: .whitespacesAndNewlines)
+        return nome.isEmpty ? servicoSecurityAposentado : nome
     }
 
     public func ler() -> String? {
-        if let t = chaveiro.ler(servico: servico) {
-            // Sobra da migração: o item antigo com o mesmo token não serve para nada.
-            if cofre.ler(conta: Self.conta) == t { cofre.apagar(conta: Self.conta) }
+        if let t = cofre.ler(conta: Self.conta), !t.isEmpty {
+            limparLegado(igualA: t)
             return t
         }
-        guard let antigo = cofre.ler(conta: Self.conta) else { return nil }
-        if (try? chaveiro.gravar(antigo, servico: servico, conta: NSUserName())) != nil {
-            cofre.apagar(conta: Self.conta)
+        if let antigo = cofreAntigo.ler(conta: Self.contaAntiga), !antigo.isEmpty {
+            if guardou(antigo) { limparLegado(igualA: antigo) }
+            return antigo
         }
-        return antigo
+        if let doScript = chaveiro.ler(servico: servicoSecurity), !doScript.isEmpty {
+            if guardou(doScript) { chaveiro.apagar(servico: servicoSecurity) }
+            return doScript
+        }
+        return nil
     }
 
     public func salvar(_ t: String) throws {
-        try chaveiro.gravar(t.trimmingCharacters(in: .whitespacesAndNewlines), servico: servico, conta: NSUserName())
-        cofre.apagar(conta: Self.conta)
+        let limpo = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        if limpo.isEmpty { throw ErroLinear.semToken }
+        if limpo.contains(where: { $0 == "\n" || $0 == "\r" }) {
+            throw ErroLinear.resposta(String(localized: "token com caractere inválido"))
+        }
+        try cofre.salvar(limpo, conta: Self.conta)
+        limparLegado(igualA: nil)
     }
 
     public func apagar() {
-        chaveiro.apagar(servico: servico)
         cofre.apagar(conta: Self.conta)
+        cofreAntigo.apagar(conta: Self.contaAntiga)
+        chaveiro.apagar(servico: servicoSecurity)
+    }
+
+    /// Só apaga o item do `security` depois que o Keychain protegido devolve o mesmo token.
+    private func guardou(_ segredo: String) -> Bool {
+        (try? cofre.salvar(segredo, conta: Self.conta)) != nil && cofre.ler(conta: Self.conta) == segredo
+    }
+
+    /// `igualA == nil` apaga a conta antiga sempre (quem chamou acabou de gravar o token novo).
+    private func limparLegado(igualA token: String?) {
+        chaveiro.apagar(servico: servicoSecurity)
+        let antigo = cofreAntigo.ler(conta: Self.contaAntiga)
+        if token == nil || antigo == token { cofreAntigo.apagar(conta: Self.contaAntiga) }
+        if cofreAntigo.servico == Cofre.servicoPadrao {
+            Cofre(servico: Legado.servicoCofreAntigo, migrarLegado: false).apagar(conta: Self.contaAntiga)
+        }
     }
 }
