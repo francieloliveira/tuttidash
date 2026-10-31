@@ -1,9 +1,9 @@
 """Cadastro de projetos que o dispatcher e o vigia enxergam.
 
-Fonte: chave `projetos` na config do TuttiDash
-(`~/.transcentia/tools/config.json` e
-`~/Library/Application Support/Lanekeeper/config.json`, nessa ordem — a primeira
-que tiver a chave ganha). Sem a chave, não há projeto: o dispatcher e o vigia
+Fonte: chave `projetos` no arquivo que `gasto_lanes/config.py` escolhe
+(env > TuttiDash > Lanekeeper > TranscentIA Gasto > legado). Só esse arquivo:
+se ele não tiver a chave, não se lê o mais antigo (senão o repo sairia de um
+e o `linear.*` de outro). Sem a chave, não há projeto: o dispatcher e o vigia
 registram «nenhum projeto cadastrado» e não fazem nada (FRA-565).
 
 Formato (lista de objetos):
@@ -58,12 +58,14 @@ import os
 import shlex
 from pathlib import Path
 
-#: Onde a config do TuttiDash mora, na ordem de precedência do `cfg`.
-CONFIG_FILES = [
-    Path.home() / "Library/Application Support/TuttiDash/config.json",
-    Path.home() / "Library/Application Support/Lanekeeper/config.json",
-    Path.home() / ".transcentia/tools/config.json",
-]
+def _arquivos_padrao(env=None, home=None) -> list:
+    """O arquivo do resolvedor único. Import tardio: este módulo também roda solto."""
+    try:
+        from .config import arquivos_em_uso
+    except ImportError:
+        from config import arquivos_em_uso
+    return arquivos_em_uso(env=env, home=home)
+
 
 #: Freio de caminho protegido padrão quando o projeto não declara o seu.
 #: São globs relativos ao `repo` do projeto: a config dos agentes do projeto.
@@ -199,15 +201,20 @@ def _resetar_cache() -> None:
 recarregar = _resetar_cache
 
 
-def ler_registro(config_files=None) -> list:
+def ler_registro(config_files=None, env=None, home=None) -> list:
     """Projetos declarados na config, ou lista vazia se não houver.
 
-    A primeira config que tiver a chave `projetos` com algum projeto válido ganha.
+    Sem ``config_files``, lê só o arquivo do resolvedor. Uma lista explícita
+    (os testes) percorre na ordem e fica com a primeira que tiver projeto válido.
     """
-    for cfg in (config_files or CONFIG_FILES):
+    if config_files is None:
+        config_files = _arquivos_padrao(env=env, home=home)
+    for cfg in config_files:
         try:
             dados = json.loads(Path(cfg).read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            continue
+        if not isinstance(dados, dict):
             continue
         bruto = dados.get("projetos")
         if not isinstance(bruto, list):

@@ -46,11 +46,19 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _caminho_cfg() -> Path:
+    """`tools/cfg` do checkout, ou a cópia instalada. O cfg usa o resolvedor único."""
+    local = Path(__file__).resolve().parent.parent / "tools" / "cfg"
+    if local.is_file():
+        return local
+    return Path.home() / ".transcentia" / "tools" / "cfg"
+
+
 def _cfg(chave, padrao):
-    """Lê ~/.transcentia/tools/cfg (FRA-295); sem cfg ou com erro, devolve o padrão."""
+    """Lê o `cfg` (FRA-295); sem cfg ou com erro, devolve o padrão."""
     try:
         import runpy
-        v = runpy.run_path(str(Path.home() / ".transcentia/tools/cfg"))["get"](chave, padrao)
+        v = runpy.run_path(str(_caminho_cfg()))["get"](chave, padrao)
         return type(padrao)(v) if padrao is not None and not isinstance(padrao, (list, set, dict)) else v
     except Exception:
         return padrao

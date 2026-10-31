@@ -18,6 +18,7 @@ class BotsChaveTests(unittest.TestCase):
         self.home = Path(self._tmp.name)
         (self.home / ".transcentia/tools").mkdir(parents=True)
         shutil.copy(RAIZ / "tools" / "cfg", self.home / ".transcentia/tools/cfg")
+        shutil.copy(RAIZ / "gasto_lanes" / "config.py", self.home / ".transcentia/tools/config.py")
         self.bots = self.home / ".transcentia/bots"
         self.bots.mkdir(parents=True)
 

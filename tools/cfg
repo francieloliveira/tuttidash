@@ -1,9 +1,11 @@
 #!/usr/bin/python3
 """cfg: leitor único dos ajustes do TranscentIA (FRA-295).
 
-Ordem: TRANSCENTIA_GASTO_CONFIG > ~/Library/Application Support/TuttiDash/config.json
-       > ~/Library/Application Support/Lanekeeper/config.json
-       > ~/Library/Application Support/TranscentIA Gasto/config.json > ~/.transcentia/tools/config.json (legado) > padrão passado na linha de comando.
+O arquivo vem de gasto_lanes/config.py (`arquivo_config`):
+TRANSCENTIA_GASTO_CONFIG > ~/Library/Application Support/TuttiDash/config.json
+> ~/Library/Application Support/Lanekeeper/config.json
+> ~/Library/Application Support/TranscentIA Gasto/config.json
+> ~/.transcentia/tools/config.json (legado). Sem arquivo, vale o padrão da linha de comando.
 
   cfg get <chave.pontuada> [padrão]   imprime o valor (listas/dicts em JSON; bool como true/false)
   cfg path                            imprime o arquivo em uso (ou nada)
@@ -92,14 +94,41 @@ DEFAULTS = {
 }
 
 
+_LIB = None
+
+
+def _lib():
+    """gasto_lanes/config.py, pelo caminho: o cfg instalado não é um pacote."""
+    global _LIB
+    if _LIB is not None:
+        return _LIB
+    import importlib.util
+    aqui = Path(__file__).resolve().parent
+    # Ao lado (cópia instalada), no checkout (tools/../gasto_lanes) e no cwd
+    # (teste que copia só o cfg para um HOME falso e roda a partir do repo).
+    candidatos = (
+        aqui / "config.py",
+        aqui.parent / "gasto_lanes" / "config.py",
+        Path.cwd() / "gasto_lanes" / "config.py",
+    )
+    for candidato in candidatos:
+        if not candidato.is_file():
+            continue
+        nome = "tuttidash_gasto_config"
+        spec = importlib.util.spec_from_file_location(nome, candidato)
+        if spec is None or spec.loader is None:
+            continue
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[nome] = mod
+        spec.loader.exec_module(mod)
+        if hasattr(mod, "arquivo_config"):
+            _LIB = mod
+            return mod
+    raise ImportError("gasto_lanes/config.py")
+
+
 def arquivo():
-    e = os.environ.get("TRANSCENTIA_GASTO_CONFIG")
-    if e:
-        return Path(os.path.expanduser(e))
-    for p in (NOVO, LANEKEEPER, INTERMEDIO, LEGADO):
-        if p.exists():
-            return p
-    return None
+    return _lib().arquivo_config()
 
 
 def carregar():
