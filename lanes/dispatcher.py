@@ -121,8 +121,12 @@ GROK_TOOLS = ["run_terminal_command", "read_file", "search_replace", "write", "l
 # dontAsk: o que não está no allow não roda. acceptEdits aprovava edição em
 # qualquer caminho (FRA-598).
 MODO_PERMISSAO = "dontAsk"
-# Perfil do Grok (`--sandbox lane`). `strict` lê só o worktree + sistema +
-# ~/.grok; o deny tapa o que o strict ainda deixaria executar.
+# Perfil do Grok (`--sandbox lane`). `strict` lê o worktree, o sistema e
+# ~/.grok. O deny tapa ssh, gh, transcentia e o binário security. Não nega
+# ~/.grok/auth.json: o processo precisa dele para autenticar. O token fica
+# fora do agente pelo deny Read/Grep/Edit/Write de **/.grok/** (o `~` numa
+# regra de permissão casa o caractere, não a home) e pelos comandos sort,
+# git commit -F/--file e git diff --no-index.
 PERFIL_SANDBOX = "lane"
 PERFIL_SANDBOX_TOML = """\
 [profiles.lane]
@@ -678,8 +682,8 @@ def escrita_negada(caminho: str, permissoes: Optional[dict] = None) -> bool:
 
 _WRAPPERS_BASH = {"env", "timeout", "nice", "ionice", "chrt", "stdbuf"}
 # Comandos que o Grok trata como só-leitura e rodaria até no dontAsk, se nenhum
-# deny pegar (doc 22, "Read-Only Shell Commands"). cat/head/tail/grep estão no
-# deny da lane justamente por isso.
+# deny pegar (doc 22, "Read-Only Shell Commands"). cat/head/tail/grep/sort estão
+# no deny da lane justamente por isso. O deny ganha desta lista.
 _SO_LEITURA = {
     "ls", "cat", "pwd", "date", "whoami", "hostname", "uptime", "ps",
     "head", "tail", "wc", "sort", "uniq", "tr", "cut",
@@ -745,23 +749,28 @@ def _sem_involucro(segmento: str) -> str:
 
 
 def _bash_casa(padrao: str, comando: str) -> bool:
-    """`Bash(foo:*)` é prefixo `foo` com fronteira de palavra. Um token só também
-    casa o basename (`/usr/bin/security` ≡ `security`)."""
+    """Mesma regra de prefixo do CLI.
+
+    `Bash(foo:*)` é prefixo cru, sem fronteira: `git diff:*` casa `git difftool`.
+    `Bash(foo *)` exige o espaço, ou o comando igual a `foo`: `git diff *` casa
+    `git diff` e `git diff --stat`, não `git difftool`. Um token só no `:*`
+    também casa o basename (`/usr/bin/security` ≡ `security`)."""
     cmd = comando.strip()
     if not cmd:
         return False
     if padrao.endswith(":*"):
         prefixo = padrao[:-2]
-        if cmd.startswith(prefixo) and (len(cmd) == len(prefixo) or cmd[len(prefixo)] in " \t"):
+        if cmd.startswith(prefixo):
             return True
         if " " not in prefixo.strip():
             primeiro = cmd.split()[0]
             if primeiro.rsplit("/", 1)[-1] == prefixo.strip():
                 return True
         return False
-    if cmd.startswith(padrao) and (len(cmd) == len(padrao) or cmd[len(padrao)] in " \t"):
-        return True
-    return False
+    if padrao.endswith(" *"):
+        prefixo = padrao[:-2]
+        return cmd == prefixo or cmd.startswith(prefixo + " ") or cmd.startswith(prefixo + "\t")
+    return cmd.startswith(padrao) and (len(cmd) == len(padrao) or cmd[len(padrao)] in " \t")
 
 
 def _regra_bash_casa(regras: list, comando: str) -> bool:
