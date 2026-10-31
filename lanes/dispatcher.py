@@ -1027,9 +1027,12 @@ def _ps_processo(pid: int) -> Optional[dict]:
     if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
         return None
     try:
+        # `lstart` é `%c`: o número de campos muda com o locale e a foto zera.
+        # C (e pt_BR) fecha em 5. O `ps` roda em C para a leitura não depender do idioma.
         out = subprocess.run(
             ["/bin/ps", "-p", str(pid), "-o", "uid=", "-o", "lstart=", "-o", "command="],
             capture_output=True, text=True, timeout=5,
+            env=dict(os.environ, LC_ALL="C", LANG="C", LC_TIME="C"),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -1037,7 +1040,7 @@ def _ps_processo(pid: int) -> Optional[dict]:
     if out.returncode != 0 or not linha:
         return None
     partes = linha.split()
-    # uid, lstart (5 tokens: dia mês número mês hora ano) e o command.
+    # uid, lstart em C (5 tokens: dia mês número mês hora ano) e o command.
     if len(partes) < 7:
         return None
     try:
@@ -1087,6 +1090,26 @@ def arquivo_prova_proc(wt: Path) -> Path:
     return STATE_DIR / "proof-proc" / f"{chave}.json"
 
 
+_FRONTEIRA_PATH = set("/'\" \t\n;|&<>()`")
+
+
+def _no_comando_com_fronteira(command: str, caminho: str) -> bool:
+    """`caminho` aparece no command e não é prefixo de outro componente (`fra-1` em `fra-10`)."""
+    if not caminho:
+        return False
+    inicio = 0
+    while True:
+        i = command.find(caminho, inicio)
+        if i < 0:
+            return False
+        fim = i + len(caminho)
+        antes = i == 0 or command[i - 1] in _FRONTEIRA_PATH
+        depois = fim == len(command) or command[fim] in _FRONTEIRA_PATH
+        if antes and depois:
+            return True
+        inicio = i + 1
+
+
 def comando_e_prova(wt: Path, command: str) -> bool:
     """O process group da prova é o `/bin/bash` que o dispatcher lançou neste worktree."""
     if not command or command.split()[0] != "/bin/bash":
@@ -1095,7 +1118,7 @@ def comando_e_prova(wt: Path, command: str) -> bool:
         texto = str(Path(wt).resolve())
     except (OSError, RuntimeError):
         texto = str(wt)
-    if str(wt) not in command and texto not in command:
+    if not _no_comando_com_fronteira(command, str(wt)) and not _no_comando_com_fronteira(command, texto):
         return False
     return ".lane/proof.log" in command
 
@@ -2517,9 +2540,10 @@ def start_proof(wt: Path, suites: list[str]) -> None:
     """Roda o comando de prova em segundo plano, fora do terminal do agente.
 
     Grava .lane/proof.log e, ao final, .lane/proof_exit (0 = verde). O pid fica
-    em .lane/proof_pid: o processo é líder do grupo (`start_new_session`), e
-    `matar_prova` mata o grupo inteiro. O xcodebuild filho morre junto e solta
-    o build lock.
+    em .lane/proof_pid e a foto (dono, início, command) fora do worktree. Quem
+    decide se a prova vive é a foto; o arquivo do worktree não manda. O processo
+    é líder do grupo (`start_new_session`), e `matar_prova` mata o grupo inteiro.
+    O xcodebuild filho morre junto e solta o build lock.
     """
     lane_dir = wt / ".lane"
     lane_dir.mkdir(exist_ok=True)
@@ -2618,16 +2642,37 @@ def matar_prova(wt: Path) -> None:
         pass
 
 
+def _foto_da_prova(lane_dir: Path) -> tuple[Optional[dict], Optional[int]]:
+    """Foto em `STATE_DIR` e o pid dela. `.lane/proof_pid` divergente é ignorado."""
+    foto = _ler_foto(arquivo_prova_proc(lane_dir.parent))
+    pid = foto.get("pid") if foto else None
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
+        return None, None
+    pid_arquivo = ler_proof_pid(lane_dir)
+    if pid_arquivo is not None and pid_arquivo != pid:
+        log(f"prova: proof_pid {pid_arquivo} não é o da foto ({pid}); ignoro o arquivo")
+    return foto, pid
+
+
 def decidir_prova_morta(lane_dir: Path) -> str:
-    """'viva', 'refazer' (uma única vez) ou 'esgotou'. Sem pid, segue como viva."""
+    """'viva', 'refazer' (uma única vez) ou 'esgotou'.
+
+    O pid é o da foto fora do worktree. Sem foto, segue como viva: o arquivo
+    `.lane/proof_pid` não decide. `os.kill` e `waitpid` só nesse pid, e só
+    quando `pid_autorizado` confirma o processo. Ausente no `ps`, a prova morreu.
+    """
+    wt = lane_dir.parent
+    foto, pid = _foto_da_prova(lane_dir)
+    autorizada = bool(
+        foto is not None and pid is not None
+        and pid_autorizado(pid, foto, lambda comando: comando_e_prova(wt, comando))
+    )
     if (lane_dir / "proof_exit").exists():
         # A prova acabou: colhe o zumbi do bash para não vazar um por card.
-        pid = ler_proof_pid(lane_dir)
-        if pid:
+        if autorizada and pid is not None:
             prova_viva(pid)
         return "viva"
-    pid = ler_proof_pid(lane_dir)
-    if pid is None or prova_viva(pid):
+    if pid is None or (autorizada and prova_viva(pid)):
         return "viva"
     if (lane_dir / "proof_morta").exists():
         return "esgotou"
@@ -2653,6 +2698,9 @@ def acompanhar_prova(st: dict, wt: Path, suites: list[str]) -> str:
         return "stop"
     decisao = decidir_prova_morta(lane_dir)
     if decisao == "refazer":
+        # Mata com a foto antiga ainda no disco. `start_proof` troca o registro;
+        # sem isto o grupo que a foto autorizava fica sem sinal e segura o lock.
+        matar_prova(wt)
         (lane_dir / "proof_exit").unlink(missing_ok=True)
         (lane_dir / "proof.log").unlink(missing_ok=True)
         log(f"lane:{st['lane']} {st['card']}: prova morreu sem terminar; refaz uma vez")

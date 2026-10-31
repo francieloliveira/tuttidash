@@ -49,7 +49,7 @@ class EstadoLaneJson(unittest.TestCase):
             "issue_id": "issue-600",
             "title": "t",
             "url": "u",
-            "branch": "francieltechnix/fra-600-seguranca",
+            "branch": "lane/fra-600-seguranca",
             "worktree": str(self.wt),
             "base": self.base,
             "effort": "medio",
@@ -267,6 +267,64 @@ class EstadoLaneJson(unittest.TestCase):
         self.assertTrue(d.encerrar_caffeinate(foto))
         proc.wait(timeout=5)
         self.assertFalse(d.prova_viva(proc.pid))
+
+    def test_comando_da_prova_exige_fronteira_de_path(self):
+        curto = self.wts / "fra-1"
+        longo = self.wts / "fra-10"
+        cmd_longo = f"/bin/bash -c cd {longo} && true > .lane/proof.log"
+        self.assertFalse(d.comando_e_prova(curto, cmd_longo))
+        self.assertTrue(d.comando_e_prova(longo, cmd_longo))
+        cmd_curto = f"/bin/bash -c cd {shlex.quote(str(curto))} && true > .lane/proof.log"
+        self.assertTrue(d.comando_e_prova(curto, cmd_curto))
+        citado = "/bin/bash -c cd '/tmp/work trees/fra-1' && true > .lane/proof.log"
+        self.assertTrue(d.comando_e_prova(Path("/tmp/work trees/fra-1"), citado))
+        self.assertFalse(d.comando_e_prova(Path("/tmp/work trees/fra-10"), citado))
+
+    def test_proof_pid_morto_nao_apaga_a_foto_nem_comeca_outra(self):
+        bash_cmd = f"cd {shlex.quote(str(self.wt))} && sleep 60 > .lane/proof.log 2>&1"
+        bash = self._vigiar(subprocess.Popen(
+            ["/bin/bash", "-c", bash_cmd], cwd=self.wt, start_new_session=True,
+        ))
+        self.assertIsNotNone(d.registrar_prova(self.wt, bash.pid))
+        morto = subprocess.Popen(["sleep", "0"])
+        morto.wait(timeout=5)
+        (self.wt / ".lane" / "proof_pid").write_text(str(morto.pid), encoding="utf-8")
+        (self.wt / ".lane" / "proof_started").write_text(str(time.time()), encoding="utf-8")
+        st = {"lane": "claude", "card": "FRA-600"}
+        with mock.patch.object(d, "start_proof") as start:
+            self.assertEqual(d.acompanhar_prova(st, self.wt, ["FooTests"]), "rodando")
+        start.assert_not_called()
+        self.assertTrue(d.prova_viva(bash.pid))
+        foto = json.loads(d.arquivo_prova_proc(self.wt).read_text(encoding="utf-8"))
+        self.assertEqual(foto["pid"], bash.pid)
+        self.assertIn("ignoro o arquivo", d.LOG_FILE.read_text(encoding="utf-8"))
+
+    def test_refazer_mata_antes_de_trocar_a_foto(self):
+        bash_cmd = f"cd {shlex.quote(str(self.wt))} && sleep 60 > .lane/proof.log 2>&1"
+        bash = self._vigiar(subprocess.Popen(
+            ["/bin/bash", "-c", bash_cmd], cwd=self.wt, start_new_session=True,
+        ))
+        self.assertIsNotNone(d.registrar_prova(self.wt, bash.pid))
+        os.killpg(bash.pid, signal.SIGKILL)
+        bash.wait(timeout=5)
+        (self.wt / ".lane" / "proof_pid").write_text(str(bash.pid), encoding="utf-8")
+        (self.wt / ".lane" / "proof_started").write_text(str(time.time()), encoding="utf-8")
+        ordem = []
+        original = d.matar_prova
+
+        def mata(wt):
+            ordem.append("matar")
+            self.assertTrue(d.arquivo_prova_proc(wt).is_file())
+            return original(wt)
+
+        def comeca(wt, suites):
+            ordem.append("start")
+
+        st = {"lane": "claude", "card": "FRA-600"}
+        with mock.patch.object(d, "matar_prova", side_effect=mata), \
+                mock.patch.object(d, "start_proof", side_effect=comeca):
+            self.assertEqual(d.acompanhar_prova(st, self.wt, ["FooTests"]), "refeita")
+        self.assertEqual(ordem, ["matar", "start"])
 
 
 if __name__ == "__main__":

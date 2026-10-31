@@ -1436,11 +1436,21 @@ class ProvaPresa(unittest.TestCase):
 
     def test_prova_morta_refeita_uma_vez(self):
         wt = _lane_dir(self)
+        lane = wt / ".lane"
+        # Sem foto, o pid morto escrito no worktree não decide a prova.
         morto = subprocess.Popen(["sleep", "0"])
         morto.wait(timeout=5)
-        lane = wt / ".lane"
         (lane / "proof_pid").write_text(str(morto.pid), encoding="utf-8")
         (lane / "proof_started").write_text(str(time.time()), encoding="utf-8")
+        self.assertEqual(d.decidir_prova_morta(lane), "viva")
+        self.assertFalse((lane / "proof_morta").exists())
+        bash = f"cd {shlex.quote(str(wt))} && sleep 30 > .lane/proof.log 2>&1"
+        proc = subprocess.Popen(["/bin/bash", "-c", bash], cwd=wt, start_new_session=True)
+        self.procs.append(proc)
+        self.assertIsNotNone(d.registrar_prova(wt, proc.pid))
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=5)
+        (lane / "proof_pid").write_text(str(proc.pid), encoding="utf-8")
         self.assertEqual(d.decidir_prova_morta(lane), "refazer")
         self.assertTrue((lane / "proof_morta").exists())
         self.assertEqual(d.decidir_prova_morta(lane), "esgotou")

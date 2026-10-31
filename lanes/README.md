@@ -24,11 +24,23 @@ sob o diretório de logs. Estado que falha vai para o log. O dispatcher não cha
 
 `proof_pid` e `caffeinate.pid` só recebem sinal se o processo ainda é o que o
 dispatcher gerou: mesmo dono, mesmo início e o command esperado (o bash da prova
-naquele worktree, ou `/usr/bin/caffeinate -i -s -t 150`).
+naquele worktree, ou `/usr/bin/caffeinate -i -s -t 150`). O pid que decide se a
+prova vive é a foto em `STATE_DIR/proof-proc/`, fora do worktree. Se
+`.lane/proof_pid` divergir, o arquivo é ignorado. `os.kill` e `waitpid` só no
+pid da foto, e só com dono, início e command conferidos. Processo ausente no
+`ps` conta como prova morta; no refazer, o dispatcher mata o grupo enquanto a
+foto antiga ainda autoriza o processo, e só então começa a prova de novo.
 
 Isto é consistência, não barreira. O mesmo usuário do macOS ainda pode forjar o
-JSON e o `claim-<lane>.json`: os dois estão no home dele. A garantia real é a
+JSON, o `claim-<lane>.json`, a foto em `STATE_DIR/proof-proc/` e o
+`caffeinate.pid`: os quatro estão no home dele. A garantia real é a
 fase 5 (estado fora do alcance do agente).
+
+Lane já em andamento sem `claim-<lane>.json` cai em "sem claim gravado". O
+`watch` volta antes do timeout, da parada manual e do `finalize`, e a sessão
+tmux segue. O card não entra na reserva, então outra lane pode assumir o mesmo
+card; a lane em si continua ocupada enquanto o `lane-<lane>.json` existir. Quem
+sobe o dispatcher encerra essa lane ou grava o claim à mão antes.
 
 ## Instalar a cópia viva
 
