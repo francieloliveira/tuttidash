@@ -5,7 +5,10 @@
 # formatada, grava .lane/exit_code e espera o dispatcher fechar o card.
 set -uo pipefail
 LANE="$1"; WT="$2"; CARD="$3"; LOG="$4"
-HERE="$HOME/.transcentia/lanes"
+# Este script e o lane_view.py vêm do mesmo diretório (repo ou bundle assinado).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# zdotdir é estado. Escrever dentro do .app quebraria o codesign.
+STATE_DIR="$HOME/.transcentia/lanes"
 # O CLI dsh vem dentro do app DeepSeek Harness; instalação global (npm) também vale.
 DSH_BIN="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin"
 export LANE PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$DSH_BIN:$PATH"
@@ -19,14 +22,14 @@ echo
 # FRA-269: shell limpo. O agente e os comandos que ele abre não leem o .zshrc/.bashrc
 # do usuário (um alias `cat`→`bat` quebrado derrubou o FRA-13). ZDOTDIR vazio impede
 # o zsh de ler ~/.zshrc; env -i deixa só o necessário; PATH explícito.
-CLEAN_ZDOTDIR="$HERE/zdotdir-limpo"
+CLEAN_ZDOTDIR="$STATE_DIR/zdotdir-limpo"
 mkdir -p "$CLEAN_ZDOTDIR"
 AGENT_CMD="$(cat .lane/agent_cmd)"
 env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
   TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-pt_BR.UTF-8}" TERM="${TERM:-xterm-256color}" \
   PATH="$PATH" SHELL=/bin/bash ZDOTDIR="$CLEAN_ZDOTDIR" LANE="$LANE" \
   DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}" \
-  /bin/bash --noprofile --norc -c "$AGENT_CMD" < .lane/prompt.md 2>&1 | tee "$LOG" | /usr/bin/python3 "$HERE/lane_view.py"
+  /bin/bash --noprofile --norc -c "$AGENT_CMD" < .lane/prompt.md 2>&1 | tee "$LOG" | /usr/bin/python3 "$SCRIPT_DIR/lane_view.py"
 rc=${PIPESTATUS[0]}
 # Não sobrescreve: se o dispatcher parou a lane, o motivo dele já está lá.
 [ -f .lane/exit_code ] || echo "$rc" > .lane/exit_code

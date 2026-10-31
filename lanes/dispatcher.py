@@ -13,9 +13,11 @@ Divisão de trabalho (E3):
               Não fala com Linear nem GitHub.
 
 Fonte da verdade: este repo (`tuttidash`), `lanes/`.
-Cópia instalada: ~/.transcentia/lanes/ (tools/install.sh neste repo). O repo
-do app é só o que a lane edita — qual é, e a prova de cada um, sai do cadastro
-`projetos` da config (`gasto_lanes/projetos.py`), lido a cada ciclo.
+O launchd executa a cópia no bundle assinado
+(`TuttiDash.app/Contents/Resources/controle/lanes/`), não `~/.transcentia`.
+O estado (enabled, heartbeat, lane-*.json) continua em `~/.transcentia/lanes`.
+O repo do app é só o que a lane edita — qual é, e a prova de cada um, sai do
+cadastro `projetos` da config (`gasto_lanes/projetos.py`), lido a cada ciclo.
 """
 from __future__ import annotations
 
@@ -38,17 +40,17 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# A pasta deste arquivo entra primeiro: lanes_window.py sai daqui (repo ou
+# bundle), nunca de ~/.transcentia. Os módulos (catalogo, fila, …) ainda podem
+# estar na cópia instalada até o FRA-615; essa pasta entra depois, não antes.
+_AQUI = Path(__file__).resolve().parent
+sys.path.insert(0, str(_AQUI))
 import lanes_window  # noqa: E402  janela única das lanes
 
-# Catálogo de agentes: `catalogo.py` lê os manifests em `agents.d/` (mesmos que o
-# Swift). O dispatcher é instalado sozinho em ~/.transcentia/lanes, então o
-# `catalogo.py` vai junto (tools/install.sh copia). Adicionar um agente novo =
-# 1 arquivo JSON em `agents.d/`, sem tocar neste arquivo.
-_AQUI = Path(__file__).resolve().parent
-for _cand in (_AQUI, _AQUI.parent / "gasto_lanes"):   # 1º: instalado; 2º: dev no repo
+for _cand in (_AQUI, _AQUI.parent / "gasto_lanes", Path.home() / ".transcentia" / "lanes"):
     if (_cand / "catalogo.py").is_file():
-        sys.path.insert(0, str(_cand))
+        if _cand != _AQUI and str(_cand) not in sys.path:
+            sys.path.append(str(_cand))
         break
 try:
     import catalogo  # noqa: E402
@@ -275,7 +277,23 @@ PROTECTED_GLOBS = projetos.PROTEGIDOS_PADRAO
 
 HOME = Path.home()
 STATE_DIR = HOME / ".transcentia" / "lanes"
-LANES_COMMAND = HOME / ".transcentia" / "tools" / "lanes.command"
+
+
+def caminho_runner() -> Path:
+    """`run_lane.sh` ao lado deste arquivo (repo ou bundle). Não usa ~/.transcentia."""
+    return _AQUI / "run_lane.sh"
+
+
+def caminho_comando_janela() -> Path:
+    """`lanes.command` do bundle ou do repo. A cópia em ~/.transcentia só entra
+    se o arquivo ao lado não existir (instalação antiga da ferramenta)."""
+    ao_lado = _AQUI.parent / "tools" / "lanes.command"
+    if ao_lado.is_file() and ".transcentia" not in str(ao_lado):
+        return ao_lado
+    return HOME / ".transcentia" / "tools" / "lanes.command"
+
+
+LANES_COMMAND = caminho_comando_janela()
 APP_PID = STATE_DIR / "app.pid"
 VIEWER_FILE = STATE_DIR / "viewer-id"
 
@@ -1327,7 +1345,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     session = st["session"]
     if tmux_alive(session):
         sh(["tmux", "kill-session", "-t", session], check=False)
-    runner = STATE_DIR / "run_lane.sh"
+    runner = caminho_runner()
     sh(["tmux", "new-session", "-d", "-s", session, "-c", str(wt),
         f"bash {shlex.quote(str(runner))} {lane} {shlex.quote(str(wt))} {ident} {shlex.quote(str(lane_log))}"])
     # Janela única 'lanes' (claude em cima, grok embaixo). Fechar não para a lane.

@@ -49,6 +49,20 @@ else
   echo "AVISO: agents.d/ não encontrado em $AGENTS_D (o app cai no registry embutido)"
 fi
 
+echo "==> plano de controle (scripts no bundle assinado, FRA-613)"
+REPO="$(cd "$HERE/../.." && pwd)"
+CTRL="$APP/Contents/Resources/controle"
+mkdir -p "$CTRL/lanes" "$CTRL/bots" "$CTRL/tools"
+install -m 755 "$REPO/lanes/dispatcher.py" "$CTRL/lanes/dispatcher.py"
+install -m 755 "$REPO/lanes/lane_view.py" "$CTRL/lanes/lane_view.py"
+install -m 755 "$REPO/lanes/lanes_window.py" "$CTRL/lanes/lanes_window.py"
+install -m 755 "$REPO/lanes/lanes_ctl.py" "$CTRL/lanes/lanes_ctl.py"
+install -m 755 "$REPO/lanes/run_lane.sh" "$CTRL/lanes/run_lane.sh"
+install -m 755 "$REPO/bots/watch.py" "$CTRL/bots/watch.py"
+install -m 755 "$REPO/tools/bots-chave" "$CTRL/tools/bots-chave"
+install -m 755 "$REPO/tools/lanes.command" "$CTRL/tools/lanes.command"
+install -m 644 "$REPO/tools/script-controle.sh" "$CTRL/tools/script-controle.sh"
+
 echo "==> textos (Localizable.xcstrings -> en/pt-BR)"
 xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$APP/Contents/Resources"
 # FRA-524: o app é só em pt-BR. Com o en.lproj no bundle, um Mac em inglês misturava os dois idiomas.

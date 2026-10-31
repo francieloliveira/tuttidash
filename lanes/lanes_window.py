@@ -20,9 +20,12 @@ SESSION = "lanes"
 # fonte do dispatcher e do vigia): a lane entra quando está habilitada no arquivo
 # `enabled` (mesmo que o dispatcher lê); sem o arquivo, as duas primeiras.
 _AQUI = Path(__file__).resolve().parent
-for _cand in (_AQUI, _AQUI.parent / "gasto_lanes"):   # 1º: instalado; 2º: dev no repo
+# Pasta do script primeiro. Módulos em ~/.transcentia entram depois (FRA-615 tira isso).
+sys.path.insert(0, str(_AQUI))
+for _cand in (_AQUI, _AQUI.parent / "gasto_lanes", Path.home() / ".transcentia" / "lanes"):
     if (_cand / "catalogo.py").is_file():
-        sys.path.insert(0, str(_cand))
+        if _cand != _AQUI and str(_cand) not in sys.path:
+            sys.path.append(str(_cand))
         break
 import catalogo  # noqa: E402
 
@@ -31,16 +34,31 @@ TMUX = shutil.which("tmux") or "/opt/homebrew/bin/tmux"
 HERE = Path(__file__).resolve()
 
 
+def diretorio_estado() -> Path:
+    """`enabled` e o marcador da janela são estado. Dentro do .app não se escreve
+    (o codesign quebraria). `enabled` ao lado do script só vale fora do bundle
+    (teste ou cópia antiga que ainda mora junto do estado)."""
+    ao_lado = HERE.parent
+    if ".app/Contents/" in str(ao_lado):
+        return Path.home() / ".transcentia" / "lanes"
+    if (ao_lado / "enabled").is_file():
+        return ao_lado
+    return Path.home() / ".transcentia" / "lanes"
+
+
 def _enabled() -> set[str]:
     try:
-        return {l.strip() for l in (HERE.parent / "enabled").read_text().split() if l.strip()}
+        return {l.strip() for l in (diretorio_estado() / "enabled").read_text().split() if l.strip()}
     except OSError:
         return set(LANES_ORDEM[:2])
 
 
 LANES = tuple(l for l in LANES_ORDEM if l in _enabled()) or LANES_ORDEM[:2]
-OPEN_GUARD = HERE.parent / "lanes-window.opened"   # evita abrir duas janelas seguidas
 OPEN_GUARD_SECONDS = 90
+
+
+def _marca_janela() -> Path:
+    return diretorio_estado() / "lanes-window.opened"
 TEMA = Path.home() / ".transcentia" / "tools" / "tema.tmux"
 BOUNDS = "{40, 60, 1040, 760}"     # ~1000x700, nunca tela cheia
 
@@ -157,9 +175,13 @@ def open_window_once(command_path: Path) -> None:
     """Abre UMA janela do Terminal com lanes.command se nenhuma estiver anexada."""
     if window_open():
         return
-    if OPEN_GUARD.exists() and time.time() - OPEN_GUARD.stat().st_mtime < OPEN_GUARD_SECONDS:
+    marca = _marca_janela()
+    try:
+        if marca.exists() and time.time() - marca.stat().st_mtime < OPEN_GUARD_SECONDS:
+            return
+        marca.write_text(str(time.time()))
+    except OSError:
         return
-    OPEN_GUARD.write_text(str(time.time()))
     script = f'''
 tell application "Terminal"
     set t to do script "bash {command_path}"

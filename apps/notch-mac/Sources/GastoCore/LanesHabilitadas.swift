@@ -13,10 +13,12 @@ public enum LanesHabilitadas {
         stateDir.appendingPathComponent("enabled")
     }
 
-    /// Verifica se o dispatcher existe no Mac (pasta ~/.transcentia/lanes/dispatcher.py).
+    /// Verifica se o dispatcher está no bundle assinado ou, no teste, ao lado do estado.
+    /// A cópia em `stateDir` não é o que o launchd executa (FRA-613).
     public static func dispatcherExiste(stateDir: URL) -> Bool {
-        let dispatcher = stateDir.appendingPathComponent("dispatcher.py")
-        return FileManager.default.fileExists(atPath: dispatcher.path)
+        if ScriptsDoBundle.url("lanes/dispatcher.py") != nil { return true }
+        let legado = stateDir.appendingPathComponent("dispatcher.py")
+        return FileManager.default.fileExists(atPath: legado.path)
     }
 
     public static func ler(stateDir: URL) -> Set<String> {

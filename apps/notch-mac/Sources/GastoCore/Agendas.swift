@@ -273,11 +273,39 @@ public final class GerenciadorAgendas {
         }
     }
 
+    /// Scripts do plano de controle que o launchd pode executar fora do home:
+    /// só a cópia em /Applications/TuttiDash.app. `~/.transcentia` não entra.
+    static let scriptsDoControle: Set<String> = [
+        "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/dispatcher.py",
+        "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/lane_view.py",
+        "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/lanes_window.py",
+        "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/lanes_ctl.py",
+        "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/run_lane.sh",
+        "/Applications/TuttiDash.app/Contents/Resources/controle/bots/watch.py",
+        "/Applications/TuttiDash.app/Contents/Resources/controle/tools/bots-chave",
+    ]
+
+    static func scriptDoBundle(_ bruto: String) -> String? {
+        guard bruto.hasPrefix("/Applications/TuttiDash.app/Contents/Resources/controle/") else { return nil }
+        guard !bruto.contains(".transcentia"), !bruto.contains(".."), !temMetaShell(bruto) else { return nil }
+        let pad = URL(fileURLWithPath: bruto).standardizedFileURL.path
+        guard scriptsDoControle.contains(pad) else { return nil }
+        return pad
+    }
+
+    /// Script do job. Recusa `~/.transcentia` (cópia gravável). Aceita o bundle
+    /// em /Applications ou um caminho sob o home que não seja essa cópia.
+    func expandirScript(_ bruto: String) -> String? {
+        if bruto.contains(".transcentia") { return nil }
+        if let bundle = Self.scriptDoBundle(bruto) { return bundle }
+        return expandirSobHome(bruto)
+    }
+
     func plano(_ t: Trabalho) throws -> Plano {
         guard Self.labelValido(t.label) else { throw ErroAgenda.labelInvalido(t.label) }
         guard Self.nomeSeguro(t.nome) else { throw ErroAgenda.nomeInvalido(t.nome) }
         guard Self.interpretadorValido(t.interpretador) else { throw ErroAgenda.interpretadorInvalido(t.interpretador) }
-        guard let script = expandirSobHome(t.script) else { throw ErroAgenda.caminhoForaDaCasa(t.script) }
+        guard let script = expandirScript(t.script) else { throw ErroAgenda.caminhoForaDaCasa(t.script) }
         guard let log = expandirSobHome(t.log) else { throw ErroAgenda.caminhoForaDaCasa(t.log) }
         // Argumentos vão no vetor do launchd, um por elemento. Não passam por shell.
         return Plano(interpretador: t.interpretador, script: script, argumentos: t.argumentos, log: log)

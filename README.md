@@ -69,7 +69,7 @@ Then configure, in the app (*Ajustes*) or in `~/Library/Application Support/Tutt
 Check what the dispatcher would do, without touching anything:
 
 ```bash
-python3 ~/.transcentia/lanes/dispatcher.py --dry-run
+python3 lanes/dispatcher.py --dry-run
 ```
 
 The app schedules the dispatcher in real mode, but it only takes cards for the lanes you enable in

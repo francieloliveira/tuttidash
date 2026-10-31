@@ -16,6 +16,8 @@ final class ModoGestaoTests: XCTestCase {
         XCTAssertEqual(g.modo, .auto)
         try g.escolher(.vigia)
         XCTAssertEqual(rodou, [g.script])
+        XCTAssertFalse(g.script.path.contains(".transcentia"))
+        XCTAssertTrue(g.script.path.hasSuffix("Contents/Resources/controle/tools/bots-chave"))
         XCTAssertEqual(ModeloAjustes(home: t.url).valorTexto(ModoForcado.chave), "vigia")
         XCTAssertEqual(GestaoLanes(modelo: ModeloAjustes(home: t.url)).modo, .vigia)
         try g.escolher(.grokbot)

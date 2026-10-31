@@ -1,10 +1,13 @@
 # Scripts das lanes (fonte canônica, FRA-374)
 
-Cópia viva: `~/.transcentia/lanes/` (é de lá que o launchd roda o dispatcher).
-Backup antes de mexer: o install abaixo guarda `.bak` automático.
+O launchd executa a cópia no bundle assinado
+(`TuttiDash.app/Contents/Resources/controle/lanes/`), gravada pelo `build.sh`
+antes do `codesign`. O estado (`enabled`, heartbeat, `lane-*.json`) continua
+em `~/.transcentia/lanes/`. Não copie estes scripts para lá: uma cópia antiga
+é legado inerte.
 
 ```
-dispatcher.py    dispatcher das lanes (60 s, launchd com.transcentia.lanes.dispatcher)
+dispatcher.py    dispatcher das lanes (60 s, launchd app.tuttidash.agente.dispatcher)
 run_lane.sh      runner de uma lane dentro da sessão tmux (lê .lane/agent_cmd)
 lanes_window.py  janela única tmux 'lanes' (um painel por lane habilitada)
 lanes_ctl.py     controles da janela
@@ -12,17 +15,18 @@ lane_view.py     formata a saída do agente no painel
 test_lanes.py    testes offline (sem Linear, sem rede): python3 lanes/test_lanes.py
 ```
 
-## Instalar a cópia viva
+## O que o launchd roda
+
+`tuttidash-agente` (dentro do `.app`) resolve o script pelo próprio executável.
+Alterar `~/.transcentia/lanes/dispatcher.py` não muda o processo. Para testar
+sem o app:
 
 ```bash
-cd ~/Developer/tuttidash
-for f in dispatcher.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py; do
-  cp ~/.transcentia/lanes/$f /tmp/lanes-$f.bak
-  cp lanes/$f ~/.transcentia/lanes/$f
-done
+python3 lanes/dispatcher.py --dry-run
 ```
 
-Nunca edite `~/.transcentia/lanes/` direto: a fonte é esta pasta.
+Nunca edite a cópia em `~/.transcentia/lanes/`: a fonte é esta pasta, e a
+cópia executada é a do bundle.
 
 ## Lane nova (ex.: opencode, FRA-374)
 

@@ -3,10 +3,13 @@
 #   tools/install.sh            instala cfg, painel (com a coluna das lanes), janela das lanes, tema,
 #                               seguidores de log com hora (carimbo, seguir-com-hora) e rodapé
 #                               com barra de progresso (rodape.py),
-#                               medir-estresse, bots-chave, lanepct-auto (+ build do lanepct),
+#                               medir-estresse, lanepct-auto (+ build do lanepct),
 #                               o catálogo de agentes (agents.d/ + catalogo.py),
-#                               vigia dos bots (watch.py, prompts, instalar.sh) e os launchd
+#                               prompts do vigia e instalar.sh, e os launchd
 #                               com.transcentia.bots.watch / .chave pelos lançadores com nome.
+#                               FRA-613: dispatcher, vigia, chave, run_lane, lane_view,
+#                               lanes_window e lanes_ctl NÃO são copiados para ~/.transcentia.
+#                               O launchd executa a cópia do TuttiDash.app assinado.
 #   tools/install.sh --sem-launchd   só copia arquivos
 # Espelho: não mexe no PAUSE (quem decide é a chave bots-chave); nunca inicia o vigia em paralelo.
 set -euo pipefail
@@ -17,6 +20,39 @@ LAUNCHERS="$HOME/Library/Application Support/AgentesLocais"
 DOMAIN="gui/$(id -u)"
 mkdir -p "$T" "$B/prompts" "$LAUNCHERS" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/TranscentIA"
 
+aviso_legado() {
+  if [ -e "$1" ]; then
+    echo "AVISO: $1 ficou como legado inerte. O launchd executa a cópia do TuttiDash.app, não esta."
+  fi
+}
+
+# Lançador com nome. O exec é o tuttidash-agente do bundle, nunca o script em ~/.transcentia.
+lancador() { # nome label papel
+  cat > "$LAUNCHERS/$1" <<EOF
+#!/bin/zsh
+# Lançador de $2 (gerado por tuttidash/tools/install.sh)
+# Executa o tuttidash-agente do bundle assinado. Não usa ~/.transcentia.
+papel=$3
+candidatos=()
+if [[ -n \${TUTTIDASH_AGENTE:-} && \${TUTTIDASH_AGENTE} != *".transcentia"* ]]; then
+  candidatos+=("\$TUTTIDASH_AGENTE")
+fi
+candidatos+=(
+  "/Applications/TuttiDash.app/Contents/MacOS/tuttidash-agente"
+  "\$HOME/Applications/TuttiDash.app/Contents/MacOS/tuttidash-agente"
+)
+for agente in "\${candidatos[@]}"; do
+  [[ "\$agente" == *".transcentia"* ]] && continue
+  if [[ -x "\$agente" ]]; then
+    exec "\$agente" "\$papel"
+  fi
+done
+echo "tuttidash: tuttidash-agente não está no bundle assinado" >&2
+exit 70
+EOF
+  chmod 755 "$LAUNCHERS/$1"
+}
+
 # O cfg acha o arquivo por gasto_lanes/config.py. A cópia fica ao lado do cfg
 # instalado (no checkout ele usa ../gasto_lanes/config.py).
 install -m 644 "$ROOT/gasto_lanes/config.py" "$T/config.py"
@@ -24,10 +60,12 @@ install -m 755 "$HERE/cfg" "$T/cfg"
 "$T/cfg" migrate
 for f in painel.command lanes.command colorir.sh carimbo.sh seguir-com-hora.sh seguir-lanes.sh \
          seguir-build.sh seguir-gestor.sh seguir-dispatcher.sh rodape.py status-lanes.sh acompanhar-testes.command medir-estresse.sh \
-         bots-chave lanepct-auto privacidade-modelos; do
+         lanepct-auto privacidade-modelos; do
   install -m 755 "$HERE/$f" "$T/$f"
 done
+install -m 644 "$HERE/script-controle.sh" "$T/script-controle.sh"
 install -m 644 "$HERE/tema.tmux" "$T/tema.tmux"
+aviso_legado "$T/bots-chave"
 
 # lanepct: fonte versionada, binário compilado aqui (Swift do Xcode).
 mkdir -p "$T/lane-pct"
@@ -37,7 +75,7 @@ if command -v swift >/dev/null; then
     || echo "AVISO: build do lanepct falhou; binário anterior mantido"
 fi
 
-install -m 700 "$ROOT/bots/watch.py" "$B/watch.py"
+aviso_legado "$B/watch.py"
 install -m 755 "$ROOT/bots/instalar.sh" "$B/instalar.sh"
 install -m 644 "$ROOT/bots/prompts/"*.md "$B/prompts/"
 
@@ -53,14 +91,13 @@ PRIVADO_PY="$ROOT/apps/notch-mac/Privado/python/gasto_privado.py"
 [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$B/gasto_privado.py"
 LANES_DIR="$HOME/.transcentia/lanes"
 if [ -d "$LANES_DIR" ]; then
-  # Só o que já está em paridade com o repo. lane_view.py tem
-  # mudança local ainda não versionada — não tocar nele aqui.
+  # Módulos continuam aqui até o FRA-615. Os scripts do plano de controle não.
   for mod in catalogo fila projetos privacidade linear_ids config; do
     install -m 644 "$ROOT/gasto_lanes/$mod.py" "$LANES_DIR/$mod.py"
   done
   [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$LANES_DIR/gasto_privado.py"
-  for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh; do
-    install -m 755 "$ROOT/lanes/$f" "$LANES_DIR/$f"
+  for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh lane_view.py; do
+    aviso_legado "$LANES_DIR/$f"
   done
   for f in "$ROOT"/lanes/lane-prompt.md "$ROOT"/lanes/lane-prompt-*.md; do
     [ -f "$f" ] || continue
@@ -70,17 +107,14 @@ fi
 mkdir -p "$HOME/.transcentia/agents.d"
 rsync -a --delete "$ROOT/agents.d/" "$HOME/.transcentia/agents.d/"
 
+# FRA-523: lançadores com nome antigo saem. Os novos apontam para o bundle.
+for velho in "TranscentIA Bots (vigia)" "TranscentIA Chave Bots"; do rm -f "$LAUNCHERS/$velho"; done
+lancador "TuttiDash Vigia" com.transcentia.bots.watch vigia
+lancador "TuttiDash Chave" com.transcentia.bots.chave chave
+lancador "TuttiDash Dispatcher" com.transcentia.lanes.dispatcher dispatcher
+
 [ "${1:-}" = "--sem-launchd" ] && { echo "arquivos instalados (sem launchd)"; exit 0; }
 
-# Nunca registrar o launchd direto no python3 (aparece como "python3" em Itens de Início):
-# cada agente tem um lançador com nome em ~/Library/Application Support/AgentesLocais/<Nome>.
-lancador(){ # nome label alvo
-  printf '#!/bin/zsh\n# Lançador de %s (gerado por tuttidash/tools/install.sh)\nexec /usr/bin/python3 %q "$@"\n' \
-    "$2" "$3" > "$LAUNCHERS/$1"; chmod 755 "$LAUNCHERS/$1"; }
-# FRA-523: lançadores com nome antigo saem (o app e este script geram os novos).
-for velho in "TranscentIA Bots (vigia)" "TranscentIA Chave Bots"; do rm -f "$LAUNCHERS/$velho"; done
-lancador "TuttiDash Vigia" com.transcentia.bots.watch "$B/watch.py"
-lancador "TuttiDash Chave" com.transcentia.bots.chave "$T/bots-chave"
 # Quando o agente já roda de dentro do TuttiDash.app (SMAppService, Labels app.tuttidash.agente.*),
 # não instala plist solto. Label antigo -> novo: bots.watch=vigia, bots.chave=chave, lanes.dispatcher=dispatcher.
 novo_label(){ case "$1" in *bots.watch) echo app.tuttidash.agente.vigia;; *bots.chave) echo app.tuttidash.agente.chave;;
