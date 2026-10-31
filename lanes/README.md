@@ -16,7 +16,7 @@ test_lanes.py    testes offline (sem Linear, sem rede): python3 lanes/test_lanes
 
 ```bash
 cd ~/Developer/tuttidash
-for f in dispatcher.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py; do
+for f in dispatcher.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py claude-settings.json; do
   cp ~/.transcentia/lanes/$f /tmp/lanes-$f.bak
   cp lanes/$f ~/.transcentia/lanes/$f
 done
@@ -84,3 +84,45 @@ estiver estourado. Chegar em In Review não zera o acumulado.
 Pedido de ajuste do revisor (`REVISOR: AJUSTES`) conta 1 tentativa, uma vez
 por id de comentário. A prioridade entre as lanes e a folga por esforço não
 mudam. O verificador do aceite do card não entra aqui.
+
+## Permissões mínimas (FRA-598)
+
+Fonte: `lanes/claude-settings.json`, ao lado do dispatcher (a cópia em
+`~/.transcentia/lanes/` é o que o `tools/install.sh` instala). Claude e Grok
+usam o mesmo allow/deny. O modo é `dontAsk`, não `acceptEdits`.
+
+O que a lane pode rodar no terminal é `git status`, `git diff`, `git add` e
+`git commit`. O allow é `Bash(git diff *)` (espaço antes do `*`): no CLI,
+`Bash(git diff:*)` é prefixo sem fronteira e também casa `git difftool`.
+`git difftool` e `git commit-tree` estão no deny. Arquivo entra pelas
+ferramentas (`Read`/`Edit`/`Write`/`Grep` em `./**`). `python3`, `cat`,
+`head`, `tail`, `sort` e `security` estão no deny, inclusive com caminho
+absoluto (`/usr/bin/security`, `/usr/bin/sort`): o basename casa a regra.
+
+`Read`/`Grep`/`Edit`/`Write` de `**/.grok/**` estão no deny. Numa regra de
+permissão o `~` casa o caractere, não a home. `git commit -F`,
+`git commit --file` e `git diff --no-index` estão no deny: leem um arquivo
+qualquer e o texto entra no commit que o dispatcher publica.
+
+Rede e `security` não ficam só na regex:
+
+- Claude: `sandbox.enabled`, `failIfUnavailable`, `allowUnsandboxedCommands`
+  false, `network.allowedDomains` vazio e `strictAllowlist`. `denyRead` cobre
+  `~/.ssh`, `~/.config/gh`, `~/.transcentia`, `~/.grok` e `/usr/bin/security`.
+  `denyWrite` cobre `.git/config` e `.git/hooks` (o pushurl e o hook).
+- Grok: `--sandbox lane`. O claim grava `[profiles.lane]` em
+  `~/.grok/sandbox.toml` (`extends = strict`, `restrict_network`, deny desses
+  caminhos) sem apagar os outros perfis. Sem o perfil o CLI recusa subir. O
+  deny do TOML não inclui `~/.grok/auth.json`: o processo precisa desse
+  arquivo para autenticar. Quem tampa o token para o agente é o deny das
+  ferramentas e dos comandos acima.
+
+Residual, de propósito: isso não substitui o usuário separado nem o sandbox da
+fase 5. No macOS o próprio Grok documenta que `restrict_network` não corta a
+rede dos processos filhos (no Linux corta). O processo continua o do usuário,
+então um bug do CLI ainda enxerga o que o usuário enxerga. O matcher em
+Python não sobe o processo. `cut`, `uniq`, `tr` e `ps` seguem na lista de
+só-leitura do CLI. OpenCode, Codex e DeepSeek não recebem este teto, e o
+allow do Claude ainda tem `mcp__transcentia-docs`. O `run_lane.sh` exporta
+`DEEPSEEK_API_KEY`. O follow-up desse residual é a FRA-587 (follow-ups das
+lanes). Não é outro card.

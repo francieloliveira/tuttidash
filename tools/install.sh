@@ -66,6 +66,9 @@ if [ -d "$LANES_DIR" ]; then
     [ -f "$f" ] || continue
     install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
   done
+  if [ -f "$ROOT/lanes/claude-settings.json" ]; then
+    install -m 644 "$ROOT/lanes/claude-settings.json" "$LANES_DIR/claude-settings.json"
+  fi
 fi
 mkdir -p "$HOME/.transcentia/agents.d"
 rsync -a --delete "$ROOT/agents.d/" "$HOME/.transcentia/agents.d/"
