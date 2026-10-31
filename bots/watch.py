@@ -156,6 +156,7 @@ for _cand in (_AQUI, _AQUI.parent / "gasto_lanes"):   # 1º: instalado; 2º: dev
         break
 try:
     import catalogo  # noqa: E402
+    import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
 except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
@@ -1714,39 +1715,18 @@ def lanes_ativas() -> set[str]:
 
 
 def contexto_card(ci: dict) -> dict:
-    """O que o card pede, sem escolher lane ainda."""
-    nodes = ci.get("labels", {}).get("nodes", [])
-    lanes = [n["name"] for n in nodes if (n.get("parent") or {}).get("name") == "lane"]
-    esforcos = [n["name"] for n in nodes if (n.get("parent") or {}).get("name") == "esforco"]
-    riscos = [n["name"] for n in nodes if n["name"].startswith("risco:")]
-    return {
-        "lane": lanes[0] if len(lanes) == 1 else None,
-        "lane_invalida": len(lanes) > 1,
-        "effort": esforcos[0] if len(esforcos) == 1 else None,
-        "effort_invalido": len(esforcos) > 1,
-        "risk": riscos[0] if riscos else "",
-        "assignee": (ci.get("assignee") or {}).get("id") or "",
-        "files": card_files(ci),
-    }
+    """Contexto do card; o vigia acrescenta os arquivos citados (para conflito)."""
+    ctx = fila.contexto_card(ci)
+    ctx["files"] = card_files(ci)
+    return ctx
 
 
 def card_em_cooldown(ci: dict, st: dict) -> bool:
-    """Card que acabou de falhar não volta no ciclo seguinte."""
-    per_card = (st.get("stops") or {}).get(ci.get("identifier") or "") or {}
-    try:
-        ultimo = float(per_card.get("ultimo") or 0)
-    except (TypeError, ValueError):
-        return False
-    return bool(ultimo and time.time() - ultimo < FAIL_COOLDOWN_S)
+    return fila.card_em_cooldown(ci, st, FAIL_COOLDOWN_S)
 
 
 def lane_em_cooldown(st: dict, lane: str) -> bool:
-    """Lane que acabou de falhar fica fora até o cooldown passar."""
-    try:
-        ultimo = float((st.get("lane_falhas") or {}).get(lane) or 0)
-    except (TypeError, ValueError):
-        return False
-    return bool(ultimo and time.time() - ultimo < LANE_FAIL_COOLDOWN_S)
+    return fila.lane_em_cooldown(st, lane, LANE_FAIL_COOLDOWN_S)
 
 
 def viewer_linear(st: dict) -> str:
@@ -1763,8 +1743,7 @@ def viewer_linear(st: dict) -> str:
 
 
 def atribuido_a_outro(ci: dict, viewer: str) -> bool:
-    assignee = (ci.get("assignee") or {}).get("id") or ""
-    return bool(assignee and viewer and assignee != viewer)
+    return fila.atribuido_a_outro(ci, viewer)
 
 
 def held_by_comments(ci: dict) -> bool:
@@ -1776,28 +1755,15 @@ def held_by_comments(ci: dict) -> bool:
 
 
 def cap_esforco(effort: str, janela: str) -> int:
-    tabela = HEADROOM_PCT_LONGA if JANELA_LONGA_RE.search(janela or "") else HEADROOM_PCT
-    return tabela.get(effort, tabela["medio"])
+    return fila.cap_esforco(effort, janela)
 
 
 def cota_ok(lane: str, effort: str, medidas: dict) -> bool:
-    medida = medidas.get(lane)
-    if not medida or medida[0] is None:
-        return False
-    try:
-        pct = float(medida[0])
-    except (TypeError, ValueError):
-        return False
-    janela = str(medida[1] if len(medida) > 1 else "")
-    return pct < cap_esforco(effort, janela)
+    return fila.cota_ok(lane, effort, medidas)
 
 
 def esforco_suportado(lane: str, effort: str) -> bool:
-    manifesto = catalogo.catalogo().get(lane) or {}
-    esforcos = {str(e).lower() for e in (manifesto.get("esforcos") or [])}
-    if not esforcos:
-        return True
-    return _EFFORT_EN.get(effort, effort).lower() in esforcos
+    return fila.esforco_suportado(lane, effort, catalogo.catalogo().get(lane) or {})
 
 
 def conflita_com_rodando(ci: dict, running_cards: set[str], issues: list[dict]) -> bool:
@@ -1810,39 +1776,32 @@ def conflita_com_rodando(ci: dict, running_cards: set[str], issues: list[dict]) 
 
 def lane_para_card(ci: dict, com_folga: set[str], medidas: dict, usados: dict,
                    running_cards: set[str], issues: list[dict]) -> Optional[str]:
-    """Primeira lane que realmente consegue rodar este card agora, ou None.
-
-    Considera lane pedida, esforço suportado pelo manifesto, cota para o esforço,
-    vaga da lane e conflito com card que já está rodando."""
-    ctx = contexto_card(ci)
-    if ctx["lane_invalida"] or ctx["effort_invalido"] or held_by_comments(ci):
+    """Lane que consegue rodar o card agora; freios de comentário e conflito ficam aqui."""
+    if held_by_comments(ci) or conflita_com_rodando(ci, running_cards, issues):
         return None
-    if conflita_com_rodando(ci, running_cards, issues):
-        return None
-    effort = ctx["effort"] or "medio"
-    candidatas = [ctx["lane"]] if ctx["lane"] else sorted(com_folga)
-    validas = []
-    for lane in candidatas:
-        if lane not in com_folga:
-            continue
-        if not esforco_suportado(lane, effort):
-            continue
-        if not cota_ok(lane, effort, medidas):
-            continue
-        if usados.get(lane, 0) >= MAX_PER_LANE:
-            continue
-        validas.append(lane)
-    if not validas:
-        return None
-    if ctx["risk"] == "risco:alto" and not ctx["lane"]:
-        # Preferência, não bloqueio: risco alto tenta Claude/Grok primeiro; se não
-        # houver nenhum, ainda aceita a lane mais livre para não travar a fila.
-        validas.sort(key=lambda l: (0 if l in LANES_RISCO_ALTO else 1, usados.get(l, 0), l))
-        return validas[0]
-    return min(validas, key=lambda l: (usados.get(l, 0), l))
-
+    return fila.escolher_lane(
+        ci, com_folga, medidas, usados, MAX_PER_LANE,
+        lambda lane: catalogo.catalogo().get(lane) or {},
+        risco_alto=LANES_RISCO_ALTO,
+    )
 
 def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
+    """Serializa a promoção com o dispatcher (mesmo fila.lock do outro processo)."""
+    LANES_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = LANES_DIR / "fila.lock"
+    with open(lock_path, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            panel("fila: dispatcher decidindo agora; adio a promoção")
+            return
+        try:
+            _keep_lanes_busy(issues, st, diary)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def _keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     queue = [c for c in issues if c["state"]["id"] == STATE_IN_PROGRESS_ID and is_ready(c)]
     ativas = lanes_ativas()
     # Vaga é por lane com folga de cota, não por lane só habilitada: Claude/Codex

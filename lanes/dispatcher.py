@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fcntl
 import fnmatch
 import hashlib
 import json
@@ -51,6 +52,7 @@ for _cand in (_AQUI, _AQUI.parent / "gasto_lanes"):   # 1º: instalado; 2º: dev
         break
 try:
     import catalogo  # noqa: E402
+    import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
 except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
@@ -2762,11 +2764,12 @@ def lanes_ociosas(lanes_on, running, limited, per_lane) -> list[str]:
             and not per_lane.get(lane)]
 
 
-def escolher_do_todo(cards: list, vagas: list[str]) -> list:
+def escolher_do_todo(cards: list, vagas: list[str], medidas: Optional[dict] = None) -> list:
     """Até um card por vaga: o de maior prioridade que uma lane ociosa pode receber.
 
-    Card com lane própria só sobe se essa lane está na lista de vagas. Card sem
-    lane (só esforço) sobe, e a lane continua sendo a de menor %.
+    Card com lane própria só sobe se essa lane está na lista de vagas **e** tem
+    cota para o esforço. Card sem lane (só esforço) sobe se alguma vaga tem cota
+    para o esforço; a lane final continua sendo a de menor %.
     """
     if not vagas:
         return []
@@ -2775,16 +2778,23 @@ def escolher_do_todo(cards: list, vagas: list[str]) -> list:
     for card in cards:
         if motivo_que_segura_todo(card):
             continue
-        lane, _effort, why = classify(card)
+        lane, effort, why = classify(card)
         if why or not lane:
             continue
         if lane != AUTO_LANE and lane not in livres:
             continue
+        if medidas is not None:
+            if lane == AUTO_LANE:
+                if not any(fila.cota_ok(candidata, effort, medidas) for candidata in livres):
+                    continue
+            elif not fila.cota_ok(lane, effort, medidas):
+                continue
         prontos.append(card)
     return sorted(prontos, key=sort_key)[:len(vagas)]
 
 
-def subir_do_todo(auto: list, per_lane: dict, lanes_on, running, limited, project_id: str) -> list[str]:
+def subir_do_todo(auto: list, per_lane: dict, lanes_on, running, limited, project_id: str,
+                  medidas: Optional[dict] = None) -> list[str]:
     """Com lane ociosa, sobe do Todo o card pronto. Não depende da vigia nem do PAUSE dos bots."""
     vagas = lanes_ociosas(lanes_on, running, limited, per_lane)
     if not vagas:
@@ -2796,7 +2806,7 @@ def subir_do_todo(auto: list, per_lane: dict, lanes_on, running, limited, projec
         log(f"fila: não li o Todo ({exc})")
         return []
     linhas = []
-    for it in escolher_do_todo(todos, vagas):
+    for it in escolher_do_todo(todos, vagas, medidas):
         ident = it.get("identifier") or "?"
         try:
             mudar_estado(it["id"], STATE_IN_PROGRESS_ID)
@@ -2818,6 +2828,23 @@ def subir_do_todo(auto: list, per_lane: dict, lanes_on, running, limited, projec
             per_lane.setdefault(lane, []).append(it)
         linhas.append(f"fila: {ident} sobe do Todo (lane ociosa)")
     return linhas
+
+
+def subir_do_todo_com_lock(auto: list, per_lane: dict, lanes_on, running, limited, project_id: str,
+                            medidas: Optional[dict] = None) -> list[str]:
+    """Serializa a decisão de fila com o vigia (mesmo fila.lock do outro processo)."""
+    lock_path = STATE_DIR / "fila.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            log("fila: outra decisão em andamento; pulo o Todo neste ciclo")
+            return []
+        try:
+            return subir_do_todo(auto, per_lane, lanes_on, running, limited, project_id, medidas)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 # --- Ciclo ------------------------------------------------------------------
@@ -2953,8 +2980,11 @@ def run(real: bool, verbose: bool) -> int:
         running_lanes = {l for l in LANES if load_state(l)}
         limited = {l: u for l in LANES if (u := lane_limited(l))}
         # FRA-515: lane ociosa puxa o Todo sem esperar a vigia. A escolha da lane
-        # continua sendo a de menor % (assign_auto_lanes / pick_lane).
-        fila_linhas = (subir_do_todo(auto, per_lane, lanes_on, running_lanes, limited, proj.id)
+        # continua sendo a de menor % (assign_auto_lanes / pick_lane). A mesma
+        # medida agora barra card cujo esforço não tem folga.
+        measures: Optional[dict] = measures_cached(real) if real else None
+        fila_linhas = (subir_do_todo_com_lock(auto, per_lane, lanes_on, running_lanes, limited, proj.id,
+                                              medidas=measures)
                        if real else [])
         freio_linhas = retirar_travados(auto, per_lane, real)
         cands = (lanes_on if real else set(LANES)) - set(limited)
@@ -2963,7 +2993,6 @@ def run(real: bool, verbose: bool) -> int:
         lines, to_claim = [], []
         lines.extend(fila_linhas)
         lines.extend(freio_linhas)
-        measures: Optional[dict] = None
         for lane in LANES:
             queue = sorted(per_lane[lane], key=sort_key)
             running = load_state(lane)
