@@ -32,6 +32,6 @@
     "effort_default": "medio"
   },
   "watch": {
-    "instalar_comando": ""
+    "instalar_comando": []
   }
 }

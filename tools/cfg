@@ -79,7 +79,11 @@ DEFAULTS = {
               # FRA-532 (23/10/2026 20h33): local primeiro, Claude por último. Lista ou texto com vírgulas.
               "ordem_needs": "ollama, opencode, claude", "ordem_paradas": "local, opencode, claude",
               "ordem_revisao": "escolhido, fallback, opencode-go, claude", "adaptador_fallback": "opencode",
-              "modelo_needs_ollama": "qwen2.5-coder:7b", "sombra_needs": True},
+              "modelo_needs_ollama": "qwen2.5-coder:7b", "sombra_needs": True,
+              # FRA-602: lista de argv (programa, argumentos), sem shell. Texto antigo ainda
+              # é aceito pelo vigia (shlex.split, sem executar) e gera aviso de migração.
+              # Vazio = o vigia não instala. Por projeto fica no FRA-585.
+              "instalar_comando": []},
     # Revisor dos PRs (melhoria 3, 21/10/2026): quem revisa. Não é lane: o dispatcher
     # não enxerga e o painel não lista. `independente` = nunca o mesmo fornecedor do autor.
     "revisores": {"pr": {"agente": "claude", "independente": True, "reserva": "auto",

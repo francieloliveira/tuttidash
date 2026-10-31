@@ -8,7 +8,8 @@ Espelho, nunca em paralelo: com ~/.transcentia/bots/PAUSE presente não faz nada
 
 Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
   0. Instalação no aparelho em andamento/terminada -> registra o resultado no card
-     (só com `watch.instalar_comando` configurado).
+     (só com `watch.instalar_comando` configurado: lista de argv; texto antigo
+     ainda vale via shlex.split, sem shell, e gera aviso de migração).
   1. Card em In Review com a prova do dispatcher verde (comentário DONE <sha> = head
      do PR e "→ verde" no corpo) -> merge (um por vez), Done, instala a main no
      aparelho (SKIP_PREFLIGHT=1 primeiro; se falhar, com preflight). PR aguardando
@@ -261,9 +262,42 @@ AGENT_MONTHLY_PAUSE_S = _cfg("watch.pausa_limite_mensal_s", 6 * 3600)
 NEEDS_RECHECK_S = _cfg("watch.reconferir_needs_s", 30 * 60)
 INSTALL_SESSION = "instalar-aparelho"
 INSTALL_SCRIPT = STATE_DIR / "instalar.sh"
-# Comando que instala o app no aparelho, rodado no worktree `install-main` do projeto
-# (ex.: "./scripts/instalar-no-iphone.sh"). Vazio = o vigia não instala nada (FRA-565).
-INSTALL_COMMAND = str(_cfg("watch.instalar_comando", "") or "").strip()
+# Comando que instala o app no aparelho, no worktree `install-main` do projeto.
+# Lista de argv (ex.: ["./scripts/instalar-no-iphone.sh"]). Vazio = não instala (FRA-565).
+# Texto antigo ainda vale, partido com shlex.split e com aviso para migrar à lista.
+# O comando por projeto é o FRA-585: aqui continua a chave global, sem duplicar isso.
+
+
+def instalar_argv(bruto=None) -> tuple[list[str], str]:
+    """(argv, aviso). Lista = argv direto. Texto = shlex.split, sem shell, com aviso.
+
+    O aviso pede a migração para a lista. Vazio não avisa e não instala.
+    Item que não é texto desliga a instalação em vez de rodar um comando pela metade.
+    """
+    if bruto is None:
+        bruto = _cfg("watch.instalar_comando", [])
+    if isinstance(bruto, str):
+        texto = bruto.strip()
+        if not texto:
+            return [], ""
+        try:
+            partes = shlex.split(texto)
+        except ValueError as exc:
+            return [], (f"watch.instalar_comando ilegível ({exc}); instalação desligada. "
+                        "Migre para uma lista de argv.")
+        if not partes:
+            return [], ""
+        return partes, ("watch.instalar_comando ainda é texto; migre para uma lista de argv "
+                        "(programa e argumentos). O texto foi partido com shlex.split, sem shell.")
+    if isinstance(bruto, list):
+        partes = []
+        for item in bruto:
+            if not isinstance(item, str) or not item.strip():
+                return [], ("watch.instalar_comando: a lista só aceita textos não vazios; "
+                            "instalação desligada.")
+            partes.append(item)
+        return partes, ""
+    return [], "watch.instalar_comando: use uma lista de argv; instalação desligada."
 
 
 PANEL_LOG = HOME / "Library" / "Logs" / "TranscentIA" / "lanes-dispatcher.log"
@@ -751,17 +785,29 @@ def tmux_alive(session: str) -> bool:
 
 
 def start_install(ref: str, tag: str, card_id: str | None, st: dict, diary: list[str]) -> bool:
-    """Instala no aparelho numa sessão tmux própria (E14), no worktree `<worktrees>/install-main` do projeto."""
-    if not INSTALL_COMMAND:
+    """Instala no aparelho numa sessão tmux própria (E14), no worktree `<worktrees>/install-main`.
+
+    O comando entra como argv, cada pedaço citado para o tmux não reabrir um shell.
+    Repo e worktree são conferidos contra o cadastro antes de abrir a sessão.
+    """
+    argv, aviso = instalar_argv()
+    if aviso:
+        log(aviso)
+    if not argv:
         return False
     if tmux_alive(INSTALL_SESSION):
         log(f"instalação {tag}: outra instalação em andamento, fica para o próximo tick")
         return False
-    out = HOME / "Library/Logs/TranscentIA" / f"device-build-{tag}-{datetime.now():%Y%m%d-%H%M%S}.log"
     p = projeto()
-    sh(["tmux", "new-session", "-d", "-s", INSTALL_SESSION,
-        " ".join(shlex.quote(x) for x in ["/bin/bash", str(INSTALL_SCRIPT), ref, str(out), str(p.repo),
-                                         str(p.worktrees / "install-main"), INSTALL_COMMAND])])
+    wt = p.worktrees / "install-main"
+    codigo, detalhe = projetos.checar_alvo_instalar(p.repo, wt, cadastro=p)
+    if codigo:
+        log(f"instalação {tag} recusada: {detalhe.splitlines()[0]}")
+        return False
+    out = HOME / "Library/Logs/TranscentIA" / f"device-build-{tag}-{datetime.now():%Y%m%d-%H%M%S}.log"
+    cmdline = " ".join(shlex.quote(x) for x in
+                       ["/bin/bash", str(INSTALL_SCRIPT), ref, str(out), str(p.repo), str(wt), *argv])
+    sh(["tmux", "new-session", "-d", "-s", INSTALL_SESSION, cmdline])
     st["installs"]["atual"] = {"ref": ref, "tag": tag, "card_id": card_id, "log": str(out),
                                "inicio": datetime.now().isoformat(timespec="seconds")}
     diary.append(f"Gestor · instalação no aparelho iniciada ({ref}); log {out.name}")
