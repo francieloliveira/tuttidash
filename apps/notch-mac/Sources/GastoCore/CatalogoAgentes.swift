@@ -1,3 +1,5 @@
+import CryptoKit
+import Darwin
 import Foundation
 
 /// Leitor dos manifests de agente (`agents.d/*.json`).
@@ -7,8 +9,9 @@ import Foundation
 /// mesmo diretório, então a paridade dos dois registries é estrutural.
 ///
 /// Os manifests versionados no repo são a fonte. Em execução real o app lê os do
-/// bundle assinado, **só leitura**. A cópia em `~/.transcentia/agents.d/` não entra:
-/// a lane consegue reescrevê-la (FRA-614).
+/// bundle assinado, **só leitura**. A cópia em `~/.transcentia/agents.d/` não entra
+/// nessa busca (FRA-614): a lane consegue reescrevê-la. Quem compara uma cópia com
+/// o bundle só a aceita quando o hash e o dono batem (FRA-604).
 public enum CatalogoAgentes {
 
     // MARK: - Manifesto
@@ -157,6 +160,35 @@ public enum CatalogoAgentes {
         return saida
     }
 
+    /// `cli` que pode virar executável. Fora disto o campo é ignorado (não vira comando).
+    public static func cliValido(_ cli: String) -> Bool {
+        cli.range(of: #"^[a-z0-9][a-z0-9-]*$"#, options: .regularExpression) != nil
+    }
+
+    /// Cópia instalada só entra na frente do bundle quando cada JSON é arquivo regular,
+    /// do mesmo uid, e o SHA-256 é igual ao do bundle (FRA-604). Sem assinatura, nada.
+    /// `instalado` e `fallback` não têm default: `diretorios()` sem argumento é a busca
+    /// de execução (FRA-614), que não lê `~/.transcentia`.
+    public static func diretorios(
+        instalado: URL,
+        fallback: URL?,
+        bundleAssinado: Bool? = nil,
+        uid: uid_t = getuid(),
+        dono: ((URL) -> uid_t?)? = nil,
+        hash: ((URL) -> String?)? = nil
+    ) -> [URL] {
+        let assinado = bundleAssinado ?? processoAssinado
+        guard assinado, let fallback, FileManager.default.fileExists(atPath: fallback.path) else { return [] }
+        var saida = [fallback]
+        if fallback.standardizedFileURL.path != instalado.standardizedFileURL.path,
+           ArquivoConfianca.copiaConfiavel(instalado: instalado, referencia: fallback, uid: uid,
+                                           dono: dono ?? ArquivoConfianca.dono,
+                                           hash: hash ?? ArquivoConfianca.sha256) {
+            saida.insert(instalado, at: 0)
+        }
+        return saida
+    }
+
     /// No `.app`, nil: o binário não lê o checkout, que a lane pode editar.
     static func repoDev() -> URL? {
         var caminho = Bundle.main.bundleURL.path
@@ -179,6 +211,9 @@ public enum CatalogoAgentes {
         return true
     }
 
+    /// Assinatura do processo, calculada uma vez. Testes passam `bundleAssinado` e não chegam aqui.
+    private static let processoAssinado: Bool = ArquivoConfianca.bundleAssinado()
+
     /// Lê todos os manifests de um diretório. Um manifest ruim não derruba os outros.
     /// - Throws: só quando nenhum manifest válido foi encontrado no diretório.
     public static func ler(diretorio: URL) throws -> [ModeloAgente] {
@@ -196,6 +231,9 @@ public enum CatalogoAgentes {
     }
 
     /// Lê o primeiro diretório que tiver manifests válidos. Lista vazia = nenhum achado.
+    ///
+    /// Sem `caminhos`, a busca é a de `diretorios()` (bundle e, no dev, o repo).
+    /// `~/.transcentia` não entra. `caminhos` explícito é de quem já escolheu a pasta.
     public static func carregar(caminhos: [URL]? = nil) -> [ModeloAgente] {
         for dir in caminhos ?? diretorios() {
             if let lista = try? ler(diretorio: dir), !lista.isEmpty { return lista }
@@ -220,7 +258,7 @@ public enum CatalogoAgentes {
             return v
         }
         let rot = try texto("rotulo")
-        let cli = obj["cli"] as? String
+        let cli = (obj["cli"] as? String).flatMap { cliValido($0) ? $0 : nil }
         let resume = obj["resume"] as? String
         let corObj = (obj["cor"] as? [String: Any]) ?? [:]
         func hex(_ chave: String, padrao: String) -> String {
@@ -293,5 +331,58 @@ public enum CatalogoAgentes {
                      esforcos: esforcos,
                      esforcoPadrao: padraoEsforco.isEmpty ? (esforcos.first ?? "") : padraoEsforco,
                      flagEsforco: (r["flag_esforco"] as? [String]) ?? [])
+    }
+}
+
+/// Confere assinatura do bundle e o par hash/dono da cópia instalada (FRA-604).
+enum ArquivoConfianca {
+    static func bundleAssinado(_ bundle: Bundle = .main) -> Bool {
+        Subprocesso.rodar("/usr/bin/codesign", ["--verify", bundle.bundleURL.path]).codigo == 0
+    }
+
+    static func sha256(_ url: URL) -> String? {
+        guard let dados = try? Data(contentsOf: url, options: [.mappedIfSafe]) else { return nil }
+        return SHA256.hash(data: dados).map { String(format: "%02x", Int($0)) }.joined()
+    }
+
+    /// uid do arquivo ou da pasta. Symlink devolve nil: o alvo não herda a confiança do link.
+    static func dono(_ url: URL) -> uid_t? {
+        var st = Darwin.stat()
+        guard lstat(url.path, &st) == 0 else { return nil }
+        let tipo = st.st_mode & S_IFMT
+        guard tipo == S_IFREG || tipo == S_IFDIR else { return nil }
+        return st.st_uid
+    }
+
+    static func copiaConfiavel(instalado: URL, referencia: URL, uid: uid_t,
+                               dono: (URL) -> uid_t?, hash: (URL) -> String?) -> Bool {
+        var pasta = Darwin.stat()
+        guard lstat(instalado.path, &pasta) == 0, (pasta.st_mode & S_IFMT) == S_IFDIR, pasta.st_uid == uid else {
+            return false
+        }
+        guard let nomesI = jsons(instalado), let nomesR = jsons(referencia),
+              !nomesI.isEmpty, nomesI == nomesR else { return false }
+        for nome in nomesI {
+            let a = instalado.appendingPathComponent(nome)
+            let b = referencia.appendingPathComponent(nome)
+            guard arquivoRegular(a), arquivoRegular(b), dono(a) == uid,
+                  let ha = hash(a), let hb = hash(b), ha == hb else { return false }
+        }
+        return true
+    }
+
+    private static func jsons(_ dir: URL) -> [String]? {
+        guard let nomes = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return nil }
+        let lista = nomes.filter { $0.hasSuffix(".json") && !$0.hasPrefix(".") }.sorted()
+        guard lista.allSatisfy({ $0.range(of: #"^[A-Za-z0-9._-]+\.json$"#, options: .regularExpression) != nil }) else {
+            return nil
+        }
+        return lista
+    }
+
+    private static func arquivoRegular(_ url: URL) -> Bool {
+        var st = Darwin.stat()
+        guard lstat(url.path, &st) == 0 else { return false }
+        return (st.st_mode & S_IFMT) == S_IFREG
     }
 }

@@ -2,6 +2,8 @@ import Foundation
 
 /// Caixa do dono (PRD de 29/10): os cards com a etiqueta do dono, como o vigia grava em
 /// `~/.transcentia/lanes/caixa-dono.json`, e as ações que o app faz no Linear com um clique.
+/// O arquivo só traz o que a tela mostra. No clique o app resolve o issue pelo identifier
+/// e usa os ids do cache/config (FRA-601), com o token já compartilhado (FRA-568).
 public struct AcaoCaixa: Equatable, Sendable {
     public enum Tipo: String, Sendable { case esforco, lane, cancelar }
     public var tipo: Tipo
@@ -20,8 +22,8 @@ public struct OpcaoCaixa: Equatable, Sendable, Identifiable {
 }
 
 public struct ItemCaixa: Equatable, Sendable, Identifiable {
+    /// Identifier do Linear (FRA-123). É o que a tela mostra; o uuid não vem do arquivo.
     public var card: String
-    public var issueId: String
     public var titulo: String
     public var url: String
     public var desde: Date?
@@ -40,18 +42,37 @@ public struct ItemCaixa: Equatable, Sendable, Identifiable {
     public var outrasTravas: [String]
     public var id: String { card }
 
-    public init(card: String, issueId: String, titulo: String = "", url: String = "", desde: Date? = nil,
+    public init(card: String, titulo: String = "", url: String = "", desde: Date? = nil,
                 origem: String = "dono", motivo: String = "", perguntaId: String = "", pendencia: String = "",
                 opcoes: [OpcaoCaixa] = [], recomenda: String = "", porque: String = "",
                 esforco: String = "", lane: String = "", outrasTravas: [String] = []) {
-        self.card = card; self.issueId = issueId; self.titulo = titulo; self.url = url; self.desde = desde
+        self.card = card; self.titulo = titulo; self.url = url; self.desde = desde
         self.origem = origem; self.motivo = motivo; self.perguntaId = perguntaId.isEmpty ? card : perguntaId
         self.pendencia = pendencia; self.opcoes = opcoes; self.recomenda = recomenda; self.porque = porque
         self.esforco = esforco; self.lane = lane; self.outrasTravas = outrasTravas
     }
 }
 
-/// IDs do Linear que o vigia resolveu (o app não procura nada pelo nome).
+/// Issue que o Linear devolveu agora, pelo identifier. O `id` é o uuid da API, nunca o do arquivo.
+public struct IssueResolvida: Equatable, Sendable {
+    public var id: String
+    public var identifier: String
+    public var etiquetas: [String]
+    /// Estado `canceled` do time deste issue, se a consulta trouxe. Vazio se não veio.
+    public var estadoCancelado: String
+    public init(id: String, identifier: String, etiquetas: [String] = [], estadoCancelado: String = "") {
+        self.id = id; self.identifier = identifier; self.etiquetas = etiquetas; self.estadoCancelado = estadoCancelado
+    }
+}
+
+public enum ResultadoResolucao: Equatable, Sendable {
+    case pronta(IssueResolvida)
+    case ausente
+    case semEtiquetaDono
+}
+
+/// IDs de etiqueta e de estado da config e do cache `linear-ids` (a mesma ordem do vigia).
+/// Nunca saem do `caixa-dono.json`.
 public struct IdsCaixa: Equatable, Sendable {
     public var dono: String
     public var esforco: [String: String]
@@ -64,12 +85,11 @@ public struct IdsCaixa: Equatable, Sendable {
 
 public struct ArquivoCaixa: Equatable, Sendable {
     public var itens: [ItemCaixa]
-    public var ids: IdsCaixa
     /// Cards cancelados nos últimos dias: as Retomadas não os mostram.
     public var cancelados: Set<String>
     public var rotuloDono: String
-    public init(itens: [ItemCaixa] = [], ids: IdsCaixa = IdsCaixa(), cancelados: Set<String> = [], rotuloDono: String = "needs:dono") {
-        self.itens = itens; self.ids = ids; self.cancelados = cancelados; self.rotuloDono = rotuloDono
+    public init(itens: [ItemCaixa] = [], cancelados: Set<String> = [], rotuloDono: String = "needs:dono") {
+        self.itens = itens; self.cancelados = cancelados; self.rotuloDono = rotuloDono
     }
     public static let vazio = ArquivoCaixa()
 }
@@ -92,8 +112,9 @@ public enum CaixaDono {
         func t(_ d: [String: Any], _ k: String) -> String { (d[k] as? String) ?? "" }
         var itens: [ItemCaixa] = []
         for d in (obj["itens"] as? [[String: Any]]) ?? [] {
-            let card = t(d, "card"), issue = t(d, "issue_id")
-            guard !card.isEmpty, !issue.isEmpty else { continue }
+            // `issue_id` do arquivo é ignorado: quem grava a pasta escolheria o card do clique.
+            let card = t(d, "card")
+            guard !card.isEmpty else { continue }
             var opcoes: [OpcaoCaixa] = []
             for o in (d["opcoes"] as? [[String: Any]]) ?? [] {
                 let letra = t(o, "letra"), texto = t(o, "texto")
@@ -104,18 +125,14 @@ public enum CaixaDono {
                 }
                 opcoes.append(OpcaoCaixa(letra: letra, texto: texto, acao: acao))
             }
-            itens.append(ItemCaixa(card: card, issueId: issue, titulo: t(d, "titulo"), url: t(d, "url"),
+            itens.append(ItemCaixa(card: card, titulo: t(d, "titulo"), url: t(d, "url"),
                                    desde: iso.date(from: t(d, "desde")), origem: t(d, "origem").isEmpty ? "dono" : t(d, "origem"),
                                    motivo: t(d, "motivo"), perguntaId: t(d, "pergunta_id"), pendencia: t(d, "pendencia"),
                                    opcoes: opcoes, recomenda: t(d, "recomenda"), porque: t(d, "porque"),
                                    esforco: t(d, "esforco"), lane: t(d, "lane"),
                                    outrasTravas: (d["outras_travas"] as? [String]) ?? []))
         }
-        let ids = (obj["ids"] as? [String: Any]) ?? [:]
-        func mapa(_ v: Any?) -> [String: String] { ((v as? [String: Any]) ?? [:]).compactMapValues { $0 as? String } }
         return ArquivoCaixa(itens: itens,
-                            ids: IdsCaixa(dono: t(ids, "dono"), esforco: mapa(ids["esforco"]), lanes: mapa(ids["lanes"]),
-                                          cancelado: t(ids, "cancelado")),
                             cancelados: Set((obj["cancelados"] as? [String]) ?? []),
                             rotuloDono: t(obj, "rotulo_dono").isEmpty ? "needs:dono" : t(obj, "rotulo_dono"))
     }
@@ -145,28 +162,37 @@ public enum CaixaDono {
 
     public enum ErroCaixa: Error, Equatable, LocalizedError {
         case semId(String)
+        case ausente
+        case semEtiquetaDono
+        case naoConfere
         public var errorDescription: String? {
             switch self {
             case .semId(let o): return String(localized: "Falta o id do Linear para \(o). Rode o vigia uma vez e tente de novo.")
+            case .ausente: return String(localized: "Não encontrei esse card no Linear. Nada foi alterado.")
+            case .semEtiquetaDono: return String(localized: "Esse card não está mais na sua caixa. Nada foi alterado.")
+            case .naoConfere: return String(localized: "O card resolvido não é o que está na tela. Nada foi alterado.")
             }
         }
     }
 
     /// As mutações GraphQL de uma decisão, em ordem. Pura: o teste confere sem rede.
-    public static func mutacoes(_ decisao: Decisao, item: ItemCaixa, ids: IdsCaixa) throws -> [String] {
-        let issue = lit(item.issueId)
+    /// `issue` é o que o Linear devolveu pelo identifier; `ids` vêm da config e do cache.
+    public static func mutacoes(_ decisao: Decisao, item: ItemCaixa, issue: IssueResolvida, ids: IdsCaixa, rotuloDono: String) throws -> [String] {
+        guard issue.identifier == item.card, !issue.id.isEmpty else { throw ErroCaixa.naoConfere }
+        guard !rotuloDono.isEmpty, issue.etiquetas.contains(rotuloDono) else { throw ErroCaixa.semEtiquetaDono }
+        let ref = lit(issue.id)
         func comentar(_ corpo: String) -> String {
-            "mutation { commentCreate(input: {issueId: \(issue), body: \(lit(corpo))}) { success } }"
+            "mutation { commentCreate(input: {issueId: \(ref), body: \(lit(corpo))}) { success } }"
         }
-        func tirar(_ label: String) -> String { "mutation { issueRemoveLabel(id: \(issue), labelId: \(lit(label))) { success } }" }
-        func por(_ label: String) -> String { "mutation { issueAddLabel(id: \(issue), labelId: \(lit(label))) { success } }" }
+        func tirar(_ label: String) -> String { "mutation { issueRemoveLabel(id: \(ref), labelId: \(lit(label))) { success } }" }
+        func por(_ label: String) -> String { "mutation { issueAddLabel(id: \(ref), labelId: \(lit(label))) { success } }" }
         func liberar() throws -> String {
             guard !ids.dono.isEmpty else { throw ErroCaixa.semId("a etiqueta do dono") }
             return tirar(ids.dono)
         }
         func cancelar() throws -> String {
             guard !ids.cancelado.isEmpty else { throw ErroCaixa.semId("o estado Canceled") }
-            return "mutation { issueUpdate(id: \(issue), input: {stateId: \(lit(ids.cancelado))}) { success } }"
+            return "mutation { issueUpdate(id: \(ref), input: {stateId: \(lit(ids.cancelado))}) { success } }"
         }
         switch decisao {
         case let .opcao(op, extra):
@@ -199,6 +225,92 @@ public enum CaixaDono {
         case .cancelar:
             return [try cancelar(), comentar("Dono cancelou o card pela caixa do dono. O vigia limpa as pendências no próximo ciclo.")]
         }
+    }
+
+    /// O clique: sem issue na API, ou sem a etiqueta do dono, não há mutação.
+    /// Sem `linear.state_canceled_id` na config, o cancelar usa o estado do time do issue.
+    public static func mutacoes(_ decisao: Decisao, item: ItemCaixa, resolucao: ResultadoResolucao, ids: IdsCaixa, rotuloDono: String) throws -> [String] {
+        switch resolucao {
+        case .ausente: throw ErroCaixa.ausente
+        case .semEtiquetaDono: throw ErroCaixa.semEtiquetaDono
+        case .pronta(let issue):
+            var ids = ids
+            if ids.cancelado.isEmpty { ids.cancelado = issue.estadoCancelado }
+            return try mutacoes(decisao, item: item, issue: issue, ids: ids, rotuloDono: rotuloDono)
+        }
+    }
+
+    /// Identifier no formato do Linear (FRA-123). UUID e texto livre não viram consulta:
+    /// `issue(id:)` aceita os dois, e um uuid no lugar do identifier atingiria outro card.
+    public static func consultaIssue(_ identifier: String) -> String? {
+        let id = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard id.range(of: #"^[A-Za-z][A-Za-z0-9]*-[0-9]+$"#, options: .regularExpression) != nil else { return nil }
+        return "{ issue(id: \(lit(id))) { id identifier labels { nodes { name } } team { states { nodes { id type } } } } }"
+    }
+
+    /// Lê a resposta do Linear. Identifier diferente do pedido, ou issue ausente, não vira mutação.
+    public static func lerResolucao(_ data: [String: Any], identifier: String, rotuloDono: String) -> ResultadoResolucao {
+        guard let issue = data["issue"] as? [String: Any] else { return .ausente }
+        let id = ((issue["id"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let ident = ((issue["identifier"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, ident == identifier else { return .ausente }
+        let nodes = ((issue["labels"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
+        let etiquetas = nodes.compactMap { $0["name"] as? String }
+        guard !rotuloDono.isEmpty, etiquetas.contains(rotuloDono) else { return .semEtiquetaDono }
+        let states = (((issue["team"] as? [String: Any])?["states"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
+        let cancelado = states.first { ($0["type"] as? String) == "canceled" }.flatMap { $0["id"] as? String } ?? ""
+        return .pronta(IssueResolvida(id: id, identifier: ident, etiquetas: etiquetas, estadoCancelado: cancelado))
+    }
+
+    /// Resolve o issue pelo identifier. Não lê o `caixa-dono.json`.
+    public static func resolver(identifier: String, rotuloDono: String, cliente: ClienteLinear, token: String) async throws -> ResultadoResolucao {
+        guard let q = consultaIssue(identifier) else { return .ausente }
+        return lerResolucao(try await cliente.consultar(q, token: token), identifier: identifier, rotuloDono: rotuloDono)
+    }
+
+    /// Mesmo lugar do cache do vigia (`linear_ids.caminho_cache`): `~/.transcentia/lanes`.
+    /// Config por cima do cache, como `linear_ids.carregar`. O id do projeto não sai da pasta.
+    public static func caminhoCacheIds(home: URL = FileManager.default.homeDirectoryForCurrentUser, projetoID: String = "") -> URL {
+        let base = home.appendingPathComponent(Legado.estadoLanes)
+        let pid = String(projetoID.filter { $0.isLetter || $0.isNumber || $0 == "-" })
+        if pid.isEmpty { return base.appendingPathComponent("linear-ids.json") }
+        return base.appendingPathComponent("linear-ids", isDirectory: true).appendingPathComponent("\(pid).json")
+    }
+
+    public static func lerCacheIds(_ url: URL) -> [String: Any] {
+        guard let dados = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: dados) as? [String: Any] else { return [:] }
+        return obj
+    }
+
+    /// Etiquetas: config vence o cache `linear-ids`. Não olha o arquivo da caixa.
+    /// O estado Canceled só entra se a config tiver `linear.state_canceled_id`.
+    public static func idsDoApp(config: [String: Any], cache: [String: Any], rotuloDono: String) -> IdsCaixa {
+        func mapa(_ v: Any?) -> [String: String] {
+            guard let d = v as? [String: Any] else { return [:] }
+            var r: [String: String] = [:]
+            for (k, val) in d {
+                guard let s = val as? String else { continue }
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { r[k] = t }
+            }
+            return r
+        }
+        func vence(_ cfg: [String: String], _ doCache: [String: String]) -> [String: String] {
+            var r = doCache
+            for (k, v) in cfg { r[k] = v }
+            return r
+        }
+        let nomesCfg = mapa(Configuracao.valor("linear.labels.nomes", em: config))
+        let nomesCache = mapa(cache["labels"])
+        // O vigia não grava o estado canceled no cache. Só a config fixa esse id; senão,
+        // o clique usa o estado do time que a consulta do issue devolveu.
+        let canceladoCfg = ((Configuracao.valor("linear.state_canceled_id", em: config) as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return IdsCaixa(dono: nomesCfg[rotuloDono] ?? nomesCache[rotuloDono] ?? "",
+                        esforco: vence(mapa(Configuracao.valor("linear.labels.esforco", em: config)), mapa(cache["esforco"])),
+                        lanes: vence(mapa(Configuracao.valor("linear.labels.lanes", em: config)), mapa(cache["lanes"])),
+                        cancelado: canceladoCfg)
     }
 
     /// Roda as mutações em ordem e para no primeiro erro (o que já foi feito fica feito).

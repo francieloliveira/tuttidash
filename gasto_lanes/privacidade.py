@@ -50,10 +50,18 @@ MESES = {m: i for i, m in enumerate(["january", "february", "march", "april", "m
 LOCALE_RE = re.compile(r"/(?:[a-z]{2}|[a-z]{2}-[a-z]{2}|zh-cn|zh-tw|pt-br)/", re.I)
 
 
+def _caminho_cfg() -> Path:
+    """`tools/cfg` do checkout, ou a cópia instalada. O cfg usa o resolvedor único."""
+    local = Path(__file__).resolve().parent.parent / "tools" / "cfg"
+    if local.is_file():
+        return local
+    return Path.home() / ".transcentia" / "tools" / "cfg"
+
+
 def _cfg(chave, padrao):
     try:
         import runpy
-        v = runpy.run_path(str(Path.home() / ".transcentia/tools/cfg"))["get"](chave, padrao)
+        v = runpy.run_path(str(_caminho_cfg()))["get"](chave, padrao)
         return padrao if v in (None, "") else v
     except Exception:  # noqa: BLE001
         return padrao

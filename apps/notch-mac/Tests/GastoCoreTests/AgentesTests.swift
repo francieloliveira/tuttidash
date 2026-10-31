@@ -56,6 +56,40 @@ final class AgentesTests: XCTestCase {
         XCTAssertThrowsError(try CatalogoAgentes.ler(diretorio: tmp))
     }
 
+    /// Manifesto forjado em `~/.transcentia/agents.d` não substitui o bundle, e `cli` com shell não cola.
+    func testManifestoForjadoNaoEntra() throws {
+        let t = try PastaTemp()
+        let bundle = t.url.appendingPathComponent("bundle")
+        let inst = t.url.appendingPathComponent("inst")
+        let bom = #"{"schema":1,"nome":"grok","rotulo":"Grok","cli":"grok","ordem":1}"#
+        let mau = #"{"schema":1,"nome":"grok","rotulo":"Grok","cli":"x; touch /tmp/pwn","ordem":1}"#
+        try t.escrever("bundle/grok.json", bom)
+        try t.escrever("inst/grok.json", mau)
+        func caminhos(_ dirs: [URL]) -> [String] { dirs.map { $0.standardizedFileURL.path } }
+        let soBundle = CatalogoAgentes.diretorios(instalado: inst, fallback: bundle, bundleAssinado: true)
+        XCTAssertEqual(caminhos(soBundle), [bundle.standardizedFileURL.path])
+        XCTAssertEqual(CatalogoAgentes.carregar(caminhos: soBundle).compactMap(\.cli), ["grok"])
+        try t.escrever("inst/grok.json", bom)
+        try t.escrever("inst/evil.json", mau)
+        let extra = CatalogoAgentes.diretorios(instalado: inst, fallback: bundle, bundleAssinado: true)
+        XCTAssertEqual(caminhos(extra), [bundle.standardizedFileURL.path], "arquivo a mais na cópia não entra")
+        try FileManager.default.removeItem(at: inst.appendingPathComponent("evil.json"))
+        let confere = CatalogoAgentes.diretorios(instalado: inst, fallback: bundle, bundleAssinado: true)
+        XCTAssertEqual(caminhos(confere), [inst.standardizedFileURL.path, bundle.standardizedFileURL.path])
+        let uid = try XCTUnwrap(ArquivoConfianca.dono(inst))
+        let donoErrado = CatalogoAgentes.diretorios(instalado: inst, fallback: bundle, bundleAssinado: true,
+                                                    uid: uid, dono: { _ in uid &+ 1 })
+        XCTAssertEqual(caminhos(donoErrado), [bundle.standardizedFileURL.path])
+        XCTAssertTrue(CatalogoAgentes.diretorios(instalado: inst, fallback: bundle, bundleAssinado: false).isEmpty)
+        try t.escrever("solto/mau.json", mau)
+        let comMau = try CatalogoAgentes.ler(diretorio: t.url.appendingPathComponent("solto"))
+        XCTAssertEqual(comMau.map(\.nome), ["grok"])
+        XCTAssertNil(comMau.first?.cli)
+        let link = inst.appendingPathComponent("link.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: inst.appendingPathComponent("grok.json"))
+        XCTAssertNil(ArquivoConfianca.dono(link))
+    }
+
     func testPastaInexistenteVazio() {
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("agents.d-inexistente-\(UUID().uuidString)")

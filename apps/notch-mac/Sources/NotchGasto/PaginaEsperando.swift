@@ -79,11 +79,6 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
 
     func decidir(_ decisao: CaixaDono.Decisao, item: ItemCaixa) {
-        let passos: [String]
-        do { passos = try CaixaDono.mutacoes(decisao, item: item, ids: arquivo.ids) } catch {
-            erros[item.card] = error.localizedDescription
-            return
-        }
         guard let token = TokenLinear().ler() else {
             erros[item.card] = ErroLinear.semToken.localizedDescription
             return
@@ -92,9 +87,21 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
         enviando.insert(item.card)
         let conta = { () -> Bool in if case .responder(_, liberar: false) = decisao { return false }; return true }()
         if conta { respondidas.insert(item.perguntaId) }
+        // FRA-601: o identifier da tela vai ao Linear. Os ids de etiqueta saem da config e do
+        // cache do vigia, não do caixa-dono.json. O token é o mesmo item do FRA-568.
+        let cfg = Configuracao.resolver()
+        let bruto = Configuracao.lerArquivo()
+        let nome = cfg.rotuloDono?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rotulo = nome.isEmpty ? "needs:dono" : nome
+        let ids = CaixaDono.idsDoApp(config: bruto,
+                                    cache: CaixaDono.lerCacheIds(CaixaDono.caminhoCacheIds(home: cfg.home, projetoID: cfg.projetoPadrao?.projetoID ?? "")),
+                                    rotuloDono: rotulo)
         Task {
             do {
-                try await CaixaDono.executar(passos, cliente: HTTPClienteLinear(), token: token)
+                let cliente = HTTPClienteLinear()
+                let resolucao = try await CaixaDono.resolver(identifier: item.card, rotuloDono: rotulo, cliente: cliente, token: token)
+                let passos = try CaixaDono.mutacoes(decisao, item: item, resolucao: resolucao, ids: ids, rotuloDono: rotulo)
+                if !passos.isEmpty { try await CaixaDono.executar(passos, cliente: cliente, token: token) }
                 enviando.remove(item.card)
                 CentralAvisos.compartilhada.ok(String(localized: "\(item.card): decisão enviada"))
             } catch {
