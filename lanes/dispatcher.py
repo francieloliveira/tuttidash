@@ -55,6 +55,7 @@ try:
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
+    import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
 except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
     sys.exit(f"{_falta.name} não encontrado ao lado do dispatcher.py — "
              "rode tools/install.sh para instalar o catálogo de agentes e projetos")
@@ -67,8 +68,6 @@ except ModuleNotFoundError:  # pragma: no cover - sem instalar: lanes do OpenCod
 # Nenhum id no código (FRA-565): vêm da config (`linear.*`), do cache
 # `~/.transcentia/lanes/linear-ids.json` ou da API, pelo nome (`garantir_ids()`, no
 # começo de cada ciclo real). Sem id, a etiqueta ou o estado é pulado, com aviso no log.
-LINEAR_API = "https://api.linear.app/graphql"
-KEYCHAIN_SERVICE = "linear-transcentia-lanes"
 STATE_IN_PROGRESS_ID = STATE_IN_REVIEW_ID = STATE_TODO_ID = ""
 LABEL_DONO_ID = LABEL_LANE_FALHOU_ID = LABEL_LANE_PARADA_ID = ""
 # Catálogo de agentes (fonte única: `agents.d/*.json`, via `catalogo.py`).
@@ -297,58 +296,13 @@ LOG_FILE = LOG_DIR / "lanes-dispatcher.log"
 LANE_LOG_DIR = LOG_DIR / "lanes"
 TOOL_PATH = f"{HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-QUERY_CANDIDATES = """
-query Candidatos($project: ID!, $state: ID!) {
-  issues(
-    first: 50
-    filter: { project: { id: { eq: $project } }, state: { id: { eq: $state } } }
-  ) {
-    nodes {
-      id
-      identifier
-      title
-      priority
-      startedAt
-      createdAt
-      branchName
-      url
-      labels { nodes { name parent { name } } }
-      inverseRelations {
-        nodes { type issue { identifier state { type name } } }
-      }
-      history(last: 15) {
-        nodes { createdAt actor { name } botActor { name } toState { id } }
-      }
-      comments(last: 30) { nodes { id body } }
-    }
-  }
-}
-"""
-QUERY_ISSUE = """
-query Card($id: String!) {
-  issue(id: $id) { id identifier title description url branchName state { id name } }
-}
-"""
-MUT_COMMENT = """
-mutation($id: String!, $body: String!) {
-  commentCreate(input: { issueId: $id, body: $body }) { success }
-}
-"""
-MUT_STATE = """
-mutation($id: String!, $state: String!) {
-  issueUpdate(id: $id, input: { stateId: $state }) { success }
-}
-"""
-MUT_LABEL = """
-mutation($id: String!, $label: String!) {
-  issueAddLabel(id: $id, labelId: $label) { success }
-}
-"""
-MUT_REMOVE_LABEL = """
-mutation($id: String!, $label: String!) {
-  issueRemoveLabel(id: $id, labelId: $label) { success }
-}
-"""
+# Textos fixos da allowlist do proxy (FRA-607). O script não escolhe a consulta.
+QUERY_CANDIDATES = proxy_linear.consulta("candidatos")
+QUERY_ISSUE = proxy_linear.consulta("card")
+MUT_COMMENT = proxy_linear.consulta("comentar")
+MUT_STATE = proxy_linear.consulta("mudar_estado")
+MUT_LABEL = proxy_linear.consulta("adicionar_etiqueta")
+MUT_REMOVE_LABEL = proxy_linear.consulta("remover_etiqueta")
 
 
 # --- Utilitários -----------------------------------------------------------
@@ -373,36 +327,12 @@ def sh(args: list[str], cwd: Optional[Path] = None, check: bool = True, timeout:
     return out.stdout.strip()
 
 
-def linear_key() -> str:
-    # Lida a cada uso; nunca gravada em arquivo nem em log.
-    out = subprocess.run(
-        ["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-        capture_output=True, text=True, check=False,
-    )
-    if out.returncode != 0 or not out.stdout.strip():
-        raise RuntimeError(f"chave '{KEYCHAIN_SERVICE}' não encontrada no Keychain")
-    return out.stdout.strip()
-
-
 def linear(query: str, variables: dict) -> dict:
-    body = json.dumps({"query": query, "variables": variables}).encode()
-    req = urllib.request.Request(
-        LINEAR_API, data=body, method="POST",
-        headers={"Content-Type": "application/json", "Authorization": linear_key()},
-    )
+    """Pede a consulta ao proxy local. O token não passa por este processo."""
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        # O Linear devolve 400 com o motivo no corpo (ex.: campo inexistente).
-        try:
-            detail = json.loads(exc.read())["errors"][0]["message"]
-        except Exception:  # noqa: BLE001
-            detail = str(exc)
-        raise RuntimeError(f"Linear HTTP {exc.code}: {detail}") from None
-    if data.get("errors"):
-        raise RuntimeError(f"Linear: {data['errors'][0].get('message', data['errors'])}")
-    return data["data"]
+        return proxy_linear.executar_consulta(query, variables)
+    except proxy_linear.ErroProxy as exc:
+        raise RuntimeError(str(exc)) from None
 
 
 def viewer_linear() -> str:
@@ -414,7 +344,7 @@ def viewer_linear() -> str:
     except OSError:
         pass
     try:
-        viewer = (linear("query{ viewer{ id } }", {}).get("viewer") or {})
+        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
         ident = str(viewer.get("id") or "")
     except RuntimeError as exc:
         log(f"fila: não li o viewer do Linear ({exc})")
@@ -430,8 +360,7 @@ def viewer_linear() -> str:
 def estado_do_card(identifier: str) -> str:
     """Estado atual do card, para revalidar antes de mover (CAS leve)."""
     try:
-        issue = (linear("query($id:String!){ issue(id:$id){ state{ name } } }",
-                        {"id": identifier}).get("issue") or {})
+        issue = (linear(proxy_linear.consulta("estado_card"), {"id": identifier}).get("issue") or {})
         return str((issue.get("state") or {}).get("name") or "")
     except RuntimeError as exc:
         log(f"fila: não reli o estado de {identifier} ({exc})")

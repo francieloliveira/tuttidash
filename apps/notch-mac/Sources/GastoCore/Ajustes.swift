@@ -135,7 +135,7 @@ public enum CatalogoAjustes {
                 CampoAjuste("preflight.skip_preflight_first", String(localized: "Primeira tentativa sem checagem"), .booleano, "true"),
             ], nota: nil),
             AbaAjustes(nome: String(localized: "Integrações"), simbolo: "link", campos: [],
-                       nota: String(localized: "O token do Linear fica só no Keychain, nunca no arquivo."), linear: true),
+                       nota: String(localized: "A chave do Linear fica no Keychain do app (proteção de dados), nunca no arquivo. O dispatcher e o vigia usam o proxy local."), linear: true),
             AbaAjustes(nome: String(localized: "Agendas"), simbolo: "clock", campos: [
                 CampoAjuste("agendas.dispatcher_s", String(localized: "Dispatcher das lanes (s)"), n(15, 86_400), "60"),
                 CampoAjuste("agendas.watch_s", String(localized: "Vigia dos bots (s)"), n(15, 86_400), "180"),

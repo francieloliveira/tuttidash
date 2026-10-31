@@ -12,3 +12,6 @@ config.json
 
 # Build pessoal: leituras de uso fora das APIs oficiais (repositório privado à parte, FRA-565)
 apps/notch-mac/Privado/
+
+# estado efêmero da lane (result.json e prova); não é código
+.lane/
