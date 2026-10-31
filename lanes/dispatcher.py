@@ -111,13 +111,32 @@ RISCO_ALTO_LANES = {"claude", "grok"}
 # Teto de cards por lane ativa: 1 RUN + (MAX_PER_LANE - 1) WAIT.
 # Deve bater com tools/cfg DEFAULTS["watch"]["max_tarefas_por_lane"].
 MAX_PER_LANE = 2
-# Ferramentas embutidas do Grok que a lane pode usar (--tools). Fora da lista ficam
-# agendador, subagentes e web. use_tool/search_tool/workflow/ask_user_question não
+# Ferramentas embutidas do Grok que a lane pode usar (--tools). FRA-598: arquivo
+# e o terminal (git add/commit/status/diff). Fora da lista ficam agendador,
+# subagentes, monitor e web. use_tool/search_tool/workflow/ask_user_question não
 # saem com --tools, mas qualquer chamada a eles cancela a sessão sem executar
 # (testado em 2026-10-03, grok 1.0.41).
 GROK_TOOLS = ["run_terminal_command", "read_file", "search_replace", "write", "list_dir",
-              "grep", "todo_write", "get_command_or_subagent_output",
-              "kill_command_or_subagent", "monitor"]
+              "grep", "todo_write"]
+# dontAsk: o que não está no allow não roda. acceptEdits aprovava edição em
+# qualquer caminho (FRA-598).
+MODO_PERMISSAO = "dontAsk"
+# Perfil do Grok (`--sandbox lane`). `strict` lê só o worktree + sistema +
+# ~/.grok; o deny tapa o que o strict ainda deixaria executar.
+PERFIL_SANDBOX = "lane"
+PERFIL_SANDBOX_TOML = """\
+[profiles.lane]
+extends = "strict"
+restrict_network = true
+deny = [
+  "~/.ssh",
+  "~/.config/gh",
+  "~/.transcentia",
+  "~/.aws",
+  "~/.gnupg",
+  "/usr/bin/security",
+]
+"""
 LANE_TIMEOUT_MIN = 90
 # FRA-443 — freios acumulados por card. Decisão do dono em 28/10/2026.
 # D1 tentativas, em qualquer lane. D2 gasto acumulado em US$. D3 tempo acumulado em min.
@@ -498,9 +517,291 @@ def effective_lanes(enabled: set) -> tuple:
             sorted(l for l in enabled if not lane_runnable(l)))
 
 
+def caminho_settings() -> Path:
+    """Settings versionados ao lado deste arquivo. A cópia em STATE_DIR é reserva
+    de um install antigo: se o arquivo do repo existe, ele ganha."""
+    local = _AQUI / "claude-settings.json"
+    if local.is_file():
+        return local
+    return STATE_DIR / "claude-settings.json"
+
+
+def lane_settings() -> dict:
+    """Objeto inteiro de `claude-settings.json` (permissões e sandbox do Claude)."""
+    return json.loads(caminho_settings().read_text(encoding="utf-8"))
+
+
 def lane_permissions() -> dict:
-    """Mesmas regras para as duas lanes (claude-settings.json)."""
-    return json.loads((STATE_DIR / "claude-settings.json").read_text())["permissions"]
+    """Mesmas regras para claude e grok (allow/deny/defaultMode)."""
+    return lane_settings()["permissions"]
+
+
+def escrever_perfil_sandbox(destino: Optional[Path] = None) -> Path:
+    """Grava `[profiles.lane]` em `~/.grok/sandbox.toml` sem apagar os outros perfis.
+
+    O claim chama isto antes de subir o Grok. O perfil é do dispatcher: a lane
+    não consegue reescrevê-lo depois, porque o `strict` deixa `sandbox.toml`
+    só para leitura. Sem o perfil, o Grok recusa subir (falha fechada)."""
+    destino = destino or (Path.home() / ".grok" / "sandbox.toml")
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    atual = destino.read_text(encoding="utf-8") if destino.is_file() else ""
+    novo = _trocar_bloco_toml(atual, f"[profiles.{PERFIL_SANDBOX}]", PERFIL_SANDBOX_TOML)
+    if novo != atual:
+        destino.write_text(novo, encoding="utf-8")
+    return destino
+
+
+def _trocar_bloco_toml(texto: str, cabecalho: str, bloco: str) -> str:
+    """Troca a seção `cabecalho` pelo `bloco`. O resto do arquivo fica."""
+    linhas = texto.splitlines()
+    ini = next((i for i, linha in enumerate(linhas) if linha.strip() == cabecalho), None)
+    bloco_linhas = bloco.strip("\n").splitlines()
+    if ini is None:
+        base = texto
+        if base and not base.endswith("\n"):
+            base += "\n"
+        if base and not base.endswith("\n\n"):
+            base += "\n"
+        return base + "\n".join(bloco_linhas) + "\n"
+    fim = next((j for j in range(ini + 1, len(linhas)) if linhas[j].startswith("[")), len(linhas))
+    meio = bloco_linhas + ([""] if fim < len(linhas) else [])
+    novo = "\n".join(linhas[:ini] + meio + linhas[fim:])
+    return novo if novo.endswith("\n") else novo + "\n"
+
+
+def _re_glob_caminho(padrao: str) -> str:
+    """Glob de caminho: `*` não cruza `/`, `**` cruza. `**/` no início casa zero pastas."""
+    i, n = 0, len(padrao)
+    out = ["^"]
+    while i < n:
+        if padrao.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+            continue
+        if padrao.startswith("**", i):
+            out.append(".*")
+            i += 2
+            continue
+        ch = padrao[i]
+        if ch == "*":
+            out.append("[^/]*")
+        elif ch == "?":
+            out.append("[^/]")
+        else:
+            out.append(re.escape(ch))
+        i += 1
+    out.append("$")
+    return "".join(out)
+
+
+def _expandir_til(caminho: str) -> str:
+    if caminho == "~" or caminho.startswith("~/"):
+        return str(Path.home()) + caminho[1:]
+    return caminho
+
+
+def _casa_glob_caminho(padrao: str, caminho: str) -> bool:
+    """`**/.ssh/**` também casa a própria pasta (`~/.ssh`), não só o que está dentro."""
+    for alvo in (caminho, _expandir_til(caminho)):
+        if re.fullmatch(_re_glob_caminho(padrao), alvo):
+            return True
+        if padrao.endswith("/**") and re.fullmatch(_re_glob_caminho(padrao[:-3]), alvo):
+            return True
+    return False
+
+
+def _miolo(regra: str, ferramenta: str) -> Optional[str]:
+    prefixo = ferramenta + "("
+    if regra.startswith(prefixo) and regra.endswith(")"):
+        return regra[len(prefixo):-1]
+    return None
+
+
+def _caminho_no_worktree(caminho: str) -> bool:
+    """Relativo ao cwd da lane, sem `..` e sem absoluto. É o que `Read(./**)` cobre."""
+    if not caminho or caminho.startswith("~") or caminho.startswith("/"):
+        return False
+    return ".." not in Path(caminho).parts
+
+
+def _caminho_negado(caminho: str, regras: list, ferramenta: str) -> bool:
+    for regra in regras:
+        miolo = _miolo(regra, ferramenta)
+        if miolo and _casa_glob_caminho(miolo, caminho):
+            return True
+    return False
+
+
+def leitura_negada(caminho: str, permissoes: Optional[dict] = None) -> bool:
+    """A ferramenta de leitura não alcança este caminho.
+
+    Deny ganha do allow. Sem `Read` global, caminho fora do worktree também cai
+    (dontAsk). `~/.config/gh/hosts.yml` não passa."""
+    perms = permissoes if permissoes is not None else lane_permissions()
+    deny = list(perms.get("deny") or [])
+    if _caminho_negado(caminho, deny, "Read") or _caminho_negado(caminho, deny, "Grep"):
+        return True
+    if any(r in ("Read", "Grep") for r in (perms.get("allow") or [])):
+        return False
+    return not _caminho_no_worktree(caminho)
+
+
+def escrita_negada(caminho: str, permissoes: Optional[dict] = None) -> bool:
+    """Edit/Write negados (`.git/config`, `.git/hooks`) ou fora do worktree."""
+    perms = permissoes if permissoes is not None else lane_permissions()
+    deny = list(perms.get("deny") or [])
+    if _caminho_negado(caminho, deny, "Edit") or _caminho_negado(caminho, deny, "Write"):
+        return True
+    if any(r in ("Edit", "Write") for r in (perms.get("allow") or [])):
+        return False
+    return not _caminho_no_worktree(caminho)
+
+
+_WRAPPERS_BASH = {"env", "timeout", "nice", "ionice", "chrt", "stdbuf"}
+# Comandos que o Grok trata como só-leitura e rodaria até no dontAsk, se nenhum
+# deny pegar (doc 22, "Read-Only Shell Commands"). cat/head/tail/grep estão no
+# deny da lane justamente por isso.
+_SO_LEITURA = {
+    "ls", "cat", "pwd", "date", "whoami", "hostname", "uptime", "ps",
+    "head", "tail", "wc", "sort", "uniq", "tr", "cut",
+    "mkdir", "touch", "grep", "rg",
+}
+_GIT_SO_LEITURA = {
+    "status", "branch", "log", "diff", "ls-files", "show", "rev-parse",
+    "blame", "describe", "merge-base", "shortlog", "check-ignore", "check-attr",
+    "cat-file", "ls-tree", "show-ref", "for-each-ref", "rev-list", "name-rev",
+    "count-objects",
+}
+
+
+def _segmentos_bash(comando: str) -> list:
+    """Parte em `&&`, `||`, `;` e `|`. Não parte dentro de aspas."""
+    partes: list = []
+    buf: list = []
+    aspas = ""
+    i = 0
+    while i < len(comando):
+        c = comando[i]
+        if aspas:
+            buf.append(c)
+            if c == aspas:
+                aspas = ""
+            i += 1
+            continue
+        if c in "\"'":
+            aspas = c
+            buf.append(c)
+            i += 1
+            continue
+        if comando.startswith("&&", i) or comando.startswith("||", i):
+            partes.append("".join(buf))
+            buf = []
+            i += 2
+            continue
+        if c in ";|":
+            partes.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(c)
+        i += 1
+    partes.append("".join(buf))
+    return [p.strip() for p in partes if p.strip()]
+
+
+def _sem_involucro(segmento: str) -> str:
+    """Tira `VAR=...` e invólucros (`env`, `timeout`) para a regra ver o comando de dentro."""
+    try:
+        tokens = shlex.split(segmento)
+    except ValueError:
+        tokens = segmento.split()
+    i = 0
+    while i < len(tokens) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[i] or ""):
+        i += 1
+    while i < len(tokens) and tokens[i] in _WRAPPERS_BASH:
+        i += 1
+        while i < len(tokens) and tokens[i].startswith("-"):
+            i += 1
+    return " ".join(tokens[i:])
+
+
+def _bash_casa(padrao: str, comando: str) -> bool:
+    """`Bash(foo:*)` é prefixo `foo` com fronteira de palavra. Um token só também
+    casa o basename (`/usr/bin/security` ≡ `security`)."""
+    cmd = comando.strip()
+    if not cmd:
+        return False
+    if padrao.endswith(":*"):
+        prefixo = padrao[:-2]
+        if cmd.startswith(prefixo) and (len(cmd) == len(prefixo) or cmd[len(prefixo)] in " \t"):
+            return True
+        if " " not in prefixo.strip():
+            primeiro = cmd.split()[0]
+            if primeiro.rsplit("/", 1)[-1] == prefixo.strip():
+                return True
+        return False
+    if cmd.startswith(padrao) and (len(cmd) == len(padrao) or cmd[len(padrao)] in " \t"):
+        return True
+    return False
+
+
+def _regra_bash_casa(regras: list, comando: str) -> bool:
+    for regra in regras:
+        miolo = _miolo(regra, "Bash")
+        if miolo and _bash_casa(miolo, comando):
+            return True
+    return False
+
+
+def _so_leitura(comando: str) -> bool:
+    tokens = comando.split()
+    if not tokens:
+        return False
+    base = tokens[0].rsplit("/", 1)[-1]
+    if base in _SO_LEITURA:
+        return True
+    if base == "git" and len(tokens) > 1 and tokens[1] in _GIT_SO_LEITURA:
+        return True
+    return False
+
+
+def _toca_caminho_negado(comando: str, deny: list) -> bool:
+    try:
+        tokens = shlex.split(comando)
+    except ValueError:
+        tokens = comando.split()
+    for token in tokens[1:]:
+        if token.startswith("-"):
+            continue
+        if _caminho_negado(token, deny, "Read") or _caminho_negado(token, deny, "Edit"):
+            return True
+    return False
+
+
+def comando_negado_pela_lane(comando: str, permissoes: Optional[dict] = None) -> bool:
+    """True se a lane não deixa este comando rodar.
+
+    Deny ganha. No `dontAsk`, o que não é allow e não é só-leitura também cai.
+    `cat ~/.config/gh/hosts.yml` e `security find-generic-password` caem aqui:
+    o primeiro pelo deny de `cat` e do caminho, o segundo porque `security`
+    não está no allow (e o basename `/usr/bin/security` casa o deny)."""
+    perms = permissoes if permissoes is not None else lane_permissions()
+    deny = list(perms.get("deny") or [])
+    allow = list(perms.get("allow") or [])
+    dont = (perms.get("defaultMode") or MODO_PERMISSAO) == "dontAsk"
+    for bruto in _segmentos_bash(comando):
+        segmento = _sem_involucro(bruto)
+        if not segmento:
+            return True
+        if _regra_bash_casa(deny, segmento) or _toca_caminho_negado(segmento, deny):
+            return True
+        if _so_leitura(segmento):
+            continue
+        if _regra_bash_casa(allow, segmento):
+            continue
+        if dont:
+            return True
+    return False
 
 
 def sort_key(issue: dict) -> tuple:
@@ -742,8 +1043,8 @@ def agent_command(lane: str, effort: str) -> list[str]:
         return [
             "claude", "-p",  # prompt chega pelo stdin (run_lane.sh < .lane/prompt.md)
             "--output-format", "stream-json", "--verbose",
-            "--permission-mode", "acceptEdits",
-            "--settings", str(STATE_DIR / "claude-settings.json"),
+            "--permission-mode", MODO_PERMISSAO,
+            "--settings", str(caminho_settings()),
             "--strict-mcp-config", "--mcp-config", str(STATE_DIR / "lane-mcp.json"),
             "--max-budget-usd", str(BUDGET_USD[effort]),
             *flags_da_lane("claude", effort),
@@ -753,7 +1054,8 @@ def agent_command(lane: str, effort: str) -> list[str]:
         cmd = [
             "grok", "--prompt-file", ".lane/prompt.md",
             "--output-format", "streaming-messages-json",
-            "--permission-mode", "acceptEdits",   # vence o always-approve global (testado)
+            "--permission-mode", MODO_PERMISSAO,
+            "--sandbox", PERFIL_SANDBOX,
             "--tools", ",".join(GROK_TOOLS), "--disable-web-search",
             "--max-turns", str(GROK_MAX_TURNS[effort]),
             *flags_da_lane("grok", effort),
@@ -1268,6 +1570,11 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     # dsh: o patch do perfil (conta + modelo + esforço) vai junto com o prompt.
     if lane == "deepseek":
         (lane_dir / "deepseek.yml").write_text(deepseek_patch(effort), encoding="utf-8")
+
+    # FRA-598: o perfil do Grok tem de existir antes do processo. Sem ele o CLI
+    # recusa subir, em vez de rodar sem o deny de `security` e dos segredos.
+    if lane == "grok":
+        escrever_perfil_sandbox()
 
     # FRA-374: o `--` fecha o parsing de flags do CLI. Sem ele, um token do
     # prompt como `--check` (git diff --check) é lido como flag e o CLI aborta.

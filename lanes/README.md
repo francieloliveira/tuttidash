@@ -16,7 +16,7 @@ test_lanes.py    testes offline (sem Linear, sem rede): python3 lanes/test_lanes
 
 ```bash
 cd ~/Developer/tuttidash
-for f in dispatcher.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py; do
+for f in dispatcher.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py claude-settings.json; do
   cp ~/.transcentia/lanes/$f /tmp/lanes-$f.bak
   cp lanes/$f ~/.transcentia/lanes/$f
 done
@@ -84,3 +84,30 @@ estiver estourado. Chegar em In Review não zera o acumulado.
 Pedido de ajuste do revisor (`REVISOR: AJUSTES`) conta 1 tentativa, uma vez
 por id de comentário. A prioridade entre as lanes e a folga por esforço não
 mudam. O verificador do aceite do card não entra aqui.
+
+## Permissões mínimas (FRA-598)
+
+Fonte: `lanes/claude-settings.json`, ao lado do dispatcher (a cópia em
+`~/.transcentia/lanes/` é o que o `tools/install.sh` instala). Claude e Grok
+usam o mesmo allow/deny. O modo é `dontAsk`, não `acceptEdits`.
+
+O que a lane pode rodar no terminal é `git status`, `git diff`, `git add` e
+`git commit`. Arquivo entra pelas ferramentas (`Read`/`Edit`/`Write`/`Grep`
+em `./**`). `python3`, `cat`, `head`, `tail` e `security` estão no deny,
+inclusive com caminho absoluto (`/usr/bin/security`): o basename casa a regra.
+
+Rede e `security` não ficam só na regex:
+
+- Claude: `sandbox.enabled`, `failIfUnavailable`, `allowUnsandboxedCommands`
+  false, `network.allowedDomains` vazio e `strictAllowlist`. `denyRead` cobre
+  `~/.ssh`, `~/.config/gh`, `~/.transcentia` e `/usr/bin/security`. `denyWrite`
+  cobre `.git/config` e `.git/hooks` (o pushurl e o hook).
+- Grok: `--sandbox lane`. O claim grava `[profiles.lane]` em
+  `~/.grok/sandbox.toml` (`extends = strict`, `restrict_network`, deny desses
+  caminhos) sem apagar os outros perfis. Sem o perfil o CLI recusa subir.
+
+Residual, de propósito: isso não substitui o usuário separado nem o sandbox da
+fase 5. No macOS o próprio Grok documenta que `restrict_network` não corta a
+rede dos processos filhos (no Linux corta). O processo continua o do usuário,
+então um bug do CLI ainda enxerga o que o usuário enxerga. O follow-up desse
+residual é a FRA-587 (follow-ups das lanes). Não é outro card.
