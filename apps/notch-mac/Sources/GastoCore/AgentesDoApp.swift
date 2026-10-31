@@ -11,7 +11,7 @@ public protocol RegistroAgentes: AnyObject {
 }
 
 public enum ResultadoMigracao: Equatable, Sendable {
-    case jaNoApp, migrado, semLegado, revertido(String)
+    case jaNoApp, migrado, semLegado, revertido(String), integridade(String)
 }
 
 /// Um agente do app: Label novo (SMAppService) e o Label antigo do plist solto que ele substitui.
@@ -37,17 +37,20 @@ public final class AgentesDoApp {
     let tentativas: Int
     /// Confirmação extra antes de apagar o plist solto (o dispatcher exige heartbeat em modo real).
     let confirmar: (AgenteApp, Date) -> Bool
+    let integridade: FonteIntegridade
 
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, sistema: SistemaAgendas = SistemaReal(),
                 registro: RegistroAgentes, tentativas: Int = 15,
                 esperar: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
-                confirmar: ((AgenteApp, Date) -> Bool)? = nil) {
+                confirmar: ((AgenteApp, Date) -> Bool)? = nil,
+                integridade: FonteIntegridade = IntegridadeAoVivo()) {
         self.home = home; self.sistema = sistema; self.registro = registro
         self.tentativas = tentativas; self.esperar = esperar
         let h = home
         self.confirmar = confirmar ?? { a, desde in
             a != AgentesDoApp.dispatcher || AgentesDoApp.heartbeatReal(home: h, desde: desde)
         }
+        self.integridade = integridade
     }
 
     /// heartbeat.json do dispatcher: gravado depois de `desde` e com dry_run=false.
@@ -84,6 +87,8 @@ public final class AgentesDoApp {
     /// tempo: o antigo sai do launchd antes de registrar o novo. O plist solto só é apagado depois que
     /// o novo carregou e foi confirmado (heartbeat real no dispatcher); senão volta ao plist solto.
     public func migrar(_ a: AgenteApp) -> ResultadoMigracao {
+        let veredito = integridade.veredito()
+        if !veredito.confere { return .integridade(veredito.aviso ?? "integridade: divergencia") }
         if registro.status(a.plist) == .ativo && carregado(a.novo).0 { aposentarAntigo(a); return .jaNoApp }
         guard sistema.existe(legadoURL(a.antigo)) else { return .semLegado }
         _ = sistema.launchctl(["bootout", "\(dominio)/\(a.antigo)"])
@@ -125,7 +130,10 @@ public final class AgentesDoApp {
     }
 
     /// Liga pelo app; se o macOS recusar e ainda houver o plist solto, carrega o solto.
+    /// Hash ou assinatura divergente não registra o agente.
     public func ligar(_ a: AgenteApp) throws {
+        let veredito = integridade.veredito()
+        guard veredito.confere else { throw ErroIntegridade.divergencia(veredito.aviso ?? "integridade: divergencia") }
         do { try registro.registrar(a.plist) } catch {
             guard sistema.existe(legadoURL(a.antigo)) else { throw error }
             _ = sistema.launchctl(["enable", "\(dominio)/\(a.antigo)"])

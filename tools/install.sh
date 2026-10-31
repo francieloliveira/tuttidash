@@ -111,6 +111,13 @@ lancador "TuttiDash Vigia" com.transcentia.bots.watch vigia
 lancador "TuttiDash Chave" com.transcentia.bots.chave chave
 lancador "TuttiDash Dispatcher" com.transcentia.lanes.dispatcher dispatcher
 
+# FRA-616: hash fora do alcance do agente. Não copia o manifesto para ~/.transcentia.
+if [[ "${TUTTIDASH_SEM_ANCORA:-}" == "1" ]]; then
+  echo "AVISO: âncora de integridade não instalada (TUTTIDASH_SEM_ANCORA)."
+else
+  python3 "$ROOT/tools/integridade-controle.py" instalar-repo "$ROOT"
+fi
+
 [ "${1:-}" = "--sem-launchd" ] && { echo "arquivos instalados (sem launchd)"; exit 0; }
 
 # Quando o agente já roda de dentro do TuttiDash.app (SMAppService, Labels app.tuttidash.agente.*),

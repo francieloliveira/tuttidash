@@ -10,6 +10,7 @@ final class EstadoAgendas: ObservableObject {
     @Published var status: [String: StatusAgente] = [:]
     @Published var instalados: Set<String> = []
     @Published var erro: String?
+    @Published var avisoIntegridade: String?
 
     init(modelo: ModeloAjustes) { self.modelo = modelo; atualizar() }
 
@@ -24,11 +25,13 @@ final class EstadoAgendas: ObservableObject {
             var st: [String: StatusAgente] = [:]
             let app = AgentesDoApp(registro: RegistroSMAppService())
             for t in g.trabalhos { est[t.label] = g.estado(t); if let a = AgentesDoApp.agente(antigo: t.label) { st[t.label] = app.status(a) } }
+            let aviso = IntegridadeControle.atual().aviso
             let final = est, finalSt = st
             await MainActor.run { [weak self] in
                 self?.instalados = inst
                 self?.estados = final
                 self?.status = finalSt
+                self?.avisoIntegridade = aviso
             }
         }
     }
@@ -111,6 +114,13 @@ struct SecaoAgendas: View {
 
     @ViewBuilder
     private var conteudo: some View {
+        if let aviso = estado.avisoIntegridade {
+            Text(aviso)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("integridade-controle")
+        }
         ForEach(estado.gerenciador.trabalhos) { t in
             HStack(alignment: .center, spacing: DS.e3) {
                 IconeCartao(simbolo: t.simbolo, cor: corStatus(estado.status[t.label]),
