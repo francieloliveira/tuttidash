@@ -48,6 +48,17 @@ class FilaCompartilhadaTest(unittest.TestCase):
         self.assertTrue(fila.atribuido_a_outro({"assignee": {"id": "u1"}}, "u2"))
         self.assertFalse(fila.atribuido_a_outro({"assignee": {"id": "u1"}}, "u1"))
 
+    def test_saude_de_lane_e_compartilhada(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            caminho = Path(d) / "saude-lanes.json"
+            fila.marcar_falha_lane(caminho, "opencode", "modelo indisponível", 60, quando=100)
+            saude = fila.ler_saude(caminho)
+            self.assertFalse(fila.lane_saudavel(saude, "opencode", agora=130))
+            self.assertTrue(fila.lane_saudavel(saude, "opencode", agora=161))
+            self.assertEqual(saude["opencode"]["motivo"], "modelo indisponível")
+
 
 if __name__ == "__main__":
     unittest.main()

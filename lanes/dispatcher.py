@@ -2757,11 +2757,12 @@ def motivo_que_segura_todo(issue: dict) -> Optional[str]:
     return None
 
 
-def lanes_ociosas(lanes_on, running, limited, per_lane) -> list[str]:
-    """Lanes ligadas, sem card rodando, sem limite de uso e com a fila vazia."""
+def lanes_ociosas(lanes_on, running, limited, per_lane, saude: Optional[dict] = None) -> list[str]:
+    """Lanes ligadas, sem card rodando, sem limite de uso, saudáveis e com a fila vazia."""
     return [lane for lane in LANES
             if lane in lanes_on and lane not in running and lane not in limited
-            and not per_lane.get(lane)]
+            and not per_lane.get(lane)
+            and (saude is None or fila.lane_saudavel(saude, lane))]
 
 
 def escolher_do_todo(cards: list, vagas: list[str], medidas: Optional[dict] = None) -> list:
@@ -2796,7 +2797,8 @@ def escolher_do_todo(cards: list, vagas: list[str], medidas: Optional[dict] = No
 def subir_do_todo(auto: list, per_lane: dict, lanes_on, running, limited, project_id: str,
                   medidas: Optional[dict] = None) -> list[str]:
     """Com lane ociosa, sobe do Todo o card pronto. Não depende da vigia nem do PAUSE dos bots."""
-    vagas = lanes_ociosas(lanes_on, running, limited, per_lane)
+    saude = fila.ler_saude(STATE_DIR / "saude-lanes.json")
+    vagas = lanes_ociosas(lanes_on, running, limited, per_lane, saude)
     if not vagas:
         return []
     try:

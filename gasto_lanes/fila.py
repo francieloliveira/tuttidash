@@ -111,3 +111,40 @@ def escolher_lane(ci: dict, com_folga: set[str], medidas: dict, usados: dict,
         validas.sort(key=lambda l: (0 if l in risco_alto else 1, usados.get(l, 0), l))
         return validas[0]
     return min(validas, key=lambda l: (usados.get(l, 0), l))
+
+
+def ler_saude(caminho) -> dict:
+    """Lê a saúde compartilhada das lanes; arquivo ausente/ilegível = sem bloqueio."""
+    import json
+    from pathlib import Path
+    try:
+        dados = json.loads(Path(caminho).read_text())
+        return dados if isinstance(dados, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def gravar_saude(caminho, saude: dict) -> None:
+    import json
+    from pathlib import Path
+    p = Path(caminho)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(saude, ensure_ascii=False, indent=1))
+    tmp.replace(p)
+
+
+def marcar_falha_lane(caminho, lane: str, motivo: str, cooldown_s: float,
+                      quando: Optional[float] = None) -> None:
+    quando = time.time() if quando is None else float(quando)
+    saude = ler_saude(caminho)
+    saude[lane] = {"ate": quando + cooldown_s, "motivo": motivo}
+    gravar_saude(caminho, saude)
+
+
+def lane_saudavel(saude: dict, lane: str, agora: Optional[float] = None) -> bool:
+    agora = time.time() if agora is None else float(agora)
+    try:
+        return float((saude.get(lane) or {}).get("ate") or 0) <= agora
+    except (TypeError, ValueError):
+        return True

@@ -81,6 +81,7 @@ def app_aberta() -> bool:
 STATE_FILE = STATE_DIR / "state.json"
 PROMPTS_DIR = STATE_DIR / "prompts"
 LANES_DIR = HOME / ".transcentia" / "lanes"
+SAUDE_LANES = LANES_DIR / "saude-lanes.json"
 LOG_FILE = HOME / "Library" / "Logs" / "TranscentIA" / "bots-watch.log"
 RUN_LOG_DIR = HOME / "Library" / "Logs" / "TranscentIA" / "bots"
 PATH_ENV = f"/opt/homebrew/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -1807,7 +1808,11 @@ def _keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     # Vaga é por lane com folga de cota, não por lane só habilitada: Claude/Codex
     # no limite e OpenCode sem medida não podem segurar 2 cards cada no Todo.
     # Lane que acabou de falhar (ex.: modelo indisponível) sai da fila por um tempo.
-    com_folga = {lane for lane in lanes_com_folga() if not lane_em_cooldown(st, lane)}
+    for lane, quando in (st.get("lane_falhas") or {}).items():
+        fila.marcar_falha_lane(SAUDE_LANES, lane, "lane:falhou", LANE_FAIL_COOLDOWN_S, quando)
+    saude = fila.ler_saude(SAUDE_LANES)
+    com_folga = {lane for lane in lanes_com_folga()
+                 if not lane_em_cooldown(st, lane) and fila.lane_saudavel(saude, lane)}
     medidas = medidas_contas()
     running = busy_lanes() & ativas
     running_cards: set[str] = set()
