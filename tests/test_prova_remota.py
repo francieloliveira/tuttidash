@@ -334,8 +334,14 @@ class ContratoDoWorkflow(unittest.TestCase):
         self.assertIn("github.event.pull_request.base.sha", texto)
         self.assertIn("github.event.pull_request.head.sha", texto)
         self.assertIn("head.repo.full_name", texto)
+        self.assertIn('cat-file -e "${PROVA_BASE_SHA}:scripts/prova-remota.sh"', texto)
         self.assertIn('cat-file -p "${PROVA_BASE_SHA}:scripts/prova-remota.sh"', texto)
+        self.assertLess(
+            texto.index('cat-file -e "${PROVA_BASE_SHA}:scripts/prova-remota.sh"'),
+            texto.index('cat-file -p "${PROVA_BASE_SHA}:scripts/prova-remota.sh"'),
+        )
         self.assertIn("bash -s --", texto)
+        self.assertIn('bash "$GITHUB_WORKSPACE/base/tools/checar-publicacao.sh"', texto)
         self.assertIn(f"name: {prova.NOME_DO_CHECK}", texto)
         self.assertIn("runs-on: macos-15", texto)
 

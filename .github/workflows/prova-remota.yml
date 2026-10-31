@@ -50,5 +50,18 @@ jobs:
           [[ "$PROVA_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git -C base rev-parse HEAD)" = "$PROVA_BASE_SHA"
           test "$(git -C head rev-parse HEAD)" = "$PROVA_HEAD_SHA"
-          git -C base cat-file -p "${PROVA_BASE_SHA}:scripts/prova-remota.sh" \
-            | bash -s -- "$GITHUB_WORKSPACE/base" "$GITHUB_WORKSPACE/head"
+          # O blob da base é a prova. Ele ainda não existe no primeiro PR que o
+          # adiciona: aí a suíte abaixo usa a conferência que já está na base.
+          # Nenhum script do head roda nos dois caminhos.
+          if git -C base cat-file -e "${PROVA_BASE_SHA}:scripts/prova-remota.sh"; then
+            git -C base cat-file -p "${PROVA_BASE_SHA}:scripts/prova-remota.sh" \
+              | bash -s -- "$GITHUB_WORKSPACE/base" "$GITHUB_WORKSPACE/head"
+          else
+            echo "prova-remota: base sem scripts/prova-remota.sh; suíte fixa, sem script do head"
+            unset GITHUB_TOKEN GH_TOKEN ACTIONS_RUNTIME_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
+            cd "$GITHUB_WORKSPACE/head"
+            bash "$GITHUB_WORKSPACE/base/tools/checar-publicacao.sh"
+            python3 -m unittest discover -s tests -t .
+            python3 -m unittest lanes.test_lanes
+            (cd apps/notch-mac && swift test)
+          fi
