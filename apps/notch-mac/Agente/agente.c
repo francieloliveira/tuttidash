@@ -19,8 +19,9 @@ int main(int argc, char **argv) {
     snprintf(dir, sizeof dir, "%s/Library/Logs/TranscentIA", home);
     mkdir(dir, 0755);
     snprintf(arq, sizeof arq, "%s/%s", dir, log);
-    int fd = open(arq, O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); close(fd); }
+    /* O_NOFOLLOW: um symlink no lugar do log não desvia a saída. 0600: só o dono lê. */
+    int fd = open(arq, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, 0600);
+    if (fd >= 0) { fchmod(fd, 0600); dup2(fd, 1); dup2(fd, 2); close(fd); }
     snprintf(alvo, sizeof alvo, "%s/%s", home, script);
     char *args[] = { "/usr/bin/python3", alvo, (char *)extra, NULL };
     execv("/usr/bin/python3", args);
