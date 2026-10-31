@@ -1240,3 +1240,44 @@ class ContextoDeFilaTest(unittest.TestCase):
             watch.keep_lanes_busy([codex, grok], {}, [])
         self.assertNotIn("id-FRA-2", {i for i, _ in mudou})
         self.assertIn(("id-FRA-3", watch.STATE_TODO_ID), mudou)
+        # v2: o vigia só promove para o Todo; quem puxa para In Progress é o dispatcher.
+        self.assertNotIn(("id-FRA-3", watch.STATE_IN_PROGRESS_ID), mudou)
+
+    def test_risco_alto_prefere_lane_forte_sem_lane_explicita(self):
+        labels = [{"name": "alto", "parent": {"name": "esforco"}},
+                  {"name": "risco:alto", "parent": None}]
+        card = {"identifier": "FRA-8", "title": "x", "description": "- [ ] ok",
+                "labels": {"nodes": labels}, "comments": {"nodes": []}}
+        medidas = {"opencode": (1, "créditos"), "grok": (50, "créditos")}
+        lane = watch.lane_para_card(card, {"opencode", "grok"}, medidas,
+                                    {"opencode": 0, "grok": 1}, set(), [card])
+        self.assertEqual(lane, "grok", "risco alto tenta Grok/Claude antes da free")
+
+    def test_card_e_lane_entram_em_cooldown(self):
+        import time as _time
+        agora = _time.time()
+        self.assertTrue(watch.card_em_cooldown(
+            {"identifier": "FRA-1"}, {"stops": {"FRA-1": {"ultimo": agora}}}))
+        self.assertFalse(watch.card_em_cooldown(
+            {"identifier": "FRA-1"}, {"stops": {"FRA-1": {"ultimo": agora - watch.FAIL_COOLDOWN_S - 1}}}))
+        self.assertTrue(watch.lane_em_cooldown({"lane_falhas": {"opencode": agora}}, "opencode"))
+        self.assertFalse(watch.lane_em_cooldown(
+            {"lane_falhas": {"opencode": agora - watch.LANE_FAIL_COOLDOWN_S - 1}}, "opencode"))
+
+    def test_card_atribuido_a_outro_nao_entra(self):
+        self.assertTrue(watch.atribuido_a_outro({"assignee": {"id": "u1"}}, "u2"))
+        self.assertFalse(watch.atribuido_a_outro({"assignee": {"id": "u1"}}, "u1"))
+        self.assertFalse(watch.atribuido_a_outro({"assignee": None}, "u2"))
+
+    def test_project_issues_pagina_ate_o_fim(self):
+        from unittest.mock import patch
+        paginas = [
+            {"issues": {"pageInfo": {"hasNextPage": True, "endCursor": "c1"},
+                        "nodes": [{"identifier": "FRA-1", "state": {"name": "Backlog"}}]}},
+            {"issues": {"pageInfo": {"hasNextPage": False, "endCursor": "c2"},
+                        "nodes": [{"identifier": "FRA-2", "state": {"name": "Backlog"}}]}},
+        ]
+        with patch.object(watch, "projeto_linear", return_value="p"), \
+             patch.object(watch, "linear", side_effect=paginas):
+            issues = watch.project_issues(["Backlog"])
+        self.assertEqual([i["identifier"] for i in issues], ["FRA-1", "FRA-2"])

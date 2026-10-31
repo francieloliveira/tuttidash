@@ -134,6 +134,13 @@ HEADROOM_PCT = {"baixo": 90, "medio": 80, "alto": 60}
 HEADROOM_PCT_LONGA = {"baixo": 95, "medio": 90, "alto": 85}
 JANELA_LONGA_RE = re.compile(r"\d+\s*dias?\b|semana|m[êe]s\b|mensal", re.I)
 _EFFORT_EN = {"baixo": "low", "medio": "medium", "alto": "high"}
+# v2 do contexto: card que acabou de falhar não volta no ciclo seguinte; lane que
+# falhou fica fora da fila por um tempo. Risco alto prefere lane forte quando o
+# card não traz uma lane explícita (não bloqueia: é preferência, não regra de ferro).
+FAIL_COOLDOWN_S = _cfg("watch.cooldown_apos_falha_s", 30 * 60)
+LANE_FAIL_COOLDOWN_S = _cfg("watch.cooldown_lane_s", 30 * 60)
+_RISCO_ALTO_CFG = _cfg("watch.lanes_risco_alto", ["claude", "grok"])
+LANES_RISCO_ALTO = set(_RISCO_ALTO_CFG.split() if isinstance(_RISCO_ALTO_CFG, str) else _RISCO_ALTO_CFG)
 STOPS_TO_CALL = _cfg("watch.paradas_para_chamar", 3)   # chama o dono na 3ª parada pelo mesmo motivo
 # Card onde a triagem pede cards novos quando o Todo esvazia; vazio = não pede.
 TRIAGEM_PEDIDOS_CARD = _cfg("watch.card_pedidos_triagem", "")
@@ -358,8 +365,19 @@ def issue(ident: str) -> dict | None:
 
 def project_issues(state_names: list[str] | None = None) -> list[dict]:
     flt = "project:{ id:{ eq:$p } }, state:{ type:{ nin:[\"completed\",\"canceled\"] } }"
-    q = f"""query($p:ID!){{ issues(first:100, filter:{{ {flt} }}){{ nodes{{ {ISSUE_FIELDS} }} }} }}"""
-    nodes = [em_ordem(n) for n in linear(q, {"p": projeto_linear()})["issues"]["nodes"]]
+    q = f"""query($p:ID!, $after:String){{ issues(first:100, after:$after, filter:{{ {flt} }})
+          {{ pageInfo{{ hasNextPage endCursor }} nodes{{ {ISSUE_FIELDS} }} }} }}"""
+    nodes: list[dict] = []
+    after = None
+    # Board grande não pode sumir depois dos 100 primeiros. O teto de 10 páginas
+    # evita laço infinito se a API devolver cursor repetido.
+    for _ in range(10):
+        pagina = linear(q, {"p": projeto_linear(), "after": after})["issues"]
+        nodes.extend(em_ordem(n) for n in pagina["nodes"])
+        info = pagina.get("pageInfo") or {}
+        if not info.get("hasNextPage") or not info.get("endCursor"):
+            break
+        after = info["endCursor"]
     if state_names:
         nodes = [n for n in nodes if n["state"]["name"] in state_names]
     return nodes
@@ -981,6 +999,12 @@ def handle_stops(ci: dict, label: str, st: dict, diary: list[str]) -> bool:
     """Devolve True se usou uma rodada de IA."""
     cid, reason = stop_reason(ci, label)
     per_card = st["stops"].setdefault(ci["identifier"], {"vistos": [], "motivos": {}})
+    if label == "lane:falhou":
+        # A lane também entra em cooldown: modelo indisponível/erro de execução não
+        # deve receber outro card no ciclo seguinte.
+        for lane in catalogo.lanes_por_prioridade():
+            if lane in labels_of(ci):
+                st.setdefault("lane_falhas", {})[lane] = time.time()
     if cid in per_card["vistos"]:
         return False
     count = per_card["motivos"].get(reason, 0) + 1
@@ -988,6 +1012,7 @@ def handle_stops(ci: dict, label: str, st: dict, diary: list[str]) -> bool:
     def seen() -> None:
         per_card["vistos"] = (per_card["vistos"] + [cid])[-20:]
         per_card["motivos"][reason] = count
+        per_card["ultimo"] = time.time()
         st["analise_falhas"].pop(cid, None)
     if count >= STOPS_TO_CALL:
         add_label(ci["id"], OWNER_LABEL)
@@ -1700,8 +1725,46 @@ def contexto_card(ci: dict) -> dict:
         "effort": esforcos[0] if len(esforcos) == 1 else None,
         "effort_invalido": len(esforcos) > 1,
         "risk": riscos[0] if riscos else "",
+        "assignee": (ci.get("assignee") or {}).get("id") or "",
         "files": card_files(ci),
     }
+
+
+def card_em_cooldown(ci: dict, st: dict) -> bool:
+    """Card que acabou de falhar não volta no ciclo seguinte."""
+    per_card = (st.get("stops") or {}).get(ci.get("identifier") or "") or {}
+    try:
+        ultimo = float(per_card.get("ultimo") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(ultimo and time.time() - ultimo < FAIL_COOLDOWN_S)
+
+
+def lane_em_cooldown(st: dict, lane: str) -> bool:
+    """Lane que acabou de falhar fica fora até o cooldown passar."""
+    try:
+        ultimo = float((st.get("lane_falhas") or {}).get(lane) or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(ultimo and time.time() - ultimo < LANE_FAIL_COOLDOWN_S)
+
+
+def viewer_linear(st: dict) -> str:
+    """Id do usuário do token do Linear, para não puxar card atribuído a outra pessoa."""
+    if st.get("viewer_id"):
+        return str(st["viewer_id"])
+    try:
+        viewer = (linear("query{ viewer{ id } }", {}).get("viewer") or {})
+        st["viewer_id"] = viewer.get("id") or ""
+    except RuntimeError as exc:
+        log(f"fila: não li o viewer do Linear ({exc})")
+        st["viewer_id"] = ""
+    return str(st.get("viewer_id") or "")
+
+
+def atribuido_a_outro(ci: dict, viewer: str) -> bool:
+    assignee = (ci.get("assignee") or {}).get("id") or ""
+    return bool(assignee and viewer and assignee != viewer)
 
 
 def held_by_comments(ci: dict) -> bool:
@@ -1771,6 +1834,11 @@ def lane_para_card(ci: dict, com_folga: set[str], medidas: dict, usados: dict,
         validas.append(lane)
     if not validas:
         return None
+    if ctx["risk"] == "risco:alto" and not ctx["lane"]:
+        # Preferência, não bloqueio: risco alto tenta Claude/Grok primeiro; se não
+        # houver nenhum, ainda aceita a lane mais livre para não travar a fila.
+        validas.sort(key=lambda l: (0 if l in LANES_RISCO_ALTO else 1, usados.get(l, 0), l))
+        return validas[0]
     return min(validas, key=lambda l: (usados.get(l, 0), l))
 
 
@@ -1779,7 +1847,8 @@ def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     ativas = lanes_ativas()
     # Vaga é por lane com folga de cota, não por lane só habilitada: Claude/Codex
     # no limite e OpenCode sem medida não podem segurar 2 cards cada no Todo.
-    com_folga = lanes_com_folga()
+    # Lane que acabou de falhar (ex.: modelo indisponível) sai da fila por um tempo.
+    com_folga = {lane for lane in lanes_com_folga() if not lane_em_cooldown(st, lane)}
     medidas = medidas_contas()
     running = busy_lanes() & ativas
     running_cards: set[str] = set()
@@ -1811,11 +1880,15 @@ def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     # esforço e bloqueios resolvidos sobe sozinho para o Todo, até a meta de prontos.
     # O freio só decide o que sobe; o card que ele segura aparece no log com o motivo
     # (FRA-471), para o card não sumir sem explicação.
+    candidatos = [c for c in promotable(issues) if not motivo_do_freio(c)]
+    viewer = viewer_linear(st) if any((c.get("assignee") or {}).get("id") for c in candidatos) else ""
     for ci, motivo in travados_pelo_freio(issues):
         panel(f"freio: {ci['identifier']} não sobe do Backlog — {motivo}")
-    for nxt in [c for c in promotable(issues) if not motivo_do_freio(c)]:
+    for nxt in candidatos:
         if len(todo) >= READY_TARGET:
             break
+        if card_em_cooldown(nxt, st) or atribuido_a_outro(nxt, viewer):
+            continue
         lane = lane_para_card(nxt, com_folga, medidas, usados, running_cards, issues)
         if not lane:
             continue
@@ -1838,26 +1911,8 @@ def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
         diary.append(f"Triagem · {nxt['identifier']} Backlog → Todo (pronto, com lane {lane})")
         todo.append(nxt)
         usados[lane] += 1
-    free = max(0, SLOTS - len(running) - len(waiting))
-    pulled = False
-    if free > 0 and todo:
-        nxt = None
-        lane_choice = None
-        for cand in list(todo):
-            lane = lane_para_card(cand, com_folga, medidas, usados, running_cards, issues)
-            if lane:
-                nxt, lane_choice = cand, lane
-                todo.remove(cand)
-                break
-        if nxt is not None and lane_choice is not None:
-            set_state(nxt["id"], STATE_IN_PROGRESS_ID)
-            comment(nxt["id"], f"[Triagem] Lane ociosa: card puxado do Todo para a fila; encaixe {lane_choice}. "
-                               "O dispatcher escolhe a lane pela medida (lanepct-auto).")
-            diary.append(f"Triagem · {nxt['identifier']} Todo → fila (lane {lane_choice})")
-            panel(f"fila: {nxt['identifier']} puxado do Todo para In Progress (lane {lane_choice})")
-            usados[lane_choice] += 1
-            pulled = True
-    if free > 0 and not todo and not pulled and time.time() - st.get("painel_fila", 0) > EMPTY_QUEUE_PANEL_S:
+    free = max(0, SLOTS - len(running) - len(waiting) - len(todo))
+    if free > 0 and not todo and time.time() - st.get("painel_fila", 0) > EMPTY_QUEUE_PANEL_S:
         st["painel_fila"] = time.time()
         panel(f"fila vazia: {free} lane(s) ociosa(s) e nenhum card pronto no Todo nem no Backlog "
               "(precisa de esforço e bloqueios em Done); precisa de card pronto")
