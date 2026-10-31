@@ -60,5 +60,15 @@ class FilaCompartilhadaTest(unittest.TestCase):
             self.assertEqual(saude["opencode"]["motivo"], "modelo indisponível")
 
 
+    def test_dispatcher_respeita_assignee(self):
+        import lanes.dispatcher as d
+        c = card(lane="grok", assignee="u1")
+        c.update({"title": "x", "inverseRelations": {"nodes": []}})
+        medidas = {"grok": (11, "créditos")}
+        self.assertEqual(d.escolher_do_todo([c], ["grok"], medidas, viewer="u2"), [])
+        self.assertEqual(len(d.escolher_do_todo([c], ["grok"], medidas, viewer="u1")), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
+

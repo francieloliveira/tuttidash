@@ -106,6 +106,8 @@ GROK_MAX_TURNS = {"baixo": 30, "medio": 60, "alto": 100}
 # `--effort`; o dispatcher grava um patch de perfil por execução (deepseek_patch).
 DSH_ESFORCO = {"baixo": "low", "medio": "high", "alto": "max"}
 DSH_ESFORCOS_VALIDOS = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
+# Risco alto sem lane explícita prefere estas lanes (mesma preferência do vigia).
+RISCO_ALTO_LANES = {"claude", "grok"}
 # Teto de cards por lane ativa: 1 RUN + (MAX_PER_LANE - 1) WAIT.
 # Deve bater com tools/cfg DEFAULTS["watch"]["max_tarefas_por_lane"].
 MAX_PER_LANE = 2
@@ -267,6 +269,7 @@ HOME = Path.home()
 STATE_DIR = HOME / ".transcentia" / "lanes"
 LANES_COMMAND = HOME / ".transcentia" / "tools" / "lanes.command"
 APP_PID = STATE_DIR / "app.pid"
+VIEWER_FILE = STATE_DIR / "viewer-id"
 
 
 def app_aberta() -> bool:
@@ -400,6 +403,28 @@ def linear(query: str, variables: dict) -> dict:
     if data.get("errors"):
         raise RuntimeError(f"Linear: {data['errors'][0].get('message', data['errors'])}")
     return data["data"]
+
+
+def viewer_linear() -> str:
+    """Id do usuário do token, para o dispatcher também respeitar assignee."""
+    try:
+        salvo = VIEWER_FILE.read_text().strip()
+        if salvo:
+            return salvo
+    except OSError:
+        pass
+    try:
+        viewer = (linear("query{ viewer{ id } }", {}).get("viewer") or {})
+        ident = str(viewer.get("id") or "")
+    except RuntimeError as exc:
+        log(f"fila: não li o viewer do Linear ({exc})")
+        return ""
+    if ident:
+        try:
+            VIEWER_FILE.write_text(ident)
+        except OSError:
+            pass
+    return ident
 
 
 # --- Regras de elegibilidade (determinísticas) ------------------------------
@@ -2668,6 +2693,8 @@ def spread_auto(auto: list, measures: dict, candidates, busy, per_lane: dict,
                    and not card_banido_da_lane(l, it.get("identifier", ""), it.get("_effort") or "")]
         if not fit_run:
             continue
+        if fila.contexto_card(it).get("risk") == "risco:alto":
+            fit_run.sort(key=lambda l: (0 if l in RISCO_ALTO_LANES else 1, l))
         lane = fit_run[0]
         fill[lane] += 1
         per_lane.setdefault(lane, []).append(it)
@@ -2682,6 +2709,8 @@ def spread_auto(auto: list, measures: dict, candidates, busy, per_lane: dict,
         if not fit_wait:
             out.append((it, None))
             continue
+        if fila.contexto_card(it).get("risk") == "risco:alto":
+            fit_wait.sort(key=lambda l: (0 if l in RISCO_ALTO_LANES else 1, l))
         lane = fit_wait[0]
         fill[lane] += 1
         per_lane.setdefault(lane, []).append(it)
@@ -2765,7 +2794,8 @@ def lanes_ociosas(lanes_on, running, limited, per_lane, saude: Optional[dict] = 
             and (saude is None or fila.lane_saudavel(saude, lane))]
 
 
-def escolher_do_todo(cards: list, vagas: list[str], medidas: Optional[dict] = None) -> list:
+def escolher_do_todo(cards: list, vagas: list[str], medidas: Optional[dict] = None,
+                     viewer: str = "") -> list:
     """Até um card por vaga: o de maior prioridade que uma lane ociosa pode receber.
 
     Card com lane própria só sobe se essa lane está na lista de vagas **e** tem
@@ -2778,6 +2808,8 @@ def escolher_do_todo(cards: list, vagas: list[str], medidas: Optional[dict] = No
     prontos = []
     for card in cards:
         if motivo_que_segura_todo(card):
+            continue
+        if fila.atribuido_a_outro(card, viewer):
             continue
         lane, effort, why = classify(card)
         if why or not lane:
@@ -2807,8 +2839,9 @@ def subir_do_todo(auto: list, per_lane: dict, lanes_on, running, limited, projec
     except Exception as exc:  # noqa: BLE001
         log(f"fila: não li o Todo ({exc})")
         return []
+    viewer = viewer_linear() if any((c.get("assignee") or {}).get("id") for c in todos) else ""
     linhas = []
-    for it in escolher_do_todo(todos, vagas, medidas):
+    for it in escolher_do_todo(todos, vagas, medidas, viewer):
         ident = it.get("identifier") or "?"
         try:
             mudar_estado(it["id"], STATE_IN_PROGRESS_ID)
