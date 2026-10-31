@@ -584,8 +584,13 @@ struct LinhaLaneDashboard: View {
                 .accessibilityLabel(aberta ? "Recolher \(linha.lane)" : "Expandir \(linha.lane)")
                 PilulaEstado(estado: estado).fixedSize().frame(width: 97, alignment: .leading)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: linha.ultimaBuild.map { "build #" + String($0) } ?? "—").font(PV.fonte(12.5))
-                    Text(haPainel(linha.ultimaBuildInicio, agora: agora) ?? "sem build").font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    if linha.estado == .rodando || linha.estado == .livre {
+                        Text(verbatim: linha.ultimaBuild.map { "build #" + String($0) } ?? "—").font(PV.fonte(12.5))
+                        Text(haPainel(linha.ultimaBuildInicio, agora: agora) ?? "sem build").font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    } else {
+                        // Pausada/desligada não está executando build: mostrar a última só confunde.
+                        Text("—").font(PV.fonte(12.5)).foregroundStyle(PV.apagado)
+                    }
                 }
                 .padding(.leading, 10)
                 Spacer(minLength: 4)
