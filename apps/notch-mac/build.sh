@@ -18,8 +18,10 @@ if [[ "${1:-}" == "--testes" ]]; then
 fi
 
 echo "==> swift build -c release"
-swift build -c release --product "$EXEC"
-BIN_DIR="$(swift build -c release --show-bin-path)"
+# Sem cache de manifesto: o Package.swift decide se Privado/GastoPrivado entra,
+# e o cache antigo continuaria dizendo "sem privado" depois de restaurar a pasta.
+swift build -c release --manifest-cache none --product "$EXEC"
+BIN_DIR="$(swift build -c release --manifest-cache none --show-bin-path)"
 
 echo "==> empacotando $APP"
 rm -rf "$APP"

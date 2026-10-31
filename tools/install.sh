@@ -30,7 +30,7 @@ install -m 644 "$HERE/tema.tmux" "$T/tema.tmux"
 mkdir -p "$T/lane-pct"
 rsync -a --delete --exclude .build "$HERE/lane-pct/" "$T/lane-pct/"
 if command -v swift >/dev/null; then
-  (cd "$T/lane-pct" && TUTTIDASH_APP="$ROOT/apps/notch-mac" swift build -c release -q) \
+  (cd "$T/lane-pct" && TUTTIDASH_APP="$ROOT/apps/notch-mac" swift build -c release --manifest-cache none -q) \
     || echo "AVISO: build do lanepct falhou; binário anterior mantido"
 fi
 
