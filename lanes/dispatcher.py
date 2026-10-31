@@ -172,11 +172,19 @@ LANEPCT_AUTO = Path.home() / ".transcentia" / "tools" / "lanepct-auto"
 # Vem do cadastro `projetos` da config do TuttiDash (`gasto_lanes/projetos.py`).
 # Sem a chave na config não há projeto e o ciclo só registra isso (FRA-565).
 # `projeto()` é lido a cada ciclo: mudar a config muda o projeto na hora.
+def _caminho_cfg() -> Path:
+    """`tools/cfg` do checkout, ou a cópia instalada. O cfg usa o resolvedor único."""
+    local = Path(__file__).resolve().parent.parent / "tools" / "cfg"
+    if local.is_file():
+        return local
+    return Path.home() / ".transcentia" / "tools" / "cfg"
+
+
 def _cfg(chave, padrao):
-    """Lê ~/.transcentia/tools/cfg (FRA-295); sem cfg ou com erro, devolve o padrão."""
+    """Lê o `cfg` (FRA-295); sem cfg ou com erro, devolve o padrão."""
     try:
         import runpy
-        v = runpy.run_path(str(Path.home() / ".transcentia/tools/cfg"))["get"](chave, padrao)
+        v = runpy.run_path(str(_caminho_cfg()))["get"](chave, padrao)
         return type(padrao)(v) if padrao is not None and not isinstance(padrao, (list, set, dict)) else v
     except Exception:  # noqa: BLE001
         return padrao
@@ -527,14 +535,20 @@ def touched_protected(paths: list[str]) -> list[str]:
 
 
 # --- Modelo customizado por lane (do config do TuttiDash) -------------------
-# O app grava em ~/Library/Application Support/TuttiDash/config.json (FRA-523);
-# a pasta antiga Lanekeeper fica como reserva.
-# O dispatcher lê esse caminho primeiro, com fallback para ~/.transcentia/tools/config.json.
-CONFIG_FILES = [
-    Path.home() / "Library/Application Support/TuttiDash/config.json",
-    Path.home() / "Library/Application Support/Lanekeeper/config.json",
-    Path.home() / ".transcentia/tools/config.json",
-]
+# O arquivo é o do resolvedor único (gasto_lanes/config.py): env > TuttiDash >
+# Lanekeeper > TranscentIA Gasto > legado. Testes trocam CONFIG_FILES por uma lista.
+_USAR_RESOLVEDOR = object()
+CONFIG_FILES = _USAR_RESOLVEDOR
+
+
+def _arquivos_cfg() -> list:
+    if CONFIG_FILES is not _USAR_RESOLVEDOR:
+        return list(CONFIG_FILES)
+    try:
+        from config import arquivos_em_uso
+    except ImportError:
+        from gasto_lanes.config import arquivos_em_uso
+    return arquivos_em_uso()
 # Última lista boa de modelos, a mesma que os Ajustes gravam (FRA-521).
 CACHE_MODELOS = catalogo.CACHE_MODELOS
 
@@ -544,7 +558,7 @@ def ler_modelo_lane(lane: str) -> Optional[str]:
 
     String antiga e `{"modo": "fixo"}` devolvem o modelo. O automático por peso não cabe
     numa string: `modelo_da_lane` lê `porPeso`."""
-    bruto = catalogo.bruto_modelo(lane, CONFIG_FILES)
+    bruto = catalogo.bruto_modelo(lane, _arquivos_cfg())
     if bruto is None:
         return None
     cfg = catalogo.normalizar_config_modelo(bruto)
@@ -563,7 +577,7 @@ def _cache_modelos() -> dict:
 
 
 def _resolucao_modelo(lane: str, effort: str) -> dict:
-    return catalogo.resolver_modelo(lane, effort, catalogo.bruto_modelo(lane, CONFIG_FILES), _cache_modelos())
+    return catalogo.resolver_modelo(lane, effort, catalogo.bruto_modelo(lane, _arquivos_cfg()), _cache_modelos())
 
 
 def modelo_da_lane(lane: str, effort: str) -> str:
@@ -610,7 +624,7 @@ def reconciliar_modelos_sumidos() -> list[str]:
     if not cache:
         return []
     mudou: list[str] = []
-    for cfg_path in CONFIG_FILES:
+    for cfg_path in _arquivos_cfg():
         if not cfg_path.exists():
             continue
         try:
