@@ -7,6 +7,9 @@ TRANSCENTIA_GASTO_CONFIG > ~/Library/Application Support/TuttiDash/config.json
 > ~/Library/Application Support/TranscentIA Gasto/config.json
 > ~/.transcentia/tools/config.json (legado). Sem arquivo, vale o padrão da linha de comando.
 
+``migrate`` grava o TuttiDash em modo 0600. Não cobre um dict com texto (``preflight``
+string fica de fora) e não copia ``agendas.jobs`` que não passe na validação.
+
   cfg get <chave.pontuada> [padrão]   imprime o valor (listas/dicts em JSON; bool como true/false)
   cfg path                            imprime o arquivo em uso (ou nada)
   cfg migrate                         cria o arquivo novo (versão atual) a partir do legado + padrões;
@@ -19,11 +22,27 @@ import json, os, sys
 from pathlib import Path
 
 VERSION = 1
-HOME = Path.home()
-NOVO = HOME / "Library/Application Support/TuttiDash/config.json"
-LANEKEEPER = HOME / "Library/Application Support/Lanekeeper/config.json"  # nome antes do FRA-523
-INTERMEDIO = HOME / "Library/Application Support/TranscentIA Gasto/config.json"  # nome provisório
-LEGADO = HOME / ".transcentia/tools/config.json"
+
+
+def _caminhos():
+    """Os quatro caminhos do Mac, na hora da chamada (o home pode ser de teste)."""
+    return _lib().caminhos_config(Path.home(), "darwin")
+
+
+def _novo():
+    return _caminhos()[0]
+
+
+def _lanekeeper():
+    return _caminhos()[1]
+
+
+def _intermedio():
+    return _caminhos()[2]
+
+
+def _legado():
+    return _caminhos()[3]
 
 DEFAULTS = {
     "version": VERSION,
@@ -173,10 +192,18 @@ def _fmt(v):
 
 
 def _mesclar(base, extra):
-    out = dict(base)
-    for k, v in extra.items():
-        out[k] = _mesclar(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
-    return out
+    """Delegação ao resolvedor: não mistura tipos e não leva jobs sem validação."""
+    return _lib().mesclar(base, extra)
+
+
+def _gravar(path: Path, dados) -> None:
+    """Grava o JSON e deixa o arquivo só para o dono (0600)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+    os.chmod(path, 0o600)
 
 
 def _faltantes(base, atual):
@@ -193,7 +220,7 @@ def _faltantes(base, atual):
 def _copiar_pasta_lanekeeper():
     """FRA-523: copia (não move) os arquivos da pasta Lanekeeper para a TuttiDash.
     Não sobrescreve nada que já exista na pasta nova."""
-    antiga, nova = LANEKEEPER.parent, NOVO.parent
+    antiga, nova = _lanekeeper().parent, _novo().parent
     if not antiga.is_dir():
         return
     import shutil
@@ -217,38 +244,51 @@ def _renomear_jobs(d):
     return d
 
 
+def _ler_json(path: Path):
+    try:
+        dados = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return dados if isinstance(dados, dict) else None
+
+
 def migrar():
+    novo = _novo()
+    ja_tinha = novo.exists()
     _copiar_pasta_lanekeeper()
-    if NOVO.exists():
+    if ja_tinha:
         try:
-            atual = json.loads(NOVO.read_text())
+            atual = json.loads(novo.read_text(encoding="utf-8"))
         except Exception:
-            print(f"já existe (ilegível, não mexo): {NOVO}")
+            print(f"já existe (ilegível, não mexo): {novo}")
             return 0
-        novo = _renomear_jobs(_faltantes(DEFAULTS, json.loads(json.dumps(atual)))) if isinstance(atual, dict) else atual
-        if novo != atual:
-            tmp = NOVO.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(novo, ensure_ascii=False, indent=2) + "\n")
-            tmp.replace(NOVO)
-            print(f"completado com padrões novos: {NOVO}")
+        completo = _renomear_jobs(_faltantes(DEFAULTS, json.loads(json.dumps(atual)))) if isinstance(atual, dict) else atual
+        if completo != atual:
+            _gravar(novo, completo)
+            print(f"completado com padrões novos: {novo}")
         else:
-            print(f"já existe: {NOVO}")
+            print(f"já existe: {novo}")
         return 0
-    legado = {}
-    origem = next((p for p in (LANEKEEPER, INTERMEDIO) if p.exists()), LEGADO)
-    if origem.exists():
-        try:
-            legado = json.loads(origem.read_text())
-        except Exception:
-            print(f"config antiga ilegível, usando só padrões: {origem}", file=sys.stderr)
-    d = _mesclar(DEFAULTS, legado if isinstance(legado, dict) else {})
+    bruto = {}
+    if novo.exists():
+        # A cópia da pasta Lanekeeper acabou de criar o arquivo: é a origem.
+        lido = _ler_json(novo)
+        if lido is None:
+            print(f"config copiada ilegível, usando só padrões: {novo}", file=sys.stderr)
+        else:
+            bruto = lido
+    else:
+        origem = next((p for p in (_lanekeeper(), _intermedio()) if p.exists()), _legado())
+        if origem.exists():
+            lido = _ler_json(origem)
+            if lido is None:
+                print(f"config antiga ilegível, usando só padrões: {origem}", file=sys.stderr)
+            else:
+                bruto = lido
+    d = _renomear_jobs(_mesclar(DEFAULTS, bruto))
     d["version"] = VERSION
-    _renomear_jobs(d)
-    NOVO.parent.mkdir(parents=True, exist_ok=True)
-    tmp = NOVO.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n")
-    tmp.replace(NOVO)
-    print(f"criado: {NOVO}")
+    _gravar(novo, d)
+    print(f"criado: {novo}")
     return 0
 
 

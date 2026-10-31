@@ -24,6 +24,7 @@ e o app) usa este módulo. Não mantenha outra lista de caminhos.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -193,6 +194,80 @@ def obter(chave: str, padrao=None, env: Optional[Mapping[str, str]] = None,
     if valor is _AUSENTE or valor is None or valor == "":
         return padrao
     return valor
+
+
+def tipos_compativeis(atual, novo) -> bool:
+    """True quando ``novo`` pode substituir ``atual``. Texto não cobre dict, bool não cobre número."""
+    if isinstance(atual, bool) or isinstance(novo, bool):
+        return isinstance(atual, bool) and isinstance(novo, bool)
+    if isinstance(atual, (int, float)) and isinstance(novo, (int, float)):
+        return True
+    if isinstance(atual, str) and isinstance(novo, str):
+        return True
+    if isinstance(atual, list) and isinstance(novo, list):
+        return True
+    if isinstance(atual, dict) and isinstance(novo, dict):
+        return True
+    return False
+
+
+def job_valido(item) -> bool:
+    """Mesma régua do app (``Trabalho.lista``): label, nome sem barra, chave, script e log."""
+    if not isinstance(item, dict):
+        return False
+    for campo in ("label", "nome", "chave", "script", "log"):
+        valor = item.get(campo)
+        if not isinstance(valor, str) or not valor.strip():
+            return False
+    if "/" in item["nome"]:
+        return False
+    if "argumentos" in item:
+        args = item["argumentos"]
+        if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
+            return False
+    if "interpretador" in item and not isinstance(item["interpretador"], str):
+        return False
+    if "intervalo_padrao" in item and (
+            isinstance(item["intervalo_padrao"], bool)
+            or not isinstance(item["intervalo_padrao"], (int, float))):
+        return False
+    if "run_at_load" in item and not isinstance(item["run_at_load"], bool):
+        return False
+    return True
+
+
+def jobs_validos(bruto):
+    """Cópia da lista se todos os jobs passam. None = não migrar (fica o padrão)."""
+    if not isinstance(bruto, list) or not bruto:
+        return None
+    if not all(job_valido(j) for j in bruto):
+        return None
+    return [copy.deepcopy(j) for j in bruto]
+
+
+def mesclar(base, extra) -> dict:
+    """Copia ``extra`` sobre ``base``. Dict desce. Tipo diferente não substitui.
+
+    ``jobs`` que já é lista (``agendas.jobs``) só entra se cada item for um
+    lançador válido. Lista vazia, texto ou item sem label ficam de fora.
+    """
+    out = copy.deepcopy(base) if isinstance(base, dict) else {}
+    if not isinstance(extra, dict):
+        return out
+    for chave, valor in extra.items():
+        if chave == "jobs" and isinstance(out.get(chave), list):
+            validos = jobs_validos(valor)
+            if validos is None:
+                continue
+            out[chave] = validos
+            continue
+        if chave in out and isinstance(out[chave], dict) and isinstance(valor, dict):
+            out[chave] = mesclar(out[chave], valor)
+            continue
+        if chave in out and not tipos_compativeis(out[chave], valor):
+            continue
+        out[chave] = valor
+    return out
 
 
 def _num(key: str, value, origem: str) -> Optional[float]:

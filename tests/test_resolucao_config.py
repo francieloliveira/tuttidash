@@ -206,5 +206,125 @@ class MesmoArquivo(unittest.TestCase):
             self.assertEqual(C.obter("linear.workspace_url"), "https://tutti.example")
 
 
+def _job(**extra):
+    item = {
+        "label": "com.exemplo.job",
+        "nome": "Exemplo",
+        "chave": "exemplo",
+        "script": "~/bin/exemplo",
+        "argumentos": ["--real"],
+        "log": "~/Library/Logs/exemplo.log",
+    }
+    item.update(extra)
+    return item
+
+
+class MigrateDoCfg(unittest.TestCase):
+    """``cfg migrate``: não mistura tipo, não leva job sem validação, grava 0600."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self._home = mock.patch.object(Path, "home", return_value=self.home)
+        self._home.start()
+        self.addCleanup(self._home.stop)
+        self._env = mock.patch.dict(os.environ, {C.ENV_CONFIG: ""})
+        self._env.start()
+        self.addCleanup(self._env.stop)
+
+    def novo(self) -> Path:
+        return self.home / "Library/Application Support/TuttiDash/config.json"
+
+    def escrever(self, relativo, dados) -> Path:
+        caminho = self.home / relativo
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        caminho.write_text(json.dumps(dados), encoding="utf-8")
+        return caminho
+
+    def migrar(self):
+        cfg = carregar_cfg()
+        self.assertEqual(cfg.migrar(), 0)
+        return cfg, json.loads(self.novo().read_text(encoding="utf-8"))
+
+    def test_mesclar_nao_cobre_dict_com_texto_nem_job_vazio(self):
+        base = {
+            "preflight": {"max_load": 16, "scheme": ""},
+            "agendas": {"dispatcher_s": 60, "jobs": [_job(label="com.padrao")]},
+        }
+        out = C.mesclar(base, {
+            "preflight": "quebrado",
+            "aviso_pct": 70,
+            "agendas": {"dispatcher_s": 90, "jobs": []},
+        })
+        self.assertEqual(out["preflight"], {"max_load": 16, "scheme": ""})
+        self.assertEqual(out["aviso_pct"], 70)
+        self.assertEqual(out["agendas"]["dispatcher_s"], 90)
+        self.assertEqual(out["agendas"]["jobs"], [_job(label="com.padrao")])
+        self.assertIsNot(out["agendas"]["jobs"], base["agendas"]["jobs"])
+
+    def test_lanekeeper_string_e_job_invalido_nao_entram_e_grava_0600(self):
+        self.escrever("Library/Application Support/Lanekeeper/config.json", {
+            "preflight": "quebrado",
+            "aviso_pct": 70,
+            "agendas": {"dispatcher_s": 120, "jobs": [{"nome": "sem/barra"}]},
+        })
+        self.escrever("Library/Application Support/Lanekeeper/agendas.json", {"x": 1})
+        cfg, dados = self.migrar()
+        novo = self.novo()
+        self.assertIsInstance(dados["preflight"], dict)
+        self.assertEqual(dados["preflight"]["max_load"], 16)
+        self.assertEqual(dados["aviso_pct"], 70)
+        self.assertEqual(dados["agendas"]["dispatcher_s"], 120)
+        self.assertEqual(dados["agendas"]["jobs"], cfg.DEFAULTS["agendas"]["jobs"])
+        self.assertEqual(novo.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(novo.with_suffix(".json.tmp").exists())
+        self.assertTrue((self.home / "Library/Application Support/Lanekeeper/config.json").is_file())
+        self.assertTrue((self.home / "Library/Application Support/TuttiDash/agendas.json").is_file())
+
+    def test_legado_com_jobs_validos_troca_a_lista_e_nao_o_numero(self):
+        job = _job()
+        self.escrever(".transcentia/tools/config.json", {
+            "preflight": {"max_load": True, "scheme": "App"},
+            "agendas": {"jobs": [job]},
+        })
+        _, dados = self.migrar()
+        self.assertEqual(dados["preflight"]["max_load"], 16)
+        self.assertTrue(dados["preflight"]["skip_preflight_first"])
+        self.assertEqual(dados["preflight"]["scheme"], "App")
+        self.assertEqual(dados["agendas"]["jobs"], [job])
+        self.assertEqual(self.novo().stat().st_mode & 0o777, 0o600)
+        self.assertTrue((self.home / ".transcentia/tools/config.json").is_file())
+
+    def test_job_sem_campo_ou_lista_vazia_fica_no_padrao(self):
+        cfg, dados = self._migrar_jobs([])
+        self.assertEqual(dados["agendas"]["jobs"], cfg.DEFAULTS["agendas"]["jobs"])
+        incompleto = _job()
+        del incompleto["script"]
+        cfg, dados = self._migrar_jobs([incompleto])
+        self.assertEqual(dados["agendas"]["jobs"], cfg.DEFAULTS["agendas"]["jobs"])
+
+    def _migrar_jobs(self, jobs):
+        pasta = self.home / ".transcentia/tools"
+        if pasta.exists():
+            for item in pasta.iterdir():
+                item.unlink()
+        self.escrever(".transcentia/tools/config.json", {"agendas": {"jobs": jobs}})
+        tutti = self.novo()
+        if tutti.exists():
+            tutti.unlink()
+        return self.migrar()
+
+    def test_arquivo_incompleto_completa_sem_trocar_valor_e_grava_0600(self):
+        novo = self.escrever(
+            "Library/Application Support/TuttiDash/config.json",
+            {"version": 1, "preflight": {"max_load": 33}})
+        os.chmod(novo, 0o644)
+        _, dados = self.migrar()
+        self.assertEqual(dados["preflight"]["max_load"], 33)
+        self.assertEqual(dados["linear"]["owner_label"], "needs:dono")
+        self.assertEqual(novo.stat().st_mode & 0o777, 0o600)
+
+
 if __name__ == "__main__":
     unittest.main()
