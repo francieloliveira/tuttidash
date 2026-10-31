@@ -40,14 +40,22 @@ cp Resources/LaunchAgents/*.plist "$APP/Contents/Library/LaunchAgents/"
 xcrun clang -O2 -Wall -mmacosx-version-min=14.0 -o "$APP/Contents/MacOS/tuttidash-agente" Agente/agente.c
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-echo "==> manifests de agente (agents.d/)"
+echo "==> manifests de agente (agents.d/, 0600 no bundle)"
 AGENTS_D="$(cd "$HERE/../.." && pwd)/agents.d"
-if [[ -d "$AGENTS_D" ]]; then
-  mkdir -p "$APP/Contents/Resources/agents.d"
-  cp "$AGENTS_D"/*.json "$APP/Contents/Resources/agents.d/"
-else
-  echo "AVISO: agents.d/ não encontrado em $AGENTS_D (o app cai no registry embutido)"
+if [[ ! -d "$AGENTS_D" ]]; then
+  echo "ERRO: agents.d/ não encontrado em $AGENTS_D" >&2
+  exit 1
 fi
+mkdir -p "$APP/Contents/Resources/agents.d"
+install -m 600 "$AGENTS_D"/*.json "$APP/Contents/Resources/agents.d/"
+
+echo "==> settings e MCP (bundle, 0600; sem fixture de teste)"
+if [[ ! -f "$HERE/Resources/claude-settings.json" || ! -f "$HERE/Resources/lane-mcp.json" ]]; then
+  echo "ERRO: falta o template de produção Resources/claude-settings.json ou lane-mcp.json" >&2
+  exit 1
+fi
+install -m 600 "$HERE/Resources/claude-settings.json" "$APP/Contents/Resources/claude-settings.json"
+install -m 600 "$HERE/Resources/lane-mcp.json" "$APP/Contents/Resources/lane-mcp.json"
 
 echo "==> textos (Localizable.xcstrings -> en/pt-BR)"
 xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$APP/Contents/Resources"

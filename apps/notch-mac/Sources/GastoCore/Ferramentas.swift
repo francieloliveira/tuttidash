@@ -1,8 +1,9 @@
 import Foundation
 
 /// Ferramenta que o TuttiDash precisa ou usa (FRA-570): as de base ficam aqui; as dos agentes vêm
-/// do bloco `instalar` de cada manifesto (`agents.d`). Instalar e entrar abrem o Terminal com o
-/// comando oficial: a pessoa vê o que vai rodar e responde ao login. Nada roda escondido.
+/// do bloco `instalar` de cada manifesto. O manifesto é o do bundle assinado (FRA-614), não o de
+/// `~/.transcentia/agents.d`. Instalar e entrar abrem o Terminal com o comando oficial: a pessoa
+/// vê o que vai rodar e responde ao login. Nada roda escondido.
 public struct Ferramenta: Identifiable, Equatable, Sendable {
     public enum Tipo: Sendable { case base, agente }
     public var id: String

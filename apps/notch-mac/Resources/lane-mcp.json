@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "transcentia-docs": {
+      "command": "/Users/francieloliveira/Developer/TranscentIA-App/rag-dev/venv_mcp/bin/python3",
+      "args": ["/Users/francieloliveira/Developer/TranscentIA-App/rag-dev/mcp_server.py"]
+    }
+  }
+}

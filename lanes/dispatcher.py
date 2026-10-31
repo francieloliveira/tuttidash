@@ -509,9 +509,53 @@ def effective_lanes(enabled: set) -> tuple:
             sorted(l for l in enabled if not lane_runnable(l)))
 
 
+def _template_producao(nome: str) -> Optional[Path]:
+    """Template versionado no repo. Não é o fixture de teste nem a cópia em ~/.transcentia."""
+    aqui = Path(__file__).resolve()
+    if ".transcentia" in aqui.parts:
+        return None
+    raiz = None
+    for pai in aqui.parents:
+        if (pai / ".git").exists():
+            raiz = pai
+            break
+    if raiz is None:
+        return None
+    caminho = raiz / "apps" / "notch-mac" / "Resources" / nome
+    try:
+        resolvido = caminho.resolve()
+    except OSError:
+        return None
+    if "fixtures" in resolvido.parts or ".transcentia" in resolvido.parts or not resolvido.is_file():
+        return None
+    return resolvido
+
+
+def caminho_controle(nome: str) -> Path:
+    """`claude-settings.json` ou `lane-mcp.json` do bundle assinado; senão, o template do repo.
+
+    A cópia em `~/.transcentia/lanes` e o fixture de teste não servem: a lane escreve
+    na primeira, e o fixture é um stub (`allow: ["Read"]`).
+    """
+    if nome not in ("claude-settings.json", "lane-mcp.json"):
+        raise ValueError(nome)
+    recursos = catalogo.recursos_do_bundle()
+    if recursos is not None:
+        arq = (recursos / nome).resolve()
+        if arq.is_file() and "fixtures" not in arq.parts and ".transcentia" not in arq.parts:
+            return arq
+    repo = _template_producao(nome)
+    if repo is not None:
+        return repo
+    raise FileNotFoundError(
+        f"{nome} não está no bundle assinado nem no template de produção; "
+        "não uso ~/.transcentia nem o fixture de teste")
+
+
 def lane_permissions() -> dict:
-    """Mesmas regras para as duas lanes (claude-settings.json)."""
-    return json.loads((STATE_DIR / "claude-settings.json").read_text())["permissions"]
+    """Regras das lanes claude e grok. O arquivo vem do bundle, não de ~/.transcentia."""
+    dados = json.loads(caminho_controle("claude-settings.json").read_text(encoding="utf-8"))
+    return dados["permissions"]
 
 
 def sort_key(issue: dict) -> tuple:
@@ -754,8 +798,8 @@ def agent_command(lane: str, effort: str) -> list[str]:
             "claude", "-p",  # prompt chega pelo stdin (run_lane.sh < .lane/prompt.md)
             "--output-format", "stream-json", "--verbose",
             "--permission-mode", "acceptEdits",
-            "--settings", str(STATE_DIR / "claude-settings.json"),
-            "--strict-mcp-config", "--mcp-config", str(STATE_DIR / "lane-mcp.json"),
+            "--settings", str(caminho_controle("claude-settings.json")),
+            "--strict-mcp-config", "--mcp-config", str(caminho_controle("lane-mcp.json")),
             "--max-budget-usd", str(BUDGET_USD[effort]),
             *flags_da_lane("claude", effort),
         ]

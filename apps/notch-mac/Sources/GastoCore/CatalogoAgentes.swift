@@ -6,8 +6,9 @@ import Foundation
 /// 1 arquivo JSON em `agents.d/`, sem tocar em código. O Swift e o Python leem o
 /// mesmo diretório, então a paridade dos dois registries é estrutural.
 ///
-/// Os manifests versionados no repo são a fonte (E13). Em runtime o app lê a cópia
-/// instalada em `~/.transcentia/agents.d/` (ou a do bundle), **só leitura**.
+/// Os manifests versionados no repo são a fonte. Em execução real o app lê os do
+/// bundle assinado, **só leitura**. A cópia em `~/.transcentia/agents.d/` não entra:
+/// a lane consegue reescrevê-la (FRA-614).
 public enum CatalogoAgentes {
 
     // MARK: - Manifesto
@@ -143,16 +144,39 @@ public enum CatalogoAgentes {
 
     // MARK: - Descoberta
 
-    /// Diretórios onde os manifests podem estar, em ordem de precedência.
-    /// A cópia instalada (E13) tem prioridade; o bundle serve de fallback em dev.
-    public static func diretorios(
-        instalado: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".transcentia/agents.d"),
-        fallback: URL? = Bundle.main.resourceURL?.appendingPathComponent("agents.d")
-    ) -> [URL] {
-        var saida: [URL] = [instalado]
-        if let fallback, fallback != instalado { saida.append(fallback) }
+    /// Diretórios de manifesto para execução real, em ordem.
+    /// O bundle assinado vem primeiro. Fora do `.app` (teste e `swift run`), entra
+    /// também o `agents.d` do repositório. `~/.transcentia/agents.d` não entra.
+    public static func diretorios(bundle: URL? = nil, repo: URL? = nil) -> [URL] {
+        var saida: [URL] = []
+        let doBundle = bundle ?? Bundle.main.resourceURL?.appendingPathComponent("agents.d")
+        let doRepo = repo ?? repoDev()
+        for url in [doBundle, doRepo].compactMap({ $0 }) where confiavel(url) {
+            if !saida.contains(where: { $0.path == url.path }) { saida.append(url) }
+        }
         return saida
+    }
+
+    /// No `.app`, nil: o binário não lê o checkout, que a lane pode editar.
+    static func repoDev() -> URL? {
+        var caminho = Bundle.main.bundleURL.path
+        if caminho.hasSuffix("/") { caminho.removeLast() }
+        if caminho.hasSuffix(".app") { return nil }
+        return URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // GastoCore
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // notch-mac
+            .deletingLastPathComponent() // apps
+            .deletingLastPathComponent() // raiz do repo
+            .appendingPathComponent("agents.d")
+    }
+
+    /// A cópia em `~/.transcentia` e o fixture de teste não são fonte de execução.
+    static func confiavel(_ url: URL) -> Bool {
+        let partes = url.pathComponents
+        if partes.contains(".transcentia") { return false }
+        if partes.contains("tests") && partes.contains("fixtures") { return false }
+        return true
     }
 
     /// Lê todos os manifests de um diretório. Um manifest ruim não derruba os outros.

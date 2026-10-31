@@ -4,10 +4,12 @@ Fonte única da lista de CLIs/lanes: adicionar um agente novo = 1 arquivo JSON.
 `gasto_lanes/agentes.py` (e o resto do Python) deriva deste catálogo em vez de
 manter uma lista hardcoded paralela.
 
-Busca, em ordem: cópia instalada (`~/.transcentia/agents.d/`, E13), depois o
-diretório `agents.d/` na raiz do repo (dev), e por fim `EMBUTIDOS` — cópia
-mecânica dos mesmos manifests dentro deste arquivo, para teste isolado e máquina
-sem o catálogo instalado. `tests/test_catalogo.py` cobra a paridade dos três.
+Busca, em ordem: `agents.d/` no bundle assinado (FRA-614), depois o diretório
+`agents.d/` na raiz do repo (dev), e por fim `EMBUTIDOS` — cópia mecânica dos
+mesmos manifests dentro deste arquivo, para teste isolado e máquina sem o
+catálogo. A cópia em `~/.transcentia/agents.d/` não entra: a lane grava nessa
+pasta. `EMBUTIDOS` não é o fixture de teste. `tests/test_catalogo.py` cobra a
+paridade do disco com o embutido.
 
 Somente Python 3 da stdlib.
 """
@@ -24,7 +26,8 @@ from pathlib import Path
 
 SCHEMA_ATUAL = 1
 
-#: Diretório instalado pelo `tools/install.sh` (fonte da verdade em produção).
+#: Cópia antiga que o `tools/install.sh` ainda espelha. A execução não lê daqui
+#: (FRA-614): a lane consegue reescrever `~/.transcentia`.
 DIR_INSTALADO = Path.home() / ".transcentia" / "agents.d"
 
 
@@ -423,8 +426,82 @@ def ler_diretorio(diretorio) -> dict:
     return dict(sorted(saida.items(), key=lambda kv: (kv[1]["ordem"], kv[0])))
 
 
+def e_recursos_de_bundle(caminho: Path) -> bool:
+    """True se o caminho é `Algo.app/Contents/Resources` (ou fica dentro) e não é cópia gravável."""
+    try:
+        partes = caminho.resolve().parts
+    except OSError:
+        return False
+    if ".transcentia" in partes or ("tests" in partes and "fixtures" in partes):
+        return False
+    for i, parte in enumerate(partes):
+        if (parte.endswith(".app") and i + 2 < len(partes)
+                and partes[i + 1] == "Contents" and partes[i + 2] == "Resources"):
+            return True
+    return False
+
+
+def _raiz_git() -> Path | None:
+    """Checkout do git onde este arquivo vive. None na cópia instalada em ~/.transcentia."""
+    aqui = Path(__file__).resolve()
+    if ".transcentia" in aqui.parts:
+        return None
+    for pai in aqui.parents:
+        if (pai / ".git").exists():
+            return pai
+    return None
+
+
+def recursos_do_bundle() -> Path | None:
+    """`Contents/Resources` do app assinado.
+
+    `TUTTIDASH_RECURSOS` (o `tuttidash-agente` aponta para o bundle que o lançou)
+    vem primeiro. No checkout, não se vasculha `/Applications`: um app velho não
+    pode vencer o template do repo. Fora do checkout (cópia em ~/.transcentia),
+    valem `/Applications` e `~/Applications`.
+    """
+    bruto = os.environ.get("TUTTIDASH_RECURSOS", "").strip()
+    if bruto:
+        candidato = Path(bruto)
+        if e_recursos_de_bundle(candidato) and candidato.is_dir():
+            return candidato
+    if ".transcentia" not in Path(__file__).resolve().parts and _raiz_git() is not None:
+        return None
+    for candidato in (Path("/Applications/TuttiDash.app/Contents/Resources"),
+                      Path.home() / "Applications/TuttiDash.app/Contents/Resources"):
+        if e_recursos_de_bundle(candidato) and candidato.is_dir():
+            return candidato
+    return None
+
+
+def _repo_agents_d() -> Path | None:
+    """`agents.d/` do checkout. None na cópia instalada e se o caminho cair em ~/.transcentia."""
+    if _raiz_git() is None or not DIR_REPO.is_dir():
+        return None
+    try:
+        resolvido = DIR_REPO.resolve()
+    except OSError:
+        return None
+    if ".transcentia" in resolvido.parts:
+        return None
+    return resolvido
+
+
 def _diretorios() -> list:
-    return [DIR_INSTALADO, DIR_REPO]
+    """Manifestos para execução real: bundle assinado, depois o repo. Nunca ~/.transcentia."""
+    saida = []
+    recursos = recursos_do_bundle()
+    if recursos is not None:
+        agents = recursos / "agents.d"
+        try:
+            if agents.is_dir() and ".transcentia" not in agents.resolve().parts:
+                saida.append(agents)
+        except OSError:
+            pass
+    repo = _repo_agents_d()
+    if repo is not None and repo not in saida:
+        saida.append(repo)
+    return saida
 
 
 _CACHE: dict = {}

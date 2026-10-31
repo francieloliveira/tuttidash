@@ -1,0 +1,37 @@
+{
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "3600000",
+    "BASH_MAX_TIMEOUT_MS": "3600000",
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Read", "Edit", "Write", "Glob", "Grep",
+      "Bash(./scripts/safe_xcodebuild.sh:*)",
+      "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
+      "Bash(git add:*)", "Bash(git commit:*)",
+      "Bash(ls:*)", "Bash(cat:*)", "Bash(wc:*)", "Bash(head:*)", "Bash(tail:*)",
+      "Bash(grep:*)", "Bash(find:*)", "Bash(mkdir:*)", "Bash(python3:*)",
+      "Bash(true:*)", "Bash(echo:*)",
+      "mcp__transcentia-docs"
+    ],
+    "deny": [
+      "Bash(git push:*)", "Bash(git merge:*)", "Bash(git rebase:*)", "Bash(git reset:*)",
+      "Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git tag:*)", "Bash(git branch:*)",
+      "Bash(git worktree:*)", "Bash(git remote:*)", "Bash(git fetch:*)", "Bash(git pull:*)",
+      "Bash(gh:*)", "Bash(xcodebuild:*)", "Bash(xcrun:*)", "Bash(rm:*)", "Bash(sudo:*)",
+      "Bash(curl:*)", "Bash(wget:*)", "Bash(security:*)", "Bash(open:*)", "Bash(osascript:*)",
+      "Bash(./scripts/hash_fonte_inpi.sh:*)", "Bash(scripts/hash_fonte_inpi.sh:*)",
+      "WebFetch", "WebSearch",
+      "Edit(docs/produto/caminho.md)", "Write(docs/produto/caminho.md)",
+      "Edit(docs/produto/pacote-inpi.md)", "Write(docs/produto/pacote-inpi.md)",
+      "Edit(docs/produto/inpi-hash-manifest.txt)", "Write(docs/produto/inpi-hash-manifest.txt)",
+      "Edit(docs/produto/mvp-patente.md)", "Write(docs/produto/mvp-patente.md)",
+      "Edit(scripts/hash_fonte_inpi.sh)", "Write(scripts/hash_fonte_inpi.sh)",
+      "Edit(docs/arquivo/**)", "Write(docs/arquivo/**)",
+      "Edit(scripts/lanes/**)", "Write(scripts/lanes/**)",
+      "Edit(scripts/safe_xcodebuild.sh)", "Write(scripts/safe_xcodebuild.sh)",
+      "Edit(.claude/**)", "Write(.claude/**)", "Edit(.mcp.json)", "Write(.mcp.json)"
+    ]
+  }
+}
