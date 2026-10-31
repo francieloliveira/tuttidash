@@ -98,8 +98,47 @@ final class TokenUnicoTests: XCTestCase {
         XCTAssertEqual(q[kSecAttrAccount as String] as? String, TokenLinear.conta)
         XCTAssertEqual(q[kSecAttrService as String] as? String, Cofre.servicoPadrao)
         XCTAssertEqual(q[kSecUseDataProtectionKeychain as String] as? Bool, true)
-        XCTAssertEqual(q[kSecAttrAccessGroup as String] as? String, AtributosChaveiro.grupoLinear)
+        let grupo = q[kSecAttrAccessGroup as String] as? String
+        XCTAssertEqual(grupo, AtributosChaveiro.grupoDoProcesso())
+        XCTAssertTrue(grupo?.hasSuffix(AtributosChaveiro.sufixoGrupo) == true)
         XCTAssertNotEqual(q[kSecAttrService as String] as? String, TokenLinear.servicoSecurityAposentado)
+    }
+
+    func testGrupoDoEntitlementCasaComOAccessGroup() {
+        let adhoc = NSDictionary(dictionary: [
+            "entitlements-dict": NSDictionary(dictionary: ["keychain-access-groups": [AtributosChaveiro.sufixoGrupo]]),
+        ])
+        XCTAssertEqual(AtributosChaveiro.grupo(em: adhoc), AtributosChaveiro.sufixoGrupo)
+        let time = NSDictionary(dictionary: [
+            "entitlements-dict": NSDictionary(dictionary: ["keychain-access-groups": ["ABCDE12345.app.tuttidash.mac"]]),
+        ])
+        XCTAssertEqual(AtributosChaveiro.grupo(em: time), "ABCDE12345.app.tuttidash.mac")
+        XCTAssertEqual(AtributosChaveiro.grupo(em: NSDictionary(dictionary: ["teamid": "TEAMID99"])),
+                       "TEAMID99.app.tuttidash.mac")
+        XCTAssertEqual(AtributosChaveiro.grupo(em: NSDictionary()), AtributosChaveiro.grupoLinear)
+        let plist = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Resources/TuttiDash.entitlements")
+        let texto = (try? String(contentsOf: plist, encoding: .utf8)) ?? ""
+        XCTAssertTrue(texto.contains("$(AppIdentifierPrefix)\(AtributosChaveiro.sufixoGrupo)"))
+        XCTAssertFalse(texto.contains("<string>\(AtributosChaveiro.sufixoGrupo)</string>"))
+    }
+
+    func testGravaELeOItemProtegidoDeVerdade() throws {
+        let servico = "app.tuttidash.teste.\(UUID().uuidString)"
+        let cf = Cofre(servico: servico, migrarLegado: false, protecaoDeDados: true,
+                       grupo: AtributosChaveiro.grupoDoProcesso())
+        defer { cf.apagar(conta: TokenLinear.conta) }
+        do {
+            try cf.salvar("segredo-real", conta: TokenLinear.conta)
+        } catch let erro as NSError where erro.code == Int(errSecMissingEntitlement) {
+            throw XCTSkip("processo sem o entitlement keychain-access-groups")
+        }
+        XCTAssertEqual(cf.ler(conta: TokenLinear.conta), "segredo-real")
+        let r = Subprocesso.rodar("/usr/bin/security",
+                                  ["find-generic-password", "-s", servico, "-a", TokenLinear.conta, "-w"])
+        XCTAssertNotEqual(r.codigo, 0)
+        XCTAssertFalse(r.texto.contains("segredo-real"))
     }
 }
 

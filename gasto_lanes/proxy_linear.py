@@ -6,7 +6,10 @@ pedem uma operação pelo socket e recebem o `data` do GraphQL. A resposta, o
 auditório e o argv não levam o token.
 
 Escopo mínimo é a allowlist daqui: consulta fora dela é negada e registrada em
-`linear-proxy-audit.log`. A chave é dedicada ao TuttiDash. Rotação: Linear ›
+`linear-proxy-audit.log`. `ler_documento` e `atualizar_documento` só aceitam os
+ids da config (`linear.diary_doc_id`, `linear.erros_conhecidos_doc_id`). O
+auditório passa de algumas centenas de KB e vira `.1`. A chave é dedicada ao
+TuttiDash. Rotação da chave: Linear ›
 Settings › API, colar a nova em Ajustes › Contas e revogar a antiga. O item
 `linear-transcentia-lanes` do `security` não é mais gravado.
 
@@ -15,6 +18,7 @@ na primeira linha da entrada padrão.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import socket
@@ -31,6 +35,11 @@ SERVICO_SECURITY_APOSENTADO = "linear-transcentia-lanes"
 NOME_SOCKET = "linear-proxy.sock"
 NOME_AUDITORIA = "linear-proxy-audit.log"
 NOME_PID = "linear-proxy.pid"
+#: Teto do auditório. Ao passar, o arquivo corrente é renomeado para `.1`.
+TETO_AUDITORIA = 256 * 1024
+#: Ids de documento que a config autoriza. O socket não identifica o cliente.
+CHAVES_DOCUMENTO = ("linear.diary_doc_id", "linear.erros_conhecidos_doc_id")
+OPS_DOCUMENTO = frozenset({"ler_documento", "atualizar_documento"})
 
 #: Campos do card que o vigia pede. O teste do vigia olha este texto.
 ISSUE_FIELDS = """id identifier title description url priority sortOrder startedAt createdAt updatedAt dueDate estimate
@@ -252,6 +261,55 @@ def op_auditavel(op: str, token: str) -> str:
 _LOCK_AUDIT = threading.Lock()
 
 
+def _rotacionar_auditoria(arquivo: Path) -> None:
+    """Renomeia para `.1` quando o arquivo passa do teto. Uma geração só."""
+    try:
+        tamanho = arquivo.stat().st_size
+    except OSError:
+        return
+    if tamanho < TETO_AUDITORIA:
+        return
+    try:
+        os.replace(arquivo, arquivo.with_name(arquivo.name + ".1"))
+    except OSError:
+        pass
+
+
+def ids_documento(obter: Optional[Callable] = None) -> frozenset:
+    """Ids de documento autorizados. Sem config, nenhum: a operação é negada."""
+    if obter is None:
+        try:
+            obter = _obter_config()
+        except Exception:
+            return frozenset()
+    ids = set()
+    for chave in CHAVES_DOCUMENTO:
+        try:
+            valor = obter(chave, "")
+        except Exception:
+            continue
+        if isinstance(valor, str) and valor.strip():
+            ids.add(valor.strip())
+    return frozenset(ids)
+
+
+def _obter_config():
+    """`config.obter` ao lado deste script (bundle ou `gasto_lanes`).
+
+    Não carrega a cópia em `~/.transcentia`: a lane pode trocar esse arquivo,
+    e ele rodaria dentro do processo que tem o token.
+    """
+    arquivo = Path(__file__).resolve().parent / "config.py"
+    if not arquivo.is_file():
+        raise ImportError("config")
+    spec = importlib.util.spec_from_file_location("tuttidash_config_proxy", arquivo)
+    if spec is None or spec.loader is None:
+        raise ImportError("config")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.obter
+
+
 def auditar(arquivo: Path, op: str, token: str, motivo: str) -> None:
     linha = json.dumps({
         "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -261,6 +319,7 @@ def auditar(arquivo: Path, op: str, token: str, motivo: str) -> None:
     }, ensure_ascii=False) + "\n"
     arquivo.parent.mkdir(parents=True, exist_ok=True)
     with _LOCK_AUDIT:
+        _rotacionar_auditoria(arquivo)
         fd = os.open(arquivo, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
         try:
             os.write(fd, linha.encode("utf-8"))
@@ -301,7 +360,8 @@ def consultar_http(texto: str, variaveis: dict, token: str) -> dict:
     return saida
 
 
-def atender(pedido: dict, *, token: str, consultar: Callable, auditoria: Path) -> dict:
+def atender(pedido: dict, *, token: str, consultar: Callable, auditoria: Path,
+            ids_documento_fn: Optional[Callable] = None) -> dict:
     op = pedido.get("op")
     if not isinstance(op, str) or not op:
         op = "sem-op"
@@ -320,6 +380,12 @@ def atender(pedido: dict, *, token: str, consultar: Callable, auditoria: Path) -
     except Negado:
         auditar(auditoria, op, token, "variavel fora do escopo")
         return {"ok": False, "erro": "negado", "op": op}
+    if op in OPS_DOCUMENTO:
+        permitidos = (ids_documento_fn or ids_documento)()
+        doc = variaveis.get("id")
+        if not isinstance(doc, str) or doc.strip() not in permitidos:
+            auditar(auditoria, op, token, "documento fora da config")
+            return {"ok": False, "erro": "negado", "op": op}
     try:
         data = consultar(spec.consulta, variaveis, token)
     except ErroProxy as exc:
@@ -372,7 +438,8 @@ def executar_consulta(query: str, variables: Optional[dict] = None, socket_path:
     return pedir(op, variables or {}, socket_path=socket_path)
 
 
-def _atender_conexao(conn: socket.socket, token: str, consultar: Callable, auditoria: Path) -> None:
+def _atender_conexao(conn: socket.socket, token: str, consultar: Callable, auditoria: Path,
+                     ids_documento_fn: Optional[Callable] = None) -> None:
     try:
         conn.settimeout(25)
         buf = b""
@@ -387,7 +454,8 @@ def _atender_conexao(conn: socket.socket, token: str, consultar: Callable, audit
             pedido = {"op": "json-invalido"}
         if not isinstance(pedido, dict):
             pedido = {"op": "json-invalido"}
-        resp = atender(pedido, token=token, consultar=consultar, auditoria=auditoria)
+        resp = atender(pedido, token=token, consultar=consultar, auditoria=auditoria,
+                       ids_documento_fn=ids_documento_fn)
         conn.sendall((json.dumps(redigir(resp, token), ensure_ascii=False) + "\n").encode("utf-8"))
     except OSError:
         pass
@@ -397,7 +465,8 @@ def _atender_conexao(conn: socket.socket, token: str, consultar: Callable, audit
 
 def servir(token: str, caminho: Path, auditoria: Path, consultar: Callable = consultar_http,
            parar: Optional[threading.Event] = None, gravar_pid: bool = False,
-           pronto: Optional[threading.Event] = None) -> None:
+           pronto: Optional[threading.Event] = None,
+           ids_documento_fn: Optional[Callable] = None) -> None:
     caminho.parent.mkdir(parents=True, exist_ok=True)
     try:
         os.chmod(caminho.parent, 0o700)
@@ -422,8 +491,11 @@ def servir(token: str, caminho: Path, auditoria: Path, consultar: Callable = con
                 conn, _ = srv.accept()
             except socket.timeout:
                 continue
-            threading.Thread(target=_atender_conexao, args=(conn, token, consultar, auditoria),
-                             daemon=True).start()
+            threading.Thread(
+                target=_atender_conexao,
+                args=(conn, token, consultar, auditoria, ids_documento_fn),
+                daemon=True,
+            ).start()
     finally:
         srv.close()
         if caminho.exists() or caminho.is_socket():

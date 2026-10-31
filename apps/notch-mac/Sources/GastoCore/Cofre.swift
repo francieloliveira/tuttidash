@@ -4,7 +4,52 @@ import Security
 /// Atributos do item de segredo. Com proteção de dados o `security` da linha de
 /// comando não lista o item (FRA-607). O access group limita quem assina o app.
 public enum AtributosChaveiro {
-    public static let grupoLinear = "app.tuttidash.mac"
+    /// Sufixo do access group. O entitlement é `$(AppIdentifierPrefix)` + este texto.
+    /// No binário assinado os dois ficam iguais: ad-hoc sem prefixo, com time `TEAMID.`.
+    public static let sufixoGrupo = "app.tuttidash.mac"
+    /// Sem entitlement legível (teste sem assinatura) vale o sufixo, que é o grupo do ad-hoc.
+    public static let grupoLinear = sufixoGrupo
+
+    /// Grupo igual ao entitlement já expandido no processo, quando a assinatura o traz.
+    public static func grupoDoProcesso() -> String {
+        var codigo: SecCode?
+        guard SecCodeCopySelf([], &codigo) == errSecSuccess, let codigo else { return grupoLinear }
+        var estatico: SecStaticCode?
+        guard SecCodeCopyStaticCode(codigo, [], &estatico) == errSecSuccess, let estatico else { return grupoLinear }
+        var infoRef: CFDictionary?
+        guard SecCodeCopySigningInformation(estatico, [], &infoRef) == errSecSuccess, let infoRef else {
+            return grupoLinear
+        }
+        return grupo(em: infoRef as NSDictionary)
+    }
+
+    /// Prefere o grupo escrito no entitlement; senão monta com o `teamid`; senão o sufixo.
+    static func grupo(em info: NSDictionary) -> String {
+        if let ent = info["entitlements-dict"] as? NSDictionary {
+            let grupos = textos(ent["keychain-access-groups"])
+            if let grupo = grupos.first(where: { $0 == sufixoGrupo || $0.hasSuffix(".\(sufixoGrupo)") }) {
+                return grupo
+            }
+        }
+        if let team = info["teamid"] as? String {
+            let limpo = team.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !limpo.isEmpty { return "\(limpo).\(sufixoGrupo)" }
+        }
+        return grupoLinear
+    }
+
+    private static func textos(_ bruto: Any?) -> [String] {
+        if let lista = bruto as? [String] { return lista }
+        if let lista = bruto as? [NSString] { return lista.map { $0 as String } }
+        if let lista = bruto as? NSArray {
+            var saida: [String] = []
+            for item in lista {
+                if let texto = item as? String { saida.append(texto) }
+            }
+            return saida
+        }
+        return []
+    }
 
     public static func item(servico: String, conta: String, grupo: String? = nil,
                             protecaoDeDados: Bool = false) -> [String: Any] {

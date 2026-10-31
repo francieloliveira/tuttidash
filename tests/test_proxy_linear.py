@@ -25,7 +25,7 @@ _spec.loader.exec_module(watch)
 
 
 class ProxyLinearTests(unittest.TestCase):
-    def servidor(self, token, consultar):
+    def servidor(self, token, consultar, ids=None):
         pasta = Path(tempfile.mkdtemp(prefix="px", dir="/tmp"))
         self.addCleanup(shutil.rmtree, pasta, True)
         caminho = pasta / "s.sock"
@@ -35,7 +35,8 @@ class ProxyLinearTests(unittest.TestCase):
         thread = threading.Thread(
             target=proxy_linear.servir,
             kwargs={"token": token, "caminho": caminho, "auditoria": auditoria,
-                    "consultar": consultar, "parar": parar, "pronto": pronto},
+                    "consultar": consultar, "parar": parar, "pronto": pronto,
+                    "ids_documento_fn": ids},
             daemon=True)
         thread.start()
         self.assertTrue(pronto.wait(3), "proxy não subiu")
@@ -170,3 +171,66 @@ class ProxyLinearTests(unittest.TestCase):
         self.assertEqual(dados, {"issueUpdate": {"success": True}})
         self.assertEqual(visto["v"], {"id": "abc", "i": {"stateId": "st"}})
         self.assertNotIn(token, json.dumps(dados))
+
+    def test_auditoria_rotaciona_ao_passar_do_teto(self):
+        pasta = Path(tempfile.mkdtemp(prefix="aud", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, pasta, True)
+        auditoria = pasta / "audit.log"
+        proxy_linear.auditar(auditoria, "ler_token", "", "fora da allowlist")
+        self.assertFalse((pasta / "audit.log.1").exists())
+        token = "lin_api_segredo_teste"
+        auditoria.write_bytes(b"x" * proxy_linear.TETO_AUDITORIA)
+        proxy_linear.auditar(auditoria, token, token, "fora da allowlist")
+        girado = pasta / "audit.log.1"
+        self.assertTrue(girado.is_file())
+        self.assertEqual(girado.read_bytes(), b"x" * proxy_linear.TETO_AUDITORIA)
+        novo = auditoria.read_text(encoding="utf-8")
+        self.assertIn("negado", novo)
+        self.assertNotIn(token, novo)
+        self.assertLess(auditoria.stat().st_size, proxy_linear.TETO_AUDITORIA)
+
+    def test_config_ao_lado_do_script_e_a_mesma_leitura(self):
+        import config
+        obter = proxy_linear._obter_config()
+        self.assertEqual(obter("linear.diary_doc_id", ""), config.obter("linear.diary_doc_id", ""))
+        self.assertEqual(obter("linear.nao_existe", "padrao"), "padrao")
+
+    def test_ids_de_documento_saem_da_config(self):
+        def obter(chave, padrao=""):
+            return {
+                "linear.diary_doc_id": "  dia  ",
+                "linear.erros_conhecidos_doc_id": "",
+            }.get(chave, padrao)
+        self.assertEqual(proxy_linear.ids_documento(obter), frozenset({"dia"}))
+
+    def test_documento_fora_da_config_e_negado_e_auditado(self):
+        token = "lin_api_segredo_teste"
+        chamadas = []
+
+        def consultar(texto, variaveis, tok):
+            chamadas.append(variaveis)
+            return {"document": {"content": "ok"}, "documentUpdate": {"success": True}}
+
+        caminho, auditoria = self.servidor(token, consultar, ids=lambda: frozenset({"doc-ok"}))
+        with self.assertRaises(proxy_linear.Negado):
+            proxy_linear.pedir("ler_documento", {"id": "outro"}, socket_path=caminho)
+        with self.assertRaises(proxy_linear.Negado):
+            proxy_linear.pedir("atualizar_documento",
+                               {"id": "outro", "i": {"content": token}}, socket_path=caminho)
+        self.assertEqual(chamadas, [])
+        texto = auditoria.read_text(encoding="utf-8")
+        self.assertIn("documento fora da config", texto)
+        self.assertNotIn(token, texto)
+        dados = proxy_linear.pedir("ler_documento", {"id": "doc-ok"}, socket_path=caminho)
+        self.assertEqual(dados["document"]["content"], "ok")
+        self.assertEqual(chamadas, [{"id": "doc-ok"}])
+        self.assertNotIn(token, json.dumps(dados))
+
+    def test_instalacao_leva_proxy_e_config(self):
+        install = (RAIZ / "tools/install.sh").read_text(encoding="utf-8")
+        self.assertNotIn("<<<<<<<", install)
+        for mod in ("proxy_linear", "config"):
+            self.assertIn(mod, install)
+        build = (RAIZ / "apps/notch-mac/build.sh").read_text(encoding="utf-8")
+        for nome in ("proxy_linear.py", "linear_ids.py", "config.py"):
+            self.assertIn(f"gasto_lanes/{nome}", build)

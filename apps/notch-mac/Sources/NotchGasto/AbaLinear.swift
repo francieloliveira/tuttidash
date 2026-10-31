@@ -7,6 +7,7 @@ final class EstadoLinear: ObservableObject {
     let modelo: ModeloAjustes
     let servico: ServicoLinear
     let tokens: TokenLinear
+    let proxy: any ControleProxyLinear
     @Published var token = ""
     @Published var temToken = false
     /// false até a primeira leitura do Keychain (feita fora da criação da tela, FRA-579).
@@ -20,8 +21,9 @@ final class EstadoLinear: ObservableObject {
     @Published var opcoes = OpcoesTime()
     @Published var versao = 0
 
-    init(modelo: ModeloAjustes, servico: ServicoLinear = ServicoLinear(), tokens: TokenLinear = TokenLinear()) {
-        self.modelo = modelo; self.servico = servico; self.tokens = tokens
+    init(modelo: ModeloAjustes, servico: ServicoLinear = ServicoLinear(), tokens: TokenLinear = TokenLinear(),
+         proxy: any ControleProxyLinear = ServicoProxyLinear.compartilhado) {
+        self.modelo = modelo; self.servico = servico; self.tokens = tokens; self.proxy = proxy
         workspace = modelo.valorTexto("linear.workspace_url")
     }
 
@@ -40,9 +42,10 @@ final class EstadoLinear: ObservableObject {
         let texto = token
         let tokens = self.tokens
         do {
+            let proxy = self.proxy
             try await Task.detached {
                 try tokens.salvar(texto)
-                ServicoProxyLinear.compartilhado.ligar(tokens: tokens)
+                proxy.ligar(tokens: tokens)
             }.value
             token = ""
             temToken = true
@@ -59,8 +62,9 @@ final class EstadoLinear: ObservableObject {
         projetos = []
         opcoes = OpcoesTime()
         let tokens = self.tokens
+        let proxy = self.proxy
         Task.detached {
-            ServicoProxyLinear.compartilhado.parar()
+            proxy.parar()
             tokens.apagar()
         }
     }

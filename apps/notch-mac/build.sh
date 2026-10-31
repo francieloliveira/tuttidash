@@ -50,7 +50,10 @@ else
 fi
 
 echo "==> proxy do Linear (o app sobe o processo; a chave entra pelo stdin)"
+# O processo só enxerga o bundle: estes módulos ficam ao lado do script.
 cp "$HERE/../../gasto_lanes/proxy_linear.py" "$APP/Contents/Resources/proxy_linear.py"
+cp "$HERE/../../gasto_lanes/linear_ids.py" "$APP/Contents/Resources/linear_ids.py"
+cp "$HERE/../../gasto_lanes/config.py" "$APP/Contents/Resources/config.py"
 
 echo "==> textos (Localizable.xcstrings -> en/pt-BR)"
 xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$APP/Contents/Resources"

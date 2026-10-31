@@ -193,7 +193,7 @@ public struct TokenLinear: Sendable {
     public init(cofre: Cofre? = nil, cofreAntigo: Cofre? = nil, servicoSecurity: String? = nil,
                 chaveiro: ChaveiroScripts = ChaveiroSecurity()) {
         self.cofre = cofre ?? Cofre(servico: Cofre.servicoPadrao, migrarLegado: false,
-                                    protecaoDeDados: true, grupo: AtributosChaveiro.grupoLinear)
+                                    protecaoDeDados: true, grupo: AtributosChaveiro.grupoDoProcesso())
         self.cofreAntigo = cofreAntigo ?? Cofre(servico: Cofre.servicoPadrao)
         self.servicoSecurity = servicoSecurity ?? Self.servicoSecurityConfigurado()
         self.chaveiro = chaveiro
@@ -201,7 +201,7 @@ public struct TokenLinear: Sendable {
 
     /// Atributos do item dedicado: proteção de dados e access group. Não é o serviço do `security`.
     public static func atributos(servico: String = Cofre.servicoPadrao, conta: String = TokenLinear.conta) -> [String: Any] {
-        AtributosChaveiro.item(servico: servico, conta: conta, grupo: AtributosChaveiro.grupoLinear,
+        AtributosChaveiro.item(servico: servico, conta: conta, grupo: AtributosChaveiro.grupoDoProcesso(),
                                protecaoDeDados: true)
     }
 
