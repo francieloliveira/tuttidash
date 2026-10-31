@@ -33,6 +33,9 @@ class BotsChaveTests(unittest.TestCase):
         arq.write_text(json.dumps(cfg))
         env = {k: v for k, v in os.environ.items() if k != "TRANSCENTIA_GASTO_CONFIG"}
         env.update(HOME=str(self.home), BOTS_CHAVE_PCT=str(pct))
+        # A chave só roda com o app aberto; o teste simula o app com o PID vivo.
+        (self.home / ".transcentia/lanes").mkdir(parents=True, exist_ok=True)
+        (self.home / ".transcentia/lanes/app.pid").write_text(f"{os.getpid()} teste\n")
         subprocess.run([str(CHAVE)], env=env, check=True)
         return json.loads((self.bots / "modo.json").read_text())
 
