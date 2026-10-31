@@ -184,14 +184,14 @@ def _binarios(argv: list[str]) -> list[str]:
     return saida
 
 
-def _env_limpo(extra: list[str]) -> dict[str, str]:
+def _env_limpo(extra: list[str], home: str = "/tmp") -> dict[str, str]:
     path = os.pathsep.join(
         ["/tools", *extra, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
     )
     return {
         "PATH": path,
-        "HOME": "/tmp",
-        "TMPDIR": "/tmp",
+        "HOME": home,
+        "TMPDIR": home,
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "PYTHONNOUSERSITE": "1",
@@ -308,34 +308,36 @@ def _dentro(spec_path: str) -> int:
 
 
 def _perfil(repo: Path, escritas: list[Path], leituras: list[str]) -> str:
-    reads = [_aspas(p) for p in _PREFIXOS_SISTEMA if os.path.exists(p)]
-    reads.append(_aspas(str(repo)))
-    reads.append(_aspas(str(Path(__file__).resolve().parent)))
+    """No macOS a última regra que casa vale.
+
+    `(allow default)` deixa o processo subir (dyld, mach). Em seguida a leitura
+    da home, do temporário e dos volumes é negada, e toda escrita e a rede
+    também. O repo volta só para leitura; o scratch, para escrita.
+    """
+    ler = [str(repo), str(Path(__file__).resolve().parent)]
     for extra in leituras:
-        reads.append(_aspas(extra if os.path.isdir(extra) else os.path.dirname(extra)))
+        ler.append(extra if os.path.isdir(extra) else os.path.dirname(extra) or "/")
     for pasta in escritas:
-        reads.append(_aspas(str(pasta)))
-    writes = [_aspas(str(pasta)) for pasta in escritas]
-    if not writes:
-        writes = ["/dev/null"]
-    bloco_r = " ".join(f'(subpath "{p}")' for p in reads)
-    bloco_w = " ".join(f'(subpath "{p}")' for p in writes)
+        ler.append(str(pasta))
+    bloco_r = " ".join(f'(subpath "{_aspas(p)}")' for p in ler)
+    bloco_w = " ".join(f'(subpath "{_aspas(str(p))}")' for p in escritas)
     return (
         "(version 1)\n"
         "(deny default)\n"
-        "(allow process*)\n"
-        "(allow signal)\n"
-        "(allow sysctl-read)\n"
-        "(allow mach-lookup)\n"
-        "(allow ipc-posix-shm)\n"
-        "(allow file-ioctl)\n"
-        "(allow file-read-metadata)\n"
-        "(allow file-map-executable)\n"
+        "(allow default)\n"
+        "(deny file-write*)\n"
+        "(deny file-read*\n"
+        "  (subpath \"/Users\")\n"
+        "  (subpath \"/private/var/folders\")\n"
+        "  (subpath \"/var/folders\")\n"
+        "  (subpath \"/private/tmp\")\n"
+        "  (subpath \"/tmp\")\n"
+        "  (subpath \"/Volumes\"))\n"
         f"(allow file-read* {bloco_r})\n"
-        "(allow file-read* (literal \"/dev/null\") (literal \"/dev/urandom\") "
-        "(literal \"/dev/random\") (literal \"/dev/zero\") (literal \"/dev/tty\") "
-        "(literal \"/dev/dtracehelper\"))\n"
-        f"(allow file-write* {bloco_w} (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))\n"
+        f"(allow file-write* {bloco_w}\n"
+        "  (literal \"/dev/null\")\n"
+        "  (literal \"/dev/dtracehelper\")\n"
+        "  (literal \"/dev/tty\"))\n"
         "(deny network*)\n"
         "(deny network-outbound)\n"
         "(deny network-inbound)\n"
@@ -346,14 +348,22 @@ def _seatbelt(argv: list[str], repo: Path, timeout: int, inp: str | None,
               escritas: list[Path]) -> subprocess.CompletedProcess[str]:
     if not shutil.which("sandbox-exec"):
         raise CaixaIndisponivel("revisor sem sandbox-exec")
+    proprio: Path | None = None
+    if not escritas:
+        proprio = Path(tempfile.mkdtemp(prefix="revisor-home-"))
+        escritas = [proprio]
     binarios = _binarios(argv)
     perfil = _perfil(repo, escritas, binarios)
     dirs = [os.path.dirname(b) for b in binarios]
-    return subprocess.run(
-        ["sandbox-exec", "-p", perfil, *argv],
-        cwd=repo, capture_output=True, text=True, timeout=timeout,
-        input=inp, env=_env_limpo(dirs),
-    )
+    try:
+        return subprocess.run(
+            ["sandbox-exec", "-p", perfil, *argv],
+            cwd=repo, capture_output=True, text=True, timeout=timeout,
+            input=inp, env=_env_limpo(dirs, home=str(escritas[0])),
+        )
+    finally:
+        if proprio is not None:
+            shutil.rmtree(proprio, ignore_errors=True)
 
 
 def main(args: list[str]) -> int:
