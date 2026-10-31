@@ -25,6 +25,7 @@ trabalhar de um desenvolvedor, e isso aparece. [Read in English](README.md).
 - **Ele roda agentes sozinho, com as suas contas.** Eles editam código, rodam comandos e gastam dinheiro ou cota.
   Teste primeiro num projeto descartável, deixe todas as lanes desligadas até o teste sem efeito
   (`--dry-run`) sair certo, e defina orçamentos (`lanes.budget_usd`) e caminhos protegidos (`protegidos`).
+  O check `prova-remota` segura o merge na `main`. Ele não impede a lane de ler `~/.ssh` ou `~/.config/gh`.
 - **Limite de conta só de fonte oficial ou local**: a API de cobrança do GitHub Copilot e o banco local da
   sessão do OpenCode. As assinaturas do Claude Code, do Codex, do Grok e do Gemini não têm API pública
   oficial de cota, então o TuttiDash não mostra esses limites. O motor de leitura aceita outras fontes
@@ -89,6 +90,15 @@ python3 -m unittest discover -s tests -t .
 python3 -m unittest lanes.test_lanes
 cd apps/notch-mac && swift test
 ```
+
+## Prova remota
+
+Um PR para a `main` roda o check `prova-remota` no GitHub Actions. O workflow é
+`pull_request`, com permissão só de leitura e sem secrets. O script é o blob
+`scripts/prova-remota.sh` do commit da base do PR. O head entra ao lado e os scripts
+dele não rodam. O check fica no SHA completo do head.
+
+Esse check é a prova do merge. A lane continua rodando como o dono da máquina.
 
 ## Estrutura
 

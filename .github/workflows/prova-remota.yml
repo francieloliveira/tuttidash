@@ -1,0 +1,54 @@
+# FRA-610. A prova do merge. Não isola o home da lane.
+# O evento é pull_request: o token fica só de leitura e não há segredo.
+# O script executado é o blob scripts/prova-remota.sh no SHA da base.
+# O head entra noutro checkout; nenhum script dele é executado.
+name: prova-remota
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prova-remota-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prova-remota:
+    name: prova-remota
+    # A prova inclui `swift test` do app, como o workflow de testes.
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout da base
+        # v4 fixo em 2026-10-31. A tag móvel não entra na prova.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout do head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prova com o blob do script da base
+        env:
+          PROVA_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PROVA_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PROVA_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PROVA_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git -C base rev-parse HEAD)" = "$PROVA_BASE_SHA"
+          test "$(git -C head rev-parse HEAD)" = "$PROVA_HEAD_SHA"
+          git -C base cat-file -p "${PROVA_BASE_SHA}:scripts/prova-remota.sh" \
+            | bash -s -- "$GITHUB_WORKSPACE/base" "$GITHUB_WORKSPACE/head"

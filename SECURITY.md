@@ -21,3 +21,24 @@ Não há recompensa nem prazo de resposta garantido.
 
 It does not read, renew or rewrite the credentials of the agent CLIs.
 Ele não lê, não renova e não regrava as credenciais dos CLIs dos agentes.
+
+## Remote proof / Prova remota
+
+Pull requests into `main` run the check `prova-remota`. The workflow is triggered by
+`pull_request` (never `pull_request_target`), with `contents: read` and no secrets.
+The script that runs is the git blob `scripts/prova-remota.sh` at
+`github.event.pull_request.base.sha`. The head is checked out in another directory,
+at the full head SHA, and its scripts are not executed. The check is attached to
+that full head SHA.
+
+This is the proof of the merge. It does not limit the lane. A lane still runs as
+the owner of the machine and can read `~/.ssh` and `~/.config/gh`.
+
+PRs para a `main` rodam o check `prova-remota`. O workflow dispara em `pull_request`
+(nunca `pull_request_target`), com `contents: read` e sem secrets. O script é o blob
+`scripts/prova-remota.sh` no SHA `github.event.pull_request.base.sha`. O head entra
+noutro checkout, no SHA completo, e os scripts dele não rodam. O check fica nesse
+SHA completo.
+
+Isso é a prova do merge. Não limita a lane. A lane continua rodando como o dono da
+máquina e pode ler `~/.ssh` e `~/.config/gh`.
