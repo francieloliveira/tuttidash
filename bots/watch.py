@@ -1698,9 +1698,11 @@ def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     todo = sorted([c for c in issues if c["state"]["name"] == "Todo" and is_ready(c)],
                   key=lambda c: (c.get("priority") or 5, c.get("sortOrder") or 0))
     # Teto por lane com folga: MAX_PER_LANE (1 RUN + (N-1) WAIT) por lane.
+    # Todo também ocupa vaga: o teto é o total, não 2 no Todo + 2 rodando por lane.
     SLOTS = MAX_PER_LANE * len(com_folga)
-    free = max(0, SLOTS - len(running) - len(waiting))
-    READY_TARGET = max(_cfg("watch.prontos_no_todo", 2), SLOTS) if com_folga else 0
+    todo_n = len(todo)
+    capacidade = max(0, SLOTS - len(running) - len(waiting) - todo_n)
+    READY_TARGET = min(_cfg("watch.prontos_no_todo", 2), todo_n + capacidade) if com_folga else 0
     # Contramedida 11/10: fila vazia por 11 h porque ninguém promovia do Backlog. Card com
     # esforço e bloqueios resolvidos sobe sozinho para o Todo, até a meta de prontos.
     # O freio só decide o que sobe; o card que ele segura aparece no log com o motivo
