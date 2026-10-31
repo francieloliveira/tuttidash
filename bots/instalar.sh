@@ -90,6 +90,12 @@ fi
 REPO="${alvos%%$'\n'*}"
 _resto="${alvos#*$'\n'}"
 WT="${_resto%%$'\n'*}"
+# Duas linhas e só. Uma quebra a mais faria o clean cair num git que a checagem não viu.
+case "$_resto" in
+  *$'\n'*)
+    recusar "repo ou worktree recusados: caminho com quebra de linha"
+    ;;
+esac
 if [ -z "$REPO" ] || [ -z "$WT" ] || [ "$REPO" = "$WT" ]; then
   recusar "repo ou worktree recusados"
 fi

@@ -271,9 +271,21 @@ def resumo() -> str:
     return "; ".join(linhas) if linhas else "nenhum projeto cadastrado"
 
 
-def _resolver(valor) -> Path | None:
-    """Caminho absoluto com symlinks resolvidos. Relativo, vazio ou laço: None."""
+def _com_quebra(valor) -> bool:
+    """Quebra de linha ou retorno de carro no caminho.
+
+    O shell parte a saída no primeiro fim de linha e o `git clean` cairia
+    na linha seguinte, que a checagem não conferiu.
+    """
     if valor is None:
+        return False
+    texto = str(valor)
+    return "\n" in texto or "\r" in texto
+
+
+def _resolver(valor) -> Path | None:
+    """Caminho absoluto com symlinks resolvidos. Relativo, vazio, laço ou quebra de linha: None."""
+    if valor is None or _com_quebra(valor):
         return None
     texto = str(valor).strip()
     if not texto:
@@ -330,13 +342,17 @@ def checar_alvo_instalar(repo, worktree, cadastro=None) -> tuple[int, str]:
 
     0 e duas linhas (repo e worktree resolvidos) quando os dois batem com o
     cadastro, a pasta de worktrees não é `/` nem o home, e o worktree é um
-    descendente estrito dessa pasta. Qualquer outra coisa: código 2 e o motivo.
+    descendente estrito dessa pasta. Caminho com quebra de linha ou retorno
+    de carro é recusado: o shell não pode partir essa saída e limpar outra
+    linha. Qualquer outra coisa: código 2 e o motivo.
     `cadastro` explícito (o projeto que o vigia já escolheu) não relê a config.
     """
     if cadastro is None:
         cadastro = cadastro_da_instalacao()
     if cadastro is None or not getattr(cadastro, "id", ""):
         return 2, "nenhum projeto cadastrado; instalação recusada"
+    if any(_com_quebra(v) for v in (repo, worktree, cadastro.repo, cadastro.worktrees)):
+        return 2, "repo ou worktree recusado: caminho com quebra de linha"
     repo_r, wt_r = _resolver(repo), _resolver(worktree)
     if repo_r is None or wt_r is None:
         return 2, "repo ou worktree recusado: caminho ausente ou relativo"

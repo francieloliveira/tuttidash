@@ -130,6 +130,22 @@ class AlvoInstalar(unittest.TestCase):
             self.assertNotEqual(codigo, 0, msg)
             self.assertIn("recusad", msg)
 
+    def test_quebra_de_linha_ou_retorno_no_caminho_recusa(self):
+        wt = self.wts / "install-main"
+        fora = self.tmp / "fora"
+        for quebra in ("\n", "\r"):
+            mal = f"{self.repo}{quebra}{fora}"
+            cad = projeto(mal, self.wts)
+            codigo, msg = P.checar_alvo_instalar(mal, wt, cadastro=cad)
+            self.assertNotEqual(codigo, 0, msg)
+            self.assertIn("recusad", msg)
+            self.assertNotIn("\n", msg)
+        mal_wt = f"{self.wts}\r{fora}"
+        cad = projeto(self.repo, mal_wt)
+        codigo, msg = P.checar_alvo_instalar(self.repo, f"{wt}\r{fora}", cadastro=cad)
+        self.assertNotEqual(codigo, 0, msg)
+        self.assertIn("recusad", msg)
+
     def test_repo_diferente_do_cadastro(self):
         codigo, msg = P.checar_alvo_instalar(self.tmp / "outro", self.wts / "install-main",
                                              cadastro=self.cadastro)
@@ -202,6 +218,7 @@ class InstalarSh(unittest.TestCase):
         self.assertIn("git check-ref-format --branch", texto)
         self.assertIn("*'$'*", texto)
         self.assertIn("*';'*", texto)
+        self.assertIn("*$'\\n'*)", texto)
 
     def test_ref_com_dolar_e_ponto_e_virgula_nao_executa(self):
         repo = repo_com_main(self.tmp / "git")
@@ -239,6 +256,24 @@ class InstalarSh(unittest.TestCase):
         self.assertNotIn("ref recusada", texto)
         self.assertFalse(marcador.exists())
         self.assertTrue(precioso.exists(), "worktree fora da raiz não sofre git clean")
+        self.assertEqual(precioso.read_text(encoding="utf-8"), "fica\n")
+
+    def test_repo_com_quebra_de_linha_nao_limpa_o_git_da_segunda_linha(self):
+        repo = repo_com_main(self.tmp / "git")
+        wts = self.tmp / "wts"
+        wts.mkdir()
+        wt = wts / "install-main"
+        fora = repo_simples(self.tmp / "fora")
+        precioso = fora / "nao-apagar.txt"
+        precioso.write_text("fica\n", encoding="utf-8")
+        marcador = self.tmp / "rodou"
+        # repo válido, quebra, outro git. O shell não pode limpar a segunda linha.
+        self.cadastro(f"{repo}\n{fora}", wts)
+        r, texto = self.rodar("main", f"{repo}\n{fora}", wt, "/usr/bin/touch", str(marcador))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("recusad", texto)
+        self.assertFalse(marcador.exists(), "o comando não roda se o caminho foi recusado")
+        self.assertTrue(precioso.exists(), "git clean não roda no git da segunda linha")
         self.assertEqual(precioso.read_text(encoding="utf-8"), "fica\n")
 
     def test_wt_igual_a_raiz_nao_sofre_clean(self):
