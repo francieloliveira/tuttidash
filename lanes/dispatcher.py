@@ -1383,15 +1383,34 @@ def discard_stale_proof(lane_dir: Path, ident: str, round_started: float) -> boo
 
 
 # --- Acompanhamento e fechamento --------------------------------------------
+def nomes_do_diff(wt: Path, spec: str) -> list[str]:
+    """Caminhos completos do diff, sem o escape octal do `core.quotepath`.
+
+    O padrão do git cita non-ASCII entre aspas (`relat\\303\\263rio.docx`) e o
+    `fnmatch` não casa o glob do cadastro. `-z` separa por NUL; a decodificação
+    é UTF-8 para o acento não depender do locale do processo.
+    """
+    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    out = subprocess.run(
+        ["git", "-c", "core.quotepath=false", "diff", "--name-only", "-z", spec],
+        cwd=wt, capture_output=True, env=env, timeout=120,
+    )
+    if out.returncode != 0:
+        erro = out.stderr.decode("utf-8", "replace").strip()[:300]
+        raise RuntimeError(f"git diff… falhou ({out.returncode}): {erro}")
+    texto = out.stdout.decode("utf-8", "surrogateescape")
+    return [p for p in texto.split("\0") if p]
+
+
 def git_summary(wt: Path, base: Optional[str] = None) -> dict:
     """`files`: tudo o que a branch muda em relação à main (vai no PR).
     `new` e `lane_files`: só o que a lane fez desde `base` (sem base, estado antigo, vale a main)."""
     sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
     ahead = int(sh(["git", "rev-list", "--count", "origin/main..HEAD"], cwd=wt) or 0)
-    files = [f for f in sh(["git", "diff", "--name-only", "origin/main...HEAD"], cwd=wt).splitlines() if f]
+    files = nomes_do_diff(wt, "origin/main...HEAD")
     if base:
         new = int(sh(["git", "rev-list", "--count", f"{base}..HEAD"], cwd=wt) or 0)
-        desde_base = [f for f in sh(["git", "diff", "--name-only", f"{base}..HEAD"], cwd=wt).splitlines() if f]
+        desde_base = nomes_do_diff(wt, f"{base}..HEAD")
         # A lane pode trazer a main para dentro da branch. O merge põe no
         # `base..HEAD` arquivos que são da main, não dela — foi assim que a
         # FRA-453 morreu três vezes acusada de tocar `caminho.md`, que a main
@@ -2158,19 +2177,39 @@ def stop(st: dict, motivo: str, extra: str = "", causa: str = "") -> str:
 # O comando vem do campo `prova` do projeto no cadastro: o iOS usa
 # `safe_xcodebuild.sh` (que precisa de 2 tentativas, a 1ª com SKIP_PREFLIGHT), e um
 # projeto Python usa `python3 {suite}` com 1 tentativa só.
+# Nome de suíte: identificador com pontos (`FooTests`, `tests.test_parser`).
+# `re.fullmatch` rejeita caminho (`/`, `..`), flag (`-`) e espaço. Tirar esses
+# caracteres antes do `isalnum` deixava `../../tmp/x` passar, e `python3 {suite}`
+# executava um arquivo fora do worktree.
+SUITE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
+
+
+def suite_nome_ok(nome: str) -> bool:
+    return isinstance(nome, str) and bool(SUITE_RE.fullmatch(nome))
+
+
 def proof_suites(res: dict) -> list[str]:
     tests = res.get("tests")
     if isinstance(tests, str):
         tests = tests.split()
-    suites = [t for t in (tests or []) if isinstance(t, str) and t.replace("/", "").replace("_", "").replace(".", "").isalnum()]
+    try:
+        declaradas = [s for s in projeto().suites if suite_nome_ok(s)]
+    except Exception:  # noqa: BLE001 — sem projeto: sem lista fechada
+        declaradas = []
+    permitidas = set(declaradas)
+    suites = []
+    for t in tests or []:
+        if not suite_nome_ok(t):
+            continue
+        if permitidas and t not in permitidas:
+            continue
+        suites.append(t)
     if suites:
         return suites
-    # Sem suíte válida na lane: vale o padrão do projeto, nunca o de outro projeto.
-    try:
-        padrao = projeto().suites
-    except Exception:  # noqa: BLE001 — sem projeto: cai no legado
-        padrao = []
-    return list(padrao) if padrao else list(PROOF_DEFAULT_SUITES)
+    # Sem suíte válida na lane: vale a lista do projeto, nunca a de outro projeto.
+    if declaradas:
+        return declaradas
+    return list(PROOF_DEFAULT_SUITES)
 
 
 def proof_script(wt: Path, suites: list[str]) -> str:

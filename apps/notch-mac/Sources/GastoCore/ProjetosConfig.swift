@@ -38,7 +38,8 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     /// Comando que roda no worktree antes de cada push da lane (ex.: a conferência de
     /// publicação de um repositório público). Vazio = sem conferência.
     public var antesDoPush: String
-    /// Suítes padrão da prova quando a lane não lista nenhuma (`suites` do `projetos.py`).
+    /// Suítes da prova. Se o projeto declara, a lane só roda um nome desta lista
+    /// (`proof_suites` no dispatcher). Vazio: a lane pede o nome, no formato certo.
     /// O app não edita, mas guarda: antes, salvar o cadastro apagava a lista (revisão do PR #19).
     public var suites: [String]
 
