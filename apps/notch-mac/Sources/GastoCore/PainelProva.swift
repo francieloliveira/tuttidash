@@ -167,7 +167,11 @@ public enum Provas {
         let caso = try? NSRegularExpression(pattern: #"Test Case '-\[(?:\S+?\.)?(\w+) \w+\]' (passed|failed)(?: \(([0-9.]+) seconds\))?"#)
         let swift = try? NSRegularExpression(pattern: #"[✔✘] Test (\S+?)\(\) (passed|failed)"#)
         let executado = try? NSRegularExpression(pattern: #"Executed (\d+) tests?"#)
-        let prova = try? NSRegularExpression(pattern: #"\[prova\] ([A-Za-z0-9_./]+): (\d+)ª tentativa"#)
+        let prova = try? NSRegularExpression(pattern: #"\[prova\] ([A-Za-z0-9_./]+)(?:.*?(\d+)ª tentativa)?"#)
+        // unittest do Python (o projeto TuttiDash prova com `python3 -m unittest`).
+        let pythonRan = try? NSRegularExpression(pattern: #"Ran (\d+) tests? in"#)
+        var suitePython: String?
+        var ranPython = 0
         for linha in linhas {
             if linha.contains("CompileSwift") || linha.contains("SwiftCompile") || linha.contains("Compiling ") {
                 a.compilou = true
@@ -175,6 +179,8 @@ public enum Provas {
             }
             if let m = primeiro(prova, linha), m.count >= 2 {
                 a.compilou = true
+                suitePython = m[0]
+                ranPython = 0
                 if let n = Int(m[1]) {
                     a.tentativa = max(a.tentativa, n)
                     if n >= 2 { a.segunda = true }
@@ -191,6 +197,26 @@ public enum Provas {
             }
             if let m = primeiro(executado, linha), let n = Int(m[0]) {
                 a.executados = n
+            }
+            if let m = primeiro(pythonRan, linha), let n = Int(m[0]) {
+                ranPython = n
+                a.executados = max(a.executados ?? 0, n)
+            }
+            if let suite = suitePython, ranPython > 0 {
+                let limpa = linha.trimmingCharacters(in: .whitespaces)
+                if limpa == "OK" || limpa.hasPrefix("OK (") {
+                    registrarPython(&acum, ordem: &ordemSuites, nome: suite, passou: true,
+                                    rodou: ranPython, analise: &a)
+                    suitePython = nil
+                    ranPython = 0
+                } else if limpa.hasPrefix("FAILED (") {
+                    registrarPython(&acum, ordem: &ordemSuites, nome: suite, passou: false,
+                                    rodou: ranPython, analise: &a)
+                    a.falhaDeclarada = true
+                    a.sucesso = false
+                    suitePython = nil
+                    ranPython = 0
+                }
             }
             if linha.contains("TEST SUCCEEDED") { a.sucesso = true; a.falhaDeclarada = false }
             if linha.contains("TEST FAILED") || linha.contains("BUILD FAILED") { a.falhaDeclarada = true; a.sucesso = false }
@@ -220,6 +246,20 @@ public enum Provas {
         var atual = acum[nome] ?? (0, false, false)
         atual.rodou = true
         atual.segundos += segundos ?? 0
+        if !passou { atual.falhou = true }
+        acum[nome] = atual
+    }
+
+    static func registrarPython(_ acum: inout [String: (segundos: Double, falhou: Bool, rodou: Bool)],
+                                ordem: inout [String], nome: String, passou: Bool, rodou: Int,
+                                analise: inout Analise) {
+        analise.testes += rodou
+        if !ordem.contains(nome) {
+            ordem.append(nome)
+            acum[nome] = (0, false, false)
+        }
+        var atual = acum[nome] ?? (0, false, false)
+        atual.rodou = true
         if !passou { atual.falhou = true }
         acum[nome] = atual
     }

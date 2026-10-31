@@ -155,7 +155,7 @@ public struct IndicadoresPainel: Equatable, Sendable {
     public var semanaAnterior: Double?
     /// (semana atual − anterior) / anterior, em %. nil quando não dá para comparar.
     public var variacaoSemanaPct: Double?
-    /// Suítes das provas pedidas hoje.
+    /// Suítes (classe Swift ou módulo unittest) das provas pedidas hoje.
     public var testesPassou: Int
     public var testesFalhou: Int
     public var provasHoje: Int

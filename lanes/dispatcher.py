@@ -2562,6 +2562,13 @@ def watch(lane: str, st: dict) -> None:
             log(f"lane:{lane} TRAVADA em {st['card']}: {st['stuck']}")
             return
     (wt / ".lane" / "finalized").write_text(outcome)
+    # Arquiva a prova na pasta de estado antes de soltar a lane: o painel lê
+    # `stale-proof-*` para o histórico e para o contador de testes do dia. Sem
+    # isso a prova some quando o `lane-<lane>.json` passa a apontar para outro card.
+    try:
+        archive_old_proofs(wt / ".lane", st["card"])
+    except Exception as exc:  # noqa: BLE001 — o fechamento não pode falhar por causa do histórico
+        log(f"lane:{lane} {st['card']}: não arquivei a prova ({exc})")
     state_file(lane).unlink(missing_ok=True)
     log(f"lane:{lane} FECHOU {st['card']} → {outcome}")
 

@@ -269,7 +269,8 @@ public enum LeitorPainelDisco {
     public static let caudaLog = 256 * 1024
     public static let caudaProva = 400 * 1024
 
-    public static func ler(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date()) -> EntradaPainel {
+    public static func ler(pasta: URL, logDispatcher: URL, logsDir: URL, agora: Date = Date(),
+                           worktrees: [URL] = []) -> EntradaPainel {
         let fm = FileManager.default
         let estado = EstadoLanes.ler(pasta: pasta)
         var titulos: [String: String] = [:]
@@ -287,6 +288,15 @@ public enum LeitorPainelDisco {
             if titulos[card] == nil { titulos[card] = titulo }
         }
         provas += provasAntigas(pasta: pasta)
+        // A lane troca de card e o `lane-<lane>.json` passa a apontar para outro
+        // worktree: a prova que acabou de rodar some do painel e o contador do dia
+        // volta a zero. Lê também as provas de hoje que ficaram no worktree do card.
+        var vistas = Set(provas.map(chaveDaProva))
+        let (doWorktree, pastasDoWorktree) = provasDosWorktrees(
+            worktrees, exceto: Set(pastasLane.map { $0.resolvingSymlinksInPath().path }),
+            agora: agora, calendario: Datas.calendarioISO, vistas: &vistas)
+        provas += doWorktree
+        pastasLane += pastasDoWorktree
         provas = provas.map { prova in
             guard prova.descricao == nil, let titulo = titulos[prova.card] else { return prova }
             var comTitulo = prova
@@ -348,6 +358,55 @@ public enum LeitorPainelDisco {
         return ProvaBruta(lane: lane.lane, card: lane.card, descricao: lane.titulo, pedidoEm: pedido,
                           log: cauda(logURL, maxBytes: caudaProva) ?? "", saida: saida,
                           esperandoLock: esperando, historico: finalizado)
+    }
+
+    /// Prova que já terminou e ficou no `.lane` de um worktree que não é mais o da
+    /// lane (o card fechou e a lane pegou outro). Sem isso, o painel só conhece a
+    /// prova enquanto o `lane-<lane>.json` aponta para aquele worktree; ao trocar de
+    /// card, «testes hoje» e «provas executadas hoje» voltam a zero.
+    ///
+    /// Só a prova pedida hoje entra: o histórico anterior continua vindo dos
+    /// `stale-proof-*`. `vistas` (card + início) evita contar a mesma prova duas
+    /// vezes quando ela também está na pasta de estado.
+    static func provasDosWorktrees(_ raizes: [URL], exceto: Set<String>, agora: Date,
+                                   calendario: Calendar, vistas: inout Set<String>,
+                                   limite: Int = 12) -> (provas: [ProvaBruta], pastas: [URL]) {
+        let fm = FileManager.default
+        let hojeISO = Datas.diaISO(agora, calendario: calendario)
+        var provas: [ProvaBruta] = []
+        var pastas: [URL] = []
+        for raiz in raizes where !raiz.path.isEmpty {
+            let itens = (try? fm.contentsOfDirectory(at: raiz, includingPropertiesForKeys: [.isDirectoryKey],
+                                                     options: [.skipsHiddenFiles])) ?? []
+            for worktree in itens.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                guard provas.count < limite else { break }
+                guard (try? worktree.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+                      let card = cardArquivado(worktree.lastPathComponent) else { continue }
+                let base = worktree.appendingPathComponent(".lane")
+                if exceto.contains(base.resolvingSymlinksInPath().path) { continue }
+                guard let inicio = texto(base.appendingPathComponent("proof_started")),
+                      let segundos = Double(inicio.trimmingCharacters(in: .whitespacesAndNewlines)) else { continue }
+                let pedido = Date(timeIntervalSince1970: segundos)
+                guard Datas.diaISO(pedido, calendario: calendario) == hojeISO else { continue }
+                let chave = "\(card)|\(segundos)"
+                if vistas.contains(chave) { continue }
+                vistas.insert(chave)
+                let saida = texto(base.appendingPathComponent("proof_exit"))
+                    .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                provas.append(ProvaBruta(
+                    lane: "", card: card, descricao: nil, pedidoEm: pedido,
+                    log: cauda(base.appendingPathComponent("proof.log"), maxBytes: caudaProva) ?? "",
+                    saida: saida, esperandoLock: false, historico: true))
+                pastas.append(base)
+            }
+            if provas.count >= limite { break }
+        }
+        return (provas, pastas)
+    }
+
+    /// Chave de uma prova para não contar a mesma duas vezes (card + início).
+    static func chaveDaProva(_ prova: ProvaBruta) -> String {
+        "\(prova.card)|\(prova.pedidoEm?.timeIntervalSince1970 ?? 0)"
     }
 
     static func provasAntigas(pasta: URL, limite: Int = Provas.limiteHistorico) -> [ProvaBruta] {

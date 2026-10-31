@@ -80,8 +80,19 @@ public struct LeituraDisco: Sendable {
         }
         let resultado = carregador.carregar(config: config)
         let entrada = LeitorPainelDisco.ler(pasta: config.stateDir, logDispatcher: logDispatcher(config: config),
-                                            logsDir: config.logsDir, agora: agora)
+                                            logsDir: config.logsDir, agora: agora,
+                                            worktrees: worktreesDosProjetos(config))
         return (LeituraDisco(resultado: resultado, entrada: entrada, carimbo: carimbo, lidaEm: agora), false)
+    }
+
+    /// Pastas de worktrees do cadastro de projetos. É onde ficam as provas dos cards
+    /// que já fecharam: `~/…/<projeto>-worktrees`, expandido como no dispatcher.
+    static func worktreesDosProjetos(_ config: Configuracao) -> [URL] {
+        config.projetos.compactMap { projeto in
+            let caminho = projeto.worktreesEfetivo.trimmingCharacters(in: .whitespaces)
+            guard !caminho.isEmpty else { return nil }
+            return Configuracao.expandir(caminho, ambiente: config.ambiente, home: config.home)
+        }
     }
 
     /// Ainda vale: nenhum arquivo mudou, a config é a mesma, a leitura é mais nova que

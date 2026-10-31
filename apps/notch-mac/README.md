@@ -50,7 +50,10 @@ Tudo é lido em Swift, **só leitura**, nos mesmos caminhos da ferramenta `gasto
 O painel também lê, só para leitura, na pasta de estado: `medida-cache.json`, `planos.json`,
 `opencode-strikes.json`, `enabled`, `disabled-by-user`, a existência de `PAUSE`, `limite-<lane>.json`
 e os `stale-proof-*`. O log é `lanes-dispatcher.log` ao lado da pasta de logs. A prova em curso sai
-do `.lane/proof.log` do worktree gravado em `lane-<lane>.json`. A build no iPhone e no relógio sai
+do `.lane/proof.log` do worktree gravado em `lane-<lane>.json`. As provas de hoje que ficaram no
+`.lane` de um worktree já fechado também entram: sem isso, quando a lane pega outro card o `lane-<lane>.json`
+passa a apontar para outro worktree e o contador de testes do dia voltava a zero. Esses worktrees saem
+da pasta `worktrees` de cada projeto da config. A build no iPhone e no relógio sai
 do `device-build-*.log` mais novo, quando esse arquivo existe. Plano ou strikes ausentes aparecem
 como «sem dado» ou «sem registro». Simulador dedicado, iPhone e Apple Watch sem arquivo aparecem
 como «sem leitura ainda».

@@ -154,6 +154,51 @@ final class PainelProvaTests: XCTestCase {
         XCTAssertEqual(quadro.cartas[1].posicaoFila, 1)
         XCTAssertEqual(quadro.cartas[1].esperaSegundos, 100)
     }
+
+    /// A prova do TuttiDash roda `python3 -m unittest`: «Ran N tests … OK» não é
+    /// «0 testes». Sem isso o contador de hoje ficava em zero e a prova verde virava falha.
+    func testProvaPythonVerdeNaoViraZeroTestes() {
+        let agora = Date(timeIntervalSince1970: 1_700_000_000)
+        let log = """
+        [prova] tests.test_catalogo
+        ..................
+        ----------------------------------------------------------------------
+        Ran 18 tests in 0.044s
+
+        OK
+        """
+        let bruta = ProvaBruta(lane: "grok", card: "FRA-614", descricao: "catálogo",
+                               pedidoEm: agora.addingTimeInterval(-120), log: log, saida: 0,
+                               esperandoLock: false, historico: false)
+        let carta = Provas.organizar([bruta], agora: agora).cartas[0]
+        XCTAssertFalse(carta.zeroTestes)
+        XCTAssertFalse(carta.falha)
+        XCTAssertEqual(carta.suites.map(\.nome), ["tests.test_catalogo"])
+        XCTAssertEqual(carta.suites.first?.estado, .ok)
+        XCTAssertEqual(carta.fases.last?.detalhe, "ok")
+    }
+
+    func testProvaPythonVermelhaMarcaASuiteEFalha() {
+        let agora = Date(timeIntervalSince1970: 1_700_000_000)
+        let log = """
+        [prova] tests.test_parser: 1ª tentativa SKIP_PREFLIGHT=1
+        .F
+        ======================================================================
+        FAIL: test_x (tests.test_parser.X)
+        ----------------------------------------------------------------------
+        Ran 2 tests in 0.001s
+
+        FAILED (failures=1)
+        """
+        let bruta = ProvaBruta(lane: "grok", card: "FRA-614", descricao: nil,
+                               pedidoEm: agora.addingTimeInterval(-120), log: log, saida: 0,
+                               esperandoLock: false, historico: false)
+        let carta = Provas.organizar([bruta], agora: agora).cartas[0]
+        XCTAssertFalse(carta.zeroTestes)
+        XCTAssertTrue(carta.falha)
+        XCTAssertEqual(carta.suites.map(\.nome), ["tests.test_parser"])
+        XCTAssertEqual(carta.suites.first?.estado, .falha)
+    }
 }
 
 final class PainelMontagemTests: XCTestCase {
@@ -609,6 +654,69 @@ final class HistoricoProvasTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: t.url.appendingPathComponent("PAUSE").path))
     }
 
+    /// O card fecha, a lane pega outro e o `lane-<lane>.json` passa a apontar para
+    /// outro worktree. A prova de hoje continua no worktree do card e precisa contar.
+    func testProvaDeCardQueSaiuDaLaneContaNoDia() throws {
+        let t = try PastaTemp()
+        let worktrees = t.url.appendingPathComponent("worktrees")
+        try provaNoWorktree(worktrees, card: "fra-614", ha: 60, log: logDoisVerdes)
+        let entrada = try ler(t, worktrees: worktrees)
+        XCTAssertEqual(entrada.provas.map(\.card), ["FRA-614"])
+        let ind = indicadores(entrada)
+        XCTAssertEqual(ind.provasHoje, 1)
+        XCTAssertEqual(ind.testesPassou, 1, "uma classe Swift é uma suíte")
+        XCTAssertEqual(ind.testesFalhou, 0)
+        XCTAssertEqual(MontadorPainel.montar(entrada: entrada, execucoes: [], agora: agora,
+                                             calendario: calendarioFixo()).historico.first?.selo, "ok")
+    }
+
+    /// A mesma prova no worktree e em `stale-proof-*` conta uma vez só.
+    func testProvaNoWorktreeNaoDuplicaAArquivada() throws {
+        let t = try PastaTemp()
+        let worktrees = t.url.appendingPathComponent("worktrees")
+        let pedido = agora.addingTimeInterval(-60)
+        try provaNoWorktree(worktrees, card: "fra-614", ha: 60, log: logDoisVerdes)
+        try t.escrever("stale-proof-fra-614-0145/proof_started", "\(pedido.timeIntervalSince1970)")
+        try t.escrever("stale-proof-fra-614-0145/proof_exit", "0")
+        try t.escrever("stale-proof-fra-614-0145/proof.log", logDoisVerdes)
+        let entrada = try ler(t, worktrees: worktrees)
+        XCTAssertEqual(entrada.provas.filter { $0.card == "FRA-614" }.count, 1)
+        XCTAssertEqual(indicadores(entrada).provasHoje, 1)
+    }
+
+    /// Prova de ontem no worktree não entra no contador de hoje.
+    func testProvaDeOutroDiaNoWorktreeFicaFora() throws {
+        let t = try PastaTemp()
+        let worktrees = t.url.appendingPathComponent("worktrees")
+        try provaNoWorktree(worktrees, card: "fra-613", ha: 26 * 3600, log: logDoisVerdes)
+        let entrada = try ler(t, worktrees: worktrees)
+        XCTAssertTrue(entrada.provas.isEmpty)
+        XCTAssertEqual(indicadores(entrada).provasHoje, 0)
+    }
+
+    private var logDoisVerdes: String {
+        """
+        Test Case '-[GastoCoreTests.CatalogoBundleTests testUm]' passed (0.001 seconds).
+        Test Case '-[GastoCoreTests.CatalogoBundleTests testDois]' passed (0.002 seconds).
+        Executed 2 tests, with 0 failures (0 unexpected) in 0.003 (0.004) seconds
+        ** TEST SUCCEEDED **
+        """
+    }
+
+    private func provaNoWorktree(_ raiz: URL, card: String, ha: TimeInterval, log: String) throws {
+        let base = raiz.appendingPathComponent(card).appendingPathComponent(".lane")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try "\(agora.addingTimeInterval(-ha).timeIntervalSince1970)"
+            .write(to: base.appendingPathComponent("proof_started"), atomically: true, encoding: .utf8)
+        try "0".write(to: base.appendingPathComponent("proof_exit"), atomically: true, encoding: .utf8)
+        try log.write(to: base.appendingPathComponent("proof.log"), atomically: true, encoding: .utf8)
+    }
+
+    private func indicadores(_ entrada: EntradaPainel) -> IndicadoresPainel {
+        Indicadores.calcular(linhas: [], execucoes: [], provas: entrada.provas, semanaAtual: nil,
+                             agora: agora, calendario: calendarioFixo())
+    }
+
     private func fechada(lane: String, card: String, ha: TimeInterval, historico: Bool = true,
                          log: String? = nil, saida: Int? = 0) -> ProvaBruta {
         ProvaBruta(lane: lane, card: card, descricao: nil,
@@ -630,12 +738,13 @@ final class HistoricoProvasTests: XCTestCase {
         try FileManager.default.setAttributes([.modificationDate: quando], ofItemAtPath: dir.path)
     }
 
-    private func ler(_ t: PastaTemp) throws -> EntradaPainel {
+    private func ler(_ t: PastaTemp, worktrees: URL? = nil) throws -> EntradaPainel {
         let logs = t.url.appendingPathComponent("logs")
         try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
         return LeitorPainelDisco.ler(pasta: t.url,
                                      logDispatcher: t.url.appendingPathComponent("ausente.log"),
-                                     logsDir: logs, agora: agora)
+                                     logsDir: logs, agora: agora,
+                                     worktrees: worktrees.map { [$0] } ?? [])
     }
 }
 
