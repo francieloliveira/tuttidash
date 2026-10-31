@@ -46,7 +46,8 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
 git clone https://github.com/francieloliveira/tuttidash.git
 cd tuttidash
 
-# 1. Tools into ~/.transcentia, without background jobs yet
+# 1. Tools into ~/.transcentia, without background jobs yet.
+#    Creates ~/.transcentia/lanes even on a clean install.
 tools/install.sh --sem-launchd
 
 # 2. Linear API key in the Keychain (you will be prompted for it)
@@ -55,6 +56,15 @@ security add-generic-password -s linear-transcentia-lanes -a "$USER" -w
 # 3. The app
 cd apps/notch-mac && ./build.sh && open build/TuttiDash.app
 ```
+
+Step 1 creates `~/.transcentia/lanes` when the directory is missing and copies `dispatcher.py`,
+`run_lane.sh` (mode 755), `lane_view.py`, the lane prompts, `claude-settings.json` and
+`lane-mcp.json` (these two at mode 0600). If an installed `run_lane.sh` or `lane_view.py`
+differs from the repo, the script keeps a `.bak` and prints the diff before replacing it.
+The two JSON files are left alone once you edit them; `tools/install.sh --force` replaces
+them. `lane-mcp.json` starts with no servers: the docs MCP path belongs to this machine
+and stays in your copy. In the app, the lane switches show up only when the dispatcher,
+the runner, the view and both JSON files are present. The dispatcher file alone is not enough.
 
 Then configure, in the app (*Ajustes*) or in `~/Library/Application Support/TuttiDash/config.json`
 (start from [`config.example.json`](config.example.json)):

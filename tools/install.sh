@@ -5,13 +5,40 @@
 #                               com barra de progresso (rodape.py),
 #                               medir-estresse, bots-chave, lanepct-auto (+ build do lanepct),
 #                               o catálogo de agentes (agents.d/ + catalogo.py),
+#                               a pasta das lanes (~/.transcentia/lanes, criada mesmo
+#                               numa instalação limpa: dispatcher, run_lane.sh, lane_view.py,
+#                               prompts, claude-settings.json e lane-mcp.json),
 #                               vigia dos bots (watch.py, prompts, instalar.sh) e os launchd
 #                               com.transcentia.bots.watch / .chave pelos lançadores com nome.
 #   tools/install.sh --sem-launchd   só copia arquivos
-# Espelho: não mexe no PAUSE (quem decide é a chave bots-chave); nunca inicia o vigia em paralelo.
+#   tools/install.sh --force         substitui claude-settings.json e lane-mcp.json
+#                                    já customizados (sem --force eles ficam)
+# Espelho: não mexe no PAUSE (quem decide é a chave bots-chave) nem no arquivo enabled
+# das lanes; nunca inicia o vigia em paralelo.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
+SEM_LAUNCHD=0
+FORCE=0
+for arg in "$@"; do
+  case "$arg" in
+    --sem-launchd) SEM_LAUNCHD=1 ;;
+    --force) FORCE=1 ;;
+  esac
+done
+# FRA-591: sem runner, view ou template a instalação para aqui. A mensagem lista
+# o que falta e nada é copiado para ~/.transcentia/lanes.
+faltando=()
+[ -f "$ROOT/lanes/dispatcher.py" ] || faltando+=("lanes/dispatcher.py")
+[ -f "$ROOT/lanes/run_lane.sh" ] || faltando+=("lanes/run_lane.sh")
+[ -f "$ROOT/lanes/lane_view.py" ] || faltando+=("lanes/lane_view.py")
+[ -f "$ROOT/lanes/templates/claude-settings.json" ] || faltando+=("lanes/templates/claude-settings.json")
+[ -f "$ROOT/lanes/templates/lane-mcp.json" ] || faltando+=("lanes/templates/lane-mcp.json")
+if [ "${#faltando[@]}" -gt 0 ]; then
+  echo "ERRO: instalação das lanes incompleta no repositório. Faltam:" >&2
+  for f in "${faltando[@]}"; do echo "  - $f" >&2; done
+  exit 1
+fi
 T="$HOME/.transcentia/tools"; B="$HOME/.transcentia/bots"
 LAUNCHERS="$HOME/Library/Application Support/AgentesLocais"
 DOMAIN="gui/$(id -u)"
@@ -48,26 +75,52 @@ done
 # Build pessoal (FRA-565): módulo opcional fora do repositório aberto, ao lado do catálogo.
 PRIVADO_PY="$ROOT/apps/notch-mac/Privado/python/gasto_privado.py"
 [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$B/gasto_privado.py"
+# Backup e diff quando a cópia instalada existe e o conteúdo difere; depois instala.
+copiar_com_backup() { # mode src dest
+  local mode="$1" src="$2" dest="$3"
+  if [ -f "$dest" ] && ! cmp -s "$src" "$dest"; then
+    cp -p "$dest" "$dest.bak"
+    echo "backup: $dest → $dest.bak"
+    diff -u "$dest" "$src" || true
+  fi
+  install -m "$mode" "$src" "$dest"
+}
+# 0600. Customização fica no lugar, a menos que --force.
+copiar_template() { # src dest
+  local src="$1" dest="$2"
+  if [ -f "$dest" ] && ! cmp -s "$src" "$dest"; then
+    if [ "$FORCE" -ne 1 ]; then
+      echo "mantido: $dest (customização; use --force para substituir pelo template)"
+      return 0
+    fi
+    cp -p "$dest" "$dest.bak"
+    echo "backup: $dest → $dest.bak"
+    diff -u "$dest" "$src" || true
+  fi
+  install -m 600 "$src" "$dest"
+}
+# FRA-591: instalação limpa também cria a pasta. A fonte é o repositório.
 LANES_DIR="$HOME/.transcentia/lanes"
-if [ -d "$LANES_DIR" ]; then
-  # Só o que já está em paridade com o repo. lane_view.py tem
-  # mudança local ainda não versionada — não tocar nele aqui.
-  for mod in catalogo fila projetos privacidade linear_ids; do
-    install -m 644 "$ROOT/gasto_lanes/$mod.py" "$LANES_DIR/$mod.py"
-  done
-  [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$LANES_DIR/gasto_privado.py"
-  for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh; do
-    install -m 755 "$ROOT/lanes/$f" "$LANES_DIR/$f"
-  done
-  for f in "$ROOT"/lanes/lane-prompt.md "$ROOT"/lanes/lane-prompt-*.md; do
-    [ -f "$f" ] || continue
-    install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
-  done
-fi
+mkdir -p "$LANES_DIR"
+for mod in catalogo fila projetos privacidade linear_ids; do
+  install -m 644 "$ROOT/gasto_lanes/$mod.py" "$LANES_DIR/$mod.py"
+done
+[ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$LANES_DIR/gasto_privado.py"
+for f in dispatcher.py lanes_window.py lanes_ctl.py; do
+  install -m 755 "$ROOT/lanes/$f" "$LANES_DIR/$f"
+done
+copiar_com_backup 755 "$ROOT/lanes/run_lane.sh" "$LANES_DIR/run_lane.sh"
+copiar_com_backup 644 "$ROOT/lanes/lane_view.py" "$LANES_DIR/lane_view.py"
+for f in "$ROOT"/lanes/lane-prompt.md "$ROOT"/lanes/lane-prompt-*.md; do
+  [ -f "$f" ] || continue
+  install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
+done
+copiar_template "$ROOT/lanes/templates/claude-settings.json" "$LANES_DIR/claude-settings.json"
+copiar_template "$ROOT/lanes/templates/lane-mcp.json" "$LANES_DIR/lane-mcp.json"
 mkdir -p "$HOME/.transcentia/agents.d"
 rsync -a --delete "$ROOT/agents.d/" "$HOME/.transcentia/agents.d/"
 
-[ "${1:-}" = "--sem-launchd" ] && { echo "arquivos instalados (sem launchd)"; exit 0; }
+[ "$SEM_LAUNCHD" -eq 1 ] && { echo "arquivos instalados (sem launchd)"; exit 0; }
 
 # Nunca registrar o launchd direto no python3 (aparece como "python3" em Itens de Início):
 # cada agente tem um lançador com nome em ~/Library/Application Support/AgentesLocais/<Nome>.

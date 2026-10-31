@@ -22,6 +22,15 @@ final class EstadoLanesHabilitadas: ObservableObject {
         LanesHabilitadas.dispatcherExiste(stateDir: stateDir)
     }
 
+    /// FRA-591: dispatcher + runner + view + settings. O dispatcher sozinho não basta.
+    var instalacaoPronta: Bool {
+        LanesHabilitadas.instalacaoPronta(stateDir: stateDir)
+    }
+
+    var pecasAusentes: [String] {
+        LanesHabilitadas.ausentes(stateDir: stateDir)
+    }
+
     /// Alinha o interruptor ao arquivo, sem gravar. Vale ao abrir a seção.
     func recarregar() {
         let lidas = LanesHabilitadas.ler(stateDir: stateDir)
@@ -30,10 +39,17 @@ final class EstadoLanesHabilitadas: ObservableObject {
     }
 
     func alternar(_ lane: String, _ ligada: Bool) {
-        // FRA-421: não gravar se o dispatcher não existe.
-        guard dispatcherExiste else {
-            erro = String(localized: "dispatcher não encontrado. Nada foi alterado.")
-            CentralAvisos.compartilhada.erro(String(localized: "Dispatcher não encontrado"), String(localized: "Instale o dispatcher primeiro."))
+        // FRA-421 / FRA-591: não gravar se a instalação não está completa.
+        guard instalacaoPronta else {
+            if !dispatcherExiste {
+                erro = String(localized: "dispatcher não encontrado. Nada foi alterado.")
+                CentralAvisos.compartilhada.erro(String(localized: "Dispatcher não encontrado"), String(localized: "Instale o dispatcher primeiro."))
+            } else {
+                let faltam = pecasAusentes.joined(separator: ", ")
+                erro = String(localized: "Instalação incompleta (\(faltam)). Nada foi alterado.")
+                CentralAvisos.compartilhada.erro(String(localized: "Lanes incompletas"),
+                                                  String(localized: "Faltam \(faltam). Rode tools/install.sh."))
+            }
             return
         }
         let anterior = ligadas
@@ -126,13 +142,22 @@ struct SecaoLanesHabilitadas: View {
 
     @ViewBuilder
     private var conteudo: some View {
-        if !estado.dispatcherExiste {
-            // FRA-421: estado vazio claro quando não há dispatcher.
+        if !estado.instalacaoPronta {
+            let faltam = estado.pecasAusentes.joined(separator: ", ")
             VStack(alignment: .leading, spacing: 8) {
-                Text(String(localized: "Dispatcher não encontrado")).font(.headline).foregroundStyle(.white)
-                Text(String(localized: "O TuttiDash precisa do dispatcher para gerenciar lanes. Instale o dispatcher e tente novamente."))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !estado.dispatcherExiste {
+                    // FRA-421: estado vazio claro quando não há dispatcher.
+                    Text(String(localized: "Dispatcher não encontrado")).font(.headline).foregroundStyle(.white)
+                    Text(String(localized: "O TuttiDash precisa do dispatcher para gerenciar lanes. Instale o dispatcher e tente novamente."))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    // FRA-591: o dispatcher sozinho não basta.
+                    Text(String(localized: "Instalação das lanes incompleta")).font(.headline).foregroundStyle(.white)
+                    Text(String(localized: "O dispatcher está no Mac, mas faltam \(faltam). Rode tools/install.sh de novo."))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.vertical, 8)
         } else {
