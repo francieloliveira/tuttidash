@@ -172,11 +172,19 @@ LANEPCT_AUTO = Path.home() / ".transcentia" / "tools" / "lanepct-auto"
 # Vem do cadastro `projetos` da config do TuttiDash (`gasto_lanes/projetos.py`).
 # Sem a chave na config não há projeto e o ciclo só registra isso (FRA-565).
 # `projeto()` é lido a cada ciclo: mudar a config muda o projeto na hora.
+def _caminho_cfg() -> Path:
+    """`tools/cfg` do checkout, ou a cópia instalada. O cfg usa o resolvedor único."""
+    local = Path(__file__).resolve().parent.parent / "tools" / "cfg"
+    if local.is_file():
+        return local
+    return Path.home() / ".transcentia" / "tools" / "cfg"
+
+
 def _cfg(chave, padrao):
-    """Lê ~/.transcentia/tools/cfg (FRA-295); sem cfg ou com erro, devolve o padrão."""
+    """Lê o `cfg` (FRA-295); sem cfg ou com erro, devolve o padrão."""
     try:
         import runpy
-        v = runpy.run_path(str(Path.home() / ".transcentia/tools/cfg"))["get"](chave, padrao)
+        v = runpy.run_path(str(_caminho_cfg()))["get"](chave, padrao)
         return type(padrao)(v) if padrao is not None and not isinstance(padrao, (list, set, dict)) else v
     except Exception:  # noqa: BLE001
         return padrao
@@ -527,14 +535,20 @@ def touched_protected(paths: list[str]) -> list[str]:
 
 
 # --- Modelo customizado por lane (do config do TuttiDash) -------------------
-# O app grava em ~/Library/Application Support/TuttiDash/config.json (FRA-523);
-# a pasta antiga Lanekeeper fica como reserva.
-# O dispatcher lê esse caminho primeiro, com fallback para ~/.transcentia/tools/config.json.
-CONFIG_FILES = [
-    Path.home() / "Library/Application Support/TuttiDash/config.json",
-    Path.home() / "Library/Application Support/Lanekeeper/config.json",
-    Path.home() / ".transcentia/tools/config.json",
-]
+# O arquivo é o do resolvedor único (gasto_lanes/config.py): env > TuttiDash >
+# Lanekeeper > TranscentIA Gasto > legado. Testes trocam CONFIG_FILES por uma lista.
+_USAR_RESOLVEDOR = object()
+CONFIG_FILES = _USAR_RESOLVEDOR
+
+
+def _arquivos_cfg() -> list:
+    if CONFIG_FILES is not _USAR_RESOLVEDOR:
+        return list(CONFIG_FILES)
+    try:
+        from config import arquivos_em_uso
+    except ImportError:
+        from gasto_lanes.config import arquivos_em_uso
+    return arquivos_em_uso()
 # Última lista boa de modelos, a mesma que os Ajustes gravam (FRA-521).
 CACHE_MODELOS = catalogo.CACHE_MODELOS
 
@@ -544,7 +558,7 @@ def ler_modelo_lane(lane: str) -> Optional[str]:
 
     String antiga e `{"modo": "fixo"}` devolvem o modelo. O automático por peso não cabe
     numa string: `modelo_da_lane` lê `porPeso`."""
-    bruto = catalogo.bruto_modelo(lane, CONFIG_FILES)
+    bruto = catalogo.bruto_modelo(lane, _arquivos_cfg())
     if bruto is None:
         return None
     cfg = catalogo.normalizar_config_modelo(bruto)
@@ -563,7 +577,7 @@ def _cache_modelos() -> dict:
 
 
 def _resolucao_modelo(lane: str, effort: str) -> dict:
-    return catalogo.resolver_modelo(lane, effort, catalogo.bruto_modelo(lane, CONFIG_FILES), _cache_modelos())
+    return catalogo.resolver_modelo(lane, effort, catalogo.bruto_modelo(lane, _arquivos_cfg()), _cache_modelos())
 
 
 def modelo_da_lane(lane: str, effort: str) -> str:
@@ -610,7 +624,7 @@ def reconciliar_modelos_sumidos() -> list[str]:
     if not cache:
         return []
     mudou: list[str] = []
-    for cfg_path in CONFIG_FILES:
+    for cfg_path in _arquivos_cfg():
         if not cfg_path.exists():
             continue
         try:
@@ -1369,15 +1383,34 @@ def discard_stale_proof(lane_dir: Path, ident: str, round_started: float) -> boo
 
 
 # --- Acompanhamento e fechamento --------------------------------------------
+def nomes_do_diff(wt: Path, spec: str) -> list[str]:
+    """Caminhos completos do diff, sem o escape octal do `core.quotepath`.
+
+    O padrão do git cita non-ASCII entre aspas (`relat\\303\\263rio.docx`) e o
+    `fnmatch` não casa o glob do cadastro. `-z` separa por NUL; a decodificação
+    é UTF-8 para o acento não depender do locale do processo.
+    """
+    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    out = subprocess.run(
+        ["git", "-c", "core.quotepath=false", "diff", "--name-only", "-z", spec],
+        cwd=wt, capture_output=True, env=env, timeout=120,
+    )
+    if out.returncode != 0:
+        erro = out.stderr.decode("utf-8", "replace").strip()[:300]
+        raise RuntimeError(f"git diff… falhou ({out.returncode}): {erro}")
+    texto = out.stdout.decode("utf-8", "surrogateescape")
+    return [p for p in texto.split("\0") if p]
+
+
 def git_summary(wt: Path, base: Optional[str] = None) -> dict:
     """`files`: tudo o que a branch muda em relação à main (vai no PR).
     `new` e `lane_files`: só o que a lane fez desde `base` (sem base, estado antigo, vale a main)."""
     sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
     ahead = int(sh(["git", "rev-list", "--count", "origin/main..HEAD"], cwd=wt) or 0)
-    files = [f for f in sh(["git", "diff", "--name-only", "origin/main...HEAD"], cwd=wt).splitlines() if f]
+    files = nomes_do_diff(wt, "origin/main...HEAD")
     if base:
         new = int(sh(["git", "rev-list", "--count", f"{base}..HEAD"], cwd=wt) or 0)
-        desde_base = [f for f in sh(["git", "diff", "--name-only", f"{base}..HEAD"], cwd=wt).splitlines() if f]
+        desde_base = nomes_do_diff(wt, f"{base}..HEAD")
         # A lane pode trazer a main para dentro da branch. O merge põe no
         # `base..HEAD` arquivos que são da main, não dela — foi assim que a
         # FRA-453 morreu três vezes acusada de tocar `caminho.md`, que a main
@@ -2144,19 +2177,39 @@ def stop(st: dict, motivo: str, extra: str = "", causa: str = "") -> str:
 # O comando vem do campo `prova` do projeto no cadastro: o iOS usa
 # `safe_xcodebuild.sh` (que precisa de 2 tentativas, a 1ª com SKIP_PREFLIGHT), e um
 # projeto Python usa `python3 {suite}` com 1 tentativa só.
+# Nome de suíte: identificador com pontos (`FooTests`, `tests.test_parser`).
+# `re.fullmatch` rejeita caminho (`/`, `..`), flag (`-`) e espaço. Tirar esses
+# caracteres antes do `isalnum` deixava `../../tmp/x` passar, e `python3 {suite}`
+# executava um arquivo fora do worktree.
+SUITE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
+
+
+def suite_nome_ok(nome: str) -> bool:
+    return isinstance(nome, str) and bool(SUITE_RE.fullmatch(nome))
+
+
 def proof_suites(res: dict) -> list[str]:
     tests = res.get("tests")
     if isinstance(tests, str):
         tests = tests.split()
-    suites = [t for t in (tests or []) if isinstance(t, str) and t.replace("/", "").replace("_", "").replace(".", "").isalnum()]
+    try:
+        declaradas = [s for s in projeto().suites if suite_nome_ok(s)]
+    except Exception:  # noqa: BLE001 — sem projeto: sem lista fechada
+        declaradas = []
+    permitidas = set(declaradas)
+    suites = []
+    for t in tests or []:
+        if not suite_nome_ok(t):
+            continue
+        if permitidas and t not in permitidas:
+            continue
+        suites.append(t)
     if suites:
         return suites
-    # Sem suíte válida na lane: vale o padrão do projeto, nunca o de outro projeto.
-    try:
-        padrao = projeto().suites
-    except Exception:  # noqa: BLE001 — sem projeto: cai no legado
-        padrao = []
-    return list(padrao) if padrao else list(PROOF_DEFAULT_SUITES)
+    # Sem suíte válida na lane: vale a lista do projeto, nunca a de outro projeto.
+    if declaradas:
+        return declaradas
+    return list(PROOF_DEFAULT_SUITES)
 
 
 def proof_script(wt: Path, suites: list[str]) -> str:
