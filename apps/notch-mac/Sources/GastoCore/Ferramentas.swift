@@ -62,7 +62,7 @@ public enum Ferramentas {
         [Ferramenta(id: "brew", nome: "Homebrew", tipo: .base,
                     paraQue: String(localized: "Instala as outras ferramentas (gh, tmux)."),
                     executavel: "brew",
-                    instalar: #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)""#,
+                    instalar: instaladorHomebrew,
                     docs: URL(string: "https://brew.sh")),
          Ferramenta(id: "apple", nome: String(localized: "Ferramentas da Apple (git e python3)"), tipo: .base,
                     paraQue: String(localized: "O git guarda o código; o python3 roda o dispatcher e o vigia."),
@@ -119,12 +119,21 @@ public enum Ferramentas {
 
     // MARK: - Terminal
 
+    /// Instalador oficial do Homebrew. É o único pipeline shell fixo do app (FRA-604).
+    static let instaladorHomebrew = #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)""#
+
     /// Texto entre aspas simples para o bash.
     static func aspas(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: #"'\''"#) + "'" }
 
     /// Roteiro `.command` que o Terminal abre: mostra o comando, espera o Enter e roda.
+    ///
+    /// O comando entra citado (cada argumento entre aspas). O instalador do Homebrew
+    /// continua shell, porque é pipeline. Um `curl | bash` só roda cru se o texto for
+    /// exatamente um `instalar.comando` do catálogo confiável e não tiver `;`, `$` nem crase.
+    /// `oficiais == nil` lê esse catálogo; o teste passa a lista para não depender da máquina.
     public static func roteiro(titulo: String, comando: String, dica: String = "", docs: URL? = nil,
-                               home: URL = FileManager.default.homeDirectoryForCurrentUser) -> String {
+                               home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                               oficiais: [String]? = nil) -> String {
         var l = ["#!/bin/bash",
                  "export PATH=\(aspas(path(home: home))):\"$PATH\"",
                  "clear",
@@ -135,14 +144,74 @@ public enum Ferramentas {
         l += ["printf '\\n    %s\\n\\n' \(aspas(comando))"]
         if !dica.isEmpty { l.append("echo \(aspas(dica))"); l.append("echo") }
         l += ["read -r -p \(aspas(String(localized: "Enter para rodar, Ctrl+C para cancelar. "))) _",
-              "echo",
-              comando,
-              "codigo=$?",
-              "echo",
-              "if [ $codigo -eq 0 ]; then echo \(aspas(String(localized: "Pronto. Volte ao TuttiDash: a tela confere sozinha.")));"
-                + " else echo \(aspas(String(localized: "Terminou com erro (código"))) $codigo')'; fi",
-              "echo \(aspas(String(localized: "Pode fechar esta janela.")))"]
+              "echo"]
+        let execucao = montarExecucao(comando, oficiais: oficiais)
+        l += execucao.linhas
+        if !execucao.recusado {
+            l += ["codigo=$?",
+                  "echo",
+                  "if [ $codigo -eq 0 ]; then echo \(aspas(String(localized: "Pronto. Volte ao TuttiDash: a tela confere sozinha.")));"
+                    + " else echo \(aspas(String(localized: "Terminou com erro (código"))) $codigo')'; fi"]
+        }
+        l.append("echo \(aspas(String(localized: "Pode fechar esta janela.")))")
         return l.joined(separator: "\n") + "\n"
+    }
+
+    private static func montarExecucao(_ comando: String, oficiais: [String]?) -> (linhas: [String], recusado: Bool) {
+        if comando == instaladorHomebrew { return ([comando], false) }
+        if let argv = argvDeComando(comando), !argv.isEmpty {
+            return ([argv.map(aspas).joined(separator: " ")], false)
+        }
+        if pipelineOficial(comando, oficiais: oficiais) { return ([comando], false) }
+        return (["echo \(aspas(String(localized: "Comando recusado.")))", "exit 1"], true)
+    }
+
+    /// Pipeline do catálogo confiável, sem metacaractere que feche o comando.
+    private static func pipelineOficial(_ comando: String, oficiais: [String]?) -> Bool {
+        if temMetaShell(comando) { return false }
+        let lista = oficiais ?? CatalogoAgentes.carregar().compactMap { $0.instalar?.comando }
+        return lista.contains(comando)
+    }
+
+    static func temMetaShell(_ s: String) -> Bool {
+        s.contains { c in
+            c == ";" || c == "$" || c == "`" || c == "&" || c == "<" || c == ">" || c == "\\"
+                || c == "!" || c == "(" || c == ")" || c == "\n" || c == "\r" || c == "\0"
+        }
+    }
+
+    /// Comando sem shell: tokens separados por espaço, aspas simples ou duplas só agrupam.
+    static func argvDeComando(_ comando: String) -> [String]? {
+        var tokens: [String] = []
+        var atual = ""
+        var aspa: Character?
+        for c in comando {
+            if let q = aspa {
+                if c == q { aspa = nil } else { atual.append(c) }
+                continue
+            }
+            if c == "'" || c == "\"" { aspa = c; continue }
+            if c == " " || c == "\t" {
+                if !atual.isEmpty { tokens.append(atual); atual = "" }
+                continue
+            }
+            if c == "|" || temMetaShell(String(c)) { return nil }
+            atual.append(c)
+        }
+        if aspa != nil || tokens.isEmpty && atual.isEmpty { return nil }
+        if !atual.isEmpty { tokens.append(atual) }
+        guard let primeiro = tokens.first, tokenExecutavel(primeiro) else { return nil }
+        guard tokens.dropFirst().allSatisfy(tokenArgumento) else { return nil }
+        return tokens
+    }
+
+    private static func tokenExecutavel(_ t: String) -> Bool {
+        t.range(of: #"^[A-Za-z0-9._/+-]+$"#, options: .regularExpression) != nil
+    }
+
+    private static func tokenArgumento(_ t: String) -> Bool {
+        t.range(of: #"^[A-Za-z0-9._+@:/~=-]+$"#, options: .regularExpression) != nil
+            || t.range(of: #"^[A-Za-z0-9 ._-]+$"#, options: .regularExpression) != nil
     }
 
     /// Grava o roteiro em `~/Library/Caches/TuttiDash/terminal/<id>.command` e abre no Terminal.
