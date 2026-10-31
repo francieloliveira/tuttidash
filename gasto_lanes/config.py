@@ -1,10 +1,26 @@
 """Resolução de caminhos e opções.
 
-Prioridade (a primeira que existir vence):
-  1. flag na linha de comando
-  2. variável de ambiente
-  3. arquivo de config (JSON)
+Um arquivo só (`arquivo_config`). Precedência, a primeira que vale:
+
+  1. ``TRANSCENTIA_GASTO_CONFIG`` (mesmo se o arquivo ainda não existe: não cai no próximo)
+  2. ``~/Library/Application Support/TuttiDash/config.json``
+  3. ``~/Library/Application Support/Lanekeeper/config.json``
+  4. ``~/Library/Application Support/TranscentIA Gasto/config.json``
+  5. ``~/.transcentia/tools/config.json`` (legado)
+
+No Windows não há as pastas do Mac: o único candidato é
+``%APPDATA%/tuttidash/config.json``.
+
+Dentro do arquivo escolhido, cada opção de caminho ou número segue
+(a primeira que existir vence):
+
+  1. flag na linha de comando (``--config`` também escolhe o arquivo e fica acima da env)
+  2. variável de ambiente da opção
+  3. valor no arquivo
   4. padrão da plataforma
+
+Quem lê a config (``projetos``, ``catalogo``, ``dispatcher``, ``cfg``, o vigia
+e o app) usa este módulo. Não mantenha outra lista de caminhos.
 """
 from __future__ import annotations
 
@@ -29,8 +45,8 @@ AVISO_PCT_PADRAO = 80.0
 
 # Catálogo padrão de agentes: fonte única em `agentes.py` (FRA-372). A chave
 # `agentes` na config pode ser uma lista ["claude", "codex"] ou um dict
-# {"codex": {"custo": "estimado"}}.
-from .agentes import AGENTES_CONHECIDOS as AGENTES_PADRAO
+# {"codex": {"custo": "estimado"}}. O import é tardio: este módulo também é
+# carregado pelo caminho (cópia ao lado do `cfg`) só para achar o arquivo.
 
 
 class ConfigError(Exception):
@@ -92,6 +108,93 @@ def default_config_path(platform: Optional[str] = None, env: Optional[Mapping[st
     return app_dir(platform, env, home) / "config.json"
 
 
+def _agentes_padrao():
+    try:
+        from .agentes import AGENTES_CONHECIDOS
+    except ImportError:
+        from agentes import AGENTES_CONHECIDOS
+    return AGENTES_CONHECIDOS
+
+
+def caminhos_config(home: Optional[Path] = None, platform: Optional[str] = None,
+                    env: Optional[Mapping[str, str]] = None) -> tuple:
+    """Candidatos sem a env, na ordem TuttiDash > Lanekeeper > TranscentIA Gasto > legado."""
+    env = os.environ if env is None else env
+    home = Path.home() if home is None else Path(home)
+    if is_windows(platform):
+        return (app_dir(platform, env, home) / "config.json",)
+    return (
+        home / "Library/Application Support/TuttiDash/config.json",
+        home / "Library/Application Support/Lanekeeper/config.json",
+        home / "Library/Application Support/TranscentIA Gasto/config.json",
+        home / ".transcentia/tools/config.json",
+    )
+
+
+def arquivo_config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                   platform: Optional[str] = None) -> Optional[Path]:
+    """Arquivo de config em uso. None se não há env e nenhum candidato existe.
+
+    A env vence mesmo quando o caminho ainda não existe: não se lê o arquivo
+    seguinte. Assim ``projeto()`` e ``linear.*`` não saem de arquivos diferentes.
+    """
+    env = os.environ if env is None else env
+    home = Path.home() if home is None else Path(home)
+    bruto = str(env.get(ENV_CONFIG) or "").strip()
+    if bruto:
+        return _expand(bruto, env, home)
+    for caminho in caminhos_config(home, platform, env):
+        if caminho.exists():
+            return caminho
+    return None
+
+
+def arquivos_em_uso(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                    platform: Optional[str] = None) -> list:
+    """Lista de um elemento, ou vazia. Os leitores percorrem esta lista e param."""
+    escolhido = arquivo_config(env, home, platform)
+    return [escolhido] if escolhido is not None else []
+
+
+_AUSENTE = object()
+
+
+def buscar(dados, chave: str):
+    """Valor de uma chave pontuada (``linear.owner_label``). ``_AUSENTE`` se faltar."""
+    atual = dados
+    for parte in str(chave).split("."):
+        if isinstance(atual, dict) and parte in atual:
+            atual = atual[parte]
+        else:
+            return _AUSENTE
+    return atual
+
+
+def ler_objeto(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+               platform: Optional[str] = None) -> tuple:
+    """``(caminho ou None, dict)``. Ausente ou ilegível vira ``{}`` — não tenta o próximo."""
+    caminho = arquivo_config(env, home, platform)
+    if caminho is None or not caminho.is_file():
+        return caminho, {}
+    try:
+        dados = json.loads(caminho.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return caminho, {}
+    if not isinstance(dados, dict):
+        return caminho, {}
+    return caminho, dados
+
+
+def obter(chave: str, padrao=None, env: Optional[Mapping[str, str]] = None,
+          home: Optional[Path] = None, platform: Optional[str] = None):
+    """Valor da chave no arquivo em uso. Vazio ou ausente devolve ``padrao``."""
+    _, dados = ler_objeto(env, home, platform)
+    valor = buscar(dados, chave)
+    if valor is _AUSENTE or valor is None or valor == "":
+        return padrao
+    return valor
+
+
 def _num(key: str, value, origem: str) -> Optional[float]:
     if value is None or value == "":
         return None
@@ -115,10 +218,16 @@ def resolve(cli: Optional[Mapping] = None, env: Optional[Mapping[str, str]] = No
 
     if cli.get("config"):
         cfg_path, cfg_required = _expand(str(cli["config"]), env, home), True
-    elif env.get(ENV_CONFIG):
-        cfg_path, cfg_required = _expand(env[ENV_CONFIG], env, home), True
     else:
-        cfg_path, cfg_required = default_config_path(platform, env, home), False
+        # Mesma escolha de `arquivo_config` (env > TuttiDash > Lanekeeper >
+        # TranscentIA Gasto > legado). Sem arquivo, o caminho novo fica só
+        # como referência: a leitura continua opcional.
+        escolhido = arquivo_config(env, home, platform)
+        if escolhido is None:
+            cfg_path, cfg_required = caminhos_config(home, platform, env)[0], False
+        else:
+            cfg_path = escolhido
+            cfg_required = bool(str(env.get(ENV_CONFIG) or "").strip())
 
     file_vals: dict = {}
     if cfg_path.exists():
@@ -156,7 +265,7 @@ def resolve(cli: Optional[Mapping] = None, env: Optional[Mapping[str, str]] = No
 def _resolve_agentes(raw, cfg_path) -> tuple:
     """Normaliza a chave `agentes` da config: lista ou dict -> tuple de nomes."""
     if raw in (None, ""):
-        return tuple(AGENTES_PADRAO), "padrão"
+        return tuple(_agentes_padrao()), "padrão"
     if isinstance(raw, dict):
         nomes = [str(k).strip() for k in raw.keys() if str(k).strip()]
     elif isinstance(raw, (list, tuple)):
