@@ -427,6 +427,17 @@ def viewer_linear() -> str:
     return ident
 
 
+def estado_do_card(identifier: str) -> str:
+    """Estado atual do card, para revalidar antes de mover (CAS leve)."""
+    try:
+        issue = (linear("query($id:String!){ issue(id:$id){ state{ name } } }",
+                        {"id": identifier}).get("issue") or {})
+        return str((issue.get("state") or {}).get("name") or "")
+    except RuntimeError as exc:
+        log(f"fila: não reli o estado de {identifier} ({exc})")
+        return ""
+
+
 # --- Regras de elegibilidade (determinísticas) ------------------------------
 def classify(issue: dict) -> tuple[Optional[str], str, Optional[str]]:
     """Devolve (lane, esforço, motivo_de_exclusão). motivo=None => elegível."""
@@ -2795,7 +2806,8 @@ def lanes_ociosas(lanes_on, running, limited, per_lane, saude: Optional[dict] = 
 
 
 def escolher_do_todo(cards: list, vagas: list[str], medidas: Optional[dict] = None,
-                     viewer: str = "") -> list:
+                     viewer: str = "", ocupados: Optional[dict] = None,
+                     motivos: Optional[list] = None) -> list:
     """Até um card por vaga: o de maior prioridade que uma lane ociosa pode receber.
 
     Card com lane própria só sobe se essa lane está na lista de vagas **e** tem
@@ -2805,24 +2817,41 @@ def escolher_do_todo(cards: list, vagas: list[str], medidas: Optional[dict] = No
     if not vagas:
         return []
     livres = set(vagas)
+    ocupados = dict(ocupados or {})
     prontos = []
+    def fora(card: dict, motivo: str) -> None:
+        if motivos is not None:
+            motivos.append(f"{card.get('identifier') or '?'} fora do Todo: {motivo}")
+
     for card in cards:
-        if motivo_que_segura_todo(card):
+        motivo = motivo_que_segura_todo(card)
+        if motivo:
+            fora(card, motivo)
             continue
         if fila.atribuido_a_outro(card, viewer):
+            fora(card, "atribuído a outra pessoa")
+            continue
+        conflito = fila.conflita(card, ocupados)
+        if conflito:
+            fora(card, f"conflito com {conflito}")
             continue
         lane, effort, why = classify(card)
         if why or not lane:
+            fora(card, why or "sem lane")
             continue
         if lane != AUTO_LANE and lane not in livres:
+            fora(card, f"lane {lane} sem vaga")
             continue
         if medidas is not None:
             if lane == AUTO_LANE:
                 if not any(fila.cota_ok(candidata, effort, medidas) for candidata in livres):
+                    fora(card, f"sem cota para {effort}")
                     continue
             elif not fila.cota_ok(lane, effort, medidas):
+                fora(card, f"lane {lane} sem cota para {effort}")
                 continue
         prontos.append(card)
+        ocupados[card.get("identifier") or ""] = fila.arquivos_card(card)
     return sorted(prontos, key=sort_key)[:len(vagas)]
 
 
@@ -2840,9 +2869,16 @@ def subir_do_todo(auto: list, per_lane: dict, lanes_on, running, limited, projec
         log(f"fila: não li o Todo ({exc})")
         return []
     viewer = viewer_linear() if any((c.get("assignee") or {}).get("id") for c in todos) else ""
+    ocupados = {it.get("identifier"): fila.arquivos_card(it) for it in auto}
+    for fila_lane in per_lane.values():
+        ocupados.update({it.get("identifier"): fila.arquivos_card(it) for it in fila_lane})
+    motivos: list = []
     linhas = []
-    for it in escolher_do_todo(todos, vagas, medidas, viewer):
+    for it in escolher_do_todo(todos, vagas, medidas, viewer, ocupados, motivos):
         ident = it.get("identifier") or "?"
+        if estado_do_card(ident) != "Todo":
+            log(f"fila: {ident} não está mais no Todo; não puxo")
+            continue
         try:
             mudar_estado(it["id"], STATE_IN_PROGRESS_ID)
             linear(MUT_COMMENT, {"id": it["id"], "body":
@@ -2862,6 +2898,7 @@ def subir_do_todo(auto: list, per_lane: dict, lanes_on, running, limited, projec
         else:
             per_lane.setdefault(lane, []).append(it)
         linhas.append(f"fila: {ident} sobe do Todo (lane ociosa)")
+    linhas.extend(f"fila: {m}" for m in motivos)
     return linhas
 
 

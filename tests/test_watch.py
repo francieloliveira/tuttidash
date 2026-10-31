@@ -1232,6 +1232,7 @@ class ContextoDeFilaTest(unittest.TestCase):
         mudou, comentou = [], []
         with patch.object(watch, "lanes_ativas", return_value={"grok"}), \
              patch.object(watch, "lanes_com_folga", return_value={"grok"}), \
+             patch.object(watch, "SAUDE_LANES", Path(tempfile.mkdtemp()) / "saude.json"), \
              patch.object(watch, "medidas_contas", return_value={"grok": (11, "créditos")}), \
              patch.object(watch, "busy_lanes", return_value=set()), \
              patch.object(watch, "set_state", side_effect=lambda i, s: mudou.append((i, s))), \
