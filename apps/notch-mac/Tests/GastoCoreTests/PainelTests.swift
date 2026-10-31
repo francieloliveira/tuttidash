@@ -497,6 +497,7 @@ final class PainelMontagemTests: XCTestCase {
         XCTAssertEqual(entrada.strikes?.texto, "1/3")
         XCTAssertTrue(entrada.desligadasPeloUsuario.contains("grok"))
         XCTAssertEqual(entrada.habilitadas, Set(["claude", "codex"]))
+        XCTAssertTrue(entrada.medidas.isEmpty, "medida de 2023 não pode virar barra de agora")
     }
 
     private var provaComFalha: String {

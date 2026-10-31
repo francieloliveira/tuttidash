@@ -1491,8 +1491,12 @@ def measures_cached(real: bool) -> dict:
     except (OSError, ValueError, KeyError, TypeError):
         pass
     m, _ = measure_lanes(renew=real)
-    if m:
+    # Mesmo sem medida, grava o at: assim o painel sabe que a leitura é de agora
+    # e não repete para sempre o último 100% de dois dias atrás.
+    try:
         cache.write_text(json.dumps({"at": time.time(), "m": m}))
+    except OSError:
+        pass
     return m
 
 

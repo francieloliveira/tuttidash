@@ -2,6 +2,18 @@ import Foundation
 
 /// Leitores puros do painel. Só leem texto ou bytes. Não criam PAUSE, não gravam `enabled`.
 public enum LeitorMedida {
+    /// Mesmo TTL do dispatcher (`MEASURE_CACHE_S`): 5 min.
+    public static let validade: TimeInterval = 300
+
+    /// O cache só vale se o `at` existe e é recente. Sem isso, o painel não pode
+    /// mostrar 100% de dois dias atrás como se fosse a cota de agora.
+    public static func valida(dados: Data, agora: Date = Date()) -> Bool {
+        guard let obj = (try? JSONSerialization.jsonObject(with: dados)) as? [String: Any],
+              let at = JV.numero(obj["at"]) else { return false }
+        let idade = agora.timeIntervalSince1970 - at
+        return idade >= -60 && idade <= validade
+    }
+
     /// `medida-cache.json` do dispatcher: `{"at": epoch, "m": {"claude": [100, "semana"]}}`.
     /// Percentual ausente fica nil. Arquivo inválido devolve lista vazia.
     public static func ler(dados: Data) -> [MedidaConta] {
@@ -286,7 +298,9 @@ public enum LeitorPainelDisco {
             ? LanesHabilitadas.ler(stateDir: pasta) : nil
         let desligadas = desligadasPeloUsuario(pasta: pasta)
         let pausa = fm.fileExists(atPath: pasta.appendingPathComponent("PAUSE").path)
-        let medidas = lerJSON(pasta.appendingPathComponent("medida-cache.json")).map { LeitorMedida.ler(dados: $0) } ?? []
+        let medidas = lerJSON(pasta.appendingPathComponent("medida-cache.json")).map { dados in
+            LeitorMedida.valida(dados: dados, agora: agora) ? LeitorMedida.ler(dados: dados) : []
+        } ?? []
         let planos = lerJSON(pasta.appendingPathComponent("planos.json")).map { LeitorPlanos.ler(dados: $0) } ?? [:]
         let strikes = lerJSON(pasta.appendingPathComponent("opencode-strikes.json")).flatMap { LeitorStrikes.ler(dados: $0) }
         let logTexto = cauda(logDispatcher, maxBytes: caudaLog) ?? ""
