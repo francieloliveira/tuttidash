@@ -1169,6 +1169,15 @@ class PrSemCardTest(unittest.TestCase):
 class ContextoDeFilaTest(unittest.TestCase):
     """Encaixe card ↔ lane: o vigia não deve promover card que nenhuma lane consegue rodar."""
 
+    def setUp(self):
+        # Sem o init do Linear os dois ids começam "", e Todo/In Progress viram a
+        # mesma tupla — a asserção de "não promove" passava por tautologia.
+        self._ids = (watch.STATE_TODO_ID, watch.STATE_IN_PROGRESS_ID)
+        watch.STATE_TODO_ID, watch.STATE_IN_PROGRESS_ID = "estado-todo", "estado-em-progresso"
+
+    def tearDown(self):
+        watch.STATE_TODO_ID, watch.STATE_IN_PROGRESS_ID = self._ids
+
     def ci(self, ident="FRA-1", lane="grok", effort="alto", descricao="", comentarios=()):
         labels = []
         if lane:
