@@ -69,9 +69,29 @@ class ControleDoBundle(unittest.TestCase):
     def test_build_grava_template_0600_sem_fixture(self):
         texto = (RAIZ / "apps/notch-mac/build.sh").read_text(encoding="utf-8")
         self.assertIn('install -m 600 "$HERE/Resources/claude-settings.json"', texto)
-        self.assertIn('install -m 600 "$HERE/Resources/lane-mcp.json"', texto)
+        self.assertIn('install -m 600 "$MCP" "$APP/Contents/Resources/lane-mcp.json"', texto)
         self.assertIn('install -m 600 "$AGENTS_D"/*.json', texto)
         self.assertNotIn("fixtures/estado", texto)
+
+    def test_template_de_mcp_nao_leva_caminho_de_maquina(self):
+        # O que vai para o git não pode ter caminho de home nem nome de projeto pessoal:
+        # é o que a Conferência de publicação recusa (FRA-565). O caminho real fica no
+        # lane-mcp.local.json, ignorado.
+        texto = (RAIZ / "apps/notch-mac/Resources/lane-mcp.json").read_text(encoding="utf-8")
+        self.assertEqual(json.loads(texto), {"mcpServers": {}})
+        # Igualdade acima já fecha o caso; a checagem de caminho é a rede de segurança
+        # se o template ganhar outra chave no futuro.
+        for marca in ("/Users/", "/home/"):
+            self.assertNotIn(marca, texto)
+
+    def test_build_prefere_o_mcp_local(self):
+        texto = (RAIZ / "apps/notch-mac/build.sh").read_text(encoding="utf-8")
+        self.assertIn('MCP="$HERE/Resources/lane-mcp.json"', texto)
+        self.assertIn('MCP="$HERE/Resources/lane-mcp.local.json"', texto)
+        self.assertLess(texto.index('MCP="$HERE/Resources/lane-mcp.json"'),
+                        texto.index('MCP="$HERE/Resources/lane-mcp.local.json"'))
+        ignorado = (RAIZ / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("apps/notch-mac/Resources/lane-mcp.local.json", ignorado)
 
     def test_sem_fonte_nao_usa_o_fixture(self):
         d.STATE_DIR = RAIZ / "tests" / "fixtures" / "estado"

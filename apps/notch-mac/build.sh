@@ -55,7 +55,16 @@ if [[ ! -f "$HERE/Resources/claude-settings.json" || ! -f "$HERE/Resources/lane-
   exit 1
 fi
 install -m 600 "$HERE/Resources/claude-settings.json" "$APP/Contents/Resources/claude-settings.json"
-install -m 600 "$HERE/Resources/lane-mcp.json" "$APP/Contents/Resources/lane-mcp.json"
+# O lane-mcp.json versionado é neutro: o caminho do servidor de docs é desta máquina e
+# não vai para o git (FRA-614). Quem tem MCP põe lane-mcp.local.json, fora do git.
+MCP="$HERE/Resources/lane-mcp.json"
+if [[ -f "$HERE/Resources/lane-mcp.local.json" ]]; then
+  MCP="$HERE/Resources/lane-mcp.local.json"
+  echo "    MCP: Resources/lane-mcp.local.json"
+else
+  echo "    MCP: template neutro (o bundle fica sem servidor MCP)"
+fi
+install -m 600 "$MCP" "$APP/Contents/Resources/lane-mcp.json"
 
 echo "==> textos (Localizable.xcstrings -> en/pt-BR)"
 xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$APP/Contents/Resources"
