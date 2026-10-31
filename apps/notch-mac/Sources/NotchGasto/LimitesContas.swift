@@ -155,23 +155,15 @@ struct LinhaUsoConta: View {
         !uso.temDado && (uso.motivo?.contains("sem credencial") ?? false)
     }
 
-    private var comandoLogin: String? {
-        // O comando base é o `cli` do manifesto (`agents.d/`); só o subcomando de
-        // login é específico de cada CLI. Conta sem CLI (cursor) não tem comando.
-        guard let cli = Agentes.def(uso.tipo)?.cli else { return nil }
-        return uso.tipo == "opencode" ? "\(cli) auth login" : cli
-    }
-
     private func abrirLogin() {
         if uso.tipo == "cursor" {
             NSWorkspace.shared.launchApplication("Cursor")
             return
         }
-        guard let cmd = comandoLogin else { return }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tuttidash-login-\(uso.conta).command")
-        try? ("#!/bin/zsh\n\(cmd)\n".write(to: url, atomically: true, encoding: .utf8))
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        // cli validado e resolvido em disco. O script só faz exec do argv — sem comando cru.
+        guard let argv = LoginConta.argv(tipo: uso.tipo, cli: Agentes.def(uso.tipo)?.cli) else { return }
+        guard let url = try? LoginConta.gravar(argv: argv, conta: uso.conta,
+                                               em: FileManager.default.temporaryDirectory) else { return }
         NSWorkspace.shared.open([url],
                                  withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"),
                                  configuration: NSWorkspace.OpenConfiguration())
