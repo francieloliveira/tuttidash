@@ -35,7 +35,8 @@ Nunca edite `~/.transcentia/lanes/` direto: a fonte é esta pasta.
    semanal do ledger (`week_spend`, FRA-371) — nunca silencia
 7. Modelos opencode: só free do Console com teto Go (baixo →
    `nemotron-3.5-super-vl-free`, medio/alto → `deepseek-v4.1-flash-free`);
-   codex usa o default do CLI
+   codex usa o default do CLI. deepseek (`dsh --profile headless`) recebe um
+   patch por execução com a conta do app, o modelo e o reasoning effort do peso
 
 ## Melhorias de 21/10/2026 (consumo de tokens)
 

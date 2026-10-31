@@ -100,6 +100,10 @@ EFFORT_FLAGS = {
 BUDGET_USD = {"baixo": 3, "medio": 8, "alto": 20}
 # Grok não tem teto em dólar: o limite é de turnos.
 GROK_MAX_TURNS = {"baixo": 30, "medio": 60, "alto": 100}
+# dsh (DeepSeek Harness): peso -> reasoningEffort do modelo. O CLI não recebe
+# `--effort`; o dispatcher grava um patch de perfil por execução (deepseek_patch).
+DSH_ESFORCO = {"baixo": "low", "medio": "high", "alto": "max"}
+DSH_ESFORCOS_VALIDOS = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 # Teto de cards por lane ativa: 1 RUN + (MAX_PER_LANE - 1) WAIT.
 # Deve bater com tools/cfg DEFAULTS["watch"]["max_tarefas_por_lane"].
 MAX_PER_LANE = 2
@@ -655,6 +659,56 @@ def atualizar_privacidade() -> None:
         log(f"privacidade OpenCode: erro ao conferir ({exc}); vale a última conferência")
 
 
+def deepseek_esforco(effort: str) -> str:
+    """reasoningEffort do dsh: o da config, se válido; senão o padrão do peso."""
+    bruto = str(_resolucao_modelo("deepseek", effort).get("esforco") or "").strip()
+    if bruto in DSH_ESFORCOS_VALIDOS:
+        return bruto
+    return DSH_ESFORCO.get(effort, "high")
+
+
+def deepseek_patch(effort: str) -> str:
+    """Patch do perfil headless do dsh para esta execução.
+
+    O perfil de fábrica monta o provedor oficial (chave de API) e desliga a conta.
+    Com a conta do app, é preciso religar authorization/credentials/account e
+    apontar o modelo padrão para `deepseek-account`. Com DEEPSEEK_API_KEY no
+    ambiente, basta fixar o modelo no provedor oficial.
+    """
+    modelo = modelo_da_lane("deepseek", effort) or "deepseek-flash"
+    esforco = deepseek_esforco(effort)
+    com_api_key = bool((os.environ.get("DEEPSEEK_API_KEY") or "").strip())
+    linhas: list[str] = []
+    if not com_api_key:
+        linhas += [
+            "- id: authorization",
+            '  name: "@deepseek-ai/dsh-authorization"',
+            "  disabled: false",
+            "- id: deepseek-account",
+            '  name: "@deepseek-ai/dsh-deepseek-account-platform"',
+            "  disabled: false",
+            "  config:",
+            "    desktopPlatform: darwin",
+            "- id: credentials",
+            '  name: "@deepseek-ai/dsh-credentials-local"',
+            "  disabled: false",
+        ]
+    linhas += [
+        "- id: agent-default-model",
+        '  name: "@deepseek-ai/dsh-agent-default-model"',
+        "  config:",
+        f"    provider: {'deepseek-official' if com_api_key else 'deepseek-account'}",
+        f"    model: {modelo}",
+        f"    reasoningEffort: {esforco}",
+    ]
+    return "\n".join(linhas) + "\n"
+
+
+def deepseek_resumo(effort: str) -> str:
+    """Modelo e esforço no comentário do claim (o dsh não recebe flags de modelo)."""
+    return f"{modelo_da_lane('deepseek', effort) or 'deepseek-flash'} · reasoning {deepseek_esforco(effort)}"
+
+
 def agent_command(lane: str, effort: str) -> list[str]:
     """Comando headless do agente (claude, grok e opencode são executadas de verdade)."""
     if lane == "claude":
@@ -714,6 +768,12 @@ def agent_command(lane: str, effort: str) -> list[str]:
             "codex", "exec", "--json",
             *flags_da_lane("codex", effort),
         ]
+    if lane == "deepseek":
+        # dsh (DeepSeek Harness) headless: uma sessão nova, a resposta final no
+        # stdout e sai. O prompt vai como argumento posicional (texto_do_agente).
+        # O patch escrito no claim liga a conta e fixa modelo/reasoningEffort.
+        # Sem `--max-budget-usd` e sem stream JSON: o ledger não mede esta lane.
+        return ["dsh", "--profile", "headless", "--patch", ".lane/deepseek.yml"]
     # cursor não tem CLI headless público para execução de lanes; fica como
     # placeholder até existir comando equivalente.
     raise NotImplementedError(f"lane {lane} não tem comando de agente")
@@ -722,10 +782,10 @@ def agent_command(lane: str, effort: str) -> list[str]:
 def texto_do_agente(lane: str, effort: str) -> str:
     """Linha que o `run_lane.sh` executa no worktree.
 
-    Na opencode o prompt entra entre aspas. Sem aspas, um espaço ou uma aspa
-    do card partia o argumento e o CLI lia lixo (ou uma flag)."""
+    Na opencode e no dsh o prompt entra entre aspas. Sem aspas, um espaço ou uma
+    aspa do card partia o argumento e o CLI lia lixo (ou uma flag)."""
     agent_text = shlex.join(agent_command(lane, effort))
-    if lane == "opencode":
+    if lane in ("opencode", "deepseek"):
         agent_text += ' -- "$(cat .lane/prompt.md)"'
     return agent_text
 
@@ -1138,6 +1198,8 @@ def limit_text(lane: str, effort: str) -> str:
     teto em US$ (no opencode o CLI não trava — o gasto monitora depois da rodada)."""
     if lane == "grok":
         return f"limite {GROK_MAX_TURNS[effort]} turnos"
+    if lane == "deepseek":
+        return "sem teto de gasto no CLI"
     return f"teto US$ {BUDGET_USD[effort]}"
 
 
@@ -1176,6 +1238,10 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     prompt_file = lane_dir / "prompt.md"
     prompt_file.write_text(prompt, encoding="utf-8")
 
+    # dsh: o patch do perfil (conta + modelo + esforço) vai junto com o prompt.
+    if lane == "deepseek":
+        (lane_dir / "deepseek.yml").write_text(deepseek_patch(effort), encoding="utf-8")
+
     # FRA-374: o `--` fecha o parsing de flags do CLI. Sem ele, um token do
     # prompt como `--check` (git diff --check) é lido como flag e o CLI aborta.
     agent_text = texto_do_agente(lane, effort)
@@ -1196,7 +1262,8 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
           "log": str(lane_log), "session": f"lane-{lane}"}
     save_state(lane, st)
 
-    flags = " ".join(flags_da_lane(lane, effort))
+    flags = (deepseek_resumo(effort) if lane == "deepseek"
+             else " ".join(flags_da_lane(lane, effort)) or "padrão do CLI")
     linear(MUT_COMMENT, {"id": card["id"], "body":
         f"▶️ **lane:{lane}** assumiu o card ({now()}).\n\n"
         f"- esforço `{effort}` → `{flags}`, {limit_text(lane, effort)}, timeout {LANE_TIMEOUT_MIN} min\n"
@@ -1538,8 +1605,8 @@ def resume_line(st: dict) -> str:
     """Linha do comentário com o comando pronto para retomar a sessão do agente;
     vazia quando o log não tem o id."""
     sid = agent_session_id(st.get("log", ""))
-    if not sid:
-        return ""
+    if not sid or st["lane"] == "deepseek":
+        return ""   # o dsh headless não expõe `--resume` nem session_id no stdout
     cli = "grok" if st["lane"] == "grok" else "claude"
     return f"- retomar o agente: `cd {shlex.quote(st['worktree'])} && {cli} --resume {sid}`\n"
 

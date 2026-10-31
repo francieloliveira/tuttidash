@@ -122,11 +122,15 @@ O TuttiDash aberto lê só fontes oficiais ou locais:
 - **opencode_sessao** mostra o contexto usado pela sessão mais recente do OpenCode, lido do
   banco local aberto só para leitura.
 
-As outras lanes (Claude Code, Codex, Grok, Gemini…) não têm API oficial de cota da assinatura,
-então o TuttiDash aberto não mostra o limite delas. Para quem quiser medir de outro jeito, o
-GastoCore tem um registro de fontes: um módulo à parte implementa `FonteUso` e chama
+As outras lanes (Claude Code, Codex, DeepSeek Harness, Grok, Gemini…) não têm API oficial de cota
+da assinatura, então o TuttiDash aberto não mostra o limite delas. Para quem quiser medir de outro
+jeito, o GastoCore tem um registro de fontes: um módulo à parte implementa `FonteUso` e chama
 `FontesUso.registrar(_:)` no início do app (`Sources/NotchGasto/main.swift`). O `Package.swift`
 inclui `Privado/Sources/GastoPrivado` quando essa pasta existe; ela é ignorada pelo git.
+
+A lane **deepseek** roda `dsh --profile headless` com a conta do app DeepSeek Harness. O `dsh`
+imprime a resposta final em texto puro, sem o stream JSON das outras lanes, então o custo dela
+fica **sem medição** no ledger (desconhecido, nunca zero).
 
 A lista de modelos nos Ajustes vem dos CLIs (`opencode models`, `grok models`), da cache do
 Codex CLI (`~/.codex/models_cache.json`) e das APIs oficiais quando há chave no ambiente

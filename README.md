@@ -14,7 +14,7 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
 
 | Part | Where | What it does |
 |---|---|---|
-| Dispatcher | `lanes/dispatcher.py` | Every 60 s it takes a ready card from the Linear project, creates a worktree, runs the agent headless in tmux (Claude Code, Codex, OpenCode, Grok CLI…), runs the project's test command (the *proof*), then pushes, opens the PR with `gh`, comments and moves the card to *In Review*. The agent itself never talks to Linear or GitHub. |
+| Dispatcher | `lanes/dispatcher.py` | Every 60 s it takes a ready card from the Linear project, creates a worktree, runs the agent headless in tmux (Claude Code, Codex, OpenCode, DeepSeek Harness, Grok CLI…), runs the project's test command (the *proof*), then pushes, opens the PR with `gh`, comments and moves the card to *In Review*. The agent itself never talks to Linear or GitHub. |
 | Watcher | `bots/watch.py` | Reviews PRs, merges when the proof is green, triages stopped or failed lanes and only calls the owner (`needs:dono` label) after the same failure repeats. The AI only reads and returns text (`claude -p`, local model or OpenCode); the script does every action. |
 | Notch app | `apps/notch-mac` | SwiftUI/AppKit app in the notch and menu bar: lanes, builds, tests, deliveries, cost from the lane logs, account limits where an official source exists, and the settings. |
 | `gasto` CLI | `gasto.py`, `gasto_lanes/` | Cost ledger built from the lane logs, by day, week, card and lane. See [docs/gasto.md](docs/gasto.md). |

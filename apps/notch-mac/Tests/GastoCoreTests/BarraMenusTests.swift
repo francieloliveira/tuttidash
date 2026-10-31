@@ -39,16 +39,17 @@ final class BarraMenusTests: XCTestCase {
         XCTAssertTrue(ResumoBarra.montar(snap, limite: 0).compacto)
     }
 
-    /// A pílula padrão é a da barra (`PreferenciaNotch` desligada). Com as cinco lanes
+    /// A pílula padrão é a da barra (`PreferenciaNotch` desligada). Com as lanes
     /// ligadas, inclusive o Grok CLI, o resumo não compacta e o menu cita o nome claro.
     /// `cursor` (SuperGrok) não entra: não é lane de desenvolvimento.
-    func testCincoLanesLigadasMostramGrokNaBarraENoMenu() {
+    func testLanesLigadasMostramGrokNaBarraENoMenu() {
+        XCTAssertEqual(LanesPainel.ordem,
+                       ["claude", "codex", "opencode", "opencode-go", "grok", "deepseek"])
         let nomes = ["claude", "codex", "opencode", "opencode-go", "grok"]
-        XCTAssertEqual(LanesPainel.ordem, nomes)
         let snap = snapLanes(Set(nomes + ["cursor"]))
         let r = ResumoBarra.montar(snap)
         XCTAssertEqual(r.itens.map(\.lane), nomes)
-        XCTAssertEqual(r.itens.last?.titulo, "Grok CLI")
+        XCTAssertEqual(r.itens.first { $0.lane == "grok" }?.titulo, "Grok CLI")
         XCTAssertFalse(r.compacto)
         XCTAssertEqual(r.rodando, 0)
         XCTAssertTrue(ResumoBarra.rotuloAcessivel(r).contains("Grok CLI"))
@@ -56,9 +57,10 @@ final class BarraMenusTests: XCTestCase {
         XCTAssertFalse(snap.notch.pontos.contains { $0.lane == "cursor" })
         let menu = ResumoBarra.linhasMenu(snap)
         XCTAssertEqual(menu.map(\.lane), nomes)
-        XCTAssertEqual(menu.last?.titulo, "Grok CLI")
-        XCTAssertEqual(menu.last?.acesa, true)
-        XCTAssertEqual(menu.last?.texto, "Grok CLI · livre · –")
+        let grokMenu = menu.first { $0.lane == "grok" }
+        XCTAssertEqual(grokMenu?.titulo, "Grok CLI")
+        XCTAssertEqual(grokMenu?.acesa, true)
+        XCTAssertEqual(grokMenu?.texto, "Grok CLI · livre · –")
         XCTAssertFalse(menu.contains { $0.lane == "cursor" })
         XCTAssertTrue(ResumoBarra.montar(snap, limite: 4).compacto)
         XCTAssertTrue(ResumoBarra.linhasMenu(snap).contains { $0.lane == "grok" })

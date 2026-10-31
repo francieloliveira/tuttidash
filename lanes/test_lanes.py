@@ -245,6 +245,35 @@ class Comandos(unittest.TestCase):
         for effort in ("baixo", "medio", "alto"):
             d.agent_command("codex", effort)  # modelo default do CLI
 
+    def test_deepseek_headless_texto(self):
+        # dsh headless: sessão nova, prompt como argumento e patch de conta/modelo.
+        self.assertEqual(d.agent_command("deepseek", "medio"),
+                         ["dsh", "--profile", "headless", "--patch", ".lane/deepseek.yml"])
+        self.assertEqual(d.texto_do_agente("deepseek", "medio"),
+                         'dsh --profile headless --patch .lane/deepseek.yml -- "$(cat .lane/prompt.md)"')
+        for effort in ("baixo", "medio", "alto"):
+            self.assertEqual(d.limit_text("deepseek", effort), "sem teto de gasto no CLI")
+
+    def test_deepseek_patch_usa_a_conta_do_app_sem_api_key(self):
+        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": ""}):
+            patch = d.deepseek_patch("medio")
+        self.assertIn("id: deepseek-account", patch)
+        self.assertIn("id: authorization", patch)
+        self.assertIn("id: credentials", patch)
+        self.assertIn("provider: deepseek-account", patch)
+        self.assertIn("model: deepseek-flash", patch)
+        self.assertIn("reasoningEffort: high", patch)
+        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": ""}):
+            self.assertEqual(d.deepseek_patch("alto").splitlines()[-2:],
+                             ["    model: deepseek-v4-pro", "    reasoningEffort: max"])
+
+    def test_deepseek_patch_com_api_key_usa_o_provedor_oficial(self):
+        with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "chave"}):
+            patch = d.deepseek_patch("baixo")
+        self.assertIn("provider: deepseek-official", patch)
+        self.assertNotIn("id: deepseek-account", patch)
+        self.assertIn("reasoningEffort: low", patch)
+
     def test_desconhecida_levanta(self):
         with self.assertRaises(NotImplementedError):
             d.agent_command("umanova", "medio")

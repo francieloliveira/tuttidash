@@ -56,7 +56,7 @@ if [ -d "$LANES_DIR" ]; then
     install -m 644 "$ROOT/gasto_lanes/$mod.py" "$LANES_DIR/$mod.py"
   done
   [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$LANES_DIR/gasto_privado.py"
-  for f in dispatcher.py lanes_window.py lanes_ctl.py; do
+  for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh; do
     install -m 755 "$ROOT/lanes/$f" "$LANES_DIR/$f"
   done
   for f in "$ROOT"/lanes/lane-prompt.md "$ROOT"/lanes/lane-prompt-*.md; do

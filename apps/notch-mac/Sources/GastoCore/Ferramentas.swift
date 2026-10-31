@@ -41,6 +41,8 @@ public enum Ferramentas {
     public static func pastas(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String] {
         [home.appendingPathComponent(".local/bin").path, "/opt/homebrew/bin", "/usr/local/bin",
          home.appendingPathComponent(".grok/bin").path, home.appendingPathComponent(".opencode/bin").path,
+         // O app DeepSeek Harness já traz o CLI `dsh`; não precisa de instalação global.
+         "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin",
          "/usr/bin", "/bin"]
     }
 

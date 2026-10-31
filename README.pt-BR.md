@@ -13,7 +13,7 @@ trabalhar de um desenvolvedor, e isso aparece. [Read in English](README.md).
 
 | Parte | Onde | O que faz |
 |---|---|---|
-| Dispatcher | `lanes/dispatcher.py` | A cada 60 s pega um card pronto do projeto no Linear, cria o worktree, roda o agente sem interface no tmux (Claude Code, Codex, OpenCode, Grok CLI…), roda o comando de teste do projeto (a *prova*), faz o push, abre o PR com o `gh`, comenta e move o card para *In Review*. O agente não fala com o Linear nem com o GitHub. |
+| Dispatcher | `lanes/dispatcher.py` | A cada 60 s pega um card pronto do projeto no Linear, cria o worktree, roda o agente sem interface no tmux (Claude Code, Codex, OpenCode, DeepSeek Harness, Grok CLI…), roda o comando de teste do projeto (a *prova*), faz o push, abre o PR com o `gh`, comenta e move o card para *In Review*. O agente não fala com o Linear nem com o GitHub. |
 | Vigia | `bots/watch.py` | Revisa os PRs, faz o merge quando a prova está verde, faz a triagem das lanes paradas ou com falha e só chama o dono (etiqueta `needs:dono`) quando a mesma falha se repete. A IA só lê e devolve texto (`claude -p`, modelo local ou OpenCode); quem age é o script. |
 | App do notch | `apps/notch-mac` | App SwiftUI/AppKit no notch e na barra de menus: lanes, builds, testes, entregas, custo tirado dos logs das lanes, limites de conta quando há fonte oficial, e os Ajustes. |
 | CLI `gasto` | `gasto.py`, `gasto_lanes/` | Ledger de custo a partir dos logs das lanes, por dia, semana, card e lane. Veja [docs/gasto.md](docs/gasto.md). |

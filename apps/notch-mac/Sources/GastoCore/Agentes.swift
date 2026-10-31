@@ -121,6 +121,12 @@ public enum Agentes {
             corPainel: "#6E40C9", tipoUso: "copilot",
             fonteUso: "api.github.com/users/{username}/settings/billing/premium_request/usage",
             credencialUso: "copilot_token", optIn: true),
+        Def(nome: "deepseek", rotulo: "DeepSeek Harness", sigla: "DS", custoEstimado: true,
+            resumeCLI: "dsh", pesoFontes: ["gasto", "manual"], cli: "dsh", painel: true,
+            ordem: 9, corBase: "#4D6BFE", corGradiente: "#2B4AE0", corClaro: "#A8B6FF",
+            corPainel: "#4D6BFE", tipoUso: "deepseek",
+            fonteUso: "",
+            credencialUso: ""),
     ]
 
     // MARK: - Consultas

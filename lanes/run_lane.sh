@@ -6,7 +6,9 @@
 set -uo pipefail
 LANE="$1"; WT="$2"; CARD="$3"; LOG="$4"
 HERE="$HOME/.transcentia/lanes"
-export LANE PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+# O CLI dsh vem dentro do app DeepSeek Harness; instalação global (npm) também vale.
+DSH_BIN="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin"
+export LANE PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$DSH_BIN:$PATH"
 cd "$WT" || exit 1
 printf '\033]0;lane:%s · %s\007' "$LANE" "$CARD"   # título da janela
 echo "━━ lane:$LANE · $CARD · $(date '+%H:%M:%S') ━━"
@@ -23,10 +25,25 @@ AGENT_CMD="$(cat .lane/agent_cmd)"
 env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
   TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-pt_BR.UTF-8}" TERM="${TERM:-xterm-256color}" \
   PATH="$PATH" SHELL=/bin/bash ZDOTDIR="$CLEAN_ZDOTDIR" LANE="$LANE" \
+  DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}" \
   /bin/bash --noprofile --norc -c "$AGENT_CMD" < .lane/prompt.md 2>&1 | tee "$LOG" | /usr/bin/python3 "$HERE/lane_view.py"
 rc=${PIPESTATUS[0]}
 # Não sobrescreve: se o dispatcher parou a lane, o motivo dele já está lá.
 [ -f .lane/exit_code ] || echo "$rc" > .lane/exit_code
+
+# dsh escreve texto puro, sem o stream JSON das outras lanes. Uma linha `result`
+# sintética no fim dá ao parser do app o desfecho (ok/erro) e mantém o custo
+# desconhecido — não inventa US$ zero.
+if [ "$LANE" = "deepseek" ]; then
+  /usr/bin/python3 - "$LOG" "$rc" <<'PY'
+import json, sys
+log, rc = sys.argv[1], int(sys.argv[2])
+evento = {"type": "result", "subtype": "success" if rc == 0 else "error",
+          "is_error": rc != 0, "num_turns": 1}
+with open(log, "a", encoding="utf-8") as f:
+    f.write(json.dumps(evento, ensure_ascii=False) + "\n")
+PY
+fi
 
 echo
 echo "━━ agente terminou (código $(cat .lane/exit_code)) · o dispatcher assume: prova e fechamento ━━"
@@ -67,8 +84,12 @@ for raw in open(sys.argv[1], encoding="utf-8", errors="replace"):
         print(sid)
         break
 ' "$LOG" 2>/dev/null)
-if [ "$LANE" = "grok" ]; then CLI=grok; elif [ "$LANE" = "opencode" ]; then CLI=opencode; elif [ "$LANE" = "codex" ]; then CLI=codex; else CLI=claude; fi
-if [ -n "$SID" ]; then
+if [ "$LANE" = "grok" ]; then CLI=grok; elif [ "$LANE" = "opencode" ]; then CLI=opencode; elif [ "$LANE" = "codex" ]; then CLI=codex; elif [ "$LANE" = "deepseek" ]; then CLI=dsh; else CLI=claude; fi
+if [ "$LANE" = "deepseek" ]; then
+  # O dsh headless não tem --resume: a sessão fica no histórico (~/.dsh/sessions).
+  # O retomar possível é abrir outra sessão no worktree, que já tem o trabalho.
+  RESUME="cd \"$WT\" && dsh --profile headless --patch .lane/deepseek.yml \"continue o card $CARD a partir do worktree\""
+elif [ -n "$SID" ]; then
   # opencode/codex: --session continua a sessão (não validado ponta a ponta, FRA-374/376)
   if [ "$LANE" = "opencode" ]; then RESUME="cd \"$WT\" && opencode run --session $SID";
   elif [ "$LANE" = "codex" ]; then RESUME="cd \"$WT\" && codex run --session $SID";

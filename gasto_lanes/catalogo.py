@@ -286,6 +286,35 @@ EMBUTIDOS_JSON = """\
   "fonte": "api.github.com/users/{username}/settings/billing/premium_request/usage",
   "credencial": "copilot_token"
   }
+}
+
+{
+"schema": 1,
+"nome": "deepseek",
+"rotulo": "DeepSeek Harness",
+"sigla": "DS",
+"cli": "dsh",
+"ordem": 9,
+"prioridade": 6,
+"painel": true,
+"execucao": "implementada",
+"cor": {"base": "#4D6BFE", "gradiente": "#2B4AE0", "claro": "#A8B6FF"},
+"corPainel": "#4D6BFE",
+"custo": "estimado",
+"resume": "dsh",
+"pesoFontes": ["gasto", "manual"],
+"nota": "Lane do `dsh` (DeepSeek Harness) no modo headless: `dsh --profile headless` cria uma sessão nova, imprime a última resposta e sai. O dispatcher grava `.lane/deepseek.yml` e passa `--patch`: o perfil headless de fábrica desliga a conta, então o patch liga authorization/credentials/account e fixa modelo e reasoning effort por peso (baixo flash/low, médio flash/high, alto v4-pro/max). Usa a mesma conta logada no app DeepSeek Harness (~/.dsh); com DEEPSEEK_API_KEY no ambiente, o patch troca para o provedor oficial. O stdout é texto puro, sem o stream JSON do Claude/OpenCode/Codex; o painel mostra o texto, mas o ledger não mede tokens nem gasto desta lane. O `dsh` não tem `--resume`: a sessão fica no histórico em ~/.dsh/sessions.",
+"modelos": {
+  "baixo": {"id": "deepseek-flash", "flags": []},
+  "medio": {"id": "deepseek-flash", "flags": []},
+  "alto": {"id": "deepseek-v4-pro", "flags": []}
+  },
+"instalar": {"comando": "npm install -g @deepseek-ai/dsh", "entrar": "open -a 'DeepSeek Harness'", "dica_entrar": "Entre pela janela do app DeepSeek Harness; o CLI usa a mesma conta em ~/.dsh.", "docs": "https://github.com/deepseek-ai/deepseek-harness"},
+"uso": {
+  "tipo": "deepseek",
+  "fonte": "",
+  "credencial": ""
+  }
 }"""
 
 

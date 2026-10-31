@@ -111,10 +111,10 @@ final class ClarezaCotaTests: XCTestCase {
 
     func testListaDeLanesLigadasEUniforme() throws {
         let lanes = Agentes.embutidos.filter(ClarezaCota.recebeCard)
-        XCTAssertEqual(lanes.map(\.nome), ["claude", "codex", "opencode", "opencode-go", "grok"])
+        XCTAssertEqual(lanes.map(\.nome), ["claude", "codex", "opencode", "opencode-go", "grok", "deepseek"])
         let linhas = lanes.map(ClarezaCota.linhaLista)
-        XCTAssertEqual(linhas.map(\.detalhe), [nil, nil, nil, nil, nil])
-        XCTAssertEqual(linhas.map(\.titulo), ["Claude Code", "Codex", "OpenCode", "OpenCode Go", "Grok CLI"])
+        XCTAssertEqual(linhas.map(\.detalhe), [nil, nil, nil, nil, nil, nil])
+        XCTAssertEqual(linhas.map(\.titulo), ["Claude Code", "Codex", "OpenCode", "OpenCode Go", "Grok CLI", "DeepSeek Harness"])
         let cursor = try XCTUnwrap(Agentes.embutidos.first { $0.nome == "cursor" })
         XCTAssertFalse(ClarezaCota.recebeCard(cursor))
         XCTAssertNotNil(ClarezaCota.linhaLane(cursor).detalhe)

@@ -35,9 +35,9 @@ do repo (E13). Ninguém edita a cópia viva.
 | `cor` | não | `{ base, gradiente, claro }` em `#RRGGBB`. Ausente = matiz determinística do nome. |
 | `corPainel` | não | Cor da lane no painel v1. Ausente = usa `cor.base`. |
 | `custo` | não | `"estimado"` (preço de tabela) ou `"informado"` (servidor). Default: informado. |
-| `resume` | para lanes | CLI do `<cli> --resume <id>`. `null` = cai em `claude`. |
+| `resume` | para lanes | CLI do `<cli> --resume <id>`. `null` = cai em `claude`. O `dsh` não tem `--resume`: a lane deepseek mantém `dsh` e a sessão fica em `~/.dsh/sessions`. |
 | `pesoFontes` | não | Fontes de peso do dispatcher, em ordem: `quota` → `gasto` → `manual`. |
-| `modelos` | para lanes | `{ baixo, medio, alto }`, cada um `{ id, flags }`. `flags` é o que o dispatcher passa ao CLI; vazio = default do CLI. |
+| `modelos` | para lanes | `{ baixo, medio, alto }`, cada um `{ id, flags }`. `flags` é o que o dispatcher passa ao CLI; vazio = default do CLI. `deepseek` usa `id` para o patch do dsh e não passa `flags`. |
 | `uso` | sim | `{ tipo, fonte, credencial }`. `tipo` é a chave que o `ColetorUso` usa para achar o código de medição (duas lanes podem medir a mesma conta — `opencode` e `opencode-go`). `fonte` e `credencial` são texto de apoio. |
 | `label_linear` | não | UUID do label da lane no Linear. `null` = ainda sem label. |
 | `instalar` | não | `{ comando, entrar, dica_entrar, docs, nome? }`. O app mostra o agente em Ajustes › Geral › Ferramentas com os botões Instalar e Entrar, que abrem o Terminal com estes comandos (a pessoa vê e confirma antes de rodar). Use só o comando da documentação oficial em `docs`. Sem `comando` = sem botão. |
