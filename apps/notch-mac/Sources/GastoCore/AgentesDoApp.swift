@@ -96,7 +96,7 @@ public final class AgentesDoApp {
             throw NSError(domain: "AgentesDoApp", code: 2, userInfo: [
                 NSLocalizedDescriptionKey: "label fora de LaunchAgents"])
         }
-        try sistema.escrever(try plistGerado(a), em: url, executavel: false)
+        try sistema.escrever(try plistGerado(a), em: url, modo: 0o600)
         var m = gerenciados(); m.insert(a.antigo); try gravarManifesto(m)
     }
 
@@ -130,7 +130,7 @@ public final class AgentesDoApp {
 
     private func gravarManifesto(_ s: Set<String>) throws {
         let nomes = s.filter { Self.labelSeguro($0) }.sorted()
-        try sistema.escrever(try JSONSerialization.data(withJSONObject: nomes), em: manifestoURL, executavel: false)
+        try sistema.escrever(try JSONSerialization.data(withJSONObject: nomes), em: manifestoURL, modo: 0o600)
     }
 
     private func plistIgual(_ a: Data, _ b: Data) -> Bool {
@@ -182,16 +182,20 @@ public final class AgentesDoApp {
         if sistema.existe(legadoURL(a.antigo)) { try? mover(legadoURL(a.antigo), reservaURL(a.antigo)) }
     }
 
-    /// Troca o plist solto (Label antigo) pelo agente do app (Label novo). Nunca roda os dois ao mesmo
-    /// tempo: o antigo sai do launchd antes de registrar o novo. O plist solto só é apagado depois que
-    /// o novo carregou e foi confirmado (heartbeat real no dispatcher). Se o registro falha, volta ao
-    /// plist antigo só quando o app o gravou (manifesto) e o conteúdo ainda é o que o app geraria.
+    /// Troca o plist solto (Label antigo) pelo agente do app (Label novo). O plist solto só é
+    /// apagado depois que o novo carregou e foi confirmado (heartbeat real no dispatcher).
+    /// Legado que o app pode repor (manifesto e conteúdo gerado) sai antes do registro e volta
+    /// se falhar. Legado que o app não repõe fica carregado até essa confirmação; se o registro
+    /// falha, não há bootout desse label nem bootstrap.
     public func migrar(_ a: AgenteApp) -> ResultadoMigracao {
         if registro.status(a.plist) == .ativo && carregado(a.novo).0 { aposentarAntigo(a); return .jaNoApp }
         guard sistema.existe(legadoURL(a.antigo)) else { return .semLegado }
         anotarLegadoSeForDoApp(a)
-        _ = sistema.launchctl(["bootout", "\(dominio)/\(a.antigo)"])
-        for _ in 0..<5 where carregado(a.antigo).0 { esperar(1) }   // bootout é assíncrono
+        let repoe = podeCarregarLegado(a)
+        if repoe {
+            _ = sistema.launchctl(["bootout", "\(dominio)/\(a.antigo)"])
+            for _ in 0..<5 where carregado(a.antigo).0 { esperar(1) }   // bootout é assíncrono
+        }
         let inicio = Date()
         var motivo = ""
         do {
@@ -204,7 +208,7 @@ public final class AgentesDoApp {
             }
             if carregou {
                 for _ in 0..<(tentativas * 6) {
-                    if confirmar(a, inicio) { try? mover(legadoURL(a.antigo), reservaURL(a.antigo)); return .migrado }
+                    if confirmar(a, inicio) { aposentarAntigo(a); return .migrado }
                     esperar(1)
                 }
                 motivo = "sem heartbeat em modo real"
@@ -212,7 +216,7 @@ public final class AgentesDoApp {
         } catch { motivo = error.localizedDescription }
         try? registro.desregistrar(a.plist)
         _ = sistema.launchctl(["bootout", "\(dominio)/\(a.novo)"])
-        reverterParaLegado(a)
+        if repoe { reverterParaLegado(a) }
         return .revertido(motivo)
     }
 

@@ -45,10 +45,11 @@ final class AgentesDoAppTests: XCTestCase {
     let casa = URL(fileURLWithPath: "/tmp/casa-agentes")
     let d = AgentesDoApp.dispatcher
 
-    func montar(_ r: RegistroFalso, heartbeat: Bool = true) -> (AgentesDoApp, LaunchdFalso) {
+    func montar(_ r: RegistroFalso, heartbeat: Bool = true, exigirUmSo: Bool = true) -> (AgentesDoApp, LaunchdFalso) {
         let s = LaunchdFalso(); s.registro = r
-        let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 3, esperar: { _ in XCTAssertFalse(s.doisDispatchers) },
-                             confirmar: { _, _ in heartbeat })
+        let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 3, esperar: { _ in
+            if exigirUmSo { XCTAssertFalse(s.doisDispatchers) }
+        }, confirmar: { _, _ in heartbeat })
         s.arquivos[a.legadoURL(d.antigo).path] = Data("velho".utf8); s.carregados.insert(d.antigo)
         return (a, s)
     }
@@ -62,26 +63,44 @@ final class AgentesDoAppTests: XCTestCase {
     }
 
     func testSemHeartbeatReverte() {
-        let r = RegistroFalso(); let (a, s) = montar(r, heartbeat: false)
+        let r = RegistroFalso(); let (a, s) = montar(r, heartbeat: false, exigirUmSo: false)
         XCTAssertEqual(a.migrar(d), .revertido("sem heartbeat em modo real"))
         XCTAssertNotNil(s.arquivos[a.legadoURL(d.antigo).path])
-        XCTAssertFalse(s.carregados.contains(d.antigo)); XCTAssertFalse(s.carregados.contains(d.novo))
+        XCTAssertTrue(s.carregados.contains(d.antigo)); XCTAssertFalse(s.carregados.contains(d.novo))
         XCTAssertEqual(r.status(d.plist), .naoRegistrado)
         XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootout" && ($0.last ?? "").hasSuffix(d.antigo) })
     }
 
     func testRegistroRecusadoReverte() {
         let r = RegistroFalso(); r.falhar = true; let (a, s) = montar(r)
         guard case .revertido = a.migrar(d) else { return XCTFail() }
-        XCTAssertFalse(s.carregados.contains(d.antigo))
+        XCTAssertTrue(s.carregados.contains(d.antigo))
         XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
+    }
+
+    /// Label antigo já carregado, conteúdo diferente do plist gerado, registrar recusado:
+    /// o job segue no launchd e não há bootstrap.
+    func testRegistrarRecusadoMantemLegadoJaCarregado() throws {
+        let r = RegistroFalso(); r.falhar = true
+        let (a, s) = montar(r)
+        let noDisco = try XCTUnwrap(s.arquivos[a.legadoURL(d.antigo).path])
+        XCTAssertNotEqual(noDisco, try a.plistGerado(d))
+        XCTAssertTrue(s.carregados.contains(d.antigo))
+        s.chamadas = []
+        guard case .revertido = a.migrar(d) else { return XCTFail() }
+        XCTAssertTrue(s.carregados.contains(d.antigo))
+        XCTAssertEqual(s.arquivos[a.legadoURL(d.antigo).path], noDisco)
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootout" && ($0.last ?? "").hasSuffix(d.antigo) })
     }
 
     func testAprovacaoPendenteReverte() {
         let r = RegistroFalso(); r.aoRegistrar = .precisaAprovacao; let (a, s) = montar(r)
         XCTAssertEqual(a.migrar(d), .revertido("precisa de aprovação nos Itens de Login"))
-        XCTAssertFalse(s.carregados.contains(d.antigo))
+        XCTAssertTrue(s.carregados.contains(d.antigo))
         XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootout" && ($0.last ?? "").hasSuffix(d.antigo) })
     }
 
     func testJaNoAppAposentaOAntigo() {
