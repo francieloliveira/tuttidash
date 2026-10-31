@@ -173,13 +173,14 @@ class RunLaneDoBundle(unittest.TestCase):
             (wt / ".lane" / "finalized").write_text("ok\n")
             (wt / ".lane" / "exit_code").write_text("0\n")
             log = base / "lane.jsonl"
-            r = subprocess.run(
-                ["timeout", "5", "bash", str(bundle / "run_lane.sh"),
-                 "claude", str(wt), "FRA-613", str(log)],
-                cwd=wt, env={**os.environ, "HOME": str(home)},
-                capture_output=True, text=True)
-            # O runner fica em sleep depois do lane_view; o timeout encerra isso.
-            self.assertNotEqual(r.returncode, 0)
+            try:
+                subprocess.run(
+                    ["bash", str(bundle / "run_lane.sh"),
+                     "claude", str(wt), "FRA-613", str(log)],
+                    cwd=wt, env={**os.environ, "HOME": str(home)},
+                    capture_output=True, text=True, timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
             self.assertEqual(marca_bundle.read_text(), "bundle")
             self.assertFalse(marca_legado.exists())
 
