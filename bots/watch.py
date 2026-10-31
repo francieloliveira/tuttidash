@@ -140,6 +140,9 @@ _EFFORT_EN = {"baixo": "low", "medio": "medium", "alto": "high"}
 # card não traz uma lane explícita (não bloqueia: é preferência, não regra de ferro).
 FAIL_COOLDOWN_S = _cfg("watch.cooldown_apos_falha_s", 30 * 60)
 LANE_FAIL_COOLDOWN_S = _cfg("watch.cooldown_lane_s", 30 * 60)
+# Só falha de infraestrutura/modelo põe a lane em cooldown: prova vermelha ou
+# card cancelado é problema do card, não da lane.
+LANE_FAIL_RE = re.compile(r"model|modelo|limite|quota|token|429|indispon|api|rede|conex|autentic|login|cli", re.I)
 _RISCO_ALTO_CFG = _cfg("watch.lanes_risco_alto", ["claude", "grok"])
 LANES_RISCO_ALTO = set(_RISCO_ALTO_CFG.split() if isinstance(_RISCO_ALTO_CFG, str) else _RISCO_ALTO_CFG)
 STOPS_TO_CALL = _cfg("watch.paradas_para_chamar", 3)   # chama o dono na 3ª parada pelo mesmo motivo
@@ -1001,9 +1004,8 @@ def handle_stops(ci: dict, label: str, st: dict, diary: list[str]) -> bool:
     """Devolve True se usou uma rodada de IA."""
     cid, reason = stop_reason(ci, label)
     per_card = st["stops"].setdefault(ci["identifier"], {"vistos": [], "motivos": {}})
-    if label == "lane:falhou":
-        # A lane também entra em cooldown: modelo indisponível/erro de execução não
-        # deve receber outro card no ciclo seguinte.
+    if label == "lane:falhou" and LANE_FAIL_RE.search(reason):
+        # Só modelo/infra colocam a lane em cooldown; prova/card não.
         for lane in catalogo.lanes_por_prioridade():
             if lane in labels_of(ci):
                 st.setdefault("lane_falhas", {})[lane] = time.time()
