@@ -3,9 +3,11 @@
 env > TuttiDash > Lanekeeper > TranscentIA Gasto > legado.
 A env aponta um caminho que ainda não existe: não se lê o arquivo seguinte.
 """
+import importlib.machinery
 import importlib.util
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +15,23 @@ from unittest import mock
 
 from gasto_lanes import config as C
 from gasto_lanes import projetos as P
+
+
+def carregar_cfg():
+    """`tools/cfg` não tem sufixo .py: `spec_from_file_location` devolve None."""
+    nome = "cfg_fra605"
+    carregado = sys.modules.get(nome)
+    if carregado is not None:
+        return carregado
+    caminho = Path(__file__).resolve().parents[1] / "tools" / "cfg"
+    loader = importlib.machinery.SourceFileLoader(nome, str(caminho))
+    spec = importlib.util.spec_from_loader(nome, loader)
+    if spec is None or spec.loader is None:
+        raise ImportError(caminho)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[nome] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 class PrecedenciaDoArquivo(unittest.TestCase):
@@ -113,11 +132,7 @@ class MesmoArquivo(unittest.TestCase):
         return caminho
 
     def cfg(self):
-        caminho = Path(__file__).resolve().parents[1] / "tools" / "cfg"
-        spec = importlib.util.spec_from_file_location("cfg_fra605", caminho)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
+        return carregar_cfg()
 
     def cadastro(self, repo, dono, workspace):
         return {
