@@ -15,7 +15,8 @@ ROOT="$(cd "$HERE/.." && pwd)"
 T="$HOME/.transcentia/tools"; B="$HOME/.transcentia/bots"
 LAUNCHERS="$HOME/Library/Application Support/AgentesLocais"
 DOMAIN="gui/$(id -u)"
-mkdir -p "$T" "$B/prompts" "$LAUNCHERS" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/TranscentIA"
+mkdir -p "$T" "$B/prompts" "$LAUNCHERS" "$HOME/Library/LaunchAgents" \
+  "$HOME/Library/Logs/TranscentIA" "$HOME/Library/Logs/TuttiDash"
 
 # O cfg acha o arquivo por gasto_lanes/config.py. A cópia fica ao lado do cfg
 # instalado (no checkout ele usa ../gasto_lanes/config.py).

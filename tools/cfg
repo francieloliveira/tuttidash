@@ -78,7 +78,7 @@ DEFAULTS = {
                "filtro": "Test Case|error:|Executed|BLOCK|TEST (SUCCEEDED|FAILED)|abortado",
                "intervalo_s": 10, "linhas_lane": 40, "linhas_gestor": 20, "linhas_log": 30},
     "lane_view": {"pensamento": True, "pensamento_linhas": 14, "diff": True, "diff_linhas": 14},
-    "estresse": {"saida": "~/Library/Logs/TranscentIA/estresse.tsv", "intervalo_s": 15},
+    "estresse": {"saida": "~/Library/Logs/TuttiDash/carga-mac.tsv", "intervalo_s": 15},
     "preflight": {"min_free_gb": 10, "warn_free_gb": 40, "max_load": 16, "external_nvme": "",
                   "jobs": 2, "scheme": "", "skip_preflight_first": True},
     "lanes": {"budget_usd": {"baixo": 3, "medio": 8, "alto": 20},
