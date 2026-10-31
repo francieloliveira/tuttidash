@@ -1875,8 +1875,10 @@ def comando_revisao(agente: str, conf: dict, ctx: dict, esforco: str | None = No
     if not m:
         raise RuntimeError(f"{agente} não tem `revisao` no manifesto")
     c = conf.get(agente) or {}
-    modelo = str(c.get("modelo") or "")
-    esforco = str(esforco or c.get("esforco") or "")
+    modelo = str(c.get("modelo") or m.get("modelo_padrao") or "")
+    esforco = str(esforco or c.get("esforco") or m.get("esforco_padrao") or "")
+    # A task fala baixo/medio/alto; os manifestos de revisão falam low/medium/high.
+    esforco = {"baixo": "low", "medio": "medium", "alto": "high"}.get(esforco, esforco)
     vals = {**ctx, "modelo": modelo, "esforco": esforco, "teto": str(conf.get("teto_usd") or CLAUDE_BUDGET_USD)}
     flags: list[str] = []
     if modelo and modelo not in ("padrao", "padrão", "default"):

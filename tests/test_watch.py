@@ -194,12 +194,12 @@ class MelhoriasDe21Out(unittest.TestCase):
 
     def test_preferido_qualquer_agente(self):
         sim = lambda _c: "/bin/x"
-        self.assertEqual(watch.escolher_revisor("claude", self.conf(agente="grok"), {}, sim), ("grok", ""))
-        self.assertEqual(watch.escolher_revisor("codex", self.conf(agente="codex"), {}, sim), ("claude", ""))
+        self.assertEqual(watch.escolher_revisor("claude", self.conf(lane="grok"), {}, sim), ("grok", ""))
+        self.assertEqual(watch.escolher_revisor("codex", self.conf(lane="codex"), {}, sim), ("claude", ""))
 
     def test_confirmacao_so_com_quem_aprova_sozinho(self):
         sim = lambda _c: "/bin/x"
-        c = self.conf(agente="opencode")
+        c = self.conf(lane="opencode")
         self.assertEqual(watch.papel("opencode", c), "segunda_opiniao")
         rev, _ = watch.escolher_revisor("claude", c, {}, sim, so_sozinho=True)
         self.assertEqual(watch.papel(rev, c), "sozinho")
@@ -931,7 +931,7 @@ class VigiaLocalPrimeiro(unittest.TestCase):
     def test_revisao_cai_no_reserva_e_pula_claude_no_limite(self):
         tentou = []
 
-        def rev(a, texto, cwd, tag, conf):
+        def rev(a, texto, cwd, tag, conf, esforco=None):
             tentou.append(a)
             if a == "opencode":
                 return "[Revisor] ok"
@@ -1044,7 +1044,7 @@ class SegundaOpiniaoGuardadaTest(unittest.TestCase):
         self.st = {"reviewed": {}}
 
     def revisar_falso(self, respostas):
-        def revisar(texto, cwd, tag, revisor, conf, so_sozinho=False):
+        def revisar(texto, cwd, tag, revisor, conf, so_sozinho=False, esforco=None):
             self.chamadas.append((revisor, so_sozinho))
             r = respostas.pop(0)
             if isinstance(r, Exception):
