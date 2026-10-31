@@ -162,6 +162,30 @@ class CopiarParaWorktree(unittest.TestCase):
         self.assertEqual(list(self.wt.iterdir()), [])
 
 
+def isolar_home(teste: unittest.TestCase, raiz: Path) -> Path:
+    """HOME e XDG só deste teste, sem GIT_DIR nem GIT_CONFIG_* do ambiente."""
+    home = raiz / "home"
+    (home / "xdg").mkdir(parents=True)
+    chaves = ["HOME", "XDG_CONFIG_HOME"]
+    chaves += [k for k in os.environ if k in ("GIT_DIR", "GIT_WORK_TREE") or k.startswith("GIT_CONFIG")]
+    antigo = {k: os.environ.get(k) for k in chaves}
+    for k in chaves:
+        if k not in ("HOME", "XDG_CONFIG_HOME"):
+            os.environ.pop(k, None)
+    os.environ["HOME"] = str(home)
+    os.environ["XDG_CONFIG_HOME"] = str(home / "xdg")
+
+    def restaurar() -> None:
+        for chave, valor in antigo.items():
+            if valor is None:
+                os.environ.pop(chave, None)
+            else:
+                os.environ[chave] = valor
+
+    teste.addCleanup(restaurar)
+    return home
+
+
 class TravaAntesDoPush(unittest.TestCase):
     """Nada vai para o origin sem a main atual na história nem com a conferência vermelha."""
 
@@ -172,12 +196,16 @@ class TravaAntesDoPush(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        home = isolar_home(self, self.tmp)
         origem, self.wt = self.tmp / "origem.git", self.tmp / "wt"
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origem)], check=True)
         subprocess.run(["git", "clone", "-q", str(origem), str(self.wt)], check=True, capture_output=True)
-        # O origin fica com o link do GitHub; o git troca pelo caminho local ao buscar e enviar.
+        # O origin fica com o link do GitHub. O insteadOf que aponta para o bare
+        # local fica no HOME do teste: no config da pasta, reescrever o GitHub é recusado.
         self.git("remote", "set-url", "origin", "https://github.com/dono/app.git", cwd=self.wt)
-        self.git("config", f"url.{origem}.insteadOf", "https://github.com/dono/app.git", cwd=self.wt)
+        (home / ".gitconfig").write_text(
+            f'[url "{origem}"]\n\tinsteadOf = https://github.com/dono/app.git\n',
+            encoding="utf-8")
         (self.wt / "a.txt").write_text("a", encoding="utf-8")
         self.git("add", "a.txt", cwd=self.wt)
         self.git("commit", "-q", "-m", "main", cwd=self.wt)
@@ -214,6 +242,280 @@ class TravaAntesDoPush(unittest.TestCase):
             motivo = d.motivo_para_nao_enviar(self.wt)
         self.assertIn("saiu 1", motivo)
         self.assertIn("achou nome pessoal", motivo)
+
+
+class UrlExplicitaDoCadastro(unittest.TestCase):
+    """A URL de push sai do `dono/repo` do cadastro, no esquema do origin."""
+
+    def test_https_quando_o_origin_e_https_ou_http(self):
+        self.assertEqual(d.url_explicita("dono/app", "https://github.com/Dono/App.git"),
+                         "https://github.com/dono/app.git")
+        self.assertEqual(d.url_explicita("https://github.com/Dono/App", "http://github.com/dono/app.git"),
+                         "https://github.com/dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", ""), "https://github.com/dono/app.git")
+
+    def test_ssh_no_formato_do_origin(self):
+        self.assertEqual(d.url_explicita("dono/app", "git@github.com:Dono/App.git"),
+                         "git@github.com:dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", "ssh://git@github.com/Dono/App.git"),
+                         "ssh://git@github.com/dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", "ssh://git@ssh.github.com:443/Dono/App.git"),
+                         "ssh://git@ssh.github.com:443/dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", "git@ssh.github.com:Dono/App.git"),
+                         "git@ssh.github.com:dono/app.git")
+
+    def test_host_que_nao_e_github_nao_sai_na_url(self):
+        self.assertEqual(d.url_explicita("dono/app", "git@gitlab.com:dono/app.git"),
+                         "git@github.com:dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", "ssh://git@gitlab.com/dono/app.git"),
+                         "ssh://git@github.com/dono/app.git")
+
+    def test_slug_ilegivel_nao_vira_url(self):
+        self.assertEqual(d.url_explicita("", "https://github.com/dono/app.git"), "")
+        self.assertEqual(d.url_explicita("so-um-pedaco", "https://github.com/dono/app.git"), "")
+
+    def test_insteadof_que_rewescreve_o_github(self):
+        self.assertTrue(d._reescreve_github("https://github.com/outro/repo.git"))
+        self.assertTrue(d._reescreve_github("https://github.co"))
+        self.assertTrue(d._reescreve_github("git@github.com:dono/app.git"))
+        self.assertTrue(d._reescreve_github("http"))
+        self.assertFalse(d._reescreve_github("https://gitlab.com/dono/app.git"))
+        self.assertFalse(d._reescreve_github("https://github.com.evil.com/x"))
+        self.assertFalse(d._reescreve_github(""))
+
+    def test_ambiente_git_limpa_dir_e_config(self):
+        os.environ["GIT_DIR"] = "/tmp/outro"
+        os.environ["GIT_WORK_TREE"] = "/tmp/outro"
+        os.environ["GIT_CONFIG_COUNT"] = "1"
+        os.environ["GIT_CONFIG_KEY_0"] = "core.sshCommand"
+        os.environ["GIT_CONFIG_VALUE_0"] = "evil"
+        try:
+            env = d.ambiente_git()
+        finally:
+            for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
+                os.environ.pop(k, None)
+        self.assertNotIn("GIT_DIR", env)
+        self.assertNotIn("GIT_WORK_TREE", env)
+        self.assertFalse(any(k.startswith("GIT_CONFIG") for k in env))
+        self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+
+    def test_argv_git_desliga_hooks_e_deixa_o_resto(self):
+        self.assertEqual(d.argv_git(["git", "fetch", "-q", "origin", "main"])[:3],
+                         ["git", "-c", "core.hooksPath=/dev/null"])
+        self.assertEqual(d.argv_git(["git", "push", "-q", "https://github.com/dono/app.git", "HEAD:b"])[:3],
+                         ["git", "-c", "core.hooksPath=/dev/null"])
+        self.assertEqual(d.argv_git(["gh", "pr", "view"]), ["gh", "pr", "view"])
+
+
+class PushSoParaOCadastro(unittest.TestCase):
+    """FRA-594: pushurl não entrega no outro remote; helper não roda; push limpo chega no cadastro."""
+
+    def git(self, *args, cwd):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd,
+                       check=True, capture_output=True, text=True)
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = isolar_home(self, self.tmp)
+        self.esperado = self.tmp / "esperado.git"
+        self.atacante = self.tmp / "atacante.git"
+        self.wt = self.tmp / "wt"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.esperado)], check=True)
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.atacante)], check=True)
+        subprocess.run(["git", "clone", "-q", str(self.esperado), str(self.wt)], check=True, capture_output=True)
+        (self.wt / "a.txt").write_text("a\n", encoding="utf-8")
+        self.git("add", "a.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "main", cwd=self.wt)
+        self.git("push", "-q", "origin", "HEAD:main", cwd=self.wt)
+        self.git("remote", "set-url", "origin", "https://github.com/dono/app.git", cwd=self.wt)
+        (self.home / ".gitconfig").write_text(
+            f'[url "{self.esperado}"]\n\tinsteadOf = https://github.com/dono/app.git\n',
+            encoding="utf-8")
+        self.git("checkout", "-q", "-b", "fra-1", cwd=self.wt)
+        (self.wt / "b.txt").write_text("b\n", encoding="utf-8")
+        self.git("add", "b.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "lane", cwd=self.wt)
+        self.conf = mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(
+            id="x", repo=str(self.wt), github="dono/app"))
+        self.conf.start()
+        self.addCleanup(self.conf.stop)
+
+    def _tem(self, bare: Path, branch: str) -> bool:
+        r = subprocess.run(
+            ["git", "--git-dir", str(bare), "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+            capture_output=True, text=True)
+        return r.returncode == 0
+
+    def _script(self, nome: str, marcador: Path) -> Path:
+        script = self.tmp / nome
+        script.write_text(f"#!/bin/sh\ntouch {marcador}\n", encoding="utf-8")
+        script.chmod(0o755)
+        return script
+
+    def test_pushurl_recusado_e_o_outro_remote_nao_recebe(self):
+        self.git("config", "remote.origin.pushurl", str(self.atacante), cwd=self.wt)
+        self.assertIn("pushurl", d.motivo_para_nao_enviar(self.wt))
+        self.assertIn("pushurl", d.enviar_branch(self.wt, "fra-1"))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+        self.assertFalse(self._tem(self.esperado, "fra-1"))
+
+    def test_credential_helper_malicioso_nao_executa(self):
+        marcador = self.tmp / "helper-rodou"
+        script = self._script("helper.sh", marcador)
+        self.git("config", "credential.helper", f"!/bin/sh {script}", cwd=self.wt)
+        marcador.unlink(missing_ok=True)
+        self.assertIn("credential.helper", d.motivo_para_nao_enviar(self.wt))
+        self.assertIn("credential.helper", d.enviar_branch(self.wt, "fra-1"))
+        self.assertFalse(marcador.exists())
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+        self.assertFalse(self._tem(self.esperado, "fra-1"))
+
+    def test_push_normal_cai_no_repo_esperado(self):
+        self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+        with mock.patch.object(d, "sh", wraps=d.sh) as espiao:
+            self.assertEqual(d.enviar_branch(self.wt, "fra-1"), "")
+        argv = [c.args[0] for c in espiao.call_args_list]
+        self.assertIn(["git", "push", "-q", "https://github.com/dono/app.git", "HEAD:fra-1"], argv)
+        self.assertFalse(any(item == "-u" for lista in argv for item in lista))
+        self.assertTrue(self._tem(self.esperado, "fra-1"))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+        remoto = subprocess.run(["git", "config", "--get", "branch.fra-1.remote"], cwd=self.wt,
+                                check=True, capture_output=True, text=True).stdout.strip()
+        merge = subprocess.run(["git", "config", "--get", "branch.fra-1.merge"], cwd=self.wt,
+                               check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(remoto, "origin")
+        self.assertEqual(merge, "refs/heads/fra-1")
+
+    def test_upstream_de_branch_com_barra_aponta_para_origin(self):
+        self.git("checkout", "-q", "-b", "dono/fra-1", cwd=self.wt)
+        (self.wt / "c.txt").write_text("c\n", encoding="utf-8")
+        self.git("add", "c.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "barra", cwd=self.wt)
+        self.assertEqual(d.enviar_branch(self.wt, "dono/fra-1"), "")
+        remoto = subprocess.run(["git", "config", "--get", "branch.dono/fra-1.remote"], cwd=self.wt,
+                                check=True, capture_output=True, text=True).stdout.strip()
+        merge = subprocess.run(["git", "config", "--get", "branch.dono/fra-1.merge"], cwd=self.wt,
+                               check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(remoto, "origin")
+        self.assertEqual(merge, "refs/heads/dono/fra-1")
+        self.assertTrue(self._tem(self.esperado, "dono/fra-1"))
+
+    def test_chaves_que_desviam_ou_executam_sao_recusadas(self):
+        marcador = self.tmp / "executou"
+        script = self._script("exec.sh", marcador)
+        cfg = self.wt / ".git" / "config"
+        original = cfg.read_text(encoding="utf-8")
+        casos = [
+            ("core.sshCommand", f"/bin/sh {script}", "sshCommand"),
+            ("core.fsmonitor", str(script), "fsmonitor"),
+            ("include.path", str(self.tmp / "outro.gitconfig"), "include"),
+            ("filter.evil.clean", str(script), "filter"),
+        ]
+        for chave, valor, trecho in casos:
+            with self.subTest(chave=chave):
+                self.git("config", chave, valor, cwd=self.wt)
+                try:
+                    marcador.unlink(missing_ok=True)
+                    self.assertIn(trecho, d.motivo_para_nao_enviar(self.wt))
+                    self.assertIn(trecho, d.enviar_branch(self.wt, "fra-1"))
+                    self.assertFalse(marcador.exists())
+                    self.assertFalse(self._tem(self.atacante, "fra-1"))
+                finally:
+                    cfg.write_text(original, encoding="utf-8")
+                    marcador.unlink(missing_ok=True)
+
+    def test_insteadof_para_outro_repo_github_e_recusado(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8")
+            + '\n[url "https://github.com/outro/repo.git"]\n'
+            + "\tinsteadOf = https://github.com/dono/app.git\n",
+            encoding="utf-8")
+        self.assertIn("insteadOf", d.motivo_para_nao_enviar(self.wt))
+
+    def test_pushinsteadof_para_outro_host_e_recusado(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8")
+            + f'\n[url "{self.atacante}"]\n'
+            + "\tpushInsteadOf = https://github.com/dono/app.git\n",
+            encoding="utf-8")
+        self.assertIn("pushInsteadOf", d.motivo_para_nao_enviar(self.wt))
+        self.assertIn("pushInsteadOf", d.enviar_branch(self.wt, "fra-1"))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+
+    def test_insteadof_que_nao_e_github_nao_barra(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8")
+            + '\n[url "https://exemplo.invalid/"]\n'
+            + "\tinsteadOf = https://gitlab.com/\n",
+            encoding="utf-8")
+        self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+
+    def test_pushurl_escrito_a_mao_com_aspas_e_recusado(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8") + f'\n[remote "origin"]\n\tpushURL = "{self.atacante}"\n',
+            encoding="utf-8")
+        self.assertIn("pushurl", d.motivo_para_nao_enviar(self.wt))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+
+    def test_prefixo_curto_de_github_e_recusado(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8") + '\n[url "/tmp/x"]\n\tinsteadOf = https://github.co\n',
+            encoding="utf-8")
+        self.assertIn("insteadOf", d.motivo_para_nao_enviar(self.wt))
+
+    def test_pushurl_no_worktree_ligado_e_recusado(self):
+        lane = self.tmp / "lane"
+        self.git("worktree", "add", "-q", "-b", "fra-wt", str(lane), "HEAD", cwd=self.wt)
+        self.git("config", "remote.origin.pushurl", str(self.atacante), cwd=lane)
+        self.assertIn("pushurl", d.motivo_para_nao_enviar(lane))
+        self.assertIn("pushurl", d.enviar_branch(lane, "fra-wt"))
+        self.assertFalse(self._tem(self.atacante, "fra-wt"))
+
+    def test_helper_no_config_worktree_nao_executa(self):
+        marcador = self.tmp / "helper-wt"
+        script = self._script("helper-wt.sh", marcador)
+        # config.worktree é o arquivo do worktree; o config comum continua limpo.
+        (self.wt / ".git" / "config.worktree").write_text(
+            f"[credential]\n\thelper = !/bin/sh {script}\n", encoding="utf-8")
+        marcador.unlink(missing_ok=True)
+        self.assertIn("worktree", d.motivo_para_nao_enviar(self.wt))
+        self.assertIn("credential.helper", d.enviar_branch(self.wt, "fra-1"))
+        self.assertFalse(marcador.exists())
+
+    def test_git_dir_e_git_config_do_ambiente_nao_desviam(self):
+        os.environ["GIT_DIR"] = str(self.atacante)
+        os.environ["GIT_WORK_TREE"] = str(self.tmp)
+        os.environ["GIT_CONFIG_COUNT"] = "1"
+        os.environ["GIT_CONFIG_KEY_0"] = f"url.{self.atacante}.insteadof"
+        os.environ["GIT_CONFIG_VALUE_0"] = "https://github.com/dono/app.git"
+        try:
+            self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+            self.assertEqual(d.enviar_branch(self.wt, "fra-1"), "")
+        finally:
+            for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_CONFIG_COUNT",
+                      "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
+                os.environ.pop(k, None)
+        self.assertTrue(self._tem(self.esperado, "fra-1"))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+
+    def test_pre_push_nao_roda(self):
+        hooks = self.tmp / "hooks"
+        hooks.mkdir()
+        marcador = self.tmp / "hook-rodou"
+        hook = hooks / "pre-push"
+        hook.write_text(f"#!/bin/sh\ntouch {marcador}\n", encoding="utf-8")
+        hook.chmod(0o755)
+        self.git("config", "core.hooksPath", str(hooks), cwd=self.wt)
+        self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+        self.assertEqual(d.enviar_branch(self.wt, "fra-1"), "")
+        self.assertFalse(marcador.exists())
+        self.assertTrue(self._tem(self.esperado, "fra-1"))
 
 
 class Comandos(unittest.TestCase):

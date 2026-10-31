@@ -28,7 +28,8 @@ Regras:
   - `id` é obrigatório: sem ele o projeto é ignorado (e registrado como inválido).
     É o id do projeto no Linear; o time sai dele (FRA-567).
   - `github`: o repositório no GitHub (`dono/repo`, ou o link). O dispatcher só envia
-    a branch se o `origin` da pasta for este repositório.
+    a branch se o `origin` da pasta for este repositório, e o push vai para a URL
+    explícita desse cadastro (sem `pushurl`).
   - `ativo: false` deixa o projeto listado para o app mostrar, sem dispatch.
   - `padrao: true` marca o projeto que o dispatcher trabalha neste ciclo. Sem
     `padrao`, vale o primeiro `ativo` da lista — a ordem da lista é a ordem de
