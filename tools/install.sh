@@ -44,6 +44,9 @@ LAUNCHERS="$HOME/Library/Application Support/AgentesLocais"
 DOMAIN="gui/$(id -u)"
 mkdir -p "$T" "$B/prompts" "$LAUNCHERS" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/TranscentIA"
 
+# O cfg acha o arquivo por gasto_lanes/config.py. A cópia fica ao lado do cfg
+# instalado (no checkout ele usa ../gasto_lanes/config.py).
+install -m 644 "$ROOT/gasto_lanes/config.py" "$T/config.py"
 install -m 755 "$HERE/cfg" "$T/cfg"
 "$T/cfg" migrate
 for f in painel.command lanes.command colorir.sh carimbo.sh seguir-com-hora.sh seguir-lanes.sh \
@@ -69,7 +72,7 @@ install -m 644 "$ROOT/bots/prompts/"*.md "$B/prompts/"
 # projetos que o dispatcher enxerga (Swift, dispatcher e vigia leem o mesmo).
 # Os dois módulos são stdlib puro e precisam estar ao lado de cada script que roda
 # isolado (o dispatcher e o vigia não enxergam o pacote).
-for mod in catalogo fila projetos privacidade linear_ids; do
+for mod in catalogo fila projetos privacidade linear_ids config; do
   install -m 644 "$ROOT/gasto_lanes/$mod.py" "$B/$mod.py"
 done
 # Build pessoal (FRA-565): módulo opcional fora do repositório aberto, ao lado do catálogo.
@@ -100,9 +103,10 @@ copiar_template() { # src dest
   install -m 600 "$src" "$dest"
 }
 # FRA-591: instalação limpa também cria a pasta. A fonte é o repositório.
+# O módulo config (resolvedor único da main) fica ao lado do dispatcher, que o importa daqui.
 LANES_DIR="$HOME/.transcentia/lanes"
 mkdir -p "$LANES_DIR"
-for mod in catalogo fila projetos privacidade linear_ids; do
+for mod in catalogo fila projetos privacidade linear_ids config; do
   install -m 644 "$ROOT/gasto_lanes/$mod.py" "$LANES_DIR/$mod.py"
 done
 [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$LANES_DIR/gasto_privado.py"

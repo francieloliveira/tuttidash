@@ -72,7 +72,7 @@ public final class AgentesDoApp {
 
     private func mover(_ de: URL, _ para: URL) throws {
         guard let d = sistema.ler(de) else { return }
-        try sistema.escrever(d, em: para, executavel: false); try sistema.apagar(de)
+        try sistema.escrever(d, em: para, modo: 0o600); try sistema.apagar(de)
     }
 
     private func aposentarAntigo(_ a: AgenteApp) {

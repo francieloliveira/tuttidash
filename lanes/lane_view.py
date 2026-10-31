@@ -41,7 +41,15 @@ def largura(padrao: int = 100) -> int:
         return padrao
 
 
-CFG = os.path.expanduser("~/.transcentia/tools/cfg")
+def _caminho_cfg() -> str:
+    """`tools/cfg` do checkout, ou a cópia instalada. O cfg usa o resolvedor único."""
+    local = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools", "cfg"))
+    if os.path.isfile(local):
+        return local
+    return os.path.expanduser("~/.transcentia/tools/cfg")
+
+
+CFG = _caminho_cfg()
 _CFG: dict = {}
 DESLIGADO = ("0", "false", "nao", "não", "off", "")
 
