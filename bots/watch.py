@@ -58,6 +58,26 @@ def _cfg(chave, padrao):
 
 HOME = Path.home()
 STATE_DIR = HOME / ".transcentia" / "bots"
+APP_PID = HOME / ".transcentia" / "lanes" / "app.pid"
+
+
+def app_aberta() -> bool:
+    """Sem o app do TuttiDash aberto, o vigia não publica nem mergeia."""
+    try:
+        pid = int(APP_PID.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 STATE_FILE = STATE_DIR / "state.json"
 PROMPTS_DIR = STATE_DIR / "prompts"
 LANES_DIR = HOME / ".transcentia" / "lanes"
@@ -1909,7 +1929,8 @@ def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
         os.unlink(settings)
         os.unlink(saida)
     (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(out)
-    log(f"agente {tag} [{agente}/{manifesto_revisao(agente) or {} }.get('modelo_padrao','padrao')}/{esforco or '-'}]: "
+    manifesto = manifesto_revisao(agente) or {}
+    log(f"agente {tag} [{agente}/{manifesto.get('modelo_padrao', 'padrao')}/{esforco or '-'}]: "
         f"{int(time.time() - started)} s, {len(out)} chars")
     return limpar_saida(out)
 
@@ -2188,6 +2209,8 @@ def step(name: str, fn, *args) -> None:
 
 
 def main() -> int:
+    if not app_aberta():
+        return 0
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     projetos.recarregar()   # cadastro lido uma vez por ciclo
     if not projetos.configurado():

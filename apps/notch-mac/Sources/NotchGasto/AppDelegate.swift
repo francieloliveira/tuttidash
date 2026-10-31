@@ -49,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Intervalos (dados 30 s, uso 120 s: endpoints limitados por IP) vivem em `PoliticaAtualizacao`.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // O dispatcher/vigia/chave só trabalham enquanto este PID estiver vivo.
+        PresencaDoApp.marcarAberta()
         EstadoCaixa.compartilhada.iniciar()  // caixa do dono: contador do sino e aviso do macOS
         NSApp.setActivationPolicy(.accessory)
         Configuracao.copiarPastaAntiga()
@@ -156,6 +158,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.atualizarUso() }
         }
         timerUso?.tolerance = 15
+    }
+
+    /// «Sair» encerra o trabalho automático junto com o app. Fechar o painel não.
+    func applicationWillTerminate(_ notification: Notification) {
+        PresencaDoApp.pararTudo()
     }
 
     /// Fechar a janela do painel deixa a pílula. Não é «Sair».

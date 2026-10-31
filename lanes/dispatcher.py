@@ -260,6 +260,24 @@ PROTECTED_GLOBS = projetos.PROTEGIDOS_PADRAO
 HOME = Path.home()
 STATE_DIR = HOME / ".transcentia" / "lanes"
 LANES_COMMAND = HOME / ".transcentia" / "tools" / "lanes.command"
+APP_PID = STATE_DIR / "app.pid"
+
+
+def app_aberta() -> bool:
+    """O app TuttiDash é o dono do ciclo: sem o PID vivo, o dispatcher não trabalha."""
+    try:
+        pid = int(APP_PID.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 PAUSE_FILE = STATE_DIR / "PAUSE"
 ENABLED_FILE = STATE_DIR / "enabled"
 HEARTBEAT_FILE = STATE_DIR / "heartbeat.json"
@@ -2759,6 +2777,16 @@ def keep_awake(has_work: bool) -> None:
 
 def run(real: bool, verbose: bool) -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    if not app_aberta():
+        # Boot sem o app, ou app encerrado/caiu: interrompe o que tiver ficado e sai.
+        for lane in LANES:
+            st = load_state(lane)
+            if st:
+                try:
+                    kill_lane_tree(f"lane-{lane}")
+                except Exception:  # noqa: BLE001 — limpeza de saída não pode derrubar o launchd
+                    pass
+        return 0
     projetos.recarregar()   # cadastro lido uma vez por ciclo: mexer na config vale no ciclo seguinte
     if not projetos.configurado():
         aviso = "sem projeto: cadastre um em Ajustes › Avançado › Projetos (chave `projetos` da config)"

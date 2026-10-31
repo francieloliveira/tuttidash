@@ -37,6 +37,26 @@ def modo_forcado() -> str:
     return v if v in MODOS_FORCADOS else "auto"
 HOME = Path.home()
 BOTS = HOME / ".transcentia/bots"
+APP_PID = HOME / ".transcentia/lanes/app.pid"
+
+
+def app_aberta() -> bool:
+    """A chave só mexe no PAUSE enquanto o app do TuttiDash estiver aberto."""
+    try:
+        pid = int(APP_PID.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 PAUSE = BOTS / "PAUSE"
 MANUAL = BOTS / "PAUSE.manual"
 MODO = BOTS / "modo.json"
@@ -113,6 +133,8 @@ def medir():
 
 
 def main() -> int:
+    if not app_aberta():
+        return 0
     BOTS.mkdir(parents=True, exist_ok=True)
     antes = ler_modo()
 
