@@ -194,7 +194,7 @@ public actor ColetorUso {
     public typealias LeitorTokenCopilot = @Sendable () -> String?
 
     /// Nunca mais de uma chamada por conta nesse intervalo.
-    public static let intervaloMinimo: TimeInterval = 90
+    public static let intervaloMinimo: TimeInterval = 60
     /// Depois de um 429, espera isso antes de tentar de novo.
     public static let esperaLimitado: TimeInterval = 15 * 60
 

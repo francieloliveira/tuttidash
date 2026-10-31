@@ -24,7 +24,7 @@ public struct PoliticaAtualizacao: Equatable, Sendable {
     /// Abrir o painel relê os dados quando a última leitura tem pelo menos esta idade (FRA-583).
     public var idadeAntiga: TimeInterval = 5
 
-    public init(intervaloDados: TimeInterval = 30, intervaloUso: TimeInterval = 120,
+    public init(intervaloDados: TimeInterval = 30, intervaloUso: TimeInterval = 60,
                 intervaloReservaMouse: TimeInterval = 1, intervaloEstado: TimeInterval = 2,
                 intervaloReserva: TimeInterval = 300, idadeMaximaLeitura: TimeInterval = 300) {
         self.intervaloDados = max(intervaloDados, Self.intervaloMinimo)

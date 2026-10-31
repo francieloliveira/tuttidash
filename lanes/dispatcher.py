@@ -144,7 +144,7 @@ LIMIT_429_BASE_S = 1 * 3600
 LIMIT_429_MAX_S = 8 * 3600
 LIMIT_429_RESET_S = 6 * 3600
 # Medida reaproveitada entre ciclos (o lanepct-auto chama a API das contas).
-MEASURE_CACHE_S = 300
+MEASURE_CACHE_S = 60
 # Buraco entre dois ciclos (launchd roda a cada 60 s) acima disto = Mac em repouso/desligado.
 SLEEP_GAP_S = 5 * 60
 # FRA-269: a prova (safe_xcodebuild.sh test) roda fora do terminal do agente, pelo
