@@ -8,7 +8,7 @@ Roda a cada 60 s via launchd (com.transcentia.lanes.dispatcher).
 
 Divisão de trabalho (E3):
   dispatcher  lê o card, cria o worktree, abre a lane no tmux e, ao final,
-              faz push, abre o PR, comenta DONE <sha> e move para In Review
+              faz push para a URL do cadastro, abre o PR, comenta DONE <sha> e move para In Review
   agente      edita, testa, faz commit LOCAL e grava .lane/result.json.
               Não fala com Linear nem GitHub.
 
@@ -365,11 +365,39 @@ def log(msg: str) -> None:
         print(line)
 
 
+def ambiente_git() -> dict[str, str]:
+    """Ambiente dos comandos git, sem diretório nem config injetados.
+
+    `GIT_DIR` e `GIT_WORK_TREE` trocariam o repositório. `GIT_CONFIG_*` (arquivo,
+    global, system, contagem ou o par chave/valor) aplica config que o guard não
+    leu do disco da pasta.
+    """
+    env = dict(os.environ)
+    env["PATH"] = TOOL_PATH
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    for chave in list(env):
+        if chave in ("GIT_DIR", "GIT_WORK_TREE") or chave.startswith("GIT_CONFIG"):
+            del env[chave]
+    return env
+
+
+def argv_git(args: list[str]) -> list[str]:
+    """Desliga o hook da pasta em todo git do dispatcher.
+
+    O fetch e o push precisam disso: `core.hooksPath` no config da pasta rodaria
+    no meio do envio. O merge da main também dispara hook, então o mesmo `-c`
+    vale para qualquer subcomando.
+    """
+    if not args or args[0] != "git":
+        return list(args)
+    return ["git", "-c", "core.hooksPath=/dev/null", *args[1:]]
+
+
 def sh(args: list[str], cwd: Optional[Path] = None, check: bool = True, timeout: int = 120) -> str:
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
-    out = subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env, timeout=timeout)
+    argv = argv_git(args)
+    out = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=ambiente_git(), timeout=timeout)
     if check and out.returncode != 0:
-        raise RuntimeError(f"{' '.join(args[:3])}… falhou ({out.returncode}): {out.stderr.strip()[:300]}")
+        raise RuntimeError(f"{' '.join(argv[:6])}… falhou ({out.returncode}): {out.stderr.strip()[:300]}")
     return out.stdout.strip()
 
 
@@ -1093,26 +1121,241 @@ def copiar_para_worktree(repo: Path, wt: Path, caminhos) -> list[str]:
     return copiados
 
 
-def motivo_para_nao_enviar(wt: Path) -> str:
-    """Vazio se a branch pode ir para o `origin`; senão o motivo (nada é enviado).
+_HOSTS_GITHUB = {"github.com", "ssh.github.com", "www.github.com"}
+# Prefixo de URL do GitHub. `insteadOf` casa por prefixo de string: um valor curto
+# (`https://github.co`, `http`) também reescreve `https://github.com/dono/repo`.
+_PREFIXOS_GITHUB = (
+    "https://github.com/",
+    "http://github.com/",
+    "https://www.github.com/",
+    "http://www.github.com/",
+    "https://ssh.github.com/",
+    "http://ssh.github.com/",
+    "ssh://git@github.com/",
+    "ssh://git@ssh.github.com/",
+    "git@github.com:",
+    "git@ssh.github.com:",
+    "git://github.com/",
+)
 
-    0. O `origin` da pasta é o repositório do GitHub do cadastro (FRA-567).
-    1. A branch tem de ter a `origin/main` atual na história. Uma branch criada antes
-       de o repositório recomeçar (histórico antigo, sem ancestral comum) levaria todo
-       o histórico antigo junto no push.
-    2. O `antes_do_push` do projeto (ex.: conferência de publicação) tem de sair 0."""
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+
+def _valor_config(bruto: str) -> str:
+    v = bruto.strip()
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        v = v[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    return v.strip()
+
+
+def _parse_gitconfig(texto: str) -> list[tuple[str, str, str, str]]:
+    """(seção, subseção, chave, valor). Seção e chave em minúsculas.
+
+    Não segue `include`: quem chama recusa a chave antes de o git abrir outro arquivo.
+    """
+    secao, sub = "", ""
+    saida: list[tuple[str, str, str, str]] = []
+    pendente = ""
+    cab_re = re.compile(r'^\s*\[([A-Za-z0-9]+)(?:\s+"((?:\\.|[^"])*)")?\]\s*(?:[;#].*)?$')
+    chave_re = re.compile(r"^\s*([A-Za-z0-9-]+)\s*=\s*(.*)$")
+    plana_re = re.compile(r"^\s*([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\s*=\s*(.*)$")
+    for bruta in texto.splitlines():
+        linha = pendente + bruta if pendente else bruta
+        pendente = ""
+        if linha.endswith("\\") and not linha.endswith("\\\\"):
+            pendente = linha[:-1]
+            continue
+        if not linha.strip() or linha.lstrip().startswith(("#", ";")):
+            continue
+        cab = cab_re.match(linha)
+        if cab:
+            secao = cab.group(1).lower()
+            sub = (cab.group(2) or "").replace('\\"', '"').replace("\\\\", "\\")
+            continue
+        plana = plana_re.match(linha)
+        if plana:
+            partes = plana.group(1).split(".")
+            valor = _valor_config(plana.group(2))
+            if len(partes) == 2:
+                saida.append((partes[0].lower(), "", partes[1].lower(), valor))
+            else:
+                saida.append((partes[0].lower(), ".".join(partes[1:-1]), partes[-1].lower(), valor))
+            continue
+        chave = chave_re.match(linha)
+        if not chave:
+            continue
+        saida.append((secao, sub, chave.group(1).lower(), _valor_config(chave.group(2))))
+    return saida
+
+
+def _host_de(url: str) -> str:
+    u = url.strip()
+    if not u:
+        return ""
+    baixo = u.lower()
+    if baixo.startswith("git@"):
+        return u[4:].split(":", 1)[0].lower()
+    if "://" not in u:
+        return ""
+    sem = u.split("://", 1)[1].split("/", 1)[0]
+    if "@" in sem:
+        sem = sem.rsplit("@", 1)[1]
+    return sem.split(":", 1)[0].lower().strip("[]")
+
+
+def _reescreve_github(valor: str) -> bool:
+    """O `insteadOf` troca uma URL do GitHub (outro host ou outro `dono/repo`)."""
+    v = valor.strip().lower()
+    if not v:
+        return False
+    if _host_de(valor) in _HOSTS_GITHUB:
+        return True
+    return any(base.startswith(v) or v.startswith(base) for base in _PREFIXOS_GITHUB)
+
+
+def _motivo_chave(onde: str, secao: str, sub: str, chave: str, valor: str) -> str:
+    """Motivo para recusar esta chave do config local/worktree, ou vazio."""
+    if chave == "pushurl" and valor.strip():
+        quem = f"remote.{sub}.pushurl" if secao == "remote" and sub else "pushurl"
+        return f"o config {onde} tem `{quem}`; o push não usa pushurl"
+    if secao == "core" and chave == "sshcommand" and valor.strip():
+        return f"o config {onde} tem `core.sshCommand`"
+    if secao == "core" and chave == "fsmonitor" and valor.strip():
+        return f"o config {onde} tem `core.fsmonitor`"
+    if secao == "credential" and chave == "helper":
+        return f"o config {onde} tem `credential.helper`"
+    if secao in ("include", "includeif") and valor.strip():
+        return f"o config {onde} tem `include`"
+    if secao == "filter" and valor.strip():
+        return f"o config {onde} tem `filter.{sub or chave}`"
+    if secao == "url" and chave in ("insteadof", "pushinsteadof"):
+        if not valor.strip() or _reescreve_github(valor):
+            nome = "pushInsteadOf" if chave == "pushinsteadof" else "insteadOf"
+            return f"o config {onde} reescreve o GitHub com `url.*.{nome}`"
+    return ""
+
+
+def _diretorios_git(wt: Path) -> list[Path]:
+    """Diretório comum e, se for worktree ligado, o gitdir dele. Vazio se não é repo."""
+    ponteiro = wt / ".git"
+    if ponteiro.is_dir():
+        return [ponteiro]
+    if not ponteiro.is_file():
+        return []
+    try:
+        linhas = ponteiro.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    linha = linhas[0].strip() if linhas else ""
+    if not linha.lower().startswith("gitdir:"):
+        return []
+    bruto = linha.split(":", 1)[1].strip()
+    if not bruto:
+        return []
+    gitdir = Path(bruto)
+    gitdir = gitdir.resolve() if gitdir.is_absolute() else (wt / gitdir).resolve()
+    comum = gitdir
+    arquivo = gitdir / "commondir"
+    if arquivo.is_file():
+        try:
+            rel = arquivo.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            rel = ""
+        if rel:
+            comum = (gitdir / rel).resolve()
+    if comum == gitdir:
+        return [gitdir]
+    return [comum, gitdir]
+
+
+def _arquivos_config(wt: Path) -> list[tuple[str, Path]]:
+    dirs = _diretorios_git(wt)
+    if not dirs:
+        return []
+    comum, gitdir = dirs[0], dirs[-1]
+    return [("local", comum / "config"), ("worktree", gitdir / "config.worktree")]
+
+
+def diagnostico_config(wt: Path) -> tuple[str, str]:
+    """(motivo, url do `origin`). Motivo vazio = config local e de worktree aceitável.
+
+    Lê o arquivo em vez de `git config`: `include`, `fsmonitor` e `credential.helper`
+    não podem rodar durante o guard. A url do worktree, se houver, prevalece.
+    """
+    origem = ""
+    for onde, caminho in _arquivos_config(wt):
+        if not caminho.is_file():
+            continue
+        try:
+            texto = caminho.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return f"não consegui ler o config {onde} do git", ""
+        for secao, sub, chave, valor in _parse_gitconfig(texto):
+            motivo = _motivo_chave(onde, secao, sub, chave, valor)
+            if motivo:
+                return motivo, ""
+            if secao == "remote" and sub.lower() == "origin" and chave == "url" and valor.strip():
+                origem = valor.strip()
+    return "", origem
+
+
+def url_explicita(github: str, origem: str) -> str:
+    """URL de push a partir do `dono/repo` do cadastro, no esquema do `origin`.
+
+    HTTPS, ou SSH (`git@` ou `ssh://`) quando o `origin` já é SSH. `http` sobe
+    para `https`. O host que não é o GitHub não entra: o slug é o do cadastro.
+    Não lê `pushurl`.
+    """
+    slug = projetos.normalizar_github(github)
+    if not slug:
+        return ""
+    bruto = (origem or "").strip()
+    baixo = bruto.lower()
+    if baixo.startswith("git@") and ":" in bruto[4:]:
+        host = bruto[4:].split(":", 1)[0].lower()
+        if host not in ("github.com", "ssh.github.com"):
+            host = "github.com"
+        return f"git@{host}:{slug}.git"
+    if baixo.startswith("ssh://"):
+        sem = bruto[6:]
+        if "@" in sem.split("/", 1)[0]:
+            sem = sem.split("@", 1)[1]
+        hostport = sem.split("/", 1)[0]
+        host, sep, porta = hostport.partition(":")
+        host = host.lower()
+        if host not in ("github.com", "ssh.github.com"):
+            host, sep, porta = "github.com", "", ""
+        porta_s = f":{porta}" if sep and porta else ""
+        return f"ssh://git@{host}{porta_s}/{slug}.git"
+    return f"https://github.com/{slug}.git"
+
+
+def motivo_para_nao_enviar(wt: Path) -> str:
+    """Vazio se a branch pode ir para o repositório do cadastro; senão o motivo.
+
+    Primeira barreira, antes de qualquer git que possa executar o config da pasta:
+    0. O config local/worktree não tem `pushurl`, `insteadOf`/`pushInsteadOf` que
+       reescreva o GitHub, `core.sshCommand`, `credential.helper`, `include`,
+       `core.fsmonitor` nem `filter`.
+    1. O `origin` da pasta é o repositório do GitHub do cadastro (FRA-567).
+    2. A branch tem a `origin/main` atual na história. Uma branch criada antes
+       de o repositório recomeçar (histórico antigo, sem ancestral comum) levaria
+       todo o histórico antigo junto no push.
+    3. O `antes_do_push` do projeto (ex.: conferência de publicação) sai 0.
+
+    A segunda barreira é `enviar_branch`: o push usa a URL explícita do cadastro.
+    """
+    motivo, origem = diagnostico_config(wt)
+    if motivo:
+        return motivo
     esperado = projeto().github
-    origem = subprocess.run(["git", "config", "--get", "remote.origin.url"], cwd=wt,
-                            capture_output=True, text=True, env=env)
-    atual = projetos.normalizar_github(origem.stdout.strip()) if origem.returncode == 0 else ""
+    atual = projetos.normalizar_github(origem)
     if not esperado:
         return "o projeto não tem o repositório do GitHub no cadastro (Ajustes › Projetos)"
     if atual != esperado:
         return (f"o `origin` da pasta é `{atual or 'nenhum'}`, mas o projeto é do repositório "
                 f"`{esperado}`; confira a pasta no cadastro")
+    env = ambiente_git()
     sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
-    base = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=wt,
+    base = subprocess.run(argv_git(["git", "merge-base", "HEAD", "origin/main"]), cwd=wt,
                           capture_output=True, text=True, env=env)
     if base.returncode != 0 or not base.stdout.strip():
         return ("a branch não tem a `origin/main` atual na história (criada sobre um histórico "
@@ -1123,6 +1366,34 @@ def motivo_para_nao_enviar(wt: Path) -> str:
         if r.returncode != 0:
             fim = (r.stdout + r.stderr).strip().splitlines()[-12:]
             return f"a conferência antes do push (`{cmd}`) saiu {r.returncode}:\n" + "\n".join(fim)
+    return ""
+
+
+def enviar_branch(wt: Path, branch: str) -> str:
+    """Envia `HEAD` para a URL do cadastro. Vazio se enviou; senão o motivo.
+
+    Segunda barreira: não é `git push origin` (isso honraria `pushurl`) e não leva
+    `-u`. `-u` com a URL solta gravaria o upstream nessa URL. O rastreio fica no
+    remote `origin`.
+    """
+    branch = str(branch or "").strip()
+    if (not branch or branch.startswith(("-", "/")) or branch.endswith(("/", ".lock"))
+            or any(c in branch for c in "\n\r\t ~^:?*[\\")
+            or any(p in ("", ".", "..") for p in branch.split("/"))):
+        return "nome de branch inválido para o push"
+    motivo, origem = diagnostico_config(wt)
+    if motivo:
+        return motivo
+    esperado = projeto().github
+    if not esperado:
+        return "o projeto não tem o repositório do GitHub no cadastro (Ajustes › Projetos)"
+    url = url_explicita(esperado, origem)
+    if projetos.normalizar_github(url) != esperado:
+        return f"a URL de push `{url or 'nenhuma'}` não é a do repositório `{esperado}`"
+    sh(["git", "push", "-q", url, f"HEAD:{branch}"], cwd=wt, timeout=180)
+    # O fetch não criou `origin/<branch>`: o push foi para a URL, não para o remote.
+    sh(["git", "update-ref", f"refs/remotes/origin/{branch}", "HEAD"], cwd=wt, check=False)
+    sh(["git", "branch", "--set-upstream-to", f"origin/{branch}", branch], cwd=wt, check=False)
     return ""
 
 
@@ -1170,13 +1441,13 @@ def juntar_main(wt: Path) -> tuple[str, str]:
 
 def historico_antigo(wt: Path) -> bool:
     """A branch do worktree não tem ancestral comum com a `origin/main` (veio de outro histórico)."""
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    env = ambiente_git()
     try:
-        tem = subprocess.run(["git", "rev-parse", "-q", "--verify", "origin/main"], cwd=wt,
+        tem = subprocess.run(argv_git(["git", "rev-parse", "-q", "--verify", "origin/main"]), cwd=wt,
                              capture_output=True, text=True, env=env, timeout=60)
         if tem.returncode != 0:
             return False  # sem origin/main local (fetch falhou): não dá para afirmar
-        base = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=wt,
+        base = subprocess.run(argv_git(["git", "merge-base", "HEAD", "origin/main"]), cwd=wt,
                               capture_output=True, text=True, env=env, timeout=60)
         return base.returncode != 0 or not base.stdout.strip()
     except Exception:  # noqa: BLE001
@@ -1193,10 +1464,10 @@ def _nota_conflito(main: str, lista: str) -> str:
 
 
 def _juntar_main(wt: Path) -> tuple[str, str]:
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    env = ambiente_git()
 
     def git(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", *args], cwd=wt, capture_output=True, text=True, env=env, timeout=180)
+        return subprocess.run(argv_git(["git", *args]), cwd=wt, capture_output=True, text=True, env=env, timeout=180)
 
     # Merge pela metade (rodada anterior ou `rebase_dirty` do vigia): não começa outro;
     # a lane conclui o que já está marcado.
@@ -2496,7 +2767,9 @@ def finalize(st: dict) -> Optional[str]:
             barrado = motivo_para_nao_enviar(wt)
             if barrado:
                 return fail(st, f"nada foi enviado: {barrado}")
-            sh(["git", "push", "-q", "-u", "origin", f"HEAD:{st['branch']}"], cwd=wt, timeout=180)
+            recusa = enviar_branch(wt, st["branch"])
+            if recusa:
+                return fail(st, f"nada foi enviado: {recusa}")
         resume = resume_line(st)
         aplicar_label(st["issue_id"], LABEL_DONO_ID, OWNER_LABEL)
         linear(MUT_COMMENT, {"id": st["issue_id"], "body":
@@ -2560,7 +2833,9 @@ def finalize(st: dict) -> Optional[str]:
     barrado = motivo_para_nao_enviar(wt)
     if barrado:
         return fail(st, f"nada foi enviado: {barrado}", causa="push-barrado")
-    sh(["git", "push", "-q", "-u", "origin", f"HEAD:{st['branch']}"], cwd=wt, timeout=180)
+    recusa = enviar_branch(wt, st["branch"])
+    if recusa:
+        return fail(st, f"nada foi enviado: {recusa}", causa="push-barrado")
 
     meta = {k: res.get(k) for k in ("changed_files", "verification", "residual_risk", "decisions")}
     meta["changed_files"] = g["files"]
