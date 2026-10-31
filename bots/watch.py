@@ -133,6 +133,7 @@ READY_TARGET = _cfg("watch.prontos_no_todo", 2)        # 2 cards prontos esperan
 HEADROOM_PCT = {"baixo": 90, "medio": 80, "alto": 60}
 HEADROOM_PCT_LONGA = {"baixo": 95, "medio": 90, "alto": 85}
 JANELA_LONGA_RE = re.compile(r"\d+\s*dias?\b|semana|m[êe]s\b|mensal", re.I)
+_EFFORT_EN = {"baixo": "low", "medio": "medium", "alto": "high"}
 STOPS_TO_CALL = _cfg("watch.paradas_para_chamar", 3)   # chama o dono na 3ª parada pelo mesmo motivo
 # Card onde a triagem pede cards novos quando o Todo esvazia; vazio = não pede.
 TRIAGEM_PEDIDOS_CARD = _cfg("watch.card_pedidos_triagem", "")
@@ -328,7 +329,8 @@ def linear(query: str, variables: dict) -> dict:
     return data["data"]
 
 
-ISSUE_FIELDS = """id identifier title description url priority sortOrder startedAt branchName
+ISSUE_FIELDS = """id identifier title description url priority sortOrder startedAt createdAt updatedAt dueDate estimate
+      branchName assignee{ id name } parent{ identifier }
       state{ id name type } labels{ nodes{ id name parent{ name } } } project{ id name }
       comments(first:30, orderBy: createdAt){ nodes{ id body createdAt } }
       inverseRelations(first:30){ nodes{ type issue{ identifier state{ type } } } }"""
@@ -1686,17 +1688,119 @@ def lanes_ativas() -> set[str]:
     return enabled & set(IMPLEMENTED_LANES)
 
 
+def contexto_card(ci: dict) -> dict:
+    """O que o card pede, sem escolher lane ainda."""
+    nodes = ci.get("labels", {}).get("nodes", [])
+    lanes = [n["name"] for n in nodes if (n.get("parent") or {}).get("name") == "lane"]
+    esforcos = [n["name"] for n in nodes if (n.get("parent") or {}).get("name") == "esforco"]
+    riscos = [n["name"] for n in nodes if n["name"].startswith("risco:")]
+    return {
+        "lane": lanes[0] if len(lanes) == 1 else None,
+        "lane_invalida": len(lanes) > 1,
+        "effort": esforcos[0] if len(esforcos) == 1 else None,
+        "effort_invalido": len(esforcos) > 1,
+        "risk": riscos[0] if riscos else "",
+        "files": card_files(ci),
+    }
+
+
+def held_by_comments(ci: dict) -> bool:
+    """Comentário recente também pode segurar o card; antes só a descrição contava."""
+    for n in (ci.get("comments") or {}).get("nodes", [])[-6:]:
+        if HOLD_RE.search(n.get("body") or ""):
+            return True
+    return False
+
+
+def cap_esforco(effort: str, janela: str) -> int:
+    tabela = HEADROOM_PCT_LONGA if JANELA_LONGA_RE.search(janela or "") else HEADROOM_PCT
+    return tabela.get(effort, tabela["medio"])
+
+
+def cota_ok(lane: str, effort: str, medidas: dict) -> bool:
+    medida = medidas.get(lane)
+    if not medida or medida[0] is None:
+        return False
+    try:
+        pct = float(medida[0])
+    except (TypeError, ValueError):
+        return False
+    janela = str(medida[1] if len(medida) > 1 else "")
+    return pct < cap_esforco(effort, janela)
+
+
+def esforco_suportado(lane: str, effort: str) -> bool:
+    manifesto = catalogo.catalogo().get(lane) or {}
+    esforcos = {str(e).lower() for e in (manifesto.get("esforcos") or [])}
+    if not esforcos:
+        return True
+    return _EFFORT_EN.get(effort, effort).lower() in esforcos
+
+
+def conflita_com_rodando(ci: dict, running_cards: set[str], issues: list[dict]) -> bool:
+    files = card_files(ci)
+    if not files:
+        return False
+    ativos = [(c, card_files(c)) for c in issues if c.get("identifier") in running_cards]
+    return bool(conflicts(ci, files, ativos))
+
+
+def lane_para_card(ci: dict, com_folga: set[str], medidas: dict, usados: dict,
+                   running_cards: set[str], issues: list[dict]) -> Optional[str]:
+    """Primeira lane que realmente consegue rodar este card agora, ou None.
+
+    Considera lane pedida, esforço suportado pelo manifesto, cota para o esforço,
+    vaga da lane e conflito com card que já está rodando."""
+    ctx = contexto_card(ci)
+    if ctx["lane_invalida"] or ctx["effort_invalido"] or held_by_comments(ci):
+        return None
+    if conflita_com_rodando(ci, running_cards, issues):
+        return None
+    effort = ctx["effort"] or "medio"
+    candidatas = [ctx["lane"]] if ctx["lane"] else sorted(com_folga)
+    validas = []
+    for lane in candidatas:
+        if lane not in com_folga:
+            continue
+        if not esforco_suportado(lane, effort):
+            continue
+        if not cota_ok(lane, effort, medidas):
+            continue
+        if usados.get(lane, 0) >= MAX_PER_LANE:
+            continue
+        validas.append(lane)
+    if not validas:
+        return None
+    return min(validas, key=lambda l: (usados.get(l, 0), l))
+
+
 def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     queue = [c for c in issues if c["state"]["id"] == STATE_IN_PROGRESS_ID and is_ready(c)]
     ativas = lanes_ativas()
     # Vaga é por lane com folga de cota, não por lane só habilitada: Claude/Codex
     # no limite e OpenCode sem medida não podem segurar 2 cards cada no Todo.
     com_folga = lanes_com_folga()
+    medidas = medidas_contas()
     running = busy_lanes() & ativas
-    running_cards = {json.loads((LANES_DIR / f"lane-{l}.json").read_text()).get("card") for l in running}
+    running_cards: set[str] = set()
+    for lane in running:
+        try:
+            card = json.loads((LANES_DIR / f"lane-{lane}.json").read_text()).get("card")
+            if card:
+                running_cards.add(card)
+        except (OSError, ValueError, AttributeError):
+            log(f"fila: estado da lane {lane} ilegível; não conto como ocupada")
     waiting = [c for c in queue if c["identifier"] not in running_cards]
     todo = sorted([c for c in issues if c["state"]["name"] == "Todo" and is_ready(c)],
                   key=lambda c: (c.get("priority") or 5, c.get("sortOrder") or 0))
+    usados = {lane: 0 for lane in com_folga}
+    for lane in running:
+        if lane in usados:
+            usados[lane] += 1
+    for card in waiting + todo:
+        lane = contexto_card(card)["lane"]
+        if lane in usados:
+            usados[lane] += 1
     # Teto por lane com folga: MAX_PER_LANE (1 RUN + (N-1) WAIT) por lane.
     # Todo também ocupa vaga: o teto é o total, não 2 no Todo + 2 rodando por lane.
     SLOTS = MAX_PER_LANE * len(com_folga)
@@ -1709,13 +1813,18 @@ def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     # (FRA-471), para o card não sumir sem explicação.
     for ci, motivo in travados_pelo_freio(issues):
         panel(f"freio: {ci['identifier']} não sobe do Backlog — {motivo}")
-    for nxt in [c for c in promotable(issues) if not motivo_do_freio(c)][:max(0, READY_TARGET - len(todo))]:
+    for nxt in [c for c in promotable(issues) if not motivo_do_freio(c)]:
+        if len(todo) >= READY_TARGET:
+            break
+        lane = lane_para_card(nxt, com_folga, medidas, usados, running_cards, issues)
+        if not lane:
+            continue
         set_state(nxt["id"], STATE_TODO_ID)
         effort = ", ".join(sorted(n["name"] for n in nxt["labels"]["nodes"]
                                   if (n.get("parent") or {}).get("name") in ("esforco", "lane")))
-        comment(nxt["id"], f"[Triagem] Promovido do Backlog para o Todo: pronto ({effort}) e sem bloqueio aberto. "
-                           "Fila abaixo da meta de cards prontos.")
-        panel(f"fila: {nxt['identifier']} promovido do Backlog para o Todo ({effort})")
+        comment(nxt["id"], f"[Triagem] Promovido do Backlog para o Todo: pronto ({effort}) e sem bloqueio aberto; "
+                           f"há lane com folga e vaga ({lane}). Fila abaixo da meta de cards prontos.")
+        panel(f"fila: {nxt['identifier']} promovido do Backlog para o Todo ({effort}; lane {lane})")
         active = [(c, card_files(c)) for c in issues
                   if c["state"]["name"] in ("In Progress", "In Review", "Todo") and c["id"] != nxt["id"]]
         for other, shared in conflicts(nxt, card_files(nxt), active):
@@ -1726,18 +1835,28 @@ def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
             comment(nxt["id"], note)
             panel(f"conflito previsto {nxt['identifier']} × {other['identifier']}: merge {first['identifier']} "
                   f"primeiro, {second['identifier']} rebaseia")
-        diary.append(f"Triagem · {nxt['identifier']} Backlog → Todo (pronto, sem bloqueio)")
+        diary.append(f"Triagem · {nxt['identifier']} Backlog → Todo (pronto, com lane {lane})")
         todo.append(nxt)
-    free = SLOTS - len(running) - len(waiting)  # 1 rodando + 1 esperando por lane ativa (20/10)
+        usados[lane] += 1
+    free = max(0, SLOTS - len(running) - len(waiting))
     pulled = False
     if free > 0 and todo:
-        nxt = todo.pop(0)
-        set_state(nxt["id"], STATE_IN_PROGRESS_ID)
-        comment(nxt["id"], "[Triagem] Lane ociosa: card puxado do Todo para a fila. O dispatcher escolhe a lane pela "
-                           "medida (lanepct-auto, menor %).")
-        diary.append(f"Triagem · {nxt['identifier']} Todo → fila (lane ociosa)")
-        panel(f"fila: {nxt['identifier']} puxado do Todo para In Progress (lane ociosa)")
-        pulled = True
+        nxt = None
+        lane_choice = None
+        for cand in list(todo):
+            lane = lane_para_card(cand, com_folga, medidas, usados, running_cards, issues)
+            if lane:
+                nxt, lane_choice = cand, lane
+                todo.remove(cand)
+                break
+        if nxt is not None and lane_choice is not None:
+            set_state(nxt["id"], STATE_IN_PROGRESS_ID)
+            comment(nxt["id"], f"[Triagem] Lane ociosa: card puxado do Todo para a fila; encaixe {lane_choice}. "
+                               "O dispatcher escolhe a lane pela medida (lanepct-auto).")
+            diary.append(f"Triagem · {nxt['identifier']} Todo → fila (lane {lane_choice})")
+            panel(f"fila: {nxt['identifier']} puxado do Todo para In Progress (lane {lane_choice})")
+            usados[lane_choice] += 1
+            pulled = True
     if free > 0 and not todo and not pulled and time.time() - st.get("painel_fila", 0) > EMPTY_QUEUE_PANEL_S:
         st["painel_fila"] = time.time()
         panel(f"fila vazia: {free} lane(s) ociosa(s) e nenhum card pronto no Todo nem no Backlog "
@@ -1809,10 +1928,10 @@ def medidas_contas() -> dict:
 
 
 def lanes_com_folga() -> set[str]:
-    """Lanes que podem receber card agora: sem limite vigente e com cota abaixo do teto.
+    """Lanes candidatas: sem limite vigente e com alguma folga de cota.
 
-    Usa o teto mais rígido (`alto`) para não abrir vaga em cima de uma conta apertada;
-    sem medida também não conta — o dispatcher não escolheria essa lane.
+    O teto aqui é o mais permissivo (`baixo`); o encaixe fino por esforço é feito
+    em `cota_ok`, card a card. Sem medida também não conta.
     """
     medidas = medidas_contas()
     livres: set[str] = set()
@@ -1831,7 +1950,7 @@ def lanes_com_folga() -> set[str]:
         except (TypeError, ValueError):
             continue
         janela = str(medida[1] if len(medida) > 1 else "")
-        cap = HEADROOM_PCT_LONGA["alto"] if JANELA_LONGA_RE.search(janela) else HEADROOM_PCT["alto"]
+        cap = HEADROOM_PCT_LONGA["baixo"] if JANELA_LONGA_RE.search(janela) else HEADROOM_PCT["baixo"]
         if pct < cap:
             livres.add(lane)
     return livres

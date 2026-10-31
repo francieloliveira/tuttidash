@@ -1164,3 +1164,79 @@ class PrSemCardTest(unittest.TestCase):
         watch.avisar_pr_sem_card(pr, st, agora=10 ** 9)
         self.assertEqual(self.linhas, [])
         self.assertNotIn("sem_revisao", st)
+
+
+class ContextoDeFilaTest(unittest.TestCase):
+    """Encaixe card ↔ lane: o vigia não deve promover card que nenhuma lane consegue rodar."""
+
+    def ci(self, ident="FRA-1", lane="grok", effort="alto", descricao="", comentarios=()):
+        labels = []
+        if lane:
+            labels.append({"name": lane, "parent": {"name": "lane"}})
+        if effort:
+            labels.append({"name": effort, "parent": {"name": "esforco"}})
+        return {"identifier": ident, "title": "x", "description": descricao,
+                "labels": {"nodes": labels},
+                "comments": {"nodes": [{"id": str(i), "body": b} for i, b in enumerate(comentarios)]}}
+
+    def test_contexto_rejeita_duas_lanes(self):
+        labels = [{"name": "grok", "parent": {"name": "lane"}},
+                  {"name": "codex", "parent": {"name": "lane"}},
+                  {"name": "alto", "parent": {"name": "esforco"}}]
+        ctx = watch.contexto_card({"labels": {"nodes": labels}, "description": ""})
+        self.assertTrue(ctx["lane_invalida"])
+        self.assertIsNone(ctx["lane"])
+
+    def test_lane_pedida_precisa_ser_a_lane_com_folga(self):
+        card = self.ci(lane="codex")
+        self.assertIsNone(watch.lane_para_card(
+            card, {"grok"}, {"grok": (11, "créditos")}, {"grok": 0}, set(), [card]))
+
+    def test_escolhe_lane_com_cota_e_vaga(self):
+        card = self.ci(lane="grok")
+        medidas = {"grok": (11, "créditos")}
+        self.assertEqual(watch.lane_para_card(
+            card, {"grok"}, medidas, {"grok": 0}, set(), [card]), "grok")
+        self.assertIsNone(watch.lane_para_card(
+            card, {"grok"}, medidas, {"grok": watch.MAX_PER_LANE}, set(), [card]))
+
+    def test_cota_por_esforco(self):
+        self.assertTrue(watch.cota_ok("grok", "alto", {"grok": (11, "créditos")}))
+        self.assertFalse(watch.cota_ok("grok", "alto", {"grok": (61, "créditos")}))
+        # Janela longa afrouxa o teto do alto para 85.
+        self.assertTrue(watch.cota_ok("grok", "alto", {"grok": (80, "30 dias")}))
+        self.assertFalse(watch.cota_ok("grok", "alto", {"grok": (86, "30 dias")}))
+
+    def test_comentario_recente_segura(self):
+        card = self.ci(comentarios=("x", "não vai para a lane por enquanto"))
+        self.assertTrue(watch.held_by_comments(card))
+        self.assertIsNone(watch.lane_para_card(
+            card, {"grok"}, {"grok": (11, "créditos")}, {"grok": 0}, set(), [card]))
+
+    def test_conflito_com_card_rodando_segura(self):
+        card = self.ci(ident="FRA-2", descricao="app/MeasurementsView.swift")
+        rodando = self.ci(ident="FRA-1", descricao="app/MeasurementsView.swift")
+        self.assertIsNone(watch.lane_para_card(
+            card, {"grok"}, {"grok": (11, "créditos")}, {"grok": 0}, {"FRA-1"}, [card, rodando]))
+
+    def test_keep_nao_promove_card_de_lane_sem_folga(self):
+        from unittest.mock import patch
+        codex = self.ci(ident="FRA-2", lane="codex", descricao="- [ ] feito")
+        codex.update({"id": "id-FRA-2", "state": {"id": "todo", "name": "Backlog", "type": "backlog"},
+                      "priority": 1, "sortOrder": 0,
+                      "inverseRelations": {"nodes": []}})
+        grok = self.ci(ident="FRA-3", lane="grok", descricao="- [ ] feito")
+        grok.update({"id": "id-FRA-3", "state": {"id": "todo", "name": "Backlog", "type": "backlog"},
+                     "priority": 2, "sortOrder": 0,
+                     "inverseRelations": {"nodes": []}})
+        mudou, comentou = [], []
+        with patch.object(watch, "lanes_ativas", return_value={"grok"}), \
+             patch.object(watch, "lanes_com_folga", return_value={"grok"}), \
+             patch.object(watch, "medidas_contas", return_value={"grok": (11, "créditos")}), \
+             patch.object(watch, "busy_lanes", return_value=set()), \
+             patch.object(watch, "set_state", side_effect=lambda i, s: mudou.append((i, s))), \
+             patch.object(watch, "comment", side_effect=lambda i, b: comentou.append((i, b))), \
+             patch.object(watch, "panel", return_value=None):
+            watch.keep_lanes_busy([codex, grok], {}, [])
+        self.assertNotIn("id-FRA-2", {i for i, _ in mudou})
+        self.assertIn(("id-FRA-3", watch.STATE_TODO_ID), mudou)
