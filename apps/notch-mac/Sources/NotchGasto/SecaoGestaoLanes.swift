@@ -65,11 +65,14 @@ final class EstadoGestaoLanes: ObservableObject {
 struct SecaoGestaoLanes: View {
     @StateObject var estado: EstadoGestaoLanes
     var aoSalvar: () -> Void
+    /// Embutido nos Ajustes: o título «Quem cuida das lanes» vem do grupo, não de outro Section.
+    var embutido = false
 
     /// O estado é criado uma vez só: a página se redesenha a cada poucos segundos (FRA-579).
-    init(estado: @autoclosure @escaping () -> EstadoGestaoLanes, aoSalvar: @escaping () -> Void) {
+    init(estado: @autoclosure @escaping () -> EstadoGestaoLanes, aoSalvar: @escaping () -> Void, embutido: Bool = false) {
         _estado = StateObject(wrappedValue: estado())
         self.aoSalvar = aoSalvar
+        self.embutido = embutido
     }
 
     private var cor: Color {
@@ -91,51 +94,67 @@ struct SecaoGestaoLanes: View {
     }
 
     var body: some View {
-        Section {
-            // Quem está cuidando agora, e por quê.
-            HStack(alignment: .top, spacing: DS.e3) {
-                Image(systemName: simbolo).font(.system(size: 26, weight: .medium)).foregroundStyle(cor)
-                    .frame(width: 34).contentTransition(.symbolEffect(.replace))
-                VStack(alignment: .leading, spacing: 4) {
-                    if let q = estado.quem {
-                        Text(q.titulo).font(PV.fonte(15, .semibold)).foregroundStyle(PV.texto)
-                        Text(q.motivo).font(PV.fonte(12.5)).foregroundStyle(PV.texto2).fixedSize(horizontal: false, vertical: true)
-                        ForEach(q.avisos, id: \.self) { a in
-                            Label(a, systemImage: "exclamationmark.triangle").font(PV.fonte(12)).foregroundStyle(PV.ambar)
-                        }
-                    } else {
-                        Esqueleto(altura: 16, largura: 180); Esqueleto(altura: 12, largura: 320)
-                    }
-                }
-                Spacer(minLength: 0)
-                VStack(alignment: .trailing, spacing: 6) {
-                    SeloAtualizado(data: estado.lidoEm, carregando: estado.aplicando)
-                    Button { estado.recarregar() } label: { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.borderless).help(String(localized: "Ler de novo"))
+        Group {
+            if embutido {
+                conteudo
+                rodape
+            } else {
+                Section {
+                    conteudo
+                } header: {
+                    Text(String(localized: "Quem cuida das lanes")).font(.headline).foregroundStyle(.white)
+                } footer: {
+                    rodape
                 }
             }
-            .padding(.vertical, 4)
-            .animation(DS.anim(DS.suave), value: estado.quem)
-
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "Quem decide"))
-                    Text(String(localized: "No automático, o gestor cuida enquanto o uso do Grok Bot está abaixo do limite; depois, o vigia assume."))
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                if estado.aplicando { ProgressView().controlSize(.small) }
-                Picker("", selection: Binding(get: { estado.modo }, set: { estado.escolher($0, aoSalvar: aoSalvar) })) {
-                    ForEach(ModoForcado.allCases) { Text($0.rotulo).tag($0) }
-                }
-                .labelsHidden().pickerStyle(.segmented).fixedSize()
-                .disabled(estado.aplicando)
-            }
-        } header: {
-            Text(String(localized: "Quem cuida das lanes")).font(.headline).foregroundStyle(.white)
-        } footer: {
-            Text(String(localized: "Uma pausa geral feita por você sempre vence esta escolha."))
-                .font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    @ViewBuilder
+    private var conteudo: some View {
+        // Quem está cuidando agora, e por quê.
+        HStack(alignment: .top, spacing: DS.e3) {
+            Image(systemName: simbolo).font(.system(size: 26, weight: .medium)).foregroundStyle(cor)
+                .frame(width: 34).contentTransition(.symbolEffect(.replace))
+            VStack(alignment: .leading, spacing: 4) {
+                if let q = estado.quem {
+                    Text(q.titulo).font(PV.fonte(15, .semibold)).foregroundStyle(PV.texto)
+                    Text(q.motivo).font(PV.fonte(12.5)).foregroundStyle(PV.texto2).fixedSize(horizontal: false, vertical: true)
+                    ForEach(q.avisos, id: \.self) { a in
+                        Label(a, systemImage: "exclamationmark.triangle").font(PV.fonte(12)).foregroundStyle(PV.ambar)
+                    }
+                } else {
+                    Esqueleto(altura: 16, largura: 180); Esqueleto(altura: 12, largura: 320)
+                }
+            }
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: 6) {
+                SeloAtualizado(data: estado.lidoEm, carregando: estado.aplicando)
+                Button { estado.recarregar() } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless).help(String(localized: "Ler de novo"))
+            }
+        }
+        .padding(.vertical, 4)
+        .animation(DS.anim(DS.suave), value: estado.quem)
+
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "Quem decide"))
+                Text(String(localized: "No automático, o gestor cuida enquanto o uso do Grok Bot está abaixo do limite; depois, o vigia assume."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            if estado.aplicando { ProgressView().controlSize(.small) }
+            Picker("", selection: Binding(get: { estado.modo }, set: { estado.escolher($0, aoSalvar: aoSalvar) })) {
+                ForEach(ModoForcado.allCases) { Text($0.rotulo).tag($0) }
+            }
+            .labelsHidden().pickerStyle(.segmented).fixedSize()
+            .disabled(estado.aplicando)
+        }
+    }
+
+    private var rodape: some View {
+        Text(String(localized: "Uma pausa geral feita por você sempre vence esta escolha."))
+            .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
     }
 }

@@ -249,34 +249,54 @@ struct SecaoProjetos: View {
     /// @StateObject: a página de Ajustes se redesenha a cada poucos segundos e não pode
     /// recriar o estado (perdia as listas e o que estava sendo digitado).
     @StateObject var estado: EstadoProjetos
+    /// Embutido nos Ajustes: o título vem do grupo, não de outro Section.
+    var embutido = false
 
-    init(estado: @autoclosure @escaping () -> EstadoProjetos) {
+    init(estado: @autoclosure @escaping () -> EstadoProjetos, embutido: Bool = false) {
         _estado = StateObject(wrappedValue: estado())
+        self.embutido = embutido
     }
 
     var body: some View {
-        Section {
-            if let e = estado.erro {
-                Label(e, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
-            } else if let a = estado.aviso {
-                Label(a, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+        Group {
+            if embutido {
+                conteudo
+                rodape
+            } else {
+                Section {
+                    conteudo
+                } footer: {
+                    rodape
+                }
             }
-            if estado.linhas.isEmpty {
-                Text(String(localized: "Nenhum projeto ainda. Adicione o primeiro: escolha o projeto do Linear e o repositório do GitHub em que as lanes vão trabalhar."))
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            ForEach($estado.linhas) { $l in
-                LinhaProjeto(linha: $l, estado: estado)
-            }
-            Button { estado.adicionar() } label: {
-                Label(String(localized: "Adicionar projeto"), systemImage: "plus")
-            }
-            .disabled(estado.temNova)
-        } footer: {
-            Text(String(localized: "As lanes pegam cards só de projetos ligados. Com mais de um ligado, vale o principal; os outros esperam a vez."))
-                .font(.caption).foregroundStyle(.secondary)
         }
         .task { await estado.carregarListas() }
+    }
+
+    @ViewBuilder
+    private var conteudo: some View {
+        if let e = estado.erro {
+            Label(e, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
+        } else if let a = estado.aviso {
+            Label(a, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+        }
+        if estado.linhas.isEmpty {
+            Text(String(localized: "Nenhum projeto ainda. Adicione o primeiro: escolha o projeto do Linear e o repositório do GitHub em que as lanes vão trabalhar."))
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        ForEach($estado.linhas) { $l in
+            LinhaProjeto(linha: $l, estado: estado)
+        }
+        Button { estado.adicionar() } label: {
+            Label(String(localized: "Adicionar projeto"), systemImage: "plus")
+        }
+        .disabled(estado.temNova)
+    }
+
+    private var rodape: some View {
+        Text(String(localized: "As lanes pegam cards só de projetos ligados. Com mais de um ligado, vale o principal; os outros esperam a vez."))
+            .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

@@ -69,11 +69,14 @@ final class EstadoLanesHabilitadas: ObservableObject {
 
 struct SecaoLanesHabilitadas: View {
     @StateObject private var estado: EstadoLanesHabilitadas
+    /// Embutido nos Ajustes: o título «Lanes ligadas» vem do grupo, não de outro Section.
+    var embutido = false
 
-    init() {
+    init(embutido: Bool = false) {
         let estado = EstadoLanesHabilitadas()
         estado.aoMudar = { NavegacaoPainel.compartilhada.aoSalvar() }
         _estado = StateObject(wrappedValue: estado)
+        self.embutido = embutido
     }
 
     /// Só quem pega card. SuperGrok (via Cursor) fica na seção de baixo, sem interruptor,
@@ -82,56 +85,78 @@ struct SecaoLanesHabilitadas: View {
     private var contasDeUso: [Agentes.Def] { Agentes.todos.filter(ClarezaCota.contaDeUso) }
 
     var body: some View {
-        Section {
-            if !estado.dispatcherExiste {
-                // FRA-421: estado vazio claro quando não há dispatcher.
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(String(localized: "Dispatcher não encontrado")).font(.headline).foregroundStyle(.white)
-                    Text(String(localized: "O TuttiDash precisa do dispatcher para gerenciar lanes. Instale o dispatcher e tente novamente."))
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+        Group {
+            if embutido {
+                conteudo
+                if !contasDeUso.isEmpty {
+                    let nomes = contasDeUso.map(\.nome)
+                    SubtituloAjuste(texto: ClarezaCota.tituloSecaoUso(nomes: nomes),
+                                    ajuda: ClarezaCota.ajudaSecaoUso(nomes: nomes))
+                    linhasContas
                 }
-                .padding(.vertical, 8)
             } else {
-                ForEach(lanesQuePegamCard, id: \.nome) { lane in
-                    linhaToggle(lane)
+                Section {
+                    conteudo
+                } header: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(localized: "Lanes ligadas")).font(.headline).foregroundStyle(.white)
+                        Text(ClarezaCota.ajudaLanesLigadas)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                if let e = estado.erro { Text(e).font(.caption).foregroundStyle(.red) }
-            }
-        } header: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: "Lanes ligadas")).font(.headline).foregroundStyle(.white)
-                Text(ClarezaCota.ajudaLanesLigadas)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+
+                if !contasDeUso.isEmpty {
+                    let nomes = contasDeUso.map(\.nome)
+                    Section {
+                        linhasContas
+                    } header: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ClarezaCota.tituloSecaoUso(nomes: nomes)).font(.headline).foregroundStyle(.white)
+                            Text(ClarezaCota.ajudaSecaoUso(nomes: nomes))
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
             }
         }
         .onAppear { estado.recarregar() }
+    }
 
-        if !contasDeUso.isEmpty {
-            let nomes = contasDeUso.map(\.nome)
-            Section {
-                ForEach(contasDeUso, id: \.nome) { conta in
-                    let textos = ClarezaCota.linhaLane(conta)
-                    HStack(alignment: .center, spacing: 8) {
-                        rotulo(textos, ligada: nil)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(ClarezaCota.seloNaoELane)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(PV.azul)
-                            .fixedSize()
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(textos.titulo). \(textos.detalhe ?? "") \(ClarezaCota.seloNaoELane)")
-                }
-            } header: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ClarezaCota.tituloSecaoUso(nomes: nomes)).font(.headline).foregroundStyle(.white)
-                    Text(ClarezaCota.ajudaSecaoUso(nomes: nomes))
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+    @ViewBuilder
+    private var conteudo: some View {
+        if !estado.dispatcherExiste {
+            // FRA-421: estado vazio claro quando não há dispatcher.
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "Dispatcher não encontrado")).font(.headline).foregroundStyle(.white)
+                Text(String(localized: "O TuttiDash precisa do dispatcher para gerenciar lanes. Instale o dispatcher e tente novamente."))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.vertical, 8)
+        } else {
+            ForEach(lanesQuePegamCard, id: \.nome) { lane in
+                linhaToggle(lane)
+            }
+            if let e = estado.erro { Text(e).font(.caption).foregroundStyle(.red) }
+        }
+    }
+
+    @ViewBuilder
+    private var linhasContas: some View {
+        ForEach(contasDeUso, id: \.nome) { conta in
+            let textos = ClarezaCota.linhaLane(conta)
+            HStack(alignment: .center, spacing: 8) {
+                rotulo(textos, ligada: nil)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(ClarezaCota.seloNaoELane)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(PV.azul)
+                    .fixedSize()
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(textos.titulo). \(textos.detalhe ?? "") \(ClarezaCota.seloNaoELane)")
         }
     }
 

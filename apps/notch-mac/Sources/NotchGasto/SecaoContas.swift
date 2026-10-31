@@ -97,34 +97,54 @@ final class EstadoContas: ObservableObject {
 struct SecaoContas: View {
     @StateObject private var estado: EstadoContas
     private var aoSalvar: () -> Void
+    /// Embutido nos Ajustes: o título «Contas das lanes» vem do grupo, não de outro Section.
+    var embutido = false
 
-    init(modelo: ModeloAjustes, aoSalvar: @escaping () -> Void) {
+    init(modelo: ModeloAjustes, aoSalvar: @escaping () -> Void, embutido: Bool = false) {
         let estado = EstadoContas(modelo: modelo)
         estado.aoSalvar = aoSalvar
         _estado = StateObject(wrappedValue: estado)
         self.aoSalvar = aoSalvar
+        self.embutido = embutido
     }
 
     var body: some View {
-        Section {
-            if let e = estado.erro {
-                Text(e).font(.caption).foregroundStyle(.red)
+        Group {
+            if embutido {
+                conteudo
+                rodape
+            } else {
+                Section {
+                    conteudo
+                } header: {
+                    Text(String(localized: "Contas acompanhadas"))
+                } footer: {
+                    rodape
+                }
             }
-            ForEach($estado.contas) { $c in
-                LinhaConta(conta: $c, estado: estado)
-            }
-            Button {
-                estado.adicionar()
-            } label: {
-                Label(String(localized: "Adicionar conta"), systemImage: "plus")
-            }
-        } header: {
-            Text(String(localized: "Contas acompanhadas"))
-        } footer: {
-            Text(String(localized: "Estas contas entram em limites, gasto e retomadas. Só tipos que o app já mede. Provedor novo entra pelo catálogo agents.d, não por um nome livre."))
-                .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear { estado.aoSalvar = aoSalvar }
+    }
+
+    @ViewBuilder
+    private var conteudo: some View {
+        if let e = estado.erro {
+            Text(e).font(.caption).foregroundStyle(.red)
+        }
+        ForEach($estado.contas) { $c in
+            LinhaConta(conta: $c, estado: estado)
+        }
+        Button {
+            estado.adicionar()
+        } label: {
+            Label(String(localized: "Adicionar conta"), systemImage: "plus")
+        }
+    }
+
+    private var rodape: some View {
+        Text(String(localized: "Estas contas entram em limites, gasto e retomadas. Só tipos que o app já mede. Provedor novo entra pelo catálogo agents.d, não por um nome livre."))
+            .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

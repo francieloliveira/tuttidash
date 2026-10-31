@@ -72,11 +72,14 @@ final class EstadoAgendas: ObservableObject {
 
 struct SecaoAgendas: View {
     @StateObject var estado: EstadoAgendas
+    /// Embutido nos Ajustes: o título vem do grupo, não de outro Section.
+    var embutido = false
     @State private var confirmar: Trabalho?
 
     /// O estado é criado uma vez só: a página se redesenha a cada poucos segundos (FRA-579).
-    init(estado: @autoclosure @escaping () -> EstadoAgendas) {
+    init(estado: @autoclosure @escaping () -> EstadoAgendas, embutido: Bool = false) {
         _estado = StateObject(wrappedValue: estado())
+        self.embutido = embutido
     }
 
     private func texto(_ e: EstadoTrabalho?) -> (String, Color) {
@@ -106,38 +109,47 @@ struct SecaoAgendas: View {
         }
     }
 
-    var body: some View {
-        Section {
-            ForEach(estado.gerenciador.trabalhos) { t in
-                HStack(alignment: .center, spacing: DS.e3) {
-                    IconeCartao(simbolo: t.simbolo, cor: corStatus(estado.status[t.label]),
-                                fundo: corStatus(estado.status[t.label]).opacity(0.14), tamanho: 32, tamanhoIcone: 15)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 8) {
-                            Text(t.nomeCurto).font(PV.fonte(13.5, .semibold))
-                            HStack(spacing: 5) {
-                                Circle().fill(corStatus(estado.status[t.label])).frame(width: 6, height: 6)
-                                Text(estado.status[t.label]?.rotulo ?? String(localized: "lendo…"))
-                            }
-                            .font(PV.fonte(11)).foregroundStyle(corStatus(estado.status[t.label]))
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Capsule().fill(corStatus(estado.status[t.label]).opacity(0.12)))
+    @ViewBuilder
+    private var conteudo: some View {
+        ForEach(estado.gerenciador.trabalhos) { t in
+            HStack(alignment: .center, spacing: DS.e3) {
+                IconeCartao(simbolo: t.simbolo, cor: corStatus(estado.status[t.label]),
+                            fundo: corStatus(estado.status[t.label]).opacity(0.14), tamanho: 32, tamanhoIcone: 15)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(t.nomeCurto).font(PV.fonte(13.5, .semibold))
+                        HStack(spacing: 5) {
+                            Circle().fill(corStatus(estado.status[t.label])).frame(width: 6, height: 6)
+                            Text(estado.status[t.label]?.rotulo ?? String(localized: "lendo…"))
                         }
-                        Text(t.ajuda).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(PV.fonte(11)).foregroundStyle(corStatus(estado.status[t.label]))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Capsule().fill(corStatus(estado.status[t.label]).opacity(0.12)))
                     }
-                    Spacer(minLength: 8)
-                    if estado.trabalhando.contains(t.label) { ProgressView().controlSize(.small) }
-                    Toggle("", isOn: chave(t)).labelsHidden().toggleStyle(.switch)
-                        .disabled(estado.trabalhando.contains(t.label))
-                        .accessibilityLabel(t.nomeCurto)
+                    Text(t.ajuda).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.vertical, 3)
-                .animation(DS.anim(DS.suave), value: estado.status[t.label])
+                Spacer(minLength: 8)
+                if estado.trabalhando.contains(t.label) { ProgressView().controlSize(.small) }
+                Toggle("", isOn: chave(t)).labelsHidden().toggleStyle(.switch)
+                    .disabled(estado.trabalhando.contains(t.label))
+                    .accessibilityLabel(t.nomeCurto)
             }
-            if estado.status.values.contains(.precisaAprovacao) {
-                Button(String(localized: "Abrir Itens de Login nos Ajustes do Sistema")) {
-                    RegistroSMAppService.abrirItensDeLogin()
-                }
+            .padding(.vertical, 3)
+            .animation(DS.anim(DS.suave), value: estado.status[t.label])
+        }
+        if estado.status.values.contains(.precisaAprovacao) {
+            Button(String(localized: "Abrir Itens de Login nos Ajustes do Sistema")) {
+                RegistroSMAppService.abrirItensDeLogin()
+            }
+        }
+    }
+
+    var body: some View {
+        Group {
+            if embutido {
+                conteudo
+            } else {
+                Section { conteudo }
             }
         }
         .confirmationDialog(String(localized: "Desligar o dispatcher?"),

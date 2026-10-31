@@ -83,7 +83,10 @@ struct BarraLateralPainel: View {
             }
             .padding(.top, 24)
             Rectangle().fill(PV.divisor).frame(height: 1).padding(.horizontal, 14).padding(.vertical, 14)
-            ItemNavegacao(simbolo: "gearshape", texto: "Ajustes", selecionado: pagina == .ajustes, ns: selecao) { ir(.ajustes) }
+            // Com as sub-seções abertas, «Ajustes» vira o cabeçalho do grupo: o destaque forte
+            // fica só na sub-seção ativa, para não parecer que há dois itens selecionados.
+            ItemNavegacao(simbolo: "gearshape", texto: "Ajustes", selecionado: pagina == .ajustes,
+                          destaque: pagina != .ajustes, chevron: true, ns: selecao) { ir(.ajustes) }
             if pagina == .ajustes {
                 VStack(spacing: 1) {
                     ForEach(secoes, id: \.0) { id, nome, simbolo in
@@ -158,6 +161,10 @@ struct ItemNavegacao: View {
     var simbolo: String
     var texto: String
     var selecionado: Bool
+    /// `false` no «Ajustes» com as sub-seções abertas: o destaque forte fica na sub-seção ativa.
+    var destaque = true
+    /// Seta de grupo aberto/fechado (só no item «Ajustes»).
+    var chevron = false
     var ns: Namespace.ID? = nil
     var acao: () -> Void
     @State private var hover = false
@@ -173,11 +180,17 @@ struct ItemNavegacao: View {
                     .font(PV.fonte(14.5, selecionado ? .semibold : .regular))
                     .foregroundStyle(selecionado ? Color.white : PV.icone)
                 Spacer(minLength: 0)
+                if chevron {
+                    Image(systemName: selecionado ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(PV.mudo)
+                        .frame(width: 12)
+                }
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
             .background {
-                if selecionado {
+                if selecionado && destaque {
                     let fundo = RoundedRectangle(cornerRadius: 8).fill(PV.navSelecao)
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(PV.navSelecaoBorda, lineWidth: 1))
                         .overlay(alignment: .leading) {
@@ -197,20 +210,31 @@ struct ItemNavegacao: View {
 }
 
 /// Cabeçalho: título da página, busca (ainda sem função), notificações (ainda sem central) e conta.
+/// Nos Ajustes, o título e a busca acompanham a sub-seção aberta (FRA-531): assim a página
+/// não repete um segundo cabeçalho dentro do formulário.
 struct CabecalhoPainel: View {
     var pagina: PaginaPainel
     @ObservedObject var modelo: ModeloNotch
     @ObservedObject private var busca = BuscaPainel.compartilhada
+    @ObservedObject private var nav = NavegacaoPainel.compartilhada
+
+    private var secaoAjustes: SecaoAjustes? {
+        guard pagina == .ajustes else { return nil }
+        return CatalogoAjustes.secoes().first { $0.id == nav.secao }
+    }
 
     var body: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(pagina.titulo).font(PV.fonte(22, .semibold))
-                Text(pagina.subtitulo).font(PV.fonte(13)).foregroundStyle(PV.mudo)
+                Text(secaoAjustes?.nome ?? pagina.titulo).font(PV.fonte(22, .semibold))
+                Text(secaoAjustes?.subtitulo ?? pagina.subtitulo).font(PV.fonte(13)).foregroundStyle(PV.mudo)
+                    .lineLimit(1)
             }
             .padding(.leading, 5).padding(.top, 2)
             Spacer(minLength: 16)
-            if pagina != .dashboard {
+            if pagina == .ajustes {
+                CampoBuscaAjustes(texto: $nav.busca, largura: 300, altura: 36)
+            } else if pagina != .dashboard {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(PV.icone)
                     TextField("Buscar lanes, builds, entregas...", text: $busca.texto)
