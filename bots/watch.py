@@ -129,6 +129,10 @@ MAX_PARALLEL = _cfg("watch.max_tarefas", 2)            # até 2 tarefas ao mesmo
 MAX_PARALLEL_POR_AGENTE = _cfg("watch.max_tarefas_por_agente", {})  # ex.: {"codex": 1}
 MAX_PER_LANE = _cfg("watch.max_tarefas_por_lane", 2)   # teto por lane ativa: 1 RUN + (N-1) WAIT
 READY_TARGET = _cfg("watch.prontos_no_todo", 2)        # 2 cards prontos esperando no Todo
+# Mesma régua do dispatcher: lane só conta para vaga se a cota atual tem folga.
+HEADROOM_PCT = {"baixo": 90, "medio": 80, "alto": 60}
+HEADROOM_PCT_LONGA = {"baixo": 95, "medio": 90, "alto": 85}
+JANELA_LONGA_RE = re.compile(r"\d+\s*dias?\b|semana|m[êe]s\b|mensal", re.I)
 STOPS_TO_CALL = _cfg("watch.paradas_para_chamar", 3)   # chama o dono na 3ª parada pelo mesmo motivo
 # Card onde a triagem pede cards novos quando o Todo esvazia; vazio = não pede.
 TRIAGEM_PEDIDOS_CARD = _cfg("watch.card_pedidos_triagem", "")
@@ -1685,15 +1689,18 @@ def lanes_ativas() -> set[str]:
 def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     queue = [c for c in issues if c["state"]["id"] == STATE_IN_PROGRESS_ID and is_ready(c)]
     ativas = lanes_ativas()
+    # Vaga é por lane com folga de cota, não por lane só habilitada: Claude/Codex
+    # no limite e OpenCode sem medida não podem segurar 2 cards cada no Todo.
+    com_folga = lanes_com_folga()
     running = busy_lanes() & ativas
     running_cards = {json.loads((LANES_DIR / f"lane-{l}.json").read_text()).get("card") for l in running}
     waiting = [c for c in queue if c["identifier"] not in running_cards]
     todo = sorted([c for c in issues if c["state"]["name"] == "Todo" and is_ready(c)],
                   key=lambda c: (c.get("priority") or 5, c.get("sortOrder") or 0))
-    # Teto por lane ativa: MAX_PER_LANE (1 RUN + (N-1) WAIT) por lane.
-    SLOTS = MAX_PER_LANE * len(ativas)
+    # Teto por lane com folga: MAX_PER_LANE (1 RUN + (N-1) WAIT) por lane.
+    SLOTS = MAX_PER_LANE * len(com_folga)
     free = max(0, SLOTS - len(running) - len(waiting))
-    READY_TARGET = max(_cfg("watch.prontos_no_todo", 2), SLOTS)
+    READY_TARGET = max(_cfg("watch.prontos_no_todo", 2), SLOTS) if com_folga else 0
     # Contramedida 11/10: fila vazia por 11 h porque ninguém promovia do Backlog. Card com
     # esforço e bloqueios resolvidos sobe sozinho para o Todo, até a meta de prontos.
     # O freio só decide o que sobe; o card que ele segura aparece no log com o motivo
@@ -1791,9 +1798,41 @@ def fornecedor(agente: str) -> str:
 
 def medidas_contas() -> dict:
     try:
-        return dict(json.loads(MEDIDA_CACHE.read_text()).get("m") or {})
+        dados = json.loads(MEDIDA_CACHE.read_text())
+        if time.time() - dados.get("at", 0) > 300:  # mesma validade do dispatcher
+            return {}
+        return dict(dados.get("m") or {})
     except (OSError, ValueError, AttributeError):
         return {}
+
+
+def lanes_com_folga() -> set[str]:
+    """Lanes que podem receber card agora: sem limite vigente e com cota abaixo do teto.
+
+    Usa o teto mais rígido (`alto`) para não abrir vaga em cima de uma conta apertada;
+    sem medida também não conta — o dispatcher não escolheria essa lane.
+    """
+    medidas = medidas_contas()
+    livres: set[str] = set()
+    for lane in lanes_ativas():
+        limite = LANES_DIR / f"limite-{lane}.json"
+        try:
+            if float(json.loads(limite.read_text()).get("until", 0)) > time.time():
+                continue
+        except (OSError, ValueError, AttributeError):
+            pass
+        medida = medidas.get(lane)
+        if not medida or medida[0] is None:
+            continue
+        try:
+            pct = float(medida[0])
+        except (TypeError, ValueError):
+            continue
+        janela = str(medida[1] if len(medida) > 1 else "")
+        cap = HEADROOM_PCT_LONGA["alto"] if JANELA_LONGA_RE.search(janela) else HEADROOM_PCT["alto"]
+        if pct < cap:
+            livres.add(lane)
+    return livres
 
 
 def cli_instalado(cli: str) -> str | None:
