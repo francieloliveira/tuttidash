@@ -469,6 +469,71 @@ class PushSoParaOCadastro(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("insteadOf", d.motivo_para_nao_enviar(self.wt))
 
+    def test_comentario_no_valor_sem_aspas_nao_esconde_o_prefixo(self):
+        """`#` e `;` comentam até o fim da linha. O git vê o prefixo; o guard também."""
+        self.assertEqual(d._valor_config("https://github.com#x"), "https://github.com")
+        self.assertEqual(d._valor_config("https://github.co;m"), "https://github.co")
+        self.assertEqual(d._valor_config('"https://github.com#x"'), "https://github.com#x")
+        cfg = self.wt / ".git" / "config"
+        original = cfg.read_text(encoding="utf-8")
+        casos = (
+            ("insteadOf", "https://github.com#x", "insteadOf"),
+            ("pushInsteadOf", "https://github.co;m", "pushInsteadOf"),
+        )
+        for chave, valor, trecho in casos:
+            with self.subTest(valor=valor):
+                for bare in (self.atacante, self.esperado):
+                    subprocess.run(
+                        ["git", "--git-dir", str(bare), "update-ref", "-d", "refs/heads/fra-1"],
+                        check=False, capture_output=True)
+                cfg.write_text(
+                    original + f'\n[url "{self.atacante}"]\n\t{chave} = {valor}\n',
+                    encoding="utf-8")
+                self.assertIn(trecho, d.motivo_para_nao_enviar(self.wt))
+                self.assertIn(trecho, d.enviar_branch(self.wt, "fra-1"))
+                self.assertFalse(self._tem(self.atacante, "fra-1"))
+                self.assertFalse(self._tem(self.esperado, "fra-1"))
+
+    def test_fechamento_nao_roda_helper_nem_fsmonitor(self):
+        """O guard recusa antes do git do fechamento, do resumo e do fail."""
+        marcador = self.tmp / "fechamento-rodou"
+        script = self._script("fechamento.sh", marcador)
+        self.git("config", "credential.helper", f"!/bin/sh {script}", cwd=self.wt)
+        self.git("config", "core.fsmonitor", str(script), cwd=self.wt)
+        marcador.unlink(missing_ok=True)
+        d.git_summary(self.wt)
+        self.assertFalse(marcador.exists(), "git_summary rodou o script do config")
+
+        antigo = (d.STATE_DIR, d.linear, d.LEDGER_FILE)
+        estado = self.tmp / "state"
+        estado.mkdir()
+        d.STATE_DIR = estado
+        d.LEDGER_FILE = estado / "ledger.jsonl"
+        d.linear = lambda *_a, **_k: {}
+        self.addCleanup(lambda: (
+            setattr(d, "STATE_DIR", antigo[0]),
+            setattr(d, "linear", antigo[1]),
+            setattr(d, "LEDGER_FILE", antigo[2]),
+        ))
+        st = {
+            "lane": "grok", "card": "FRA-594", "issue_id": "id-594",
+            "log": str(self.tmp / "lane.log"), "worktree": str(self.wt),
+            "effort": "alto", "branch": "fra-1", "base": "HEAD",
+            "started": 1_700_000_000, "agora": 1_700_000_060,
+        }
+        self.assertIn("lane:falhou", d.fail(st, "nada foi enviado: o config local tem `credential.helper`"))
+        self.assertFalse(marcador.exists(), "o fail rodou o script do config")
+        lane = self.wt / ".lane"
+        lane.mkdir(exist_ok=True)
+        (lane / "exit_code").write_text("0", encoding="utf-8")
+        (lane / "result.json").write_text(
+            json.dumps({"status": "done", "summary": "x"}), encoding="utf-8")
+        saida = d.finalize(dict(st, log=str(self.tmp / "lane-fecha.log")))
+        self.assertTrue("credential.helper" in saida or "fsmonitor" in saida, saida)
+        self.assertFalse(marcador.exists(), "o finalize rodou o script do config")
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+        self.assertFalse(self._tem(self.esperado, "fra-1"))
+
     def test_pushurl_no_worktree_ligado_e_recusado(self):
         lane = self.tmp / "lane"
         self.git("worktree", "add", "-q", "-b", "fra-wt", str(lane), "HEAD", cwd=self.wt)

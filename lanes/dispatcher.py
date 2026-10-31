@@ -1140,10 +1140,48 @@ _PREFIXOS_GITHUB = (
 
 
 def _valor_config(bruto: str) -> str:
-    v = bruto.strip()
-    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
-        v = v[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-    return v.strip()
+    """Valor como o git lê a linha.
+
+    Fora de aspas, `#` e `;` comentam até o fim: `https://github.com#x` é
+    `https://github.com`. Dentro de aspas o caractere fica no valor.
+    """
+    i = 0
+    n = len(bruto)
+    while i < n and bruto[i] in " \t":
+        i += 1
+    partes: list[str] = []
+    aspas = False
+    while i < n:
+        c = bruto[i]
+        if aspas:
+            if c == "\\" and i + 1 < n:
+                nxt = bruto[i + 1]
+                if nxt == "n":
+                    partes.append("\n")
+                elif nxt == "t":
+                    partes.append("\t")
+                elif nxt == "b":
+                    partes.append("\b")
+                else:
+                    partes.append(nxt)
+                i += 2
+                continue
+            if c == '"':
+                aspas = False
+                i += 1
+                continue
+            partes.append(c)
+            i += 1
+            continue
+        if c in "#;":
+            break
+        if c == '"':
+            aspas = True
+            i += 1
+            continue
+        partes.append(c)
+        i += 1
+    return "".join(partes).rstrip(" \t")
 
 
 def _parse_gitconfig(texto: str) -> list[tuple[str, str, str, str]]:
@@ -1642,7 +1680,13 @@ def discard_stale_proof(lane_dir: Path, ident: str, round_started: float) -> boo
 # --- Acompanhamento e fechamento --------------------------------------------
 def git_summary(wt: Path, base: Optional[str] = None) -> dict:
     """`files`: tudo o que a branch muda em relação à main (vai no PR).
-    `new` e `lane_files`: só o que a lane fez desde `base` (sem base, estado antigo, vale a main)."""
+    `new` e `lane_files`: só o que a lane fez desde `base` (sem base, estado antigo, vale a main).
+
+    Não chama git se o config local ou de worktree for recusado: o fetch e o
+    `status` rodariam `credential.helper` e `core.fsmonitor`."""
+    motivo, _origem = diagnostico_config(wt)
+    if motivo:
+        return {"ahead": 0, "new": 0, "files": [], "lane_files": [], "dirty": [], "sha": ""}
     sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
     ahead = int(sh(["git", "rev-list", "--count", "origin/main..HEAD"], cwd=wt) or 0)
     files = [f for f in sh(["git", "diff", "--name-only", "origin/main...HEAD"], cwd=wt).splitlines() if f]
@@ -1922,8 +1966,14 @@ def resume_line(st: dict) -> str:
 
 def pending_lines(st: dict) -> str:
     """FRA-269: trabalho pronto não fica invisível. Lista o que está sem commit e os
-    commits da lane ainda não enviados."""
+    commits da lane ainda não enviados.
+
+    O `fail` da recusa passa por aqui. Sem o config aceito, `git status` rodaria
+    o `core.fsmonitor` que o guard acabou de recusar."""
     wt = Path(st["worktree"])
+    motivo, _origem = diagnostico_config(wt)
+    if motivo:
+        return ""
     try:
         dirty = [l for l in sh(["git", "status", "--porcelain"], cwd=wt, check=False).splitlines() if l.strip()]
         base = st.get("base")
@@ -2732,6 +2782,10 @@ def proof_failures(wt: Path) -> str:
 def finalize(st: dict) -> Optional[str]:
     """Fecha o card. None = ainda não (a prova do dispatcher está rodando)."""
     wt = Path(st["worktree"])
+    # A recusa do config antecede o primeiro git do fechamento (fetch e status).
+    motivo_cfg, _origem = diagnostico_config(wt)
+    if motivo_cfg:
+        return fail(st, f"nada foi enviado: {motivo_cfg}", causa="push-barrado")
     code = (wt / ".lane" / "exit_code").read_text().strip()
     res = read_result(wt)
     g = git_summary(wt, st.get("base"))
