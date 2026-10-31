@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import permissao  # noqa: E402  glob de Bash do CLI (um só lugar)
 import lanes_window  # noqa: E402  janela única das lanes
 
 # Catálogo de agentes: `catalogo.py` lê os manifests em `agents.d/` (mesmos que o
@@ -125,8 +126,8 @@ MODO_PERMISSAO = "dontAsk"
 # ~/.grok. O deny tapa ssh, gh, transcentia e o binário security. Não nega
 # ~/.grok/auth.json: o processo precisa dele para autenticar. O token fica
 # fora do agente pelo deny Read/Grep/Edit/Write de **/.grok/** (o `~` numa
-# regra de permissão casa o caractere, não a home) e pelos comandos sort,
-# git commit -F/--file e git diff --no-index.
+# regra de permissão casa o caractere, não a home), pelo glob que pega
+# -F, --file e --no-index em qualquer posição, e por sort.
 PERFIL_SANDBOX = "lane"
 PERFIL_SANDBOX_TOML = """\
 [profiles.lane]
@@ -748,35 +749,10 @@ def _sem_involucro(segmento: str) -> str:
     return " ".join(tokens[i:])
 
 
-def _bash_casa(padrao: str, comando: str) -> bool:
-    """Mesma regra de prefixo do CLI.
-
-    `Bash(foo:*)` é prefixo cru, sem fronteira: `git diff:*` casa `git difftool`.
-    `Bash(foo *)` exige o espaço, ou o comando igual a `foo`: `git diff *` casa
-    `git diff` e `git diff --stat`, não `git difftool`. Um token só no `:*`
-    também casa o basename (`/usr/bin/security` ≡ `security`)."""
-    cmd = comando.strip()
-    if not cmd:
-        return False
-    if padrao.endswith(":*"):
-        prefixo = padrao[:-2]
-        if cmd.startswith(prefixo):
-            return True
-        if " " not in prefixo.strip():
-            primeiro = cmd.split()[0]
-            if primeiro.rsplit("/", 1)[-1] == prefixo.strip():
-                return True
-        return False
-    if padrao.endswith(" *"):
-        prefixo = padrao[:-2]
-        return cmd == prefixo or cmd.startswith(prefixo + " ") or cmd.startswith(prefixo + "\t")
-    return cmd.startswith(padrao) and (len(cmd) == len(padrao) or cmd[len(padrao)] in " \t")
-
-
 def _regra_bash_casa(regras: list, comando: str) -> bool:
     for regra in regras:
         miolo = _miolo(regra, "Bash")
-        if miolo and _bash_casa(miolo, comando):
+        if miolo and permissao.bash_casa(miolo, comando):
             return True
     return False
 
@@ -794,15 +770,26 @@ def _so_leitura(comando: str) -> bool:
 
 
 def _toca_caminho_negado(comando: str, deny: list) -> bool:
+    """O deny de Read/Edit vale para o caminho que o shell toca.
+
+    Token que começa com `-` não é caminho. `--file=~/.grok/auth.json` carrega
+    o caminho depois do `=`. `-F~/.grok/auth.json` não tem `=`: o glob
+    `Bash(git commit *-F*)` é quem nega essa forma."""
     try:
         tokens = shlex.split(comando)
     except ValueError:
         tokens = comando.split()
     for token in tokens[1:]:
-        if token.startswith("-"):
-            continue
-        if _caminho_negado(token, deny, "Read") or _caminho_negado(token, deny, "Edit"):
-            return True
+        candidatos = []
+        if "=" in token:
+            valor = token.split("=", 1)[1]
+            if valor:
+                candidatos.append(valor)
+        elif not token.startswith("-"):
+            candidatos.append(token)
+        for cand in candidatos:
+            if _caminho_negado(cand, deny, "Read") or _caminho_negado(cand, deny, "Edit"):
+                return True
     return False
 
 

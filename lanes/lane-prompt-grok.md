@@ -18,5 +18,5 @@ card vai para `lane:falhou`. Siga à risca:
   `workflow`, `ask_user_question`, `enter_plan_mode`, `send_feedback`, e as de
   imagem/vídeo. Você não tem MCP nem web nesta lane.
 - Se precisar de algo fora disso para cumprir o card, **não tente**: grave
-  `.lane/result.json` com `needs_franciel` explicando o que faltou.
+  `.lane/result.json` com `needs_dono` explicando o que faltou.
 - **Prova:** não rode `safe_xcodebuild.sh` (E5, regra comum a todas as lanes): a prova é do dispatcher. Liste as suítes em `tests` no `result.json`.

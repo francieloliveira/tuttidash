@@ -5,6 +5,7 @@ Backup antes de mexer: o install abaixo guarda `.bak` automático.
 
 ```
 dispatcher.py    dispatcher das lanes (60 s, launchd com.transcentia.lanes.dispatcher)
+permissao.py     glob de Bash do CLI (o mesmo que o allow/deny usa)
 run_lane.sh      runner de uma lane dentro da sessão tmux (lê .lane/agent_cmd)
 lanes_window.py  janela única tmux 'lanes' (um painel por lane habilitada)
 lanes_ctl.py     controles da janela
@@ -16,7 +17,7 @@ test_lanes.py    testes offline (sem Linear, sem rede): python3 lanes/test_lanes
 
 ```bash
 cd ~/Developer/tuttidash
-for f in dispatcher.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py claude-settings.json; do
+for f in dispatcher.py permissao.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py claude-settings.json; do
   cp ~/.transcentia/lanes/$f /tmp/lanes-$f.bak
   cp lanes/$f ~/.transcentia/lanes/$f
 done
@@ -100,9 +101,12 @@ ferramentas (`Read`/`Edit`/`Write`/`Grep` em `./**`). `python3`, `cat`,
 absoluto (`/usr/bin/security`, `/usr/bin/sort`): o basename casa a regra.
 
 `Read`/`Grep`/`Edit`/`Write` de `**/.grok/**` estão no deny. Numa regra de
-permissão o `~` casa o caractere, não a home. `git commit -F`,
-`git commit --file` e `git diff --no-index` estão no deny: leem um arquivo
-qualquer e o texto entra no commit que o dispatcher publica.
+permissão o `~` casa o caractere, não a home. `Bash(git commit *-F*)`,
+`Bash(git commit *--file*)` e `Bash(git diff *--no-index*)` estão no deny:
+o `*` no meio casa a flag em qualquer posição. Esses comandos leem um arquivo
+qualquer e o texto entra no commit que o dispatcher publica. O caminho
+depois de `=` também entra no deny de Read. Quem casa o glob é
+`lanes/permissao.py`.
 
 Rede e `security` não ficam só na regex:
 

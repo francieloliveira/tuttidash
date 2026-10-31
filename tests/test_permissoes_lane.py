@@ -46,10 +46,13 @@ class PermissoesMinimasLane(unittest.TestCase):
             self.assertNotIn(f"Bash({comando}:*)", allow, comando)
         deny = perms["deny"]
         for regra in ("Bash(git difftool:*)", "Bash(git commit-tree:*)",
-                      "Bash(git diff --no-index:*)", "Bash(git commit -F:*)",
-                      "Bash(git commit --file:*)", "Bash(sort:*)",
+                      "Bash(git diff *--no-index*)", "Bash(git commit *-F*)",
+                      "Bash(git commit *--file*)", "Bash(sort:*)",
                       "Bash(/usr/bin/sort:*)"):
             self.assertIn(regra, deny, regra)
+        for antiga in ("Bash(git diff --no-index:*)", "Bash(git commit -F:*)",
+                       "Bash(git commit --file:*)"):
+            self.assertNotIn(antiga, deny, antiga)
         for ferramenta in ("Read", "Grep", "Edit", "Write"):
             self.assertIn(f"{ferramenta}(**/.grok/**)", deny, ferramenta)
             self.assertNotIn(f"{ferramenta}(~/.grok/**)", deny, ferramenta)
@@ -59,7 +62,7 @@ class PermissoesMinimasLane(unittest.TestCase):
         pedidos = [
             "cat ~/.config/gh/hosts.yml",
             "/bin/cat ~/.config/gh/hosts.yml",
-            "security find-generic-password -s github -a franciel",
+            "security find-generic-password -s github -a conta",
             "/usr/bin/security find-generic-password -s github",
             "python3 -c 'import subprocess; subprocess.check_call([\"security\", \"find-generic-password\"])'",
             "/usr/bin/python3 -c 'print(1)'",
@@ -76,6 +79,9 @@ class PermissoesMinimasLane(unittest.TestCase):
             "git commit -F ~/.grok/auth.json",
             "git commit --file ~/.grok/auth.json",
             "git diff --no-index ~/.grok/auth.json /dev/null",
+            "git commit -q -F~/.grok/auth.json",
+            "git commit -q --file=~/.grok/auth.json",
+            "git diff -a --no-index ~/.grok/auth.json /dev/null",
         ]
         for cmd in pedidos:
             with self.subTest(cmd=cmd):
@@ -143,6 +149,9 @@ class PermissoesMinimasLane(unittest.TestCase):
         self.assertIn("Bash(/usr/bin/security:*)", denies)
         self.assertIn("Bash(git difftool:*)", denies)
         self.assertIn("Bash(git commit-tree:*)", denies)
+        self.assertIn("Bash(git commit *-F*)", denies)
+        self.assertIn("Bash(git commit *--file*)", denies)
+        self.assertIn("Bash(git diff *--no-index*)", denies)
         self.assertIn("Read(**/.grok/**)", denies)
         self.assertNotIn("monitor", grok[grok.index("--tools") + 1].split(","))
 
@@ -169,6 +178,20 @@ class PermissoesMinimasLane(unittest.TestCase):
         self.assertFalse(d.comando_negado_pela_lane("git difftool --extcmd id", diff_cru))
         commit_cru = {"defaultMode": "dontAsk", "allow": ["Bash(git commit:*)"], "deny": []}
         self.assertFalse(d.comando_negado_pela_lane("git commit-tree HEAD", commit_cru))
+        meio = {"defaultMode": "dontAsk", "allow": ["Bash(git * main)"], "deny": []}
+        self.assertFalse(d.comando_negado_pela_lane("git checkout main", meio))
+        self.assertTrue(d.comando_negado_pela_lane("git checkout other", meio))
+
+    def test_valor_depois_do_igual_entra_no_deny_de_read(self):
+        """`--file=~/.grok/auth.json` não é pulado por começar com `-`."""
+        perms = {
+            "defaultMode": "dontAsk",
+            "allow": ["Bash(git commit *)"],
+            "deny": ["Read(**/.grok/**)", "Edit(**/.grok/**)"],
+        }
+        self.assertTrue(d.comando_negado_pela_lane(
+            "git commit -q --file=~/.grok/auth.json", perms))
+        self.assertFalse(d.comando_negado_pela_lane("git commit -m ajuste", perms))
 
     def test_prompt_da_lane_grok_so_lista_os_quatro_git(self):
         texto = (Path(d.__file__).resolve().parent / "lane-prompt-grok.md").read_text(encoding="utf-8")
