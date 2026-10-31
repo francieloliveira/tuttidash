@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""Git só de leitura do revisor. Recusa --output, --ext-diff e --exec-path."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import caixa_leitura
+
+raise SystemExit(caixa_leitura.main(sys.argv[1:]))
