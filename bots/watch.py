@@ -10,9 +10,11 @@ Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
   0. Instalação no aparelho em andamento/terminada -> registra o resultado no card
      (só com `watch.instalar_comando` configurado).
   1. Card em In Review com a prova do dispatcher verde (comentário DONE <sha> = head
-     do PR e "→ verde" no corpo) -> merge (um por vez), Done, instala a main no
-     aparelho (SKIP_PREFLIGHT=1 primeiro; se falhar, com preflight). PR aguardando
-     teste no aparelho não é mergeado: instala a branch atualizada com a main.
+     do PR e "→ verde" no corpo) -> merge (um por vez) só com `mergeStateStatus`
+     CLEAN e `statusCheckRollup` sem FAILURE/PENDING. UNSTABLE espera. HAS_HOOKS
+     segura e chama o dono (não é CI vermelho). Caminho protegido no PR não mergeia.
+     Depois: Done e instala a main no aparelho (SKIP_PREFLIGHT=1 primeiro; se falhar,
+     com preflight). PR aguardando teste no aparelho não é mergeado: instala a branch.
   2. PR mergeado cujo card não está Done -> Done (determinístico).
   3. lane:parada / lane:falhou -> a triagem acha a causa; o card volta para a fila
      (remove a label). Na 3ª parada pelo mesmo motivo chama o dono (`linear.owner_label`).
@@ -25,11 +27,13 @@ Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
 
 A IA (claude -p) só lê e devolve texto; quem publica, mergeia e instala é este script.
 Nunca toca caminhos protegidos — a lista é a do projeto no cadastro (`projetos.py`),
-relida a cada uso, e vai no prompt do agente.
+relida a cada uso. Vai no prompt do agente e, no merge, casa o caminho completo
+do PR (`fnmatch`) com essa lista.
 """
 from __future__ import annotations
 
 import fcntl
+import fnmatch
 import hashlib
 import json
 import os
@@ -46,11 +50,19 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _caminho_cfg() -> Path:
+    """`tools/cfg` do checkout, ou a cópia instalada. O cfg usa o resolvedor único."""
+    local = Path(__file__).resolve().parent.parent / "tools" / "cfg"
+    if local.is_file():
+        return local
+    return Path.home() / ".transcentia" / "tools" / "cfg"
+
+
 def _cfg(chave, padrao):
-    """Lê ~/.transcentia/tools/cfg (FRA-295); sem cfg ou com erro, devolve o padrão."""
+    """Lê o `cfg` (FRA-295); sem cfg ou com erro, devolve o padrão."""
     try:
         import runpy
-        v = runpy.run_path(str(Path.home() / ".transcentia/tools/cfg"))["get"](chave, padrao)
+        v = runpy.run_path(str(_caminho_cfg()))["get"](chave, padrao)
         return type(padrao)(v) if padrao is not None and not isinstance(padrao, (list, set, dict)) else v
     except Exception:
         return padrao
@@ -140,6 +152,9 @@ _EFFORT_EN = {"baixo": "low", "medio": "medium", "alto": "high"}
 # card não traz uma lane explícita (não bloqueia: é preferência, não regra de ferro).
 FAIL_COOLDOWN_S = _cfg("watch.cooldown_apos_falha_s", 30 * 60)
 LANE_FAIL_COOLDOWN_S = _cfg("watch.cooldown_lane_s", 30 * 60)
+# Só falha de infraestrutura/modelo põe a lane em cooldown: prova vermelha ou
+# card cancelado é problema do card, não da lane.
+LANE_FAIL_RE = re.compile(r"model|modelo|limite|quota|token|429|indispon|api|rede|conex|autentic|login|cli", re.I)
 _RISCO_ALTO_CFG = _cfg("watch.lanes_risco_alto", ["claude", "grok"])
 LANES_RISCO_ALTO = set(_RISCO_ALTO_CFG.split() if isinstance(_RISCO_ALTO_CFG, str) else _RISCO_ALTO_CFG)
 STOPS_TO_CALL = _cfg("watch.paradas_para_chamar", 3)   # chama o dono na 3ª parada pelo mesmo motivo
@@ -304,7 +319,7 @@ def load_state() -> dict:
         st = json.loads(STATE_FILE.read_text())
     except Exception:  # noqa: BLE001
         st = {}
-    for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases", "bloqueios", "removidas_pelo_vigia", "sem_revisao", "erros_revisao", "caixa_analise", "caixa_desde", "cancelados_limpos"):
+    for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases", "bloqueios", "removidas_pelo_vigia", "sem_revisao", "erros_revisao", "caixa_analise", "caixa_desde", "cancelados_limpos", "hooks_dono"):
         st.setdefault(k, {})
     return st
 
@@ -803,6 +818,59 @@ def waiting_device_test(ci: dict, pr: dict) -> bool:
     return bool(names & DEVICE_TEST_LABELS)
 
 
+def _itens_rollup(bruto) -> list:
+    """`statusCheckRollup` do gh: lista, ou objeto com `nodes`/`contexts`."""
+    if isinstance(bruto, dict):
+        bruto = bruto.get("nodes") or bruto.get("contexts") or []
+    return list(bruto) if isinstance(bruto, list) else []
+
+
+def motivo_checks(pr: dict) -> str | None:
+    """Por que o rollup segura o merge, ou None se não há FAILURE nem PENDING.
+
+    Sem a lista não dá para afirmar que o PR está limpo: o merge espera.
+    CheckRun traz `conclusion`/`status`; StatusContext traz `state`."""
+    if "statusCheckRollup" in pr:
+        itens = _itens_rollup(pr.get("statusCheckRollup"))
+    else:
+        try:
+            raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "statusCheckRollup"],
+                     cwd=REPOS["app"]["dir"])
+            itens = _itens_rollup(json.loads(raw).get("statusCheckRollup"))
+        except (RuntimeError, ValueError, OSError):
+            return "statusCheckRollup indisponível"
+    ruins = []
+    for item in itens:
+        if not isinstance(item, dict):
+            continue
+        conclusion = str(item.get("conclusion") or "").upper()
+        status = str(item.get("status") or "").upper()
+        state = str(item.get("state") or "").upper()
+        if conclusion == "FAILURE" or state == "FAILURE" or status == "PENDING" or state == "PENDING":
+            ruins.append(str(item.get("name") or item.get("context") or item.get("workflowName") or "check"))
+    if ruins:
+        return "checks " + ", ".join(ruins)
+    return None
+
+
+def segurar_has_hooks(ci: dict, pr: dict, st: dict, diary: list[str]) -> None:
+    """HAS_HOOKS não é CI vermelho: checks passaram e um pre-receive hook segura.
+
+    O merge não acontece. O dono é chamado uma vez por head. Não vira `lane:falhou`."""
+    head = pr.get("headRefOid") or ""
+    ja = st.setdefault("hooks_dono", {})
+    if ja.get(head):
+        return
+    ja[head] = time.time()
+    add_label(ci["id"], OWNER_LABEL)
+    comment(ci["id"],
+            f"[Gestor] PR #{pr['number']} está com `mergeStateStatus` HAS_HOOKS "
+            f"(pre-receive hook, não é check vermelho nem CI falhando). "
+            f"Não mergeio sozinho. Confira os hooks e mergeie à mão, e tire `{OWNER_LABEL}`.")
+    diary.append(f"Gestor · {ci['identifier']} PR #{pr['number']} HAS_HOOKS → chamou o dono")
+    log(f"{ci['identifier']} PR #{pr['number']}: HAS_HOOKS, merge seguro, dono chamado")
+
+
 def merge_ready(st: dict, diary: list[str]) -> None:
     repo = REPOS["app"]
     prs = {card_of(p["title"], p["headRefName"]): p for p in open_prs(repo)}
@@ -824,8 +892,27 @@ def merge_ready(st: dict, diary: list[str]) -> None:
         if veredito != "APROVADO":
             segurar_sem_aprovacao(ci, pr, st, diary)
             continue
-        if pr.get("mergeStateStatus") not in ("CLEAN", "UNSTABLE", "HAS_HOOKS"):
-            log(f"{ci['identifier']} PR #{pr['number']}: merge adiado ({pr.get('mergeStateStatus')})")
+        estado = pr.get("mergeStateStatus")
+        if estado == "HAS_HOOKS":
+            segurar_has_hooks(ci, pr, st, diary)
+            continue
+        if estado == "UNSTABLE":
+            log(f"{ci['identifier']} PR #{pr['number']}: merge adiado (UNSTABLE)")
+            continue
+        if estado != "CLEAN":
+            log(f"{ci['identifier']} PR #{pr['number']}: merge adiado ({estado})")
+            continue
+        checks = motivo_checks(pr)
+        if checks:
+            log(f"{ci['identifier']} PR #{pr['number']}: merge adiado ({checks})")
+            continue
+        try:
+            tocados = protegidos_no_merge(pr)
+        except RuntimeError as exc:
+            log(f"{ci['identifier']} PR #{pr['number']}: merge adiado (arquivos do PR indisponíveis: {exc})")
+            continue
+        if tocados:
+            log(f"{ci['identifier']} PR #{pr['number']}: merge adiado (caminho protegido: {', '.join(tocados)})")
             continue
         if hold_for_heavier(ci, pr, st, diary):
             continue
@@ -840,9 +927,23 @@ def merge_ready(st: dict, diary: list[str]) -> None:
 
 
 def pr_files(pr: dict) -> set[str]:
+    """Basename, de propósito: o conflito entre cards compara o nome, sem a pasta."""
     raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "files", "-q", ".files[].path"],
              cwd=REPOS["app"]["dir"], check=False)
     return {l.rsplit("/", 1)[-1] for l in raw.splitlines() if l.strip()}
+
+
+def pr_paths(pr: dict) -> list[str]:
+    """Caminhos completos dos arquivos do PR. Não substitui `pr_files` nem `card_files`."""
+    raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "files", "-q", ".files[].path"],
+             cwd=REPOS["app"]["dir"])
+    return [linha.strip() for linha in raw.splitlines() if linha.strip()]
+
+
+def protegidos_no_merge(pr: dict) -> list[str]:
+    """Caminhos do PR que casam um glob protegido do projeto (`fnmatch` no caminho inteiro)."""
+    globs = protected()
+    return [p for p in pr_paths(pr) if any(fnmatch.fnmatch(p, g) for g in globs)]
 
 
 def hold_for_heavier(ci: dict, pr: dict, st: dict, diary: list[str]) -> bool:
@@ -1001,9 +1102,8 @@ def handle_stops(ci: dict, label: str, st: dict, diary: list[str]) -> bool:
     """Devolve True se usou uma rodada de IA."""
     cid, reason = stop_reason(ci, label)
     per_card = st["stops"].setdefault(ci["identifier"], {"vistos": [], "motivos": {}})
-    if label == "lane:falhou":
-        # A lane também entra em cooldown: modelo indisponível/erro de execução não
-        # deve receber outro card no ciclo seguinte.
+    if label == "lane:falhou" and LANE_FAIL_RE.search(reason):
+        # Só modelo/infra colocam a lane em cooldown; prova/card não.
         for lane in catalogo.lanes_por_prioridade():
             if lane in labels_of(ci):
                 st.setdefault("lane_falhas", {})[lane] = time.time()
@@ -1377,6 +1477,9 @@ def recheck_needs(ci: dict, st: dict, diary: list[str]) -> bool:
 # O vigia monta `~/.transcentia/lanes/caixa-dono.json`: um item por card com a etiqueta do dono,
 # com a pendência, até 3 decisões e a recomendada (da reconferência), para o app mostrar e o
 # dono decidir com um clique. Card cancelado com pendência é limpo aqui também.
+# FRA-601: o arquivo não leva id de issue, de etiqueta nem de estado. Quem escreve esta pasta
+# escolheria o card e a etiqueta que o clique aplica. O app resolve o issue pelo identifier
+# e lê os ids no cache/config do Linear (o mesmo do vigia), com o token já compartilhado.
 CAIXA_ARQUIVO = LANES_DIR / "caixa-dono.json"
 ACAO_RE = re.compile(r"\[\s*(esforco\s*=\s*(baixo|medio|alto)|lane\s*=\s*([a-z0-9-]+)|cancelar)\s*\]\s*$", re.I)
 SEM_DECISAO_RE = re.compile(r"\b(manter|esperar|aguardar)\b", re.I)
@@ -1440,7 +1543,10 @@ def origem_e_motivo(ci: dict) -> tuple[str, str]:
 
 
 def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> dict:
-    """Grava a caixa do dono (atômica) e devolve o que gravou."""
+    """Grava a caixa do dono (atômica) e devolve o que gravou.
+
+    Só o que a tela mostra: identifier, textos e opção com tipo fechado. Sem `issue_id`
+    e sem mapa de ids — isso o app resolve no clique (FRA-601)."""
     agora = time.time() if agora is None else agora
     st.setdefault("caixa_analise", {})
     st.setdefault("caixa_desde", {})
@@ -1455,12 +1561,11 @@ def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> 
         origem, motivo = origem_e_motivo(ci)
         nomes = labels_of(ci)
         pergunta = f"{ident}:{an.get('imp') or int(desde)}"
-        itens.append({"card": ident, "issue_id": ci["id"], "titulo": ci.get("title") or "", "url": ci.get("url") or "",
+        itens.append({"card": ident, "titulo": ci.get("title") or "", "url": ci.get("url") or "",
                       "desde": datetime.fromtimestamp(desde).isoformat(timespec="seconds"),
                       "origem": origem, "motivo": motivo, "pergunta_id": pergunta,
                       "pendencia": an.get("pendencia") or "", "opcoes": an.get("opcoes") or [],
                       "recomenda": an.get("recomenda") or "", "porque": an.get("porque") or "",
-                      "analise": an.get("quem") or "",
                       "esforco": next((e for e in ESFORCOS if e in nomes), ""),
                       # Outras etiquetas que seguram o card: liberar o dono não o devolve à fila sozinho.
                       "outras_travas": [lb for lb in ("lane:falhou", "lane:parada") if lb in nomes],
@@ -1468,11 +1573,8 @@ def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> 
     for ident in list(st["caixa_desde"]):
         if ident not in vistos:
             st["caixa_desde"].pop(ident, None)
-    ids = IDS_LINEAR or {}
     dados = {"atualizado_em": datetime.fromtimestamp(agora).isoformat(timespec="seconds"),
              "rotulo_dono": OWNER_LABEL,
-             "ids": {"dono": LABEL_IDS.get(OWNER_LABEL, ""), "esforco": dict(ids.get("esforco") or {}),
-                     "lanes": dict(ids.get("lanes") or {}), "cancelado": st.get("estado_cancelado_id", "")},
              "itens": sorted(itens, key=lambda i: i["desde"]),
              "cancelados": sorted((st.get("cancelados_limpos") or {}).keys())}
     CAIXA_ARQUIVO.parent.mkdir(parents=True, exist_ok=True)
@@ -2205,7 +2307,7 @@ def avisar_espera_confirmacao(pr: dict, st: dict, guardada: bool) -> None:
 
 def limpar_revisoes_fechadas(st: dict, heads_abertos: set[str]) -> None:
     """Segundas opiniões e avisos de espera só valem para heads de PR aberto."""
-    for chave in ("segundas_opinioes", "espera_confirmacao", "sem_revisao"):
+    for chave in ("segundas_opinioes", "espera_confirmacao", "sem_revisao", "hooks_dono"):
         d = st.get(chave) or {}
         for h in [h for h in d if h.split("|")[0] not in heads_abertos]:
             del d[h]

@@ -74,23 +74,72 @@ final class FerramentasTests: XCTestCase {
     func testRoteiroMostraOComandoEEsperaOEnter() {
         let cmd = #"curl -fsSL https://x/i.sh | bash; echo 'aspas'"#
         let r = Ferramentas.roteiro(titulo: "Instalar X", comando: cmd, dica: "Entre pelo navegador",
-                                    docs: URL(string: "https://x/docs"), home: home)
+                                    docs: URL(string: "https://x/docs"), home: home, oficiais: [])
         let linhas = r.split(separator: "\n").map(String.init)
         XCTAssertEqual(linhas.first, "#!/bin/bash")
         let iRead = try! XCTUnwrap(linhas.firstIndex { $0.hasPrefix("read -r -p") })
-        let iCmd = try! XCTUnwrap(linhas.firstIndex(of: cmd))
-        XCTAssertLessThan(iRead, iCmd, "o comando só roda depois do Enter")
+        XCTAssertFalse(linhas.suffix(from: iRead).contains(cmd), "injeção não vira linha de shell")
+        XCTAssertTrue(linhas.suffix(from: iRead).contains("exit 1"))
         XCTAssertTrue(r.contains(#"printf '\n    %s\n\n' 'curl -fsSL https://x/i.sh | bash; echo '\''aspas'\'''"#))
         XCTAssertTrue(r.contains("https://x/docs")); XCTAssertTrue(r.contains("Entre pelo navegador"))
         XCTAssertTrue(r.contains("/Users/teste/.local/bin"))
+    }
+
+    /// Argv citado. O instalador do Homebrew continua shell. Pipeline só se estiver na lista oficial.
+    func testRoteiroCitaArgvEVetaShell() throws {
+        let brew = Ferramentas.roteiro(titulo: "Brew", comando: "brew install gh", home: home, oficiais: [])
+        let linhasBrew = brew.split(separator: "\n").map(String.init)
+        let iRead = try XCTUnwrap(linhasBrew.firstIndex { $0.hasPrefix("read -r -p") })
+        XCTAssertTrue(linhasBrew.suffix(from: iRead).contains("'brew' 'install' 'gh'"))
+        let homebrew = Ferramentas.instaladorHomebrew
+        let cru = Ferramentas.roteiro(titulo: "HB", comando: homebrew, home: home, oficiais: [])
+        XCTAssertTrue(cru.split(separator: "\n").map(String.init).contains(homebrew))
+        let curl = "curl -fsSL https://claude.ai/install.sh | bash"
+        let oficial = Ferramentas.roteiro(titulo: "C", comando: curl, home: home, oficiais: [curl])
+        XCTAssertTrue(oficial.split(separator: "\n").map(String.init).contains(curl))
+        let falso = Ferramentas.roteiro(titulo: "C", comando: curl + "; touch /tmp/pwn", home: home, oficiais: [curl + "; touch /tmp/pwn"])
+        XCTAssertTrue(falso.contains("exit 1"))
+        XCTAssertFalse(falso.split(separator: "\n").map(String.init).contains(curl + "; touch /tmp/pwn"))
+        let aberto = Ferramentas.roteiro(titulo: "D", comando: "open -a 'DeepSeek Harness'", home: home, oficiais: [])
+        XCTAssertTrue(aberto.contains("'open' '-a' 'DeepSeek Harness'"))
     }
 
     /// O roteiro é bash válido (`bash -n`).
     func testRoteiroEBashValido() throws {
         let t = try PastaTemp()
         let arq = t.url.appendingPathComponent("r.command")
-        try Ferramentas.roteiro(titulo: "T'x", comando: #"/bin/bash -c "$(curl -fsSL https://exemplo/install.sh)""#,
+        try Ferramentas.roteiro(titulo: "T'x", comando: Ferramentas.instaladorHomebrew,
                                 dica: "a 'b'", docs: nil, home: home).write(to: arq, atomically: true, encoding: .utf8)
         XCTAssertEqual(Ferramentas.codigo(["/bin/bash", "-n", arq.path]), 0)
+        try Ferramentas.roteiro(titulo: "X", comando: "x; touch /tmp/pwn", home: home, oficiais: [])
+            .write(to: arq, atomically: true, encoding: .utf8)
+        XCTAssertEqual(Ferramentas.codigo(["/bin/bash", "-n", arq.path]), 0)
+    }
+
+    func testLoginPorArgvNaoAceitaCliNemContaInjetados() throws {
+        XCTAssertNil(LoginConta.argv(tipo: "grok", cli: "x; touch /tmp/pwn", home: home, existe: { _ in true }))
+        XCTAssertNil(LoginConta.argv(tipo: "grok", cli: "grok", home: home, existe: { _ in false }))
+        let bin = "/Users/teste/.local/bin/opencode"
+        XCTAssertEqual(LoginConta.argv(tipo: "opencode", cli: "opencode", home: home, existe: { $0 == bin }),
+                       [bin, "auth", "login"])
+        XCTAssertEqual(LoginConta.argv(tipo: "grok", cli: "grok", home: home, existe: { $0 == "/Users/teste/.local/bin/grok" }),
+                       ["/Users/teste/.local/bin/grok"])
+        XCTAssertEqual(LoginConta.sanitizarConta("../../x"), "x")
+        let pasta = try PastaTemp()
+        let a = try LoginConta.gravar(argv: [bin, "auth", "login"], conta: "../../x", em: pasta.url)
+        let b = try LoginConta.gravar(argv: [bin, "auth", "login"], conta: "../../x", em: pasta.url)
+        XCTAssertNotEqual(a.lastPathComponent, b.lastPathComponent)
+        XCTAssertEqual(a.deletingLastPathComponent().standardizedFileURL.path, pasta.url.standardizedFileURL.path)
+        XCTAssertTrue(a.lastPathComponent.hasPrefix("tuttidash-login-x-"))
+        XCTAssertTrue(a.lastPathComponent.hasSuffix(".command"))
+        XCTAssertFalse(a.lastPathComponent.contains(".."))
+        XCTAssertFalse(a.lastPathComponent.contains("/"))
+        let modo = try FileManager.default.attributesOfItem(atPath: a.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(modo?.uint16Value, 0o700)
+        let texto = try String(contentsOf: a, encoding: .utf8)
+        XCTAssertTrue(texto.hasPrefix("#!/bin/bash\n"))
+        XCTAssertEqual(texto, "#!/bin/bash\nexec '\(bin)' 'auth' 'login'\n")
+        XCTAssertFalse(texto.contains("zsh"))
+        XCTAssertFalse(texto.contains("touch"))
     }
 }

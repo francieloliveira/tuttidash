@@ -535,11 +535,17 @@ def existe_ambiente() -> bool:
 # O dispatcher e este módulo leem o mesmo arquivo e o mesmo cache de listas.
 
 PESOS_MODELO = ("baixo", "medio", "alto")
-ARQUIVOS_CONFIG_MODELO = [
-    Path.home() / "Library/Application Support/TuttiDash/config.json",
-    Path.home() / "Library/Application Support/Lanekeeper/config.json",
-    Path.home() / ".transcentia/tools/config.json",
-]
+
+
+def _arquivos_padrao():
+    """O arquivo do resolvedor único (`gasto_lanes/config.py`). Import tardio."""
+    try:
+        from .config import arquivos_em_uso
+    except ImportError:
+        from config import arquivos_em_uso
+    return arquivos_em_uso()
+
+
 CACHE_MODELOS = Path.home() / "Library/Application Support/TuttiDash/modelos-cache.json"
 # Antes do FRA-523 o app usava a pasta Lanekeeper; lida só como reserva.
 CACHE_MODELOS_ANTIGO = Path.home() / "Library/Application Support/Lanekeeper/modelos-cache.json"
@@ -731,8 +737,13 @@ def config_para_gravar(cfg: dict) -> dict:
 
 
 def bruto_modelo(lane: str, arquivos=None):
-    """Valor cru de `lanes.modelo.<lane>`. A chave plana antiga ganha da aninhada."""
-    for cfg in (ARQUIVOS_CONFIG_MODELO if arquivos is None else arquivos):
+    """Valor cru de `lanes.modelo.<lane>`. A chave plana antiga ganha da aninhada.
+
+    Sem ``arquivos``, só o arquivo do resolvedor — não o próximo da lista antiga.
+    """
+    if arquivos is None:
+        arquivos = _arquivos_padrao()
+    for cfg in arquivos:
         if not Path(cfg).exists():
             continue
         try:

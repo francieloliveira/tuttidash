@@ -68,6 +68,25 @@ class FilaCompartilhadaTest(unittest.TestCase):
         self.assertEqual(d.escolher_do_todo([c], ["grok"], medidas, viewer="u2"), [])
         self.assertEqual(len(d.escolher_do_todo([c], ["grok"], medidas, viewer="u1")), 1)
 
+    def test_conflito_de_arquivos(self):
+        a = {"identifier": "FRA-1", "description": "mexe em `app/Foo.swift`"}
+        b = {"identifier": "FRA-2", "description": "mexe em `app/Foo.swift` e `Bar.swift`"}
+        self.assertEqual(fila.arquivos_card(a), {"Foo.swift"})
+        self.assertEqual(fila.conflita(b, {"FRA-1": {"Foo.swift"}}), "FRA-1")
+        self.assertIsNone(fila.conflita(b, {"FRA-1": {"Outro.swift"}}))
+
+    def test_dispatcher_nao_pega_dois_cards_do_mesmo_arquivo(self):
+        import lanes.dispatcher as d
+        a = card(lane="grok")
+        a.update({"identifier": "FRA-1", "description": "app/Foo.swift", "title": "x",
+                  "inverseRelations": {"nodes": []}})
+        b = card(lane="grok")
+        b.update({"identifier": "FRA-2", "description": "app/Foo.swift", "title": "x",
+                  "inverseRelations": {"nodes": []}})
+        medidas = {"grok": (11, "créditos")}
+        escolhidos = d.escolher_do_todo([a, b], ["grok"], medidas)
+        self.assertEqual([c["identifier"] for c in escolhidos], ["FRA-1"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -148,3 +148,32 @@ def lane_saudavel(saude: dict, lane: str, agora: Optional[float] = None) -> bool
         return float((saude.get(lane) or {}).get("ate") or 0) <= agora
     except (TypeError, ValueError):
         return True
+
+
+_ARQUIVO_RE = re.compile(
+    r"((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\."
+    r"(?:swift|plist|json|ya?ml|py|sh|xcstrings|strings|entitlements))")
+_LANE_FILES = {"result.json", "settings.json", "settings.local.json", ".mcp.json", "mcp.json"}
+
+
+def arquivos_card(ci: dict) -> set[str]:
+    """Nomes de arquivo citados no card, ignorando a infraestrutura das lanes."""
+    out = set()
+    for achado in _ARQUIVO_RE.finditer(ci.get("description") or ""):
+        caminho = achado.group(1)
+        nome = caminho.rsplit("/", 1)[-1]
+        if caminho.startswith(".lane") or "/.lane/" in caminho or nome in _LANE_FILES:
+            continue
+        out.add(nome)
+    return out
+
+
+def conflita(card: dict, ocupados: dict) -> Optional[str]:
+    """Outro card ativo que toca os mesmos arquivos (nome), ou None."""
+    meus = arquivos_card(card)
+    if not meus:
+        return None
+    for ident, arquivos in (ocupados or {}).items():
+        if ident != card.get("identifier") and meus & set(arquivos or ()):
+            return ident
+    return None

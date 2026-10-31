@@ -20,7 +20,8 @@ final class LaunchdFalso: SistemaAgendas {
     var chamadas: [[String]] = []
     var registro: RegistroFalso?
     var uid: UInt32 { 501 }
-    func escrever(_ d: Data, em u: URL, executavel: Bool) throws { arquivos[u.path] = d }
+    func escrever(_ d: Data, em u: URL, modo: UInt16) throws { arquivos[u.path] = d }
+    func criarPasta(_ u: URL) throws {}
     func apagar(_ u: URL) throws { arquivos[u.path] = nil }
     func existe(_ u: URL) -> Bool { arquivos[u.path] != nil }
     func ler(_ u: URL) -> Data? { arquivos[u.path] }

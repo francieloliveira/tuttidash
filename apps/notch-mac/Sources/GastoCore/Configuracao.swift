@@ -2,6 +2,8 @@ import Foundation
 
 /// Mesma configuração da ferramenta `gasto` (gasto_lanes/config.py), sem flags:
 /// variável de ambiente > arquivo de config > padrão do Mac.
+/// O arquivo em uso é `arquivoEmUso`, a mesma ordem de `arquivo_config`:
+/// env > TuttiDash > Lanekeeper > TranscentIA Gasto > legado.
 public struct Configuracao: Equatable, Sendable {
     public var logsDir: URL
     public var stateDir: URL
@@ -114,22 +116,34 @@ public struct Configuracao: Equatable, Sendable {
         home.appendingPathComponent(Legado.configLegada)
     }
 
-    /// Lê o JSON da config em uso (mesma ordem do `cfg`): env > novo > legado. Vazio se ausente/ilegível.
+    /// Arquivo em uso. Uma função só, a mesma ordem de `gasto_lanes/config.py`
+    /// (`arquivo_config`): env > TuttiDash > Lanekeeper > TranscentIA Gasto > legado.
+    /// `obrigatoria` quando a env aponta o caminho (não cai no próximo, mesmo se faltar).
+    /// `legado` só no `~/.transcentia/tools/config.json` escolhido por falta dos mais novos.
+    public static func arquivoEmUso(ambiente: [String: String], home: URL) -> (url: URL, obrigatoria: Bool, legado: Bool) {
+        if let p = ambiente[envConfig], !p.isEmpty {
+            return (expandir(p, ambiente: ambiente, home: home), true, false)
+        }
+        let candidatos: [(URL, Bool)] = [
+            (arquivoNovo(home: home), false),
+            (arquivoLanekeeper(home: home), false),
+            (arquivoIntermedio(home: home), false),
+            (arquivoLegado(home: home), true),
+        ]
+        for (url, legado) in candidatos where FileManager.default.fileExists(atPath: url.path) {
+            return (url, false, legado)
+        }
+        return (arquivoNovo(home: home), false, false)
+    }
+
+    /// Lê o JSON da config em uso. Vazio se ausente ou ilegível — não tenta o arquivo seguinte.
     public static func lerArquivo(ambiente: [String: String] = ProcessInfo.processInfo.environment,
                                   home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String: Any] {
-        let candidatos: [URL]
-        if let p = ambiente[envConfig], !p.isEmpty {
-            candidatos = [expandir(p, ambiente: ambiente, home: home)]
-        } else {
-            candidatos = [arquivoNovo(home: home), arquivoLanekeeper(home: home), arquivoIntermedio(home: home),
-                          arquivoLegado(home: home)]
-        }
-        for u in candidatos where FileManager.default.fileExists(atPath: u.path) {
-            guard let d = try? Data(contentsOf: u),
-                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
-            return o
-        }
-        return [:]
+        let url = arquivoEmUso(ambiente: ambiente, home: home).url
+        guard FileManager.default.fileExists(atPath: url.path),
+              let d = try? Data(contentsOf: url),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        return o
     }
 
     /// Valor por chave pontuada ("preflight.max_load"), igual ao `cfg get`. nil se ausente.
@@ -194,6 +208,7 @@ public struct Configuracao: Equatable, Sendable {
 
     public static func resolver(ambiente: [String: String] = ProcessInfo.processInfo.environment,
                                 home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Configuracao {
+        let escolhido = arquivoEmUso(ambiente: ambiente, home: home)
         var cfg = Configuracao(
             logsDir: home.appendingPathComponent(Legado.logsLanes),
             stateDir: home.appendingPathComponent(Legado.estadoLanes),
@@ -202,28 +217,12 @@ public struct Configuracao: Equatable, Sendable {
             opencodeDb: home.appendingPathComponent(".local/share/opencode/opencode.db"),
             usoContas: true,
             rotuloDono: nil, workspaceLinear: nil,
-            arquivoConfig: arquivoNovo(home: home),
+            arquivoConfig: escolhido.url,
             arquivoConfigExiste: false, versao: nil, erro: nil)
         cfg.home = home
         cfg.ambiente = ambiente
-        if !FileManager.default.fileExists(atPath: cfg.arquivoConfig.path),
-           FileManager.default.fileExists(atPath: arquivoLanekeeper(home: home).path) {
-            cfg.arquivoConfig = arquivoLanekeeper(home: home)
-        } else if !FileManager.default.fileExists(atPath: cfg.arquivoConfig.path),
-           FileManager.default.fileExists(atPath: arquivoIntermedio(home: home).path) {
-            cfg.arquivoConfig = arquivoIntermedio(home: home)
-        } else if !FileManager.default.fileExists(atPath: cfg.arquivoConfig.path),
-           FileManager.default.fileExists(atPath: arquivoLegado(home: home).path) {
-            cfg.arquivoConfig = arquivoLegado(home: home)
-            cfg.usandoLegado = true
-        }
-
-        var obrigatoria = false
-        if let p = ambiente[envConfig], !p.isEmpty {
-            cfg.arquivoConfig = expandir(p, ambiente: ambiente, home: home)
-            cfg.usandoLegado = false
-            obrigatoria = true
-        }
+        cfg.usandoLegado = escolhido.legado
+        let obrigatoria = escolhido.obrigatoria
         var arquivo: [String: Any] = [:]
         if FileManager.default.fileExists(atPath: cfg.arquivoConfig.path) {
             cfg.arquivoConfigExiste = true
