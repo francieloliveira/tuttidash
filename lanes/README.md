@@ -14,12 +14,18 @@ test_lanes.py    testes offline (sem Linear, sem rede): python3 lanes/test_lanes
 
 ## Instalar a cópia viva
 
-`tools/install.sh` cria `~/.transcentia/lanes` (também numa instalação limpa) e copia
-o dispatcher, o `run_lane.sh`, o `lane_view.py`, os prompts e os templates
-`claude-settings.json` e `lane-mcp.json` (modo 0600). Se o runner ou o view já
-instalados diferirem do repositório, o script guarda `.bak` e mostra o diff antes de
-substituir. Os dois JSON não são substituídos se você já tiver editado, a menos que
-rode `tools/install.sh --force`.
+`tools/install.sh` não cria `~/.transcentia/lanes` numa instalação limpa e não copia
+`run_lane.sh`, `lane_view.py`, `claude-settings.json` nem `lane-mcp.json`. Se a pasta
+já existe, atualiza o dispatcher, os módulos e os prompts, e deixa runner, view e
+settings como estão.
+
+```bash
+cd ~/Developer/tuttidash
+for f in dispatcher.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py; do
+  cp ~/.transcentia/lanes/$f /tmp/lanes-$f.bak
+  cp lanes/$f ~/.transcentia/lanes/$f
+done
+```
 
 Nunca edite `~/.transcentia/lanes/` direto: a fonte é esta pasta.
 

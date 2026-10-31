@@ -46,7 +46,7 @@ git clone https://github.com/francieloliveira/tuttidash.git
 cd tuttidash
 
 # 1. Ferramentas em ~/.transcentia, ainda sem nada rodando em segundo plano.
-#    Cria ~/.transcentia/lanes mesmo numa instalação limpa.
+#    Instalação limpa não cria ~/.transcentia/lanes e não copia runner, view nem settings.
 tools/install.sh --sem-launchd
 
 # 2. Chave da API do Linear no Keychain (o comando pede a chave)
@@ -56,14 +56,11 @@ security add-generic-password -s linear-transcentia-lanes -a "$USER" -w
 cd apps/notch-mac && ./build.sh && open build/TuttiDash.app
 ```
 
-O passo 1 cria `~/.transcentia/lanes` se a pasta ainda não existe e copia `dispatcher.py`,
-`run_lane.sh` (modo 755), `lane_view.py`, os prompts, `claude-settings.json` e `lane-mcp.json`
-(estes dois em modo 0600). Se o `run_lane.sh` ou o `lane_view.py` já instalados forem
-diferentes do repositório, o script guarda um `.bak` e mostra o diff antes de substituir.
-Os dois JSON não são substituídos se você já tiver editado; `tools/install.sh --force`
-substitui. O `lane-mcp.json` nasce sem servidores: o caminho do MCP de documentação é
-desta máquina e fica na sua cópia. No app, os interruptores das lanes só aparecem quando
-dispatcher, runner, view e os dois JSON estão lá. O dispatcher sozinho não basta.
+Uma instalação limpa não cria `~/.transcentia/lanes` e não copia `run_lane.sh`,
+`lane_view.py`, `claude-settings.json` nem `lane-mcp.json`. Se a pasta já existe, o
+script atualiza o dispatcher, os módulos compartilhados e os prompts, e deixa o runner,
+o view e os settings como estão. Os interruptores das lanes ficam escondidos até esses
+arquivos já estarem na pasta.
 
 Depois configure, no app (*Ajustes*) ou em `~/Library/Application Support/TuttiDash/config.json`
 (partindo do [`config.example.json`](config.example.json)):

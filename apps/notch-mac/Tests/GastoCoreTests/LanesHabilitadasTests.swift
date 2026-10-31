@@ -23,8 +23,8 @@ final class LanesHabilitadasTests: XCTestCase {
         XCTAssertEqual(texto, "claude opencode\n")
     }
 
-    /// O `tools/install.sh` numa instalação limpa deixa estes arquivos. `dispatcherExiste`
-    /// olha só o dispatcher; a prontidão exige o conjunto (FRA-591).
+    /// `dispatcherExiste` olha só o dispatcher. A prontidão exige runner, view e
+    /// settings, que o `tools/install.sh` não copia numa instalação limpa (FRA-591).
     func testDispatcherExisteEInstalacaoPronta() throws {
         let t = try PastaTemp()
         XCTAssertFalse(LanesHabilitadas.dispatcherExiste(stateDir: t.url))

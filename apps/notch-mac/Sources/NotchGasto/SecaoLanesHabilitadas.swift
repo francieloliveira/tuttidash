@@ -48,7 +48,7 @@ final class EstadoLanesHabilitadas: ObservableObject {
                 let faltam = pecasAusentes.joined(separator: ", ")
                 erro = String(localized: "Instalação incompleta (\(faltam)). Nada foi alterado.")
                 CentralAvisos.compartilhada.erro(String(localized: "Lanes incompletas"),
-                                                  String(localized: "Faltam \(faltam). Rode tools/install.sh."))
+                                                  String(localized: "Faltam \(faltam). O install não copia runner, view nem settings."))
             }
             return
         }
@@ -154,7 +154,7 @@ struct SecaoLanesHabilitadas: View {
                 } else {
                     // FRA-591: o dispatcher sozinho não basta.
                     Text(String(localized: "Instalação das lanes incompleta")).font(.headline).foregroundStyle(.white)
-                    Text(String(localized: "O dispatcher está no Mac, mas faltam \(faltam). Rode tools/install.sh de novo."))
+                    Text(String(localized: "O dispatcher está no Mac, mas faltam \(faltam). Uma instalação limpa não copia esses arquivos."))
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -18,8 +18,9 @@ public enum LanesHabilitadas {
         FileManager.default.fileExists(atPath: stateDir.appendingPathComponent("dispatcher.py").path)
     }
 
-    /// O que o `tools/install.sh` coloca numa instalação completa (FRA-591).
-    /// O dispatcher sozinho não deixa a lane pronta: faltam runner, view e settings.
+    /// Peças que o app exige antes de oferecer o interruptor (FRA-591).
+    /// O `tools/install.sh` não cria a pasta numa instalação limpa e não copia
+    /// runner, view nem settings.
     public static let arquivosDaInstalacao = [
         "dispatcher.py", "run_lane.sh", "lane_view.py",
         "claude-settings.json", "lane-mcp.json",
