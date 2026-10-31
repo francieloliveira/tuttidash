@@ -66,6 +66,108 @@ public final class AgentesDoApp {
     public func reservaURL(_ label: String) -> URL {
         Configuracao.pastaApp(home: home).appendingPathComponent("launchagents-antigos/\(label).plist")
     }
+    /// Labels cujo plist solto o app gravou. Mesmo critério de `GerenciadorAgendas.gerenciados`.
+    var manifestoURL: URL { Configuracao.pastaApp(home: home).appendingPathComponent("agentes-do-app.json") }
+
+    /// Plist solto que o app geraria para este agente. Não lê a config: ela é gravável.
+    func plistGerado(_ a: AgenteApp) throws -> Data {
+        guard let spec = Self.legadoFixo[a.antigo] else {
+            throw NSError(domain: "AgentesDoApp", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "agente sem plist do app"])
+        }
+        let script = home.appendingPathComponent(spec.script).path
+        var args = ["/usr/bin/python3", script]
+        args.append(contentsOf: spec.extra)
+        let d: [String: Any] = [
+            "Label": a.antigo,
+            "ProgramArguments": args,
+            "StartInterval": spec.intervalo,
+            "RunAtLoad": spec.aoCarregar,
+            "ProcessType": "Background",
+            "LowPriorityIO": true,
+            "AssociatedBundleIdentifiers": ["app.tuttidash.mac"],
+        ]
+        return try PropertyListSerialization.data(fromPropertyList: d, format: .xml, options: 0)
+    }
+
+    /// Grava o plist do app e anota o label no manifesto. É o único jeito de o fallback carregar.
+    func gravarLegadoDoApp(_ a: AgenteApp) throws {
+        guard let url = urlLegadoSeguro(a.antigo) else {
+            throw NSError(domain: "AgentesDoApp", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "label fora de LaunchAgents"])
+        }
+        try sistema.escrever(try plistGerado(a), em: url, executavel: false)
+        var m = gerenciados(); m.insert(a.antigo); try gravarManifesto(m)
+    }
+
+    func gerenciados() -> Set<String> {
+        guard let d = sistema.ler(manifestoURL),
+              let l = try? JSONSerialization.jsonObject(with: d) as? [String] else { return [] }
+        return Set(l.filter { Self.labelSeguro($0) })
+    }
+
+    private static let legadoFixo: [String: (script: String, intervalo: Int, aoCarregar: Bool, extra: [String])] = [
+        "com.transcentia.lanes.dispatcher": (".transcentia/lanes/dispatcher.py", 60, true, ["--real"]),
+        "com.transcentia.bots.watch": (".transcentia/bots/watch.py", 180, false, []),
+        "com.transcentia.bots.chave": (".transcentia/tools/bots-chave", 600, true, []),
+    ]
+
+    private static func labelSeguro(_ label: String) -> Bool {
+        label.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil && !label.contains("..")
+    }
+
+    /// Filho direto de ~/Library/LaunchAgents. `..` e barra não passam.
+    func urlLegadoSeguro(_ label: String) -> URL? {
+        guard Self.labelSeguro(label), !label.contains("/"), !label.contains("\\") else { return nil }
+        let pasta = home.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+        let url = legadoURL(label)
+        let base = pasta.standardizedFileURL.path
+        let alvo = url.standardizedFileURL.path
+        let prefixo = base.hasSuffix("/") ? base : base + "/"
+        guard alvo.hasPrefix(prefixo) else { return nil }
+        return url
+    }
+
+    private func gravarManifesto(_ s: Set<String>) throws {
+        let nomes = s.filter { Self.labelSeguro($0) }.sorted()
+        try sistema.escrever(try JSONSerialization.data(withJSONObject: nomes), em: manifestoURL, executavel: false)
+    }
+
+    private func plistIgual(_ a: Data, _ b: Data) -> Bool {
+        guard let da = try? PropertyListSerialization.propertyList(from: a, options: [], format: nil) as? NSDictionary,
+              let db = try? PropertyListSerialization.propertyList(from: b, options: [], format: nil) as? NSDictionary else {
+            return false
+        }
+        return da == db
+    }
+
+    /// O arquivo no disco é o plist que o app geraria para este label.
+    private func conteudoEhDoApp(_ a: AgenteApp) -> Bool {
+        guard let url = urlLegadoSeguro(a.antigo),
+              let noDisco = sistema.ler(url),
+              let gerado = try? plistGerado(a) else { return false }
+        return plistIgual(noDisco, gerado)
+    }
+
+    /// Anota o label se o plist já é o do app. Não reescreve um arquivo plantado.
+    private func anotarLegadoSeForDoApp(_ a: AgenteApp) {
+        guard conteudoEhDoApp(a), !gerenciados().contains(a.antigo) else { return }
+        var m = gerenciados(); m.insert(a.antigo); try? gravarManifesto(m)
+    }
+
+    /// Bootstrap só com as duas condições: manifesto que o app gravou e conteúdo igual ao gerado.
+    func podeCarregarLegado(_ a: AgenteApp) -> Bool {
+        guard urlLegadoSeguro(a.antigo) != nil, gerenciados().contains(a.antigo) else { return false }
+        return conteudoEhDoApp(a)
+    }
+
+    private func reverterParaLegado(_ a: AgenteApp) {
+        guard podeCarregarLegado(a), let url = urlLegadoSeguro(a.antigo) else { return }
+        for _ in 0..<5 {
+            if sistema.launchctl(["bootstrap", dominio, url.path]).0 == 0 || carregado(a.antigo).0 { break }
+            esperar(1)
+        }
+    }
     func carregado(_ label: String) -> (Bool, String) {
         let (c, s) = sistema.launchctl(["print", "\(dominio)/\(label)"]); return (c == 0, s)
     }
@@ -82,10 +184,12 @@ public final class AgentesDoApp {
 
     /// Troca o plist solto (Label antigo) pelo agente do app (Label novo). Nunca roda os dois ao mesmo
     /// tempo: o antigo sai do launchd antes de registrar o novo. O plist solto só é apagado depois que
-    /// o novo carregou e foi confirmado (heartbeat real no dispatcher); senão volta ao plist solto.
+    /// o novo carregou e foi confirmado (heartbeat real no dispatcher). Se o registro falha, volta ao
+    /// plist antigo só quando o app o gravou (manifesto) e o conteúdo ainda é o que o app geraria.
     public func migrar(_ a: AgenteApp) -> ResultadoMigracao {
         if registro.status(a.plist) == .ativo && carregado(a.novo).0 { aposentarAntigo(a); return .jaNoApp }
         guard sistema.existe(legadoURL(a.antigo)) else { return .semLegado }
+        anotarLegadoSeForDoApp(a)
         _ = sistema.launchctl(["bootout", "\(dominio)/\(a.antigo)"])
         for _ in 0..<5 where carregado(a.antigo).0 { esperar(1) }   // bootout é assíncrono
         let inicio = Date()
@@ -108,10 +212,7 @@ public final class AgentesDoApp {
         } catch { motivo = error.localizedDescription }
         try? registro.desregistrar(a.plist)
         _ = sistema.launchctl(["bootout", "\(dominio)/\(a.novo)"])
-        for _ in 0..<5 {
-            if sistema.launchctl(["bootstrap", dominio, legadoURL(a.antigo).path]).0 == 0 || carregado(a.antigo).0 { break }
-            esperar(1)
-        }
+        reverterParaLegado(a)
         return .revertido(motivo)
     }
 
@@ -124,12 +225,13 @@ public final class AgentesDoApp {
         return .desligado
     }
 
-    /// Liga pelo app; se o macOS recusar e ainda houver o plist solto, carrega o solto.
+    /// Liga pelo app. Falha do SMAppService não carrega um plist solto arbitrário:
+    /// só o que está no manifesto e cujo conteúdo ainda é o que o app geraria.
     public func ligar(_ a: AgenteApp) throws {
         do { try registro.registrar(a.plist) } catch {
-            guard sistema.existe(legadoURL(a.antigo)) else { throw error }
+            guard podeCarregarLegado(a), let url = urlLegadoSeguro(a.antigo) else { throw error }
             _ = sistema.launchctl(["enable", "\(dominio)/\(a.antigo)"])
-            _ = sistema.launchctl(["bootstrap", dominio, legadoURL(a.antigo).path])
+            _ = sistema.launchctl(["bootstrap", dominio, url.path])
         }
     }
 

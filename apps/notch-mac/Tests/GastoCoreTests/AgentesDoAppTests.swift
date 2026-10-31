@@ -64,20 +64,23 @@ final class AgentesDoAppTests: XCTestCase {
         let r = RegistroFalso(); let (a, s) = montar(r, heartbeat: false)
         XCTAssertEqual(a.migrar(d), .revertido("sem heartbeat em modo real"))
         XCTAssertNotNil(s.arquivos[a.legadoURL(d.antigo).path])
-        XCTAssertTrue(s.carregados.contains(d.antigo)); XCTAssertFalse(s.carregados.contains(d.novo))
+        XCTAssertFalse(s.carregados.contains(d.antigo)); XCTAssertFalse(s.carregados.contains(d.novo))
         XCTAssertEqual(r.status(d.plist), .naoRegistrado)
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
     }
 
     func testRegistroRecusadoReverte() {
         let r = RegistroFalso(); r.falhar = true; let (a, s) = montar(r)
         guard case .revertido = a.migrar(d) else { return XCTFail() }
-        XCTAssertTrue(s.carregados.contains(d.antigo))
+        XCTAssertFalse(s.carregados.contains(d.antigo))
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
     }
 
     func testAprovacaoPendenteReverte() {
         let r = RegistroFalso(); r.aoRegistrar = .precisaAprovacao; let (a, s) = montar(r)
         XCTAssertEqual(a.migrar(d), .revertido("precisa de aprovação nos Itens de Login"))
-        XCTAssertTrue(s.carregados.contains(d.antigo))
+        XCTAssertFalse(s.carregados.contains(d.antigo))
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
     }
 
     func testJaNoAppAposentaOAntigo() {
@@ -98,8 +101,9 @@ final class AgentesDoAppTests: XCTestCase {
         let r = RegistroFalso(); let (a, s) = montar(r)
         XCTAssertEqual(a.status(d), .aguardando)            // plist solto carregado
         try a.desligar(d); XCTAssertEqual(a.status(d), .desligado)
-        r.falhar = true; try a.ligar(d)                      // recusa: volta o solto
-        XCTAssertTrue(s.carregados.contains(d.antigo))
+        r.falhar = true
+        XCTAssertThrowsError(try a.ligar(d))                 // plantado: não faz bootstrap
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
         r.falhar = false; try a.desligar(d); try a.ligar(d)
         XCTAssertEqual(r.status(d.plist), .ativo)
         r.estado[d.plist] = .precisaAprovacao
@@ -120,5 +124,59 @@ final class AgentesDoAppTests: XCTestCase {
     func testMapaDeLabels() {
         XCTAssertEqual(AgentesDoApp.agente(antigo: "com.transcentia.bots.watch")?.novo, "app.tuttidash.agente.vigia")
         XCTAssertEqual(Set(AgentesDoApp.todos.map(\.novo)).count, 3)
+    }
+
+    /// Plist com o conteúdo que o app geraria, anotado na migração, volta se o SMAppService recusa.
+    func testMigracaoDoAppVoltaAoPlistSeORegistroFalhar() throws {
+        let r = RegistroFalso(); r.falhar = true
+        let (a, s) = montar(r)
+        s.arquivos[a.legadoURL(d.antigo).path] = try a.plistGerado(d)
+        guard case .revertido = a.migrar(d) else { return XCTFail() }
+        XCTAssertTrue(a.gerenciados().contains(d.antigo))
+        XCTAssertTrue(s.carregados.contains(d.antigo))
+        XCTAssertTrue(s.chamadas.contains { $0.first == "bootstrap" && $0.last == a.legadoURL(d.antigo).path })
+    }
+
+    /// Manifesto forjado não autoriza o arquivo plantado, nem no clique nem na reversão.
+    func testPlistPlantadoNaoCarregaMesmoComManifestoForjado() throws {
+        let r = RegistroFalso(); r.falhar = true
+        let (a, s) = montar(r)
+        s.arquivos[a.legadoURL(d.antigo).path] = Data("plantado".utf8)
+        s.arquivos[a.manifestoURL.path] = try JSONSerialization.data(withJSONObject: [d.antigo, "../../x"])
+        s.carregados.remove(d.antigo)
+        s.chamadas = []
+        XCTAssertFalse(a.podeCarregarLegado(d))
+        XCTAssertThrowsError(try a.ligar(d))
+        XCTAssertFalse(s.carregados.contains(d.antigo))
+        guard case .revertido = a.migrar(d) else { return XCTFail() }
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
+        XCTAssertFalse(s.carregados.contains(d.antigo))
+    }
+
+    /// Conteúdo certo sem manifesto não carrega. O que o app gravou, carrega.
+    func testLigarCarregaSoPlistQueOAppGravou() throws {
+        let r = RegistroFalso(); r.falhar = true
+        let (a, s) = montar(r)
+        s.carregados.remove(d.antigo)
+        s.arquivos[a.legadoURL(d.antigo).path] = try a.plistGerado(d)
+        s.chamadas = []
+        XCTAssertThrowsError(try a.ligar(d))
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
+        try a.gravarLegadoDoApp(d)
+        s.carregados.remove(d.antigo)
+        try a.ligar(d)
+        XCTAssertTrue(s.carregados.contains(d.antigo))
+        XCTAssertEqual(s.chamadas.last ?? [], ["bootstrap", "gui/501", a.legadoURL(d.antigo).path])
+    }
+
+    func testLabelQueSaiDaPastaNaoCarrega() {
+        let r = RegistroFalso(); r.falhar = true
+        let s = LaunchdFalso()
+        let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 1, esperar: { _ in })
+        let mal = AgenteApp(novo: d.novo, antigo: "../../x")
+        s.arquivos[a.legadoURL("../../x").path] = Data("plantado".utf8)
+        XCTAssertNil(a.urlLegadoSeguro("../../x"))
+        XCTAssertThrowsError(try a.ligar(mal))
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootstrap" })
     }
 }
