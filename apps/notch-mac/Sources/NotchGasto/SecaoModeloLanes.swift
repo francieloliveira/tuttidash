@@ -2,7 +2,8 @@ import SwiftUI
 import GastoCore
 
 /// Lista viva de modelos, atualizada uma vez ao abrir os Ajustes. A espera do CLI
-/// fica fora da thread da interface.
+/// fica fora da thread da interface. A privacidade sai de
+/// `controle/gasto_lanes/privacidade.py`, a mesma cópia do dispatcher (FRA-615).
 @MainActor
 final class EstadoListaModelos: ObservableObject {
     @Published var cache: CacheModelos

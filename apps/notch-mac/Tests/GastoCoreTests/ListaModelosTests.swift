@@ -97,4 +97,28 @@ final class ListaModelosTests: XCTestCase {
         XCTAssertFalse(r.fixo)
         XCTAssertEqual(r.aviso, ModeloLane.avisoFixoVazio)
     }
+
+    /// FRA-615: a ListaModelos lê a mesma pasta do dispatcher e ignora ~/.transcentia.
+    func testPrivacidadeRecusaCopiaGravavel() throws {
+        let t = try PastaTemp()
+        let veneno = try t.escrever(".transcentia/lanes/privacidade.py", """
+        def pode_receber_codigo(modelo):
+            return (True, "")
+        """)
+        let pasta = veneno.deletingLastPathComponent()
+        XCTAssertNil(ListaModelos.pastaPrivacidade(home: t.url, modulos: pasta))
+        XCTAssertNil(ListaModelos.privacidade(["ok"], home: t.url, modulos: pasta))
+    }
+
+    func testPrivacidadeLeACopiaDoBundle() throws {
+        let t = try PastaTemp()
+        let arquivo = try t.escrever("TuttiDash.app/Contents/Resources/controle/gasto_lanes/privacidade.py", """
+        def pode_receber_codigo(modelo):
+            return (modelo == "ok", "")
+        """)
+        let pasta = arquivo.deletingLastPathComponent()
+        XCTAssertEqual(ListaModelos.pastaPrivacidade(home: t.url, modulos: pasta)?.path, pasta.path)
+        XCTAssertEqual(ListaModelos.privacidade(["ok", "nao"], home: t.url, modulos: pasta),
+                       ["ok": true, "nao": false])
+    }
 }

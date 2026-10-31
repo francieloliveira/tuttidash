@@ -55,8 +55,12 @@ final class EstadoLanesHabilitadas: ObservableObject {
     }
 
     /// Recria os painéis que faltarem na janela tmux (melhor esforço, fora da UI).
+    /// O script é o do bundle. A cópia em `~/.transcentia/lanes` não roda (FRA-615).
     private func atualizarJanela() {
-        let script = stateDir.appendingPathComponent("lanes_window.py")
+        let script = ScriptsDoBundle.obrigatorio("lanes/lanes_window.py")
+        guard FileManager.default.isReadableFile(atPath: script.path), !script.path.contains(".transcentia") else {
+            return
+        }
         Task.detached(priority: .utility) {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/python3")

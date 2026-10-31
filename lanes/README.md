@@ -6,6 +6,13 @@ antes do `codesign`. O estado (`enabled`, heartbeat, `lane-*.json`) continua
 em `~/.transcentia/lanes/`. Não copie estes scripts para lá: uma cópia antiga
 é legado inerte.
 
+Os módulos que o dispatcher, o vigia e a ListaModelos importam
+(`catalogo.py`, `projetos.py`, `privacidade.py`, `linear_ids.py`, e
+`gasto_privado.py` quando o build pessoal existe) ficam numa pasta só:
+`TuttiDash.app/Contents/Resources/controle/gasto_lanes/`. `fila.py` e
+`config.py` vão junto porque o import deles é da mesma pasta. Essa cópia
+não é `~/.transcentia`.
+
 ```
 dispatcher.py    dispatcher das lanes (60 s, launchd app.tuttidash.agente.dispatcher)
 run_lane.sh      runner de uma lane dentro da sessão tmux (lê .lane/agent_cmd)

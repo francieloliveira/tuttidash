@@ -40,4 +40,26 @@ public enum ScriptsDoBundle {
     public static func obrigatorio(_ relativo: String, bundle: Bundle = .main) -> URL {
         url(relativo, bundle: bundle) ?? URL(fileURLWithPath: prefixoAplicacoes + relativo)
     }
+
+    /// Pasta única dos módulos Python. O dispatcher, o vigia e a ListaModelos
+    /// leem daqui (`controle/gasto_lanes`). `gasto_privado.py` é opcional.
+    public static let relativoModulos = "gasto_lanes"
+
+    public static func modulosAssinados(bundle: Bundle = .main) -> URL? {
+        if let achado = urlModulos(recursos: bundle.resourceURL) { return achado }
+        return urlModulos(recursos: URL(fileURLWithPath: "/Applications/TuttiDash.app/Contents/Resources"))
+    }
+
+    private static func urlModulos(recursos: URL?) -> URL? {
+        guard let recursos else { return nil }
+        let base = recursos.appendingPathComponent("controle").standardizedFileURL
+        let url = base.appendingPathComponent(relativoModulos).standardizedFileURL
+        guard url.path.hasPrefix(base.path + "/") else { return nil }
+        guard !url.path.contains(".transcentia"), !url.path.contains("..") else { return nil }
+        let catalogo = url.appendingPathComponent("catalogo.py").path
+        let privacidade = url.appendingPathComponent("privacidade.py").path
+        guard FileManager.default.isReadableFile(atPath: catalogo),
+              FileManager.default.isReadableFile(atPath: privacidade) else { return nil }
+        return url
+    }
 }

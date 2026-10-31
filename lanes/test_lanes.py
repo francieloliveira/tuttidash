@@ -4,6 +4,7 @@ Roda da raiz do repo: python3 lanes/test_lanes.py
 """
 import datetime as dt
 import fcntl
+import importlib
 import json
 import os
 import shutil
@@ -296,19 +297,26 @@ class Comandos(unittest.TestCase):
 class Janela(unittest.TestCase):
     def test_ordem_e_enabled(self):
         self.assertEqual(w.LANES_ORDEM[:3], ("claude", "grok", "opencode"))
-        # sem arquivo enabled ao lado: padrão compatível
-        import tempfile as t
-        d2 = Path(t.mkdtemp())
-        (d2 / "lanes_window.py").write_text((Path(w.__file__).read_text()))
+        # A cópia isolada lê `enabled` ao lado do script e o catálogo em
+        # ../gasto_lanes. Não consulta ~/.transcentia (FRA-615).
+        base = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        d2 = base / "lanes"
+        d2.mkdir()
+        (d2 / "lanes_window.py").write_text(Path(w.__file__).read_text())
         (d2 / "enabled").write_text("claude grok opencode\n")
+        mods = base / "gasto_lanes"
+        mods.mkdir()
+        shutil.copy(Path(w.__file__).resolve().parent.parent / "gasto_lanes" / "catalogo.py",
+                    mods / "catalogo.py")
+        antes = list(sys.path)
         sys.path.insert(0, str(d2))
         try:
-            import importlib
             mod = importlib.import_module("lanes_window")
             importlib.reload(mod)
             self.assertEqual(mod.LANES, ("claude", "grok", "opencode"))
         finally:
-            sys.path.remove(str(d2))
+            sys.path[:] = antes
             importlib.reload(w)
 
 

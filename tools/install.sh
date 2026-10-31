@@ -10,6 +10,9 @@
 #                               FRA-613: dispatcher, vigia, chave, run_lane, lane_view,
 #                               lanes_window e lanes_ctl NÃO são copiados para ~/.transcentia.
 #                               O launchd executa a cópia do TuttiDash.app assinado.
+#                               FRA-615: catalogo, projetos, privacidade, linear_ids, fila
+#                               e config também não. O bundle traz controle/gasto_lanes.
+#                               gasto_privado.py continua opcional (build pessoal).
 #   tools/install.sh --sem-launchd   só copia arquivos
 # Espelho: não mexe no PAUSE (quem decide é a chave bots-chave); nunca inicia o vigia em paralelo.
 set -euo pipefail
@@ -79,23 +82,18 @@ aviso_legado "$B/watch.py"
 install -m 755 "$ROOT/bots/instalar.sh" "$B/instalar.sh"
 install -m 644 "$ROOT/bots/prompts/"*.md "$B/prompts/"
 
-# Catálogo de agentes e de projetos: fonte única dos CLIs/lanes e da lista de
-# projetos que o dispatcher enxerga (Swift, dispatcher e vigia leem o mesmo).
-# Os dois módulos são stdlib puro e precisam estar ao lado de cada script que roda
-# isolado (o dispatcher e o vigia não enxergam o pacote).
-for mod in catalogo fila projetos privacidade linear_ids config; do
-  install -m 644 "$ROOT/gasto_lanes/$mod.py" "$B/$mod.py"
+# Catálogo e projetos: o dispatcher, o vigia e a ListaModelos leem a cópia em
+# TuttiDash.app/Contents/Resources/controle/gasto_lanes (FRA-615). A pasta
+# gravável não recebe esses módulos. config.py ao lado do cfg continua: o
+# binário `cfg` não é o import do plano de controle.
+for mod in catalogo fila projetos privacidade linear_ids config gasto_privado; do
+  aviso_legado "$B/$mod.py"
 done
-# Build pessoal (FRA-565): módulo opcional fora do repositório aberto, ao lado do catálogo.
-PRIVADO_PY="$ROOT/apps/notch-mac/Privado/python/gasto_privado.py"
-[ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$B/gasto_privado.py"
 LANES_DIR="$HOME/.transcentia/lanes"
 if [ -d "$LANES_DIR" ]; then
-  # Módulos continuam aqui até o FRA-615. Os scripts do plano de controle não.
-  for mod in catalogo fila projetos privacidade linear_ids config; do
-    install -m 644 "$ROOT/gasto_lanes/$mod.py" "$LANES_DIR/$mod.py"
+  for mod in catalogo fila projetos privacidade linear_ids config gasto_privado; do
+    aviso_legado "$LANES_DIR/$mod.py"
   done
-  [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$LANES_DIR/gasto_privado.py"
   for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh lane_view.py; do
     aviso_legado "$LANES_DIR/$f"
   done

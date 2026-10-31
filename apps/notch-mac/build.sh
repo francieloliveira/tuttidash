@@ -63,6 +63,18 @@ install -m 755 "$REPO/tools/bots-chave" "$CTRL/tools/bots-chave"
 install -m 755 "$REPO/tools/lanes.command" "$CTRL/tools/lanes.command"
 install -m 644 "$REPO/tools/script-controle.sh" "$CTRL/tools/script-controle.sh"
 
+echo "==> módulos Python (controle/gasto_lanes, FRA-615)"
+# Uma cópia só: dispatcher, vigia, janela e ListaModelos leem esta pasta.
+# gasto_privado.py é do build pessoal; sem o arquivo a instalação pública segue.
+mkdir -p "$CTRL/gasto_lanes"
+for mod in catalogo.py projetos.py privacidade.py linear_ids.py fila.py config.py; do
+  install -m 644 "$REPO/gasto_lanes/$mod" "$CTRL/gasto_lanes/$mod"
+done
+PRIVADO_PY="$REPO/apps/notch-mac/Privado/python/gasto_privado.py"
+if [[ -f "$PRIVADO_PY" ]]; then
+  install -m 644 "$PRIVADO_PY" "$CTRL/gasto_lanes/gasto_privado.py"
+fi
+
 echo "==> textos (Localizable.xcstrings -> en/pt-BR)"
 xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$APP/Contents/Resources"
 # FRA-524: o app é só em pt-BR. Com o en.lproj no bundle, um Mac em inglês misturava os dois idiomas.

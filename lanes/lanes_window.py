@@ -20,13 +20,42 @@ SESSION = "lanes"
 # fonte do dispatcher e do vigia): a lane entra quando está habilitada no arquivo
 # `enabled` (mesmo que o dispatcher lê); sem o arquivo, as duas primeiras.
 _AQUI = Path(__file__).resolve().parent
-# Pasta do script primeiro. Módulos em ~/.transcentia entram depois (FRA-615 tira isso).
-sys.path.insert(0, str(_AQUI))
-for _cand in (_AQUI, _AQUI.parent / "gasto_lanes", Path.home() / ".transcentia" / "lanes"):
-    if (_cand / "catalogo.py").is_file():
-        if _cand != _AQUI and str(_cand) not in sys.path:
-            sys.path.append(str(_cand))
-        break
+
+
+def _ativar_modulos() -> Path:
+    """`gasto_lanes/` do bundle assinado, ou o do repo. Nunca `~/.transcentia`.
+
+    Igual em `lanes/dispatcher.py` e `bots/watch.py`. Sem `catalogo.py`
+    nessa pasta, o import fecha: a cópia gravável não é consultada.
+    """
+    aqui = Path(__file__).resolve().parent
+    pasta = (aqui.parent / "gasto_lanes").resolve()
+    catalogo = (pasta / "catalogo.py").resolve()
+    if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
+        sys.exit("catalogo não está no bundle; import recusado")
+    for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py", "gasto_privado.py"):
+        arq = pasta / nome
+        if not arq.exists():
+            continue
+        if ".transcentia" in str(arq.resolve()):
+            sys.exit(f"{nome} não está no bundle; import recusado")
+
+    def suspeito(p: str) -> bool:
+        if ".transcentia" in p:
+            return True
+        if p == "":
+            try:
+                return ".transcentia" in str(Path.cwd().resolve())
+            except OSError:
+                return True
+        return False
+
+    resto = [p for p in sys.path if p not in (str(aqui), str(pasta)) and not suspeito(p)]
+    sys.path[:] = [str(aqui), str(pasta), *resto]
+    return pasta
+
+
+_ativar_modulos()
 import catalogo  # noqa: E402
 
 LANES_ORDEM = catalogo.lanes_por_prioridade()
