@@ -1379,6 +1379,9 @@ def recheck_needs(ci: dict, st: dict, diary: list[str]) -> bool:
 # O vigia monta `~/.transcentia/lanes/caixa-dono.json`: um item por card com a etiqueta do dono,
 # com a pendência, até 3 decisões e a recomendada (da reconferência), para o app mostrar e o
 # dono decidir com um clique. Card cancelado com pendência é limpo aqui também.
+# FRA-601: o arquivo não leva id de issue, de etiqueta nem de estado. Quem escreve esta pasta
+# escolheria o card e a etiqueta que o clique aplica. O app resolve o issue pelo identifier
+# e lê os ids no cache/config do Linear (o mesmo do vigia), com o token já compartilhado.
 CAIXA_ARQUIVO = LANES_DIR / "caixa-dono.json"
 ACAO_RE = re.compile(r"\[\s*(esforco\s*=\s*(baixo|medio|alto)|lane\s*=\s*([a-z0-9-]+)|cancelar)\s*\]\s*$", re.I)
 SEM_DECISAO_RE = re.compile(r"\b(manter|esperar|aguardar)\b", re.I)
@@ -1442,7 +1445,10 @@ def origem_e_motivo(ci: dict) -> tuple[str, str]:
 
 
 def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> dict:
-    """Grava a caixa do dono (atômica) e devolve o que gravou."""
+    """Grava a caixa do dono (atômica) e devolve o que gravou.
+
+    Só o que a tela mostra: identifier, textos e opção com tipo fechado. Sem `issue_id`
+    e sem mapa de ids — isso o app resolve no clique (FRA-601)."""
     agora = time.time() if agora is None else agora
     st.setdefault("caixa_analise", {})
     st.setdefault("caixa_desde", {})
@@ -1457,12 +1463,11 @@ def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> 
         origem, motivo = origem_e_motivo(ci)
         nomes = labels_of(ci)
         pergunta = f"{ident}:{an.get('imp') or int(desde)}"
-        itens.append({"card": ident, "issue_id": ci["id"], "titulo": ci.get("title") or "", "url": ci.get("url") or "",
+        itens.append({"card": ident, "titulo": ci.get("title") or "", "url": ci.get("url") or "",
                       "desde": datetime.fromtimestamp(desde).isoformat(timespec="seconds"),
                       "origem": origem, "motivo": motivo, "pergunta_id": pergunta,
                       "pendencia": an.get("pendencia") or "", "opcoes": an.get("opcoes") or [],
                       "recomenda": an.get("recomenda") or "", "porque": an.get("porque") or "",
-                      "analise": an.get("quem") or "",
                       "esforco": next((e for e in ESFORCOS if e in nomes), ""),
                       # Outras etiquetas que seguram o card: liberar o dono não o devolve à fila sozinho.
                       "outras_travas": [lb for lb in ("lane:falhou", "lane:parada") if lb in nomes],
@@ -1470,11 +1475,8 @@ def escrever_caixa(issues: list[dict], st: dict, agora: float | None = None) -> 
     for ident in list(st["caixa_desde"]):
         if ident not in vistos:
             st["caixa_desde"].pop(ident, None)
-    ids = IDS_LINEAR or {}
     dados = {"atualizado_em": datetime.fromtimestamp(agora).isoformat(timespec="seconds"),
              "rotulo_dono": OWNER_LABEL,
-             "ids": {"dono": LABEL_IDS.get(OWNER_LABEL, ""), "esforco": dict(ids.get("esforco") or {}),
-                     "lanes": dict(ids.get("lanes") or {}), "cancelado": st.get("estado_cancelado_id", "")},
              "itens": sorted(itens, key=lambda i: i["desde"]),
              "cancelados": sorted((st.get("cancelados_limpos") or {}).keys())}
     CAIXA_ARQUIVO.parent.mkdir(parents=True, exist_ok=True)
