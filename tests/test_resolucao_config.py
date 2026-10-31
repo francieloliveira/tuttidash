@@ -3,12 +3,16 @@
 env > TuttiDash > Lanekeeper > TranscentIA Gasto > legado.
 A env aponta um caminho que ainda não existe: não se lê o arquivo seguinte.
 """
+import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from gasto_lanes import config as C
+from gasto_lanes import projetos as P
 
 
 class PrecedenciaDoArquivo(unittest.TestCase):
@@ -86,6 +90,105 @@ class PrecedenciaDoArquivo(unittest.TestCase):
         self.assertEqual(
             C.arquivo_config(env=env, home=self.home, platform="win32"), caminho)
         self.assertEqual(C.caminhos_config(self.home, "win32", env), (caminho,))
+
+
+class MesmoArquivo(unittest.TestCase):
+    """``projeto().repo`` e ``linear.*`` saem do arquivo que o resolvedor escolheu.
+
+    O vigia lia ``linear.*`` pelo ``cfg`` e o repo por ``projetos.py``. Com a env
+    ou com a config antiga, os dois caminhos agora apontam o mesmo arquivo.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self.addCleanup(P._resetar_cache)
+        P._resetar_cache()
+
+    def escrever(self, relativo, dados) -> Path:
+        caminho = self.home / relativo
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        caminho.write_text(json.dumps(dados), encoding="utf-8")
+        return caminho
+
+    def cfg(self):
+        caminho = Path(__file__).resolve().parents[1] / "tools" / "cfg"
+        spec = importlib.util.spec_from_file_location("cfg_fra605", caminho)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def cadastro(self, repo, dono, workspace):
+        return {
+            "projetos": [{
+                "id": "aaaaaaaa-0000-4000-8000-0000000000aa",
+                "nome": "App",
+                "repo": repo,
+                "padrao": True,
+            }],
+            "linear": {"owner_label": dono, "workspace_url": workspace},
+        }
+
+    def assert_mesmo_arquivo(self, arquivo, repo, dono, workspace):
+        P._resetar_cache()
+        cfg = self.cfg()
+        self.assertEqual(cfg.arquivo(), arquivo)
+        self.assertEqual(C.arquivo_config(), arquivo)
+        self.assertEqual(P.padrao().repo, Path(repo))
+        self.assertEqual(cfg.get("linear.owner_label"), dono)
+        self.assertEqual(cfg.get("linear.workspace_url"), workspace)
+        self.assertEqual(C.obter("linear.owner_label"), dono)
+        self.assertEqual(C.obter("linear.workspace_url"), workspace)
+
+    def test_env_vence_e_os_dois_leem_esse_arquivo(self):
+        repo = str(self.home / "repo-env")
+        envf = self.escrever("env.json", self.cadastro(repo, "needs:env", "https://env.example"))
+        self.escrever("Library/Application Support/TuttiDash/config.json",
+                      self.cadastro(str(self.home / "repo-tutti"), "needs:tutti", "https://tutti.example"))
+        self.escrever("Library/Application Support/Lanekeeper/config.json",
+                      self.cadastro(str(self.home / "repo-lane"), "needs:lane", "https://lane.example"))
+        self.escrever("Library/Application Support/TranscentIA Gasto/config.json",
+                      self.cadastro(str(self.home / "repo-gasto"), "needs:gasto", "https://gasto.example"))
+        self.escrever(".transcentia/tools/config.json",
+                      self.cadastro(str(self.home / "repo-legado"), "needs:legado", "https://legado.example"))
+        with mock.patch.object(Path, "home", return_value=self.home), \
+             mock.patch.dict(os.environ, {C.ENV_CONFIG: str(envf)}):
+            self.assert_mesmo_arquivo(envf, repo, "needs:env", "https://env.example")
+
+    def test_config_antiga_sem_as_pastas_novas(self):
+        repo = str(self.home / "repo-legado")
+        legado = self.escrever(".transcentia/tools/config.json",
+                               self.cadastro(repo, "needs:legado", "https://legado.example"))
+        with mock.patch.object(Path, "home", return_value=self.home), \
+             mock.patch.dict(os.environ, {C.ENV_CONFIG: ""}):
+            self.assert_mesmo_arquivo(legado, repo, "needs:legado", "https://legado.example")
+
+    def test_nome_provisorio_quando_e_o_mais_novo_que_existe(self):
+        repo = str(self.home / "repo-gasto")
+        gasto = self.escrever("Library/Application Support/TranscentIA Gasto/config.json",
+                              self.cadastro(repo, "needs:gasto", "https://gasto.example"))
+        self.escrever(".transcentia/tools/config.json",
+                      self.cadastro(str(self.home / "repo-legado"), "needs:legado", "https://legado.example"))
+        with mock.patch.object(Path, "home", return_value=self.home), \
+             mock.patch.dict(os.environ, {C.ENV_CONFIG: ""}):
+            self.assert_mesmo_arquivo(gasto, repo, "needs:gasto", "https://gasto.example")
+
+    def test_tutti_sem_projeto_nao_busca_o_repo_no_legado(self):
+        """O bug: linear no TuttiDash e o repo no legado. Os dois ficam no TuttiDash."""
+        self.escrever("Library/Application Support/TuttiDash/config.json",
+                      {"linear": {"owner_label": "needs:tutti", "workspace_url": "https://tutti.example"}})
+        self.escrever(".transcentia/tools/config.json",
+                      self.cadastro(str(self.home / "repo-legado"), "needs:legado", "https://legado.example"))
+        tutti = self.home / "Library/Application Support/TuttiDash/config.json"
+        with mock.patch.object(Path, "home", return_value=self.home), \
+             mock.patch.dict(os.environ, {C.ENV_CONFIG: ""}):
+            P._resetar_cache()
+            cfg = self.cfg()
+            self.assertEqual(cfg.arquivo(), tutti)
+            self.assertEqual(cfg.get("linear.owner_label"), "needs:tutti")
+            self.assertEqual(P.padrao().id, "")
+            self.assertEqual(C.obter("linear.workspace_url"), "https://tutti.example")
 
 
 if __name__ == "__main__":
