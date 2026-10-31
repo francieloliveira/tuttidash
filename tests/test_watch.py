@@ -1364,6 +1364,11 @@ class MergeSoClean(unittest.TestCase):
         self._rodar()
         self.assertTrue(self._mergeou())
 
+    def test_rascunho_nao_e_mergeado(self):
+        self.pr = self._pr(isDraft=True)
+        self._rodar()
+        self.assertFalse(self._mergeou())
+
     def test_unstable_nao_chama_gh_pr_merge(self):
         self.pr = self._pr(mergeStateStatus="UNSTABLE")
         self._rodar()

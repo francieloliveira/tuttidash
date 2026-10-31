@@ -208,6 +208,10 @@ public struct LinhaLane: Equatable, Sendable {
     public var textoModelo: String? = nil
     /// «modelo fixo» ou o aviso de que o modelo saiu da lista.
     public var avisoModelo: String? = nil
+    /// PR aberto em rascunho, à espera do check remoto.
+    public var urlProvaRemota: String? = nil
+    /// Check `prova-remota` no GitHub, quando o dispatcher já tem o link.
+    public var urlCheckRemoto: String? = nil
 }
 
 public struct EstadoNotch: Equatable, Sendable {

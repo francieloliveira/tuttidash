@@ -16,7 +16,9 @@ Obrigado pelo interesse. O TuttiDash é um projeto pessoal compartilhado como es
 
 - Run the publication check / Rode a conferência de publicação: `tools/checar-publicacao.sh`.
 - A pull request into `main` also runs `prova-remota`: the proof script is the one from the base commit.
+  The dispatcher opens that PR as a draft and moves the card to In Review only after the check is green on the full head SHA.
   / Um PR para a `main` também roda `prova-remota`: o script da prova é o do commit da base.
+  O dispatcher abre esse PR em rascunho e só move o card para In Review quando o check está verde no SHA completo.
 - Keep the Python side standard library only, and the Swift side without external packages.
   / Python só com a biblioteca padrão; Swift sem pacotes externos.
 - Adding an agent is one manifest in `agents.d/` (see `docs/gasto.md`). / Agente novo = um manifesto em `agents.d/`.

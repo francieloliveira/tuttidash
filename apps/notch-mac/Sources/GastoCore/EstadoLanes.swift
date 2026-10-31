@@ -28,6 +28,10 @@ public struct EstadoLanes: Equatable, Sendable {
         public var modeloFixo: Bool = false
         /// «modelo fixo» ou o aviso de modelo que saiu da lista.
         public var avisoModelo: String? = nil
+        /// PR em rascunho enquanto o check remoto não fecha (FRA-611).
+        public var provaRemotaURL: String? = nil
+        /// Link do check `prova-remota`, quando o GitHub já publicou.
+        public var provaRemotaCheck: String? = nil
 
         /// Nome do log (o caminho vem do Mac; compara pelo nome).
         public var nomeLog: String {
@@ -95,7 +99,9 @@ public struct EstadoLanes: Equatable, Sendable {
                            travada: JV.verdadeiro(d["stuck"]), branch: JV.texto(d["branch"]),
                            effort: JV.texto(d["effort"]), modelo: JV.texto(d["modelo"]),
                            modeloFixo: JV.verdadeiro(d["modelo_fixo"]),
-                           avisoModelo: JV.texto(d["aviso_modelo"]))
+                           avisoModelo: JV.texto(d["aviso_modelo"]),
+                           provaRemotaURL: JV.texto(d["prova_remota_url"]),
+                           provaRemotaCheck: JV.texto(d["prova_remota_check"]))
     }
 
     static func lerJSON(_ url: URL) -> Any? {
