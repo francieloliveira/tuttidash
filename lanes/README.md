@@ -5,7 +5,7 @@ Backup antes de mexer: o install abaixo guarda `.bak` automático.
 
 ```
 dispatcher.py    dispatcher das lanes (60 s, launchd com.transcentia.lanes.dispatcher)
-run_lane.sh      runner de uma lane dentro da sessão tmux (lê .lane/agent_cmd)
+run_lane.sh      runner de uma lane dentro da sessão tmux (comando por argv, fora do worktree)
 lanes_window.py  janela única tmux 'lanes' (um painel por lane habilitada)
 lanes_ctl.py     controles da janela
 lane_view.py     formata a saída do agente no painel
@@ -23,6 +23,25 @@ done
 ```
 
 Nunca edite `~/.transcentia/lanes/` direto: a fonte é esta pasta.
+
+## Prova, exit e agent_cmd fora do worktree (FRA-595)
+
+A prova mora em `~/.transcentia/lanes/provas/<lane>/<card>/<run_id>` (modo `0700`),
+escrita pelo dispatcher e pelo runner: `proof.log`, `proof_exit`, `proof_started`,
+`proof_pid`, `proof_meta.json`. O `finalize` ignora `.lane/proof_*` e
+`.lane/exit_code`. O `exit_code` e o `finalized` também ficam nessa pasta.
+
+`.lane` no worktree só existe para o agente gravar `result.json`. O dispatcher
+não escreve esse arquivo. Abrir `.lane` ou um arquivo dele passa por `lstat` e
+`O_NOFOLLOW|O_EXCL`; symlink é recusado.
+
+`agent_cmd` sai do worktree: o dispatcher grava `agent_cmd.<nonce>` na pasta da
+rodada e o `run_lane.sh` recebe o caminho por argv. Reescrever `.lane/agent_cmd`
+não muda o comando da rodada. O `proof_pid` só leva `killpg` se dono, início e
+comando conferem com o registro; pid de outro processo não é morto.
+
+No mesmo usuário isso é higiene, não isolamento. O fechamento real é a fase 5
+do FRA-589.
 
 ## Lane nova (ex.: opencode, FRA-374)
 
