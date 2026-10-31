@@ -12,6 +12,24 @@ lane_view.py     formata a saída do agente no painel
 test_lanes.py    testes offline (sem Linear, sem rede): python3 lanes/test_lanes.py
 ```
 
+## Estado da lane (FRA-600)
+
+Antes de fechar o card, o `lane-<lane>.json` tem de passar no contrato: worktree
+resolvido sob a pasta de worktrees do projeto, sessão `lane-<lane>`, card
+`^[A-Za-z]+-\d+$`, branch no formato do git (a que o claim gravou), `issue_id`
+igual ao que o `claim` gravou, `base` um commit que o worktree alcança e `log`
+sob o diretório de logs. Estado que falha vai para o log. O dispatcher não chama
+`finalize`, não mata sessão que não seja `lane-<lane>` e não move o card.
+`save_state` legítimo continua gravando e a leitura devolve o que foi gravado.
+
+`proof_pid` e `caffeinate.pid` só recebem sinal se o processo ainda é o que o
+dispatcher gerou: mesmo dono, mesmo início e o command esperado (o bash da prova
+naquele worktree, ou `/usr/bin/caffeinate -i -s -t 150`).
+
+Isto é consistência, não barreira. O mesmo usuário do macOS ainda pode forjar o
+JSON e o `claim-<lane>.json`: os dois estão no home dele. A garantia real é a
+fase 5 (estado fora do alcance do agente).
+
 ## Instalar a cópia viva
 
 ```bash

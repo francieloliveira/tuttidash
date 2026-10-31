@@ -834,8 +834,22 @@ def state_file(lane: str) -> Path:
 
 
 def load_state(lane: str) -> Optional[dict]:
+    """Lê `lane-<lane>.json`. None se não há arquivo.
+
+    JSON ilegível ou que não é objeto volta marcado como recusado: a lane fica
+    ocupada, e o `watch` não fecha, não mata e não move o card. `save_state`
+    legítimo continua gravando o dict e a leitura devolve o que foi gravado.
+    """
     f = state_file(lane)
-    return json.loads(f.read_text()) if f.exists() else None
+    if not f.exists():
+        return None
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return {"lane": lane, "_recusado": "json inválido"}
+    if not isinstance(data, dict):
+        return {"lane": lane, "_recusado": "json não é objeto"}
+    return data
 
 
 def save_state(lane: str, st: dict) -> None:
@@ -845,6 +859,312 @@ def save_state(lane: str, st: dict) -> None:
     tmp = f.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(st, ensure_ascii=False, indent=2))
     tmp.replace(f)
+
+
+# FRA-600. O `lane-<lane>.json` mora no home, gravável pelo mesmo usuário do agente.
+# Isto é consistência: worktree, sessão, card, branch, issue do claim, base e log.
+# Não é barreira. Quem já é o usuário forja o JSON e o claim. A garantia real é a
+# fase 5 (estado fora do alcance do agente).
+_CARD_RE = re.compile(r"^[A-Za-z]+-\d+$")
+_BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
+_CAMPOS_CLAIM = ("card", "issue_id", "branch", "worktree", "base", "log", "session")
+
+
+def claim_file(lane: str) -> Path:
+    return STATE_DIR / f"claim-{lane}.json"
+
+
+def gravar_claim(lane: str, st: dict) -> None:
+    """Par que o `claim` gravou. O JSON da lane não pode trocar estes campos."""
+    dados = {k: st.get(k) for k in _CAMPOS_CLAIM}
+    f = claim_file(lane)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(f)
+
+
+def ler_claim(lane: str) -> Optional[dict]:
+    try:
+        data = json.loads(claim_file(lane).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def apagar_claim(lane: str) -> None:
+    try:
+        claim_file(lane).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def soltar_lane(lane: str) -> None:
+    state_file(lane).unlink(missing_ok=True)
+    apagar_claim(lane)
+
+
+def sessao_de_lane(session: str) -> bool:
+    """`lane-<lane>` de uma lane conhecida. Outro nome não é sessão nossa."""
+    if not isinstance(session, str) or not session.startswith("lane-"):
+        return False
+    return session[len("lane-"):] in LANES
+
+
+def branch_valida(nome) -> bool:
+    if not isinstance(nome, str) or not _BRANCH_RE.fullmatch(nome):
+        return False
+    if nome.startswith("-") or nome.endswith("/") or nome.endswith(".") or nome.endswith(".lock"):
+        return False
+    if ".." in nome.split("/") or "//" in nome or "@{" in nome or ":" in nome:
+        return False
+    return True
+
+
+def _resolvido_sob(caminho: str, raiz: Path) -> Optional[Path]:
+    """Caminho resolvido estritamente dentro de `raiz`, ou None (symlink incluso)."""
+    if not isinstance(caminho, str) or not caminho.strip():
+        return None
+    try:
+        base = Path(raiz).expanduser().resolve()
+        alvo = Path(caminho).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not base.is_dir() or alvo == base or base not in alvo.parents:
+        return None
+    return alvo
+
+
+def _commit_alcancavel(wt: Path, base: str) -> bool:
+    try:
+        out = subprocess.run(
+            ["git", "cat-file", "-e", f"{base}^{{commit}}"],
+            cwd=wt, capture_output=True, text=True, timeout=30,
+            env=dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0"),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return out.returncode == 0
+
+
+def _mesmo_caminho(a, b) -> bool:
+    try:
+        return Path(str(a)).expanduser().resolve() == Path(str(b)).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def motivo_recusa_estado(lane: str, st: dict) -> Optional[str]:
+    """None se o estado pode seguir para o `watch`. Senão o motivo, para o log.
+
+    O mesmo usuário ainda pode forjar este JSON e o `claim-<lane>.json`. A
+    garantia real é a fase 5.
+    """
+    if not isinstance(st, dict):
+        return "estado não é objeto"
+    if st.get("_recusado"):
+        return str(st["_recusado"])
+    if lane not in LANES or st.get("lane") != lane:
+        return "lane diferente do arquivo"
+    if st.get("session") != f"lane-{lane}":
+        return "sessão não é lane-<lane>"
+    card = st.get("card")
+    if not isinstance(card, str) or not _CARD_RE.fullmatch(card):
+        return "card inválido"
+    branch = st.get("branch")
+    if not branch_valida(branch):
+        return "branch inválida"
+    issue = st.get("issue_id")
+    if not isinstance(issue, str) or not issue or any(c.isspace() for c in issue) or '"' in issue:
+        return "issue_id inválido"
+    try:
+        raiz = projeto_worktrees()
+    except Exception as exc:  # noqa: BLE001 — sem pasta não há worktree confiável
+        return f"pasta de worktrees indisponível ({type(exc).__name__})"
+    wt = _resolvido_sob(st.get("worktree"), raiz)
+    if wt is None or not wt.is_dir():
+        return "worktree fora da pasta de worktrees"
+    base = st.get("base")
+    if not isinstance(base, str) or not _SHA_RE.fullmatch(base.strip()):
+        return "base não é commit"
+    base_norm = base.strip().lower()
+    if not _commit_alcancavel(wt, base_norm):
+        return "base não é commit alcançável"
+    log_path = _resolvido_sob(st.get("log"), LOG_DIR)
+    if log_path is None:
+        return "log fora de LOG_DIR"
+    claim = ler_claim(lane)
+    if not claim:
+        return "sem claim gravado"
+    if str(claim.get("issue_id") or "") != issue:
+        return "issue_id diferente do claim gravado"
+    if claim.get("card") != card:
+        return "card diferente do claim gravado"
+    if claim.get("branch") != branch:
+        return "branch diferente do claim gravado"
+    if claim.get("session") != st.get("session"):
+        return "sessão diferente do claim gravado"
+    if str(claim.get("base") or "").strip().lower() != base_norm:
+        return "base diferente do claim gravado"
+    if not _mesmo_caminho(claim.get("worktree"), st.get("worktree")):
+        return "worktree diferente do claim gravado"
+    if not _mesmo_caminho(claim.get("log"), st.get("log")):
+        return "log diferente do claim gravado"
+    return None
+
+
+def card_confiavel(lane: str, st: Optional[dict]) -> Optional[str]:
+    """Card do estado, só quando o esquema confere. Forjado não entra na fila."""
+    if not st or motivo_recusa_estado(lane, st):
+        return None
+    card = st.get("card")
+    return card if isinstance(card, str) else None
+
+
+def _ps_processo(pid: int) -> Optional[dict]:
+    """uid, início (`lstart`) e command do processo vivo. None se não dá para ler."""
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
+        return None
+    try:
+        out = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "uid=", "-o", "lstart=", "-o", "command="],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    linha = out.stdout.strip()
+    if out.returncode != 0 or not linha:
+        return None
+    partes = linha.split()
+    # uid, lstart (5 tokens: dia mês número mês hora ano) e o command.
+    if len(partes) < 7:
+        return None
+    try:
+        uid = int(partes[0])
+    except ValueError:
+        return None
+    return {"pid": pid, "uid": uid, "lstart": " ".join(partes[1:6]), "command": " ".join(partes[6:])}
+
+
+def foto_processo(pid: int) -> Optional[dict]:
+    """A mesma leitura do `_ps_processo`, com folga para o processo acabar de nascer."""
+    for i in range(8):
+        foto = _ps_processo(pid)
+        if foto:
+            return foto
+        if i < 7:
+            time.sleep(0.05)
+    return None
+
+
+def pid_autorizado(pid: int, foto: dict, comando_ok) -> bool:
+    """Dono, início e command batem com o que foi gravado, e o command é o esperado.
+
+    O critério do command é do dispatcher, não o texto que veio do arquivo sozinho.
+    """
+    if not isinstance(foto, dict) or foto.get("pid") != pid:
+        return False
+    if not isinstance(foto.get("uid"), int) or foto["uid"] != os.getuid():
+        return False
+    if not isinstance(foto.get("lstart"), str) or not foto["lstart"]:
+        return False
+    if not isinstance(foto.get("command"), str) or not foto["command"]:
+        return False
+    viva = _ps_processo(pid)
+    if not viva:
+        return False
+    if viva["uid"] != foto["uid"] or viva["lstart"] != foto["lstart"] or viva["command"] != foto["command"]:
+        return False
+    try:
+        return bool(comando_ok(viva["command"]))
+    except Exception:  # noqa: BLE001 — critério quebrado não autoriza sinal
+        return False
+
+
+def arquivo_prova_proc(wt: Path) -> Path:
+    chave = hashlib.sha256(str(Path(wt).resolve()).encode()).hexdigest()[:20]
+    return STATE_DIR / "proof-proc" / f"{chave}.json"
+
+
+def comando_e_prova(wt: Path, command: str) -> bool:
+    """O process group da prova é o `/bin/bash` que o dispatcher lançou neste worktree."""
+    if not command or command.split()[0] != "/bin/bash":
+        return False
+    try:
+        texto = str(Path(wt).resolve())
+    except (OSError, RuntimeError):
+        texto = str(wt)
+    if str(wt) not in command and texto not in command:
+        return False
+    return ".lane/proof.log" in command
+
+
+def registrar_prova(wt: Path, pid: int) -> Optional[dict]:
+    """Grava dono, início e command da prova fora do worktree. Sem isto não há sinal."""
+    foto = foto_processo(pid)
+    if not foto or not comando_e_prova(wt, foto["command"]):
+        return None
+    path = arquivo_prova_proc(wt)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(foto), encoding="utf-8")
+    tmp.replace(path)
+    return foto
+
+
+def _ler_foto(path: Path) -> Optional[dict]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return None
+    if not isinstance(data, dict) or isinstance(data.get("pid"), bool) or not isinstance(data.get("pid"), int):
+        return None
+    return data
+
+
+def comando_e_caffeinate(command: str) -> bool:
+    partes = (command or "").split()
+    return partes == [CAFFEINATE_BIN, "-i", "-s", "-t", str(CAFFEINATE_SECONDS)]
+
+
+def arquivo_caffeinate() -> Path:
+    return STATE_DIR / "caffeinate.pid"
+
+
+def gravar_caffeinate(pid: int) -> Optional[dict]:
+    foto = foto_processo(pid)
+    if not foto or not comando_e_caffeinate(foto["command"]):
+        return None
+    path = arquivo_caffeinate()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".pid.tmp")
+    tmp.write_text(json.dumps(foto), encoding="utf-8")
+    tmp.replace(path)
+    return foto
+
+
+def ler_caffeinate() -> Optional[dict]:
+    """None no formato antigo (só o número): sem início e command, não há sinal."""
+    return _ler_foto(arquivo_caffeinate())
+
+
+def encerrar_caffeinate(foto: Optional[dict]) -> bool:
+    """SIGTERM só se o pid ainda é o caffeinate que este ciclo gravou."""
+    if not foto or not isinstance(foto.get("pid"), int):
+        return False
+    pid = foto["pid"]
+    if not pid_autorizado(pid, foto, comando_e_caffeinate):
+        log(f"caffeinate.pid {pid} recusado (dono, início ou comando); não sinalizo")
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        log(f"caffeinate.pid {pid} sem permissão; não sinalizo")
+        return False
+    return True
 
 
 TITULOS_MAX = 500  # o painel só mostra cards recentes; o arquivo não cresce sem fim
@@ -902,7 +1222,13 @@ def descendants(pid: int) -> list[int]:
 
 
 def kill_lane_tree(session: str) -> None:
-    """Mata a árvore inteira da lane (o xcodebuild junto: senão segura o lock)."""
+    """Mata a árvore inteira da lane (o xcodebuild junto: senão segura o lock).
+
+    Sessão que não é `lane-<lane>` não chega no tmux: o JSON não escolhe o alvo.
+    """
+    if not sessao_de_lane(session):
+        log(f"recuso matar sessão {session!r}: não é lane-<lane>")
+        return
     try:
         panes = sh(["tmux", "list-panes", "-t", session, "-F", "#{pane_pid}"], check=False)
     except Exception:  # noqa: BLE001
@@ -1299,6 +1625,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
           "started": time.time(), "started_at": now(),
           "log": str(lane_log), "session": f"lane-{lane}"}
     save_state(lane, st)
+    gravar_claim(lane, st)
 
     flags = (deepseek_resumo(effort) if lane == "deepseek"
              else " ".join(flags_da_lane(lane, effort)) or "padrão do CLI")
@@ -2207,6 +2534,8 @@ def start_proof(wt: Path, suites: list[str]) -> None:
     proc.returncode = 0
     (lane_dir / "proof_pid").write_text(str(pid))
     (lane_dir / "proof_started").write_text(str(time.time()))
+    if registrar_prova(wt, pid) is None:
+        log(f"prova: pid {pid} sem foto confiável (dono, início ou comando); não sinalizo este pid")
 
 
 def ler_proof_pid(lane_dir: Path) -> Optional[int]:
@@ -2248,10 +2577,23 @@ def prova_viva(pid: int) -> bool:
 
 
 def matar_prova(wt: Path) -> None:
-    """Mata o grupo da prova. O build lock sai junto com o xcodebuild."""
+    """Mata o grupo da prova. O build lock sai junto com o xcodebuild.
+
+    O pid do worktree não manda: só sinaliza o processo que `start_proof` gravou,
+    e só se dono, início e command ainda são os da prova deste worktree.
+    """
     lane_dir = wt / ".lane"
-    pid = ler_proof_pid(lane_dir)
-    if pid is None:
+    foto = _ler_foto(arquivo_prova_proc(wt))
+    pid_arquivo = ler_proof_pid(lane_dir)
+    if not foto:
+        if pid_arquivo is not None:
+            log(f"prova: pid {pid_arquivo} sem registro do dispatcher; não sinalizo")
+        return
+    pid = foto["pid"]
+    if pid_arquivo is not None and pid_arquivo != pid:
+        log(f"prova: proof_pid {pid_arquivo} não é o gravado ({pid}); não sinalizo o arquivo")
+    if not pid_autorizado(pid, foto, lambda comando: comando_e_prova(wt, comando)):
+        log(f"prova: pid {pid} recusado (dono, início ou comando); não sinalizo")
         return
     for sig in (signal.SIGTERM, signal.SIGKILL):
         if not prova_viva(pid):
@@ -2270,6 +2612,10 @@ def matar_prova(wt: Path) -> None:
                 break
             time.sleep(0.05)
     (lane_dir / "proof_pid").unlink(missing_ok=True)
+    try:
+        arquivo_prova_proc(wt).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def decidir_prova_morta(lane_dir: Path) -> str:
@@ -2609,6 +2955,10 @@ def razao_sem_exit(st: dict, agora: Optional[float] = None) -> Optional[str]:
 
 
 def watch(lane: str, st: dict) -> None:
+    motivo = motivo_recusa_estado(lane, st)
+    if motivo:
+        log(f"lane:{lane} estado recusado: {motivo}; não fecho, não mato sessão, não movo o card")
+        return
     if st.get("stuck"):
         return  # precisa de ação humana: ver log; apagar lane-<x>.json libera a lane
     wt = Path(st["worktree"])
@@ -2674,7 +3024,7 @@ def watch(lane: str, st: dict) -> None:
         archive_old_proofs(wt / ".lane", st["card"])
     except Exception as exc:  # noqa: BLE001 — o fechamento não pode falhar por causa do histórico
         log(f"lane:{lane} {st['card']}: não arquivei a prova ({exc})")
-    state_file(lane).unlink(missing_ok=True)
+    soltar_lane(lane)
     log(f"lane:{lane} FECHOU {st['card']} → {outcome}")
 
 
@@ -2924,31 +3274,25 @@ def subir_do_todo_com_lock(auto: list, per_lane: dict, lanes_on, running, limite
 # Sem trabalho, não renova e ele expira sozinho. Sem pmset nem sudo.
 CAFFEINATE_BIN = "/usr/bin/caffeinate"
 CAFFEINATE_SECONDS = 150
-CAFFEINATE_PID_FILE = STATE_DIR / "caffeinate.pid"
 
 
 def keep_awake(has_work: bool) -> None:
-    old_pid = None
-    if CAFFEINATE_PID_FILE.exists():
-        try:
-            old_pid = int(CAFFEINATE_PID_FILE.read_text().strip())
-        except ValueError:
-            old_pid = None
+    antigo = ler_caffeinate()
+    pid_file = arquivo_caffeinate()
     if not has_work:
-        if old_pid is not None:
-            CAFFEINATE_PID_FILE.unlink(missing_ok=True)
+        if pid_file.exists():
+            pid_file.unlink(missing_ok=True)
             log("liberado: sem trabalho, caffeinate expira sozinho")
         return
     proc = subprocess.Popen([CAFFEINATE_BIN, "-i", "-s", "-t", str(CAFFEINATE_SECONDS)],
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, start_new_session=True)
-    CAFFEINATE_PID_FILE.write_text(str(proc.pid))
-    if old_pid is not None:
-        try:
-            os.kill(old_pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
-    else:
+    foto = gravar_caffeinate(proc.pid)
+    if foto is None:
+        log(f"caffeinate {proc.pid} sem foto; o próximo ciclo não sinaliza este pid")
+    if antigo is not None:
+        encerrar_caffeinate(antigo)
+    elif foto is not None:
         log(f"mantendo acordado: caffeinate {proc.pid} por {CAFFEINATE_SECONDS} s, renovado a cada ciclo")
 
 
@@ -2979,7 +3323,8 @@ def run(real: bool, verbose: bool) -> int:
         prev_at = None
     gap = wake_gap_line(prev_at, dt.datetime.now())
     if gap and real:
-        busy = [f"lane:{l} com {st['card']}" for l in LANES if (st := load_state(l))]
+        busy = [f"lane:{l} com {card_confiavel(l, st) or 'estado inválido'}"
+                for l in LANES if (st := load_state(l))]
         log(gap + (f"; em andamento: {', '.join(busy)} (se a sessão caiu, o card volta como lane:parada "
                    "e a triagem devolve à fila)" if busy else ""))
     if real:
@@ -3021,7 +3366,7 @@ def run(real: bool, verbose: bool) -> int:
         # fica visível no log em vez de sumir sem explicação.
         for it in issues:
             it["_projeto"] = proj.nome
-        busy = {s["card"] for s in (load_state(l) for l in LANES) if s}
+        busy = {c for l in LANES if (c := card_confiavel(l, load_state(l)))}
         per_lane: dict[str, list[dict]] = {l: [] for l in LANES}
         excluded: list[str] = []
         auto: list[dict] = []
@@ -3069,13 +3414,14 @@ def run(real: bool, verbose: bool) -> int:
             queue = sorted(per_lane[lane], key=sort_key)
             running = load_state(lane)
             if running:
-                    espera = [i["identifier"] for i in queue]
-                    if espera:
-                        lines.append(f"lane:{lane} ocupada com {running['card']} "
-                                   f"(espera: {', '.join(espera)})")
-                    else:
-                        lines.append(f"lane:{lane} ocupada com {running['card']}")
-                    continue
+                nome = card_confiavel(lane, running) or "estado inválido"
+                espera = [i["identifier"] for i in queue]
+                if espera:
+                    lines.append(f"lane:{lane} ocupada com {nome} "
+                                 f"(espera: {', '.join(espera)})")
+                else:
+                    lines.append(f"lane:{lane} ocupada com {nome}")
+                continue
             if lane in limited:
                 waiting_ids = ", ".join(i["identifier"] for i in queue) or "nenhum card"
                 lines.append(f"lane:{lane} em limite da conta até {hhmm(limited[lane])} "
@@ -3123,7 +3469,7 @@ def run(real: bool, verbose: bool) -> int:
             log(f"lane:{lane} ERRO no claim de {issue['identifier']}: {exc}")
             st = load_state(lane)
             if st and st.get("card") == issue["identifier"]:
-                state_file(lane).unlink(missing_ok=True)
+                soltar_lane(lane)
             try:
                 aplicar_label(issue["id"], LABEL_LANE_FALHOU_ID, linear_ids.FALHOU)
                 linear(MUT_COMMENT, {"id": issue["id"], "body":
