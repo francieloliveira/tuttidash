@@ -1236,7 +1236,7 @@ class StrikesDaOpencode(unittest.TestCase):
         self.assertEqual(d.LANE_TIMEOUT_MIN, 90)
         texto = Path(d.__file__).read_text(encoding="utf-8")
         self.assertIn("28/10/2026", texto)
-        self.assertIn("Franciel", texto)
+        self.assertIn("Decisão do dono", texto)
 
     def test_limite_de_tentativas_em_qualquer_lane(self):
         for lane in ("claude", "grok", "codex", "opencode"):

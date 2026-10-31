@@ -63,7 +63,7 @@ e a lane rodava de novo em opus. Quatro mudanças, todas sem dependência de pro
 
 ## Freios por card (FRA-443)
 
-Decisão do dono Franciel em 28/10/2026. O teto de uma execução não mudou
+Decisão do dono em 28/10/2026. O teto de uma execução não mudou
 (`BUDGET_USD`, `LANE_TIMEOUT_MIN`, `HEADROOM_PCT`). O que passou a valer é o
 acumulado do card, em qualquer lane:
 

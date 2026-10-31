@@ -111,7 +111,7 @@ GROK_TOOLS = ["run_terminal_command", "read_file", "search_replace", "write", "l
               "grep", "todo_write", "get_command_or_subagent_output",
               "kill_command_or_subagent", "monitor"]
 LANE_TIMEOUT_MIN = 90
-# FRA-443 — freios acumulados por card. Decisão do dono Franciel em 28/10/2026.
+# FRA-443 — freios acumulados por card. Decisão do dono em 28/10/2026.
 # D1 tentativas, em qualquer lane. D2 gasto acumulado em US$. D3 tempo acumulado em min.
 # D4: comentário do revisor com MARCA_AJUSTE_OLLIE conta 1 tentativa.
 # D5: só estes freios; o verificador do aceite é o card seguinte.
