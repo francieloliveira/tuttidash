@@ -31,8 +31,10 @@ The script that runs is the git blob `scripts/prova-remota.sh` at
 at the full head SHA, and its scripts are not executed. The check is attached to
 that full head SHA.
 
-This is the proof of the merge. It does not limit the lane. A lane still runs as
-the owner of the machine and can read `~/.ssh` and `~/.config/gh`.
+This is the proof of the merge. Branch protection on `main` has to require the
+check `prova-remota` before merge; the workflow token cannot change that setting.
+It does not limit the lane. A lane still runs as the owner of the machine and
+can read `~/.ssh` and `~/.config/gh`.
 
 PRs para a `main` rodam o check `prova-remota`. O workflow dispara em `pull_request`
 (nunca `pull_request_target`), com `contents: read` e sem secrets. O script é o blob
@@ -40,5 +42,7 @@ PRs para a `main` rodam o check `prova-remota`. O workflow dispara em `pull_requ
 noutro checkout, no SHA completo, e os scripts dele não rodam. O check fica nesse
 SHA completo.
 
-Isso é a prova do merge. Não limita a lane. A lane continua rodando como o dono da
-máquina e pode ler `~/.ssh` e `~/.config/gh`.
+Isso é a prova do merge. A proteção da `main` tem de exigir o check `prova-remota`
+antes do merge; o token do workflow não altera essa configuração. Não limita a
+lane. A lane continua rodando como o dono da máquina e pode ler `~/.ssh` e
+`~/.config/gh`.
