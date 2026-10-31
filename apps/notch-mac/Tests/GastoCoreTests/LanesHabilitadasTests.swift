@@ -22,4 +22,23 @@ final class LanesHabilitadasTests: XCTestCase {
         let texto = try String(contentsOf: LanesHabilitadas.arquivo(stateDir: t.url), encoding: .utf8)
         XCTAssertEqual(texto, "claude opencode\n")
     }
+
+    /// O `tools/install.sh` numa instalação limpa deixa estes arquivos. `dispatcherExiste`
+    /// olha só o dispatcher; a prontidão exige o conjunto (FRA-591).
+    func testDispatcherExisteEInstalacaoPronta() throws {
+        let t = try PastaTemp()
+        XCTAssertFalse(LanesHabilitadas.dispatcherExiste(stateDir: t.url))
+        XCTAssertFalse(LanesHabilitadas.instalacaoPronta(stateDir: t.url))
+        try t.escrever("dispatcher.py", "# dispatcher\n")
+        XCTAssertTrue(LanesHabilitadas.dispatcherExiste(stateDir: t.url))
+        XCTAssertFalse(LanesHabilitadas.instalacaoPronta(stateDir: t.url))
+        XCTAssertEqual(LanesHabilitadas.ausentes(stateDir: t.url),
+                       ["run_lane.sh", "lane_view.py", "claude-settings.json", "lane-mcp.json"])
+        for nome in ["run_lane.sh", "lane_view.py", "claude-settings.json", "lane-mcp.json"] {
+            try t.escrever(nome, "{\n}\n")
+        }
+        XCTAssertTrue(LanesHabilitadas.dispatcherExiste(stateDir: t.url))
+        XCTAssertTrue(LanesHabilitadas.instalacaoPronta(stateDir: t.url))
+        XCTAssertTrue(LanesHabilitadas.ausentes(stateDir: t.url).isEmpty)
+    }
 }
