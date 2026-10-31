@@ -1291,3 +1291,127 @@ class ContextoDeFilaTest(unittest.TestCase):
              patch.object(watch, "linear", side_effect=paginas):
             issues = watch.project_issues(["Backlog"])
         self.assertEqual([i["identifier"] for i in issues], ["FRA-1", "FRA-2"])
+
+
+class MergeSoClean(unittest.TestCase):
+    """FRA-596: merge só com CLEAN, sem FAILURE/PENDING e sem caminho protegido."""
+
+    def setUp(self):
+        import shutil
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(self.dir, True))
+        self.chamadas = []
+        self.comentarios = []
+        self.labels = []
+        self.arquivos = "Sources/App.swift\n"
+        nomes = ("sh", "open_prs", "project_issues", "veredito_do_head", "hold_for_heavier",
+                 "move_done", "comment", "add_label", "REPOS")
+        self._antes = {n: getattr(watch, n) for n in nomes}
+        self.addCleanup(self._restaurar)
+        watch.REPOS = {"app": {"dir": Path(self.dir), "slug": "dono/repo"}}
+        watch.open_prs = lambda repo: [self.pr]
+        watch.project_issues = lambda *a, **k: [self.ci]
+        watch.veredito_do_head = lambda *a, **k: "APROVADO"
+        watch.hold_for_heavier = lambda *a, **k: False
+        watch.move_done = lambda *a, **k: None
+        watch.comment = lambda i, b: self.comentarios.append(b)
+        watch.add_label = lambda i, n: self.labels.append(n)
+        watch.sh = self._sh
+        watch.projetos._resetar_cache()
+        watch.projetos._CACHE["lista"] = [watch.projetos.Projeto(
+            id="app", nome="App", repo=self.dir,
+            protegidos=[".github/workflows/*", "docs/arquivo/*"])]
+        self.addCleanup(watch.projetos._resetar_cache)
+        self.pr = self._pr()
+        self.ci = self._ci()
+
+    def _restaurar(self):
+        for nome, valor in self._antes.items():
+            setattr(watch, nome, valor)
+
+    def _sh(self, args, cwd=None, timeout=120, inp=None, check=True):
+        self.chamadas.append(list(args))
+        if list(args)[:3] == ["gh", "pr", "view"]:
+            return self.arquivos
+        return ""
+
+    def _pr(self, **extra):
+        pr = {"number": 7, "headRefOid": "abc1234ffff", "headRefName": "lane/fra-7",
+              "title": "FRA-7 algo", "mergeStateStatus": "CLEAN",
+              "body": "dispatcher → verde", "labels": [],
+              "statusCheckRollup": [{"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}]}
+        pr.update(extra)
+        return pr
+
+    def _ci(self):
+        return {"id": "id-7", "identifier": "FRA-7", "sortOrder": 1,
+                "labels": {"nodes": []},
+                "comments": {"nodes": [{"id": "c1", "body": "DONE abc1234\n\nok"}]}}
+
+    def _rodar(self, st=None):
+        st = {"merged": {}, "done_moves": {}, "installs": {}} if st is None else st
+        watch.merge_ready(st, [])
+        return st
+
+    def _mergeou(self):
+        return any(c[:3] == ["gh", "pr", "merge"] for c in self.chamadas)
+
+    def test_clean_sem_protegido_chama_o_merge(self):
+        self._rodar()
+        self.assertTrue(self._mergeou())
+
+    def test_unstable_nao_chama_gh_pr_merge(self):
+        self.pr = self._pr(mergeStateStatus="UNSTABLE")
+        self._rodar()
+        self.assertFalse(self._mergeou())
+        self.assertEqual(self.labels, [])
+
+    def test_so_clean_mergeia(self):
+        for estado in ("DIRTY", "BLOCKED", "BEHIND", "HAS_HOOKS", "UNSTABLE"):
+            with self.subTest(estado=estado):
+                self.chamadas.clear()
+                self.pr = self._pr(mergeStateStatus=estado)
+                self._rodar()
+                self.assertFalse(self._mergeou())
+
+    def test_has_hooks_chama_o_dono_e_nao_mergeia(self):
+        self.pr = self._pr(mergeStateStatus="HAS_HOOKS")
+        st = self._rodar()
+        self.assertFalse(self._mergeou())
+        self.assertEqual(self.labels, [watch.OWNER_LABEL])
+        self.assertIn("HAS_HOOKS", self.comentarios[0])
+        self.assertIn("não é check vermelho", self.comentarios[0])
+        self.assertNotIn("lane:falhou", self.comentarios[0])
+        self.comentarios.clear()
+        self.labels.clear()
+        self._rodar(st)
+        self.assertEqual(self.comentarios, [])
+        self.assertEqual(self.labels, [])
+
+    def test_pending_ou_failure_nao_mergeia(self):
+        for rollup in (
+            [{"name": "ci", "status": "PENDING", "conclusion": ""}],
+            [{"name": "ci", "status": "COMPLETED", "conclusion": "FAILURE"}],
+            [{"context": "ci", "state": "PENDING"}],
+            [{"context": "ci", "state": "FAILURE"}],
+        ):
+            with self.subTest(rollup=rollup):
+                self.chamadas.clear()
+                self.pr = self._pr(statusCheckRollup=rollup)
+                self._rodar()
+                self.assertFalse(self._mergeou())
+
+    def test_workflow_protegido_nao_mergeia(self):
+        self.arquivos = ".github/workflows/ci.yml\n"
+        self._rodar()
+        self.assertFalse(self._mergeou())
+
+    def test_relatorio_docx_protegido_nao_mergeia(self):
+        self.arquivos = "docs/arquivo/relatório.docx\n"
+        self._rodar()
+        self.assertFalse(self._mergeou())
+
+    def test_pr_files_continua_no_basename(self):
+        self.arquivos = ".github/workflows/ci.yml\n"
+        self.assertEqual(watch.pr_paths({"number": 7}), [".github/workflows/ci.yml"])
+        self.assertEqual(watch.pr_files({"number": 7}), {"ci.yml"})

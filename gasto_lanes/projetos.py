@@ -38,9 +38,10 @@ Regras:
     agente pediu em `.lane/result.json`. Default `python3 {suite}`.
   - `prova_tentativas`: 1 (padrão) roda a prova uma vez; 2 repete a segunda vez
     sem `SKIP_PREFLIGHT` (para scripts de prova com um preflight caro).
-  - `suites`: suítes padrão quando a lane não lista nenhuma válida no
-    `result.json`. Sem a chave, vale `TranscentIATests` (projeto iOS). Cada
-    projeto declara a sua; texto velho de outro projeto nunca entra aqui.
+  - `suites`: lista fechada da prova. Se o projeto declara, a lane só roda um
+    nome que esteja nela e que passe no formato (sem `/`, `..`, `-` ou espaço).
+    Sem nome válido no `result.json`, roda essa lista. Sem a chave, vale o nome
+    que a lane pedir no formato certo, ou `TranscentIATests` (projeto iOS).
   - `copiar_para_worktree`: arquivos que ficam fora do git no `repo` (ex.: um
     `AGENTS.md` gerado na máquina) e que cada worktree de lane precisa. São
     caminhos relativos; o dispatcher copia os que existem e nunca sobrescreve.
