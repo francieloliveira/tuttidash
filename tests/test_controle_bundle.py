@@ -39,7 +39,8 @@ class ControleDoBundle(unittest.TestCase):
         self.env = os.environ.get("TUTTIDASH_RECURSOS")
         self.state = d.STATE_DIR
         self.instalado = catalogo.DIR_INSTALADO
-        self.cfg = list(d.CONFIG_FILES)
+        # FRA-605: CONFIG_FILES é um sentinela, não uma lista, até o teste trocar.
+        self.cfg = d.CONFIG_FILES
         self.addCleanup(self._restaurar)
         d.CONFIG_FILES = [self.tmp / "config-ausente.json"]
         catalogo._resetar_cache()
@@ -69,29 +70,21 @@ class ControleDoBundle(unittest.TestCase):
     def test_build_grava_template_0600_sem_fixture(self):
         texto = (RAIZ / "apps/notch-mac/build.sh").read_text(encoding="utf-8")
         self.assertIn('install -m 600 "$HERE/Resources/claude-settings.json"', texto)
-        self.assertIn('install -m 600 "$MCP" "$APP/Contents/Resources/lane-mcp.json"', texto)
+        self.assertIn(
+            'install -m 600 "$HERE/Resources/lane-mcp.json" "$APP/Contents/Resources/lane-mcp.json"',
+            texto)
         self.assertIn('install -m 600 "$AGENTS_D"/*.json', texto)
         self.assertNotIn("fixtures/estado", texto)
+        self.assertNotIn("lane-mcp.local.json", texto)
 
     def test_template_de_mcp_nao_leva_caminho_de_maquina(self):
         # O que vai para o git não pode ter caminho de home nem nome de projeto pessoal:
-        # é o que a Conferência de publicação recusa (FRA-565). O caminho real fica no
-        # lane-mcp.local.json, ignorado.
+        # é o que a Conferência de publicação recusa (FRA-565). O comando, quando
+        # existir, fica dentro de Contents/Resources — não num script fora do bundle.
         texto = (RAIZ / "apps/notch-mac/Resources/lane-mcp.json").read_text(encoding="utf-8")
         self.assertEqual(json.loads(texto), {"mcpServers": {}})
-        # Igualdade acima já fecha o caso; a checagem de caminho é a rede de segurança
-        # se o template ganhar outra chave no futuro.
         for marca in ("/Users/", "/home/"):
             self.assertNotIn(marca, texto)
-
-    def test_build_prefere_o_mcp_local(self):
-        texto = (RAIZ / "apps/notch-mac/build.sh").read_text(encoding="utf-8")
-        self.assertIn('MCP="$HERE/Resources/lane-mcp.json"', texto)
-        self.assertIn('MCP="$HERE/Resources/lane-mcp.local.json"', texto)
-        self.assertLess(texto.index('MCP="$HERE/Resources/lane-mcp.json"'),
-                        texto.index('MCP="$HERE/Resources/lane-mcp.local.json"'))
-        ignorado = (RAIZ / ".gitignore").read_text(encoding="utf-8")
-        self.assertIn("apps/notch-mac/Resources/lane-mcp.local.json", ignorado)
 
     def test_sem_fonte_nao_usa_o_fixture(self):
         d.STATE_DIR = RAIZ / "tests" / "fixtures" / "estado"
@@ -168,6 +161,59 @@ class ControleDoBundle(unittest.TestCase):
         self.assertEqual(grok[grok.index("--allow") + 1], "SoBundle")
         self.assertEqual(grok[grok.index("--deny") + 1], "SoBundleDeny")
         self.assertNotIn("Bash(git push:*)", grok)
+
+    def test_app_plantado_sem_env_do_binario_nao_entra(self):
+        plantado = (self.tmp / "Applications" / "TuttiDash.app" / "Contents" / "Resources")
+        plantado.mkdir(parents=True)
+        (plantado / "claude-settings.json").write_text(json.dumps({
+            "permissions": {"allow": ["Evil"], "deny": []},
+        }), encoding="utf-8")
+        (plantado / "lane-mcp.json").write_text(json.dumps({
+            "mcpServers": {"evil": {"command": "/tmp/evil"}},
+        }), encoding="utf-8")
+        os.environ.pop("TUTTIDASH_RECURSOS", None)
+        with mock.patch.object(catalogo.Path, "home", return_value=self.tmp):
+            self.assertIsNone(catalogo.recursos_do_bundle())
+            caminho = d.caminho_controle("claude-settings.json")
+        self.assertNotIn("Evil", caminho.read_text(encoding="utf-8"))
+        self.assertNotIn(str(plantado), str(caminho))
+
+    def test_env_em_applications_do_usuario_nao_vale(self):
+        plantado = (self.tmp / "Applications" / "TuttiDash.app" / "Contents" / "Resources")
+        plantado.mkdir(parents=True)
+        (plantado / "claude-settings.json").write_text("{}", encoding="utf-8")
+        os.environ["TUTTIDASH_RECURSOS"] = str(plantado)
+        with mock.patch.object(catalogo.Path, "home", return_value=self.tmp):
+            self.assertIsNone(catalogo.recursos_do_bundle())
+
+    def test_comando_mcp_absoluto_fora_do_bundle_falha(self):
+        bundle = self.tmp / "TuttiDash.app" / "Contents" / "Resources"
+        bundle.mkdir(parents=True)
+        (bundle / "lane-mcp.json").write_text(json.dumps({
+            "mcpServers": {
+                "transcentia-docs": {
+                    "command": "/tmp/maquina/venv/bin/python3",
+                    "args": ["/tmp/maquina/mcp_server.py"],
+                },
+            },
+        }), encoding="utf-8")
+        os.environ["TUTTIDASH_RECURSOS"] = str(bundle)
+        with self.assertRaises(FileNotFoundError):
+            d.caminho_controle("lane-mcp.json")
+
+    def test_comando_mcp_dentro_do_bundle_vale(self):
+        bundle = self.tmp / "TuttiDash.app" / "Contents" / "Resources"
+        bundle.mkdir(parents=True)
+        script = (bundle / "mcp_server.py").resolve()
+        script.write_text("#!/usr/bin/python3\nprint('ok')\n", encoding="utf-8")
+        (bundle / "lane-mcp.json").write_text(json.dumps({
+            "mcpServers": {"transcentia-docs": {"command": str(script), "args": []}},
+        }), encoding="utf-8")
+        os.environ["TUTTIDASH_RECURSOS"] = str(bundle)
+        mcp = d.caminho_controle("lane-mcp.json")
+        self.assertEqual(mcp, (bundle / "lane-mcp.json").resolve())
+        lido = json.loads(mcp.read_text(encoding="utf-8"))
+        self.assertEqual(lido["mcpServers"]["transcentia-docs"]["command"], str(script))
 
 
 if __name__ == "__main__":

@@ -539,6 +539,40 @@ def _template_producao(nome: str) -> Optional[Path]:
     return resolvido
 
 
+def _recusar_mcp_fora_do_bundle(arq: Path) -> None:
+    """Comando absoluto do MCP tem de ficar dentro do `Contents/Resources` deste arquivo.
+
+    Caminho de outra máquina, ou script fora do bundle, não sobe na próxima lane.
+    Comando relativo (nome no PATH, ou relativo a este diretório) continua.
+    """
+    try:
+        dados = json.loads(arq.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(dados, dict):
+        return
+    servidores = dados.get("mcpServers") or {}
+    if not isinstance(servidores, dict):
+        return
+    raiz = arq.parent.resolve()
+    for spec in servidores.values():
+        if not isinstance(spec, dict):
+            continue
+        candidatos = [spec.get("command")]
+        args = spec.get("args")
+        if isinstance(args, list):
+            candidatos.extend(args)
+        for bruto in candidatos:
+            if not isinstance(bruto, str) or not bruto.startswith("/"):
+                continue
+            try:
+                alvo = Path(bruto).resolve()
+            except OSError:
+                raise FileNotFoundError(f"comando MCP fora do bundle: {bruto}") from None
+            if alvo != raiz and raiz not in alvo.parents:
+                raise FileNotFoundError(f"comando MCP fora do bundle: {bruto}")
+
+
 def caminho_controle(nome: str) -> Path:
     """`claude-settings.json` ou `lane-mcp.json` do bundle assinado; senão, o template do repo.
 
@@ -551,9 +585,13 @@ def caminho_controle(nome: str) -> Path:
     if recursos is not None:
         arq = (recursos / nome).resolve()
         if arq.is_file() and "fixtures" not in arq.parts and ".transcentia" not in arq.parts:
+            if nome == "lane-mcp.json":
+                _recusar_mcp_fora_do_bundle(arq)
             return arq
     repo = _template_producao(nome)
     if repo is not None:
+        if nome == "lane-mcp.json":
+            _recusar_mcp_fora_do_bundle(repo)
         return repo
     raise FileNotFoundError(
         f"{nome} não está no bundle assinado nem no template de produção; "

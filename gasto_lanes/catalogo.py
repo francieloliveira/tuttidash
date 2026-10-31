@@ -452,26 +452,33 @@ def _raiz_git() -> Path | None:
     return None
 
 
-def recursos_do_bundle() -> Path | None:
-    """`Contents/Resources` do app assinado.
+def _sob_applications_do_usuario(caminho: Path) -> bool:
+    """`~/Applications` é gravável pela lane. Um `.app` plantado lá não é o bundle."""
+    try:
+        resolvido = caminho.resolve()
+        base = (Path.home() / "Applications").resolve()
+    except OSError:
+        return False
+    return resolvido == base or base in resolvido.parents
 
-    `TUTTIDASH_RECURSOS` (o `tuttidash-agente` aponta para o bundle que o lançou)
-    vem primeiro. No checkout, não se vasculha `/Applications`: um app velho não
-    pode vencer o template do repo. Fora do checkout (cópia em ~/.transcentia),
-    valem `/Applications` e `~/Applications`.
+
+def recursos_do_bundle() -> Path | None:
+    """`Contents/Resources` só quando o binário gravou `TUTTIDASH_RECURSOS`.
+
+    Sem essa env, falha fechado: não vasculha `/Applications` nem `~/Applications`.
+    `~/Applications` fica de fora mesmo com a env, porque a lane cria esse `.app`.
+    Qualquer outro `.app` que o binário não lançou também fica de fora — a env é
+    o único sinal. No checkout, o chamador usa o template do repo.
     """
     bruto = os.environ.get("TUTTIDASH_RECURSOS", "").strip()
-    if bruto:
-        candidato = Path(bruto)
-        if e_recursos_de_bundle(candidato) and candidato.is_dir():
-            return candidato
-    if ".transcentia" not in Path(__file__).resolve().parts and _raiz_git() is not None:
+    if not bruto:
         return None
-    for candidato in (Path("/Applications/TuttiDash.app/Contents/Resources"),
-                      Path.home() / "Applications/TuttiDash.app/Contents/Resources"):
-        if e_recursos_de_bundle(candidato) and candidato.is_dir():
-            return candidato
-    return None
+    candidato = Path(bruto)
+    if not e_recursos_de_bundle(candidato) or not candidato.is_dir():
+        return None
+    if _sob_applications_do_usuario(candidato):
+        return None
+    return candidato
 
 
 def _repo_agents_d() -> Path | None:
