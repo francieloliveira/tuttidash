@@ -7,6 +7,7 @@ A lista de CLIs/lanes mora nos manifests. Este arquivo garante que:
     saem do manifesto, e não de listas espalhadas pelo código.
 """
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -210,6 +211,30 @@ class AgentesTest(unittest.TestCase):
             with self.subTest(agente=nome):
                 self.assertEqual(A.peso_fontes(nome), d["peso"])
         self.assertEqual(A.peso_fontes("nao-existe"), ("quota", "gasto"))
+
+
+class ExecucaoRealTest(unittest.TestCase):
+    """FRA-614: a cópia em ~/.transcentia/agents.d não manda no catálogo."""
+
+    def tearDown(self):
+        C._resetar_cache()
+
+    def test_nao_le_copia_gravavel(self):
+        antes = os.environ.pop("TUTTIDASH_RECURSOS", None)
+
+        def restaurar():
+            if antes is None:
+                os.environ.pop("TUTTIDASH_RECURSOS", None)
+            else:
+                os.environ["TUTTIDASH_RECURSOS"] = antes
+            C._resetar_cache()
+
+        self.addCleanup(restaurar)
+        C._resetar_cache()
+        vistos = [Path(p) for p in C._diretorios()]
+        for pasta in vistos:
+            self.assertNotIn(".transcentia", pasta.parts, str(pasta))
+        self.assertIn(AGENTS_D.resolve(), [p.resolve() for p in vistos])
 
 
 if __name__ == "__main__":

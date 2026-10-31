@@ -64,6 +64,8 @@ if [ -d "$LANES_DIR" ]; then
     install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
   done
 fi
+# Espelho antigo. A execução (app, dispatcher, vigia) não lê esta pasta (FRA-614):
+# o manifesto que vale é o do bundle assinado. O rsync não é a fonte.
 mkdir -p "$HOME/.transcentia/agents.d"
 rsync -a --delete "$ROOT/agents.d/" "$HOME/.transcentia/agents.d/"
 

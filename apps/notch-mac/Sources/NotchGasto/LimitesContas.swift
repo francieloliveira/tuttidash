@@ -156,8 +156,9 @@ struct LinhaUsoConta: View {
     }
 
     private var comandoLogin: String? {
-        // O comando base é o `cli` do manifesto (`agents.d/`); só o subcomando de
-        // login é específico de cada CLI. Conta sem CLI (cursor) não tem comando.
+        // O comando base é o `cli` do manifesto no bundle (FRA-614), via `Agentes.def`.
+        // A cópia em `~/.transcentia/agents.d` não entra. Só o subcomando de login é
+        // específico de cada CLI. Conta sem CLI (cursor) não tem comando.
         guard let cli = Agentes.def(uso.tipo)?.cli else { return nil }
         return uso.tipo == "opencode" ? "\(cli) auth login" : cli
     }
