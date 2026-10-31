@@ -584,11 +584,7 @@ struct LinhaLaneDashboard: View {
                 .accessibilityLabel(aberta ? "Recolher \(linha.lane)" : "Expandir \(linha.lane)")
                 PilulaEstado(estado: estado).fixedSize().frame(width: 97, alignment: .leading)
                 VStack(alignment: .leading, spacing: 1) {
-                    if linha.estado == .rodando, let card = linha.card {
-                        // O nº de build é da lane, não do card. Rodando, o que importa é o card.
-                        Text(verbatim: card).font(PV.fonte(12.5, .semibold)).foregroundStyle(PV.azul)
-                        Text("em execução").font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
-                    } else if linha.estado == .livre {
+                    if linha.estado == .rodando || linha.estado == .livre {
                         Text(verbatim: linha.ultimaBuild.map { "build #" + String($0) } ?? "—").font(PV.fonte(12.5))
                         Text(haPainel(linha.ultimaBuildInicio, agora: agora) ?? "sem build").font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
                     } else {
