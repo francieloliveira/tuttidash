@@ -91,8 +91,8 @@ extension CatalogoAjustes {
             CampoAjuste("painel.linhas_lane", String(localized: "Linhas por lane"), n(5, 500), "40"),
             CampoAjuste("painel.linhas_log", String(localized: "Linhas do log"), n(5, 500), "30"),
             CampoAjuste("painel.linhas_gestor", String(localized: "Linhas dos testes manuais"), n(5, 500), "20"),
-            CampoAjuste("estresse.saida", String(localized: "Arquivo da medição de estresse"), .caminho(deveExistir: false, opcional: true),
-                        "~/Library/Logs/TranscentIA/estresse.tsv"),
+            CampoAjuste("estresse.saida", String(localized: "Arquivo da medição de carga do Mac"), .caminho(deveExistir: false, opcional: true),
+                        "~/Library/Logs/TuttiDash/carga-mac.tsv"),
         ]
     }
 
@@ -209,7 +209,7 @@ extension CatalogoAjustes {
                     c("painel.proof_log_glob"), c("painel.gestor_log_glob"), c("painel.filtro"),
                     c("painel.linhas_lane"), c("painel.linhas_log"), c("painel.linhas_gestor"), c("painel.intervalo_s"),
                 ], recolhido: true),
-                GrupoAjustes(String(localized: "Medição de estresse"), campos: [c("estresse.intervalo_s"), c("estresse.saida")], recolhido: true),
+                GrupoAjustes(String(localized: "Carga do Mac"), campos: [c("estresse.intervalo_s"), c("estresse.saida")], recolhido: true),
             ]),
         ]
     }
