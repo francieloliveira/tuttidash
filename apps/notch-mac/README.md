@@ -164,6 +164,19 @@ Para rodar sem empacotar: `swift run NotchGasto`.
 
 Para fixar o app em `/Applications`: `cp -R "build/TuttiDash.app" /Applications/`.
 
+O token do Linear fica na keychain protegida do app (FRA-607) só quando o build encontra
+`Privado/TuttiDash.provisionprofile` (fora do git). Sem o arquivo, o app assina sem
+`keychain-access-groups` e funciona do mesmo jeito. Para gerar ou renovar o profile com a
+conta logada no Xcode (Settings › Accounts) e o `xcodegen`, na raiz do repositório:
+
+```bash
+tools/renovar-perfil.sh              # grava o profile em Privado/
+tools/renovar-perfil.sh --instalar   # também roda o build.sh e troca /Applications/TuttiDash.app
+```
+
+Com conta Apple gratuita o profile vence em 7 dias, e o app instalado não abre depois disso:
+renove antes. Com conta paga, ele dura um ano.
+
 Opções de linha de comando (para conferir layout):
 
 - `--expandido`: deixa o notch aberto.
