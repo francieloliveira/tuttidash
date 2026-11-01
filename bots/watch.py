@@ -10,9 +10,8 @@ Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
   0. Instalação no aparelho em andamento/terminada -> registra o resultado no card
      (só com `watch.instalar_comando` configurado: lista de argv; texto antigo
      ainda vale via shlex.split, sem shell, e gera aviso de migração).
-  1. Card em In Review com a prova do dispatcher verde (comentário DONE com o SHA
-     completo de 40 hex igual ao head, escrito pelo viewer do token Linear, e
-     "→ verde" no corpo) -> merge (um por vez) só com `mergeStateStatus`
+  1. Card em In Review com o check `prova-remota` verde no SHA completo do head
+     (FRA-611; prova local e comentário DONE não contam) -> merge (um por vez) só com `mergeStateStatus`
      CLEAN e `statusCheckRollup` sem FAILURE/PENDING. UNSTABLE espera. HAS_HOOKS
      segura e chama o dono (não é CI vermelho). Caminho protegido no PR não mergeia.
      Depois: Done e instala a main no aparelho (SKIP_PREFLIGHT=1 primeiro; se falhar,
@@ -528,14 +527,14 @@ def move_done(ci: dict, why: str, diary: list[str]) -> None:
 # ---------- GitHub ----------
 def open_prs(repo: dict) -> list[dict]:
     raw = sh(["gh", "pr", "list", "--state", "open", "--limit", "30", "--json",
-              "number,title,headRefOid,headRefName,url,mergeStateStatus,isDraft,body,labels"], cwd=repo["dir"])
+              "number,title,headRefOid,headRefName,url,mergeStateStatus,isDraft,body,labels,"
+              "statusCheckRollup"], cwd=repo["dir"])
     return [p for p in json.loads(raw) if not p.get("isDraft")]
 
 
 # SHA completo, com fronteira: prefixo de 7 hex dentro do head não casa, nem um
 # hex a mais. A comparação do gate é igualdade, nunca startswith.
 _SHA40_RE = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])")
-_DONE_RE = re.compile(r"^\s*DONE\s+([0-9a-f]{40})(?![0-9a-f])")
 
 
 def cita_sha_completo(texto: str, sha: str) -> bool:
@@ -980,53 +979,18 @@ def check_install(st: dict, diary: list[str]) -> None:
     # Falha não reinstala sozinha em laço: fica no card/diário para a próxima rodada de merge ou para o gestor.
 
 
-def id_viewer_linear() -> str:
-    """Id do viewer do token Linear, lido da API.
+# Check que o workflow publica no PR (FRA-610). É a prova que autoriza o merge.
+NOME_PROVA_REMOTA = "prova-remota"
 
-    Cache só em memória deste processo. Não lê a config nem o state.json:
-    `linear.actor_id` seria gravável por quem edita o aparelho.
+
+def proof_passed(pr: dict, rollup) -> bool:
+    """Prova verde no head: `prova-remota` com SUCCESS no SHA completo (FRA-611).
+
+    Prova local, `→ verde` no corpo do PR e comentário DONE não autorizam o
+    merge. Check de outro SHA, prefixo ou check pendente não passa.
     """
-    cache = getattr(id_viewer_linear, "cache", None)
-    if cache:
-        return cache
-    try:
-        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
-    except RuntimeError as exc:
-        log(f"prova: não li o viewer do Linear ({exc})")
-        return ""
-    ident = str(viewer.get("id") or "")
-    if ident:
-        id_viewer_linear.cache = ident  # type: ignore[attr-defined]
-    return ident
-
-
-def proof_passed(ci: dict, pr: dict, viewer_id: str | None = None) -> bool:
-    """Prova verde no head: DONE com o SHA completo, escrito pelo viewer do token.
-
-    O primeiro comentário `DONE` + 40 hex decide. SHA diferente do head não passa,
-    nem prefixo, nem autor ausente ou diferente do viewer. Sem `→ verde` no corpo
-    do PR, não passa.
-    """
-    if "→ verde" not in (pr.get("body") or ""):
-        return False
-    head = (pr.get("headRefOid") or "").strip().lower()
-    if not re.fullmatch(r"[0-9a-f]{40}", head):
-        return False
-    viewer = id_viewer_linear() if viewer_id is None else viewer_id
-    if not viewer:
-        return False
-    nodes = ((ci.get("comments") or {}).get("nodes") or [])
-    for n in reversed(nodes):
-        if not isinstance(n, dict):
-            continue
-        m = _DONE_RE.match(n.get("body") or "")
-        if not m:
-            continue
-        if m.group(1).lower() != head:
-            return False
-        user = n.get("user") if isinstance(n.get("user"), dict) else {}
-        return str(user.get("id") or "") == str(viewer)
-    return False
+    head = str(pr.get("headRefOid") or "")
+    return revisao_ia.veredito_check(head, head, rollup, nome=NOME_PROVA_REMOTA) == "verde"
 
 
 def waiting_device_test(ci: dict, pr: dict) -> bool:
@@ -1215,7 +1179,8 @@ def merge_ready(st: dict, diary: list[str]) -> None:
                     f"branch:{pr['headRefName']}", f"pr{pr['number']}", ci["id"], st, diary):
                 st["installs"]["branch_feita"] = key
             continue
-        if not proof_passed(ci, pr):
+        rollup = rollup_de(pr, repo)
+        if not proof_passed(pr, rollup):
             continue
         veredito = veredito_do_head(repo, pr, st)
         if veredito == "AJUSTES":
@@ -1224,7 +1189,7 @@ def merge_ready(st: dict, diary: list[str]) -> None:
             segurar_sem_aprovacao(ci, pr, st, diary)
             continue
         sha_head = str(pr.get("headRefOid") or "")
-        revisao = revisao_ia.veredito_check(sha_head, sha_head, rollup_de(pr, repo))
+        revisao = revisao_ia.veredito_check(sha_head, sha_head, rollup)
         if revisao == "vermelho":
             # Check falho bloqueia o merge e chama o dono. O corpo da revisão não entra aqui.
             chamar_dono_revisao(st, ci, pr)

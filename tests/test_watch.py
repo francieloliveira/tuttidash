@@ -33,17 +33,17 @@ class WatchTests(unittest.TestCase):
 
     def test_prova_verde_so_no_head_atual(self):
         head = "abc1234" + "d" * 33
-        pr = {"headRefOid": head, "body": "verification: dispatcher: safe_xcodebuild.sh test X → verde"}
-        prova = {"comments": {"nodes": [{"id": "0", "body": f"DONE {head}\n\nok", "user": {"id": "v"}}]},
-                 "labels": {"nodes": []}, "title": "x"}
-        self.assertTrue(watch.proof_passed(prova, pr, viewer_id="v"))
-        outro = {"comments": {"nodes": [{"id": "0", "body": "DONE " + "9" * 40 + "\n", "user": {"id": "v"}}]},
-                 "labels": {"nodes": []}, "title": "x"}
-        self.assertFalse(watch.proof_passed(outro, pr, viewer_id="v"))
-        self.assertFalse(watch.proof_passed(prova, dict(pr, body="sem prova"), viewer_id="v"))
-        curto = {"comments": {"nodes": [{"id": "0", "body": f"DONE {head[:7]}\n\nok", "user": {"id": "v"}}]},
-                 "labels": {"nodes": []}, "title": "x"}
-        self.assertFalse(watch.proof_passed(curto, pr, viewer_id="v"))
+        pr = {"headRefOid": head, "body": "sem marca"}
+
+        def check(sha, conclusao="SUCCESS"):
+            return [{"name": "prova-remota", "status": "COMPLETED", "conclusion": conclusao, "sha": sha}]
+
+        self.assertTrue(watch.proof_passed(pr, check(head)))
+        self.assertFalse(watch.proof_passed(pr, check("9" * 40)))
+        self.assertFalse(watch.proof_passed(pr, check(head[:7])))
+        self.assertFalse(watch.proof_passed(pr, check(head, "FAILURE")))
+        self.assertFalse(watch.proof_passed(pr, []))
+        self.assertFalse(watch.proof_passed(dict(pr, headRefOid=head[:7]), check(head[:7])))
 
     def test_motivo_normalizado_ignora_numeros(self):
         a = watch.stop_reason(card(["✋ lane:parada\n**Motivo:** a prova passou de 40 min"]), "lane:parada")[1]
@@ -407,7 +407,7 @@ class MergeExigeAprovadoTest(unittest.TestCase):
 
 
 class AprovacaoAutenticadaTest(unittest.TestCase):
-    """FRA-593: [Revisor] e DONE só com autor confiável e SHA completo de 40 hex."""
+    """FRA-593: [Revisor] só com autor confiável e SHA completo. FRA-611: a prova é o check remoto."""
 
     SHA = "b" * 40
 
@@ -488,25 +488,26 @@ class AprovacaoAutenticadaTest(unittest.TestCase):
         self.assertIsNone(watch.veredito_do_head({"dir": "."}, self._pr(), st))
         self.assertNotIn(self.SHA, st["reviewed"])
 
-    def test_done_de_outro_usuario_nao_passa(self):
+    def test_done_e_marca_no_corpo_nao_bastam(self):
+        # FRA-611: sem o check remoto, DONE e `→ verde` não autorizam o merge.
         pr = {"headRefOid": self.SHA, "body": "dispatcher → verde"}
-        ci = {"comments": {"nodes": [{"body": f"DONE {self.SHA}\n", "user": {"id": "intruso"}}]}}
-        self.assertFalse(watch.proof_passed(ci, pr, viewer_id="bot"))
+        self.assertFalse(watch.proof_passed(pr, [{"name": "ci", "conclusion": "SUCCESS"}]))
 
-    def test_done_do_viewer_com_sha_completo_passa(self):
-        pr = {"headRefOid": self.SHA, "body": "dispatcher → verde"}
-        ci = {"comments": {"nodes": [{"body": f"DONE {self.SHA}\n", "user": {"id": "bot"}}]}}
-        self.assertTrue(watch.proof_passed(ci, pr, viewer_id="bot"))
+    def test_prova_remota_verde_no_sha_completo_passa(self):
+        pr = {"headRefOid": self.SHA, "body": ""}
+        rollup = {"nodes": [{"name": watch.NOME_PROVA_REMOTA, "status": "COMPLETED",
+                             "conclusion": "SUCCESS", "sha": self.SHA}]}
+        self.assertTrue(watch.proof_passed(pr, rollup))
 
-    def test_done_com_sha_de_7_nao_passa(self):
-        pr = {"headRefOid": self.SHA, "body": "dispatcher → verde"}
-        ci = {"comments": {"nodes": [{"body": f"DONE {self.SHA[:7]}\n", "user": {"id": "bot"}}]}}
-        self.assertFalse(watch.proof_passed(ci, pr, viewer_id="bot"))
+    def test_prova_remota_pendente_nao_passa(self):
+        pr = {"headRefOid": self.SHA, "body": ""}
+        rollup = [{"name": watch.NOME_PROVA_REMOTA, "status": "IN_PROGRESS", "sha": self.SHA}]
+        self.assertFalse(watch.proof_passed(pr, rollup))
 
-    def test_done_sem_user_nao_passa(self):
-        pr = {"headRefOid": self.SHA, "body": "dispatcher → verde"}
-        ci = {"comments": {"nodes": [{"body": f"DONE {self.SHA}\n"}]}}
-        self.assertFalse(watch.proof_passed(ci, pr, viewer_id="bot"))
+    def test_revisao_ia_verde_nao_conta_como_prova(self):
+        pr = {"headRefOid": self.SHA, "body": ""}
+        rollup = [{"name": watch.revisao_ia.NOME_DO_CHECK, "conclusion": "SUCCESS", "sha": self.SHA}]
+        self.assertFalse(watch.proof_passed(pr, rollup))
 
     def test_prompt_pede_sha_completo_e_nao_grava_actor_id(self):
         texto = watch.prompt("revisor")
@@ -538,8 +539,6 @@ class ComentariosMaisRecentesTest(unittest.TestCase):
              "user": {"id": "viewer-teste"}}]}}
         watch.em_ordem(ci)
         self.assertEqual([n["id"] for n in ci["comments"]["nodes"]], ["1", "2", "3"])
-        pr = {"body": "dispatcher: x → verde", "headRefOid": novo}
-        self.assertTrue(watch.proof_passed(ci, pr, viewer_id="viewer-teste"))
         self.assertIsNone(watch.em_ordem(None))
 
 
@@ -1449,7 +1448,7 @@ class MergeSoClean(unittest.TestCase):
         self.labels = []
         self.arquivos = "Sources/App.swift\n"
         nomes = ("sh", "open_prs", "project_issues", "veredito_do_head", "hold_for_heavier",
-                 "move_done", "comment", "add_label", "REPOS", "id_viewer_linear")
+                 "move_done", "comment", "add_label", "REPOS")
         self._antes = {n: getattr(watch, n) for n in nomes}
         self.addCleanup(self._restaurar)
         watch.REPOS = {"app": {"dir": Path(self.dir), "slug": "dono/repo"}}
@@ -1461,7 +1460,6 @@ class MergeSoClean(unittest.TestCase):
         watch.comment = lambda i, b: self.comentarios.append(b)
         watch.add_label = lambda i, n: self.labels.append(n)
         watch.sh = self._sh
-        watch.id_viewer_linear = lambda: "viewer-teste"
         watch.projetos._resetar_cache()
         watch.projetos._CACHE["lista"] = [watch.projetos.Projeto(
             id="app", nome="App", repo=self.dir,
@@ -1492,6 +1490,12 @@ class MergeSoClean(unittest.TestCase):
                    "conclusion": "SUCCESS", "sha": self.SHA},
               ]}
         pr.update(extra)
+        # FRA-611: a prova que autoriza o merge é o check remoto no head.
+        nomes = {i.get("name") for i in pr["statusCheckRollup"]}
+        if watch.NOME_PROVA_REMOTA not in nomes:
+            pr["statusCheckRollup"] = [*pr["statusCheckRollup"], {
+                "name": watch.NOME_PROVA_REMOTA, "status": "COMPLETED",
+                "conclusion": "SUCCESS", "sha": self.SHA}]
         return pr
 
     def _ci(self):
@@ -1511,6 +1515,17 @@ class MergeSoClean(unittest.TestCase):
     def test_clean_sem_protegido_chama_o_merge(self):
         self._rodar()
         self.assertTrue(self._mergeou())
+
+    def test_sem_prova_remota_nao_mergeia(self):
+        self.pr = self._pr(statusCheckRollup=[
+            {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"},
+            {"name": watch.revisao_ia.NOME_DO_CHECK, "status": "COMPLETED",
+             "conclusion": "SUCCESS", "sha": self.SHA},
+            {"name": watch.NOME_PROVA_REMOTA, "status": "COMPLETED",
+             "conclusion": "SUCCESS", "sha": "c" * 40},
+        ])
+        self._rodar()
+        self.assertFalse(self._mergeou())
 
     def test_rascunho_nao_e_mergeado(self):
         self.pr = self._pr(isDraft=True)
