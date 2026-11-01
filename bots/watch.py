@@ -162,14 +162,15 @@ STOPS_TO_CALL = _cfg("watch.paradas_para_chamar", 3)   # chama o dono na 3ª par
 # Card onde a triagem pede cards novos quando o Todo esvazia; vazio = não pede.
 TRIAGEM_PEDIDOS_CARD = _cfg("watch.card_pedidos_triagem", "")
 TRIAGEM_PEDIDOS_S = _cfg("watch.pedido_triagem_intervalo_s", 4 * 3600)
-# Catálogo de agentes: `catalogo.py` lê os manifests em `agents.d/` (mesmos que o
-# Swift e o dispatcher). Este script é instalado sozinho em ~/.transcentia/bots,
-# então o `catalogo.py` vai junto (tools/install.sh copia). Adicionar um agente
-# novo = 1 arquivo JSON em `agents.d/`, sem tocar neste arquivo.
+# Catálogo de agentes: `catalogo.py` lê os manifests em `agents.d/`. A pasta
+# deste arquivo entra primeiro (repo ou bundle). O módulo ainda pode estar em
+# ~/.transcentia/bots até o FRA-615; essa pasta entra depois, não antes.
 _AQUI = Path(__file__).resolve().parent
-for _cand in (_AQUI, _AQUI.parent / "gasto_lanes"):   # 1º: instalado; 2º: dev no repo
+sys.path.insert(0, str(_AQUI))
+for _cand in (_AQUI, _AQUI.parent / "gasto_lanes", Path.home() / ".transcentia" / "bots"):
     if (_cand / "catalogo.py").is_file():
-        sys.path.insert(0, str(_cand))
+        if _cand != _AQUI and str(_cand) not in sys.path:
+            sys.path.append(str(_cand))
         break
 try:
     import catalogo  # noqa: E402

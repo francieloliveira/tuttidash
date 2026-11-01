@@ -79,7 +79,7 @@ Depois configure, no app (*Ajustes*) ou em `~/Library/Application Support/TuttiD
 Veja o que o dispatcher faria, sem mexer em nada:
 
 ```bash
-python3 ~/.transcentia/lanes/dispatcher.py --dry-run
+python3 lanes/dispatcher.py --dry-run
 ```
 
 O app agenda o dispatcher em modo real, mas ele só pega card para as lanes que você ligar em

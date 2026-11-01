@@ -66,7 +66,8 @@ class InstalacaoLanesTests(unittest.TestCase):
         self.assertFalse((lanes / "lane_view.py.bak").exists())
         self.assertFalse((lanes / "claude-settings.json.bak").exists())
         self.assertFalse((lanes / "lane-mcp.json.bak").exists())
-        self.assertEqual((lanes / "dispatcher.py").read_bytes(), (RAIZ / "lanes" / "dispatcher.py").read_bytes())
+        # FRA-613: o dispatcher roda do bundle assinado; o install não o copia.
+        self.assertFalse((lanes / "dispatcher.py").exists())
         self.assertEqual((lanes / "config.py").read_bytes(), (RAIZ / "gasto_lanes" / "config.py").read_bytes())
 
     def test_pasta_existente_vazia_nao_ganha_runner_view_nem_settings(self):
@@ -75,5 +76,5 @@ class InstalacaoLanesTests(unittest.TestCase):
         self.assertOk(self.instalar())
         for nome in NAO_COPIAR:
             self.assertFalse((lanes / nome).exists(), nome)
-        self.assertTrue((lanes / "dispatcher.py").is_file())
+        self.assertFalse((lanes / "dispatcher.py").exists())
         self.assertTrue((lanes / "config.py").is_file())

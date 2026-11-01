@@ -479,9 +479,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alerta.addButton(withTitle: "Desativar")
         NSApp.activate(ignoringOtherApps: true)
         guard alerta.runModal() == .alertSecondButtonReturn else { return }
-        let script = modelo.config.stateDir.appendingPathComponent("lanes_ctl.py").path
-        guard FileManager.default.fileExists(atPath: script) else {
-            modelo.avisoCtl = "Não achei o lanes_ctl.py. Nada foi alterado."
+        guard let script = caminhoLanesCtl() else {
+            modelo.avisoCtl = "Não achei o lanes_ctl.py no bundle. Nada foi alterado."
             return
         }
         modelo.avisoCtl = "Desativando \(lane)…"
@@ -512,9 +511,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Reativa a lane pelo `lanes_ctl.py enable <lane>`. Sem confirmação (ação reversível).
     private func ativar(_ lane: String) {
-        let script = modelo.config.stateDir.appendingPathComponent("lanes_ctl.py").path
-        guard FileManager.default.fileExists(atPath: script) else {
-            modelo.avisoCtl = "Não achei o lanes_ctl.py. Nada foi alterado."
+        guard let script = caminhoLanesCtl() else {
+            modelo.avisoCtl = "Não achei o lanes_ctl.py no bundle. Nada foi alterado."
             return
         }
         modelo.avisoCtl = "Ativando \(lane)…"
@@ -548,6 +546,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func acaoAtualizar() { atualizar(forcar: true, mostrarIndicador: true); atualizarUso(mostrarIndicador: true) }
     @objc private func acaoConfig() { abrirConfig() }
     @objc private func acaoSair() { PresencaApp.sair() }
+
+    /// `lanes_ctl.py` do bundle assinado. Não usa a cópia em ~/.transcentia.
+    private func caminhoLanesCtl() -> String? {
+        let url = ScriptsDoBundle.obrigatorio("lanes/lanes_ctl.py")
+        guard FileManager.default.isReadableFile(atPath: url.path), !url.path.contains(".transcentia") else {
+            return nil
+        }
+        return url.path
+    }
     @objc private func acaoTela(_ item: NSMenuItem) {
         ControladorNotch.usarTelaPrincipal.toggle()
         item.state = ControladorNotch.usarTelaPrincipal ? .on : .off

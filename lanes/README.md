@@ -1,16 +1,29 @@
 # Scripts das lanes (fonte canônica, FRA-374)
 
-Cópia viva: `~/.transcentia/lanes/` (é de lá que o launchd roda o dispatcher).
-Backup antes de mexer: o install abaixo guarda `.bak` automático.
+O launchd executa a cópia no bundle assinado
+(`TuttiDash.app/Contents/Resources/controle/lanes/`), gravada pelo `build.sh`
+antes do `codesign`. O estado (`enabled`, heartbeat, `lane-*.json`) continua
+em `~/.transcentia/lanes/`. Não copie estes scripts para lá: uma cópia antiga
+é legado inerte.
 
 ```
-dispatcher.py    dispatcher das lanes (60 s, launchd com.transcentia.lanes.dispatcher)
+dispatcher.py    dispatcher das lanes (60 s, launchd app.tuttidash.agente.dispatcher)
 permissao.py     glob de Bash do CLI (o mesmo que o allow/deny usa)
 run_lane.sh      runner de uma lane dentro da sessão tmux (comando por argv, fora do worktree)
 lanes_window.py  janela única tmux 'lanes' (um painel por lane habilitada)
 lanes_ctl.py     controles da janela
 lane_view.py     formata a saída do agente no painel
 test_lanes.py    testes offline (sem Linear, sem rede): python3 lanes/test_lanes.py
+```
+
+## O que o launchd roda
+
+`tuttidash-agente` (dentro do `.app`) resolve o script pelo próprio executável.
+Alterar `~/.transcentia/lanes/dispatcher.py` não muda o processo. Para testar
+sem o app:
+
+```bash
+python3 lanes/dispatcher.py --dry-run
 ```
 
 ## Estado da lane (FRA-600)
@@ -50,15 +63,8 @@ sobe o dispatcher encerra essa lane ou grava o claim à mão antes.
 já existe, atualiza o dispatcher, os módulos e os prompts, e deixa runner, view e
 settings como estão.
 
-```bash
-cd ~/Developer/tuttidash
-for f in dispatcher.py permissao.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py claude-settings.json; do
-  cp ~/.transcentia/lanes/$f /tmp/lanes-$f.bak
-  cp lanes/$f ~/.transcentia/lanes/$f
-done
-```
-
-Nunca edite `~/.transcentia/lanes/` direto: a fonte é esta pasta.
+Nunca edite a cópia em `~/.transcentia/lanes/`: a fonte é esta pasta, e a
+cópia executada é a do bundle.
 
 ## Prova, exit e agent_cmd fora do worktree (FRA-595)
 

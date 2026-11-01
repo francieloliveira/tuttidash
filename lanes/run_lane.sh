@@ -15,7 +15,10 @@ if [ -L "$AGENT_CMD_FILE" ] || [ -L "$RUN_DIR" ]; then
   echo "run_lane.sh: symlink recusado" >&2
   exit 1
 fi
-HERE="$HOME/.transcentia/lanes"
+# Este script e o lane_view.py vêm do mesmo diretório (repo ou bundle assinado).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# zdotdir é estado. Escrever dentro do .app quebraria o codesign.
+STATE_DIR="$HOME/.transcentia/lanes"
 # O CLI dsh vem dentro do app DeepSeek Harness; instalação global (npm) também vale.
 DSH_BIN="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin"
 export LANE PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$DSH_BIN:$PATH"
@@ -31,7 +34,7 @@ echo
 # o zsh de ler ~/.zshrc; env -i deixa só o necessário; PATH explícito.
 # FRA-595: o comando é o arquivo que o dispatcher passou por argv, aberto sem
 # seguir symlink. `.lane/agent_cmd` não entra.
-CLEAN_ZDOTDIR="$HERE/zdotdir-limpo"
+CLEAN_ZDOTDIR="$STATE_DIR/zdotdir-limpo"
 mkdir -p "$CLEAN_ZDOTDIR"
 if ! AGENT_CMD="$(/usr/bin/python3 - "$AGENT_CMD_FILE" <<'PY'
 import os, sys
@@ -74,7 +77,7 @@ os.dup2(fd, 0)
 if fd > 0:
     os.close(fd)
 os.execv("/bin/bash", ["/bin/bash", "--noprofile", "--norc", "-c", cmd])
-' "$PROMPT" "$AGENT_CMD" 2>&1 | tee "$LOG" | /usr/bin/python3 "$HERE/lane_view.py"
+' "$PROMPT" "$AGENT_CMD" 2>&1 | tee "$LOG" | /usr/bin/python3 "$SCRIPT_DIR/lane_view.py"
 rc=${PIPESTATUS[0]}
 # Não sobrescreve: se o dispatcher parou a lane, o motivo dele já está lá.
 # O_EXCL recusa arquivo plantado e não segue symlink. O código fica no RUN_DIR.
