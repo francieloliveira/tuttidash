@@ -615,10 +615,14 @@ class Comandos(unittest.TestCase):
 
     def test_deepseek_headless_texto(self):
         # dsh headless: sessão nova, prompt como argumento e patch de conta/modelo.
-        self.assertEqual(d.agent_command("deepseek", "medio"),
-                         ["dsh", "--profile", "headless", "--patch", ".lane/deepseek.yml"])
-        self.assertEqual(d.texto_do_agente("deepseek", "medio"),
-                         'dsh --profile headless --patch .lane/deepseek.yml -- "$(cat .lane/prompt.md)"')
+        # FRA-595: prompt e patch ficam fora do worktree.
+        prompt = Path("/tmp/provas/deepseek/FRA-1/run/prompt.md")
+        patch = Path("/tmp/provas/deepseek/FRA-1/run/deepseek.yml")
+        self.assertEqual(d.agent_command("deepseek", "medio", patch=patch),
+                         ["dsh", "--profile", "headless", "--patch", str(patch)])
+        self.assertEqual(d.texto_do_agente("deepseek", "medio", prompt, patch),
+                         f'dsh --profile headless --patch {patch} -- "$(cat {prompt})"')
+        self.assertNotIn(".lane/", d.texto_do_agente("deepseek", "medio", prompt, patch))
         for effort in ("baixo", "medio", "alto"):
             self.assertEqual(d.limit_text("deepseek", effort), "sem teto de gasto no CLI")
 
@@ -776,10 +780,13 @@ class FreioDeCaminhoProtegido(unittest.TestCase):
                 id="x", nome="Falso", repo=str(wt), worktrees=str(wt),
                 prova="./scripts/prova-falsa.sh test {suite}", prova_tentativas=2)]
             try:
-                script = d.proof_script(wt, ["FooTests"])
+                prova = wt / "prova-fora"
+                prova.mkdir()
+                script = d.proof_script(wt, ["FooTests"], prova)
                 subprocess.run(["/bin/bash", "-c", script], check=False)
-                saida = (wt / ".lane" / "proof.log").read_text(encoding="utf-8")
-                codigo = (wt / ".lane" / "proof_exit").read_text(encoding="utf-8").strip()
+                saida = (prova / "proof.log").read_text(encoding="utf-8")
+                codigo = (prova / "proof_exit").read_text(encoding="utf-8").strip()
+                self.assertFalse((wt / ".lane" / "proof.log").exists())
             finally:
                 d.projetos._CACHE.pop("lista", None)
                 d.projetos._resetar_cache()
@@ -1742,7 +1749,10 @@ class ProvaPresa(unittest.TestCase):
                     pass
                 proc.wait(timeout=2)
 
-    def _segura_lock(self) -> tuple[Path, subprocess.Popen]:
+    def _st(self, card: str = "FRA-1") -> dict:
+        return {"lane": "claude", "card": card, "run_id": "runlock01", "session": "lane-claude"}
+
+    def _segura_lock(self) -> tuple[Path, subprocess.Popen, dict]:
         wt = _lane_dir(self)
         lock = wt / "build.lock"
         ready = wt / "ready"
@@ -1770,11 +1780,13 @@ class ProvaPresa(unittest.TestCase):
                 break
             time.sleep(0.05)
         self.assertTrue(ready.exists(), "a prova de teste não segurou o lock")
+        st = self._st()
+        prova = d.preparar_prova_dir(st, wt)
+        d.registrar_prova(prova, proc.pid, str(lock))
+        (prova / "proof_started").write_text(str(time.time() - d.PROOF_TIMEOUT_MIN * 60 - 30),
+                                            encoding="utf-8")
         (wt / ".lane" / "proof_pid").write_text(str(proc.pid), encoding="utf-8")
-        self.assertIsNotNone(d.registrar_prova(wt, proc.pid))
-        (wt / ".lane" / "proof_started").write_text(str(time.time() - d.PROOF_TIMEOUT_MIN * 60 - 30),
-                                                   encoding="utf-8")
-        return wt, proc
+        return wt, proc, st
 
     def _lock_livre(self, lock: Path) -> bool:
         fd = os.open(lock, os.O_RDWR | os.O_CREAT)
@@ -1788,43 +1800,34 @@ class ProvaPresa(unittest.TestCase):
             os.close(fd)
 
     def test_timeout_mata_o_grupo_e_solta_o_lock(self):
-        wt, proc = self._segura_lock()
-        st = {"lane": "claude", "card": "FRA-1", "session": "lane-claude"}
+        wt, proc, st = self._segura_lock()
         self.assertEqual(d.acompanhar_prova(st, wt, ["FooTests"]), "timeout")
         self.assertFalse(d.prova_viva(proc.pid))
         self.assertTrue(self._lock_livre(wt / "build.lock"))
-        self.assertFalse((wt / ".lane" / "proof_pid").exists())
+        self.assertFalse((d.prova_dir(st) / "proof_pid").exists())
+        self.assertTrue((wt / ".lane" / "proof_pid").exists(),
+                        "o pid plantado no worktree não é o que a prova mata")
 
     def test_stop_mata_o_grupo_e_solta_o_lock(self):
-        wt, proc = self._segura_lock()
+        wt, proc, st = self._segura_lock()
         (self.tmp_state / "stop-claude").write_text("1", encoding="utf-8")
-        st = {"lane": "claude", "card": "FRA-1", "session": "lane-claude"}
         self.assertEqual(d.acompanhar_prova(st, wt, ["FooTests"]), "stop")
         self.assertFalse(d.prova_viva(proc.pid))
         self.assertTrue(self._lock_livre(wt / "build.lock"))
 
     def test_prova_morta_refeita_uma_vez(self):
         wt = _lane_dir(self)
-        lane = wt / ".lane"
-        # Sem foto, o pid morto escrito no worktree não decide a prova.
-        morto = subprocess.Popen(["sleep", "0"])
-        morto.wait(timeout=5)
-        (lane / "proof_pid").write_text(str(morto.pid), encoding="utf-8")
-        (lane / "proof_started").write_text(str(time.time()), encoding="utf-8")
-        self.assertEqual(d.decidir_prova_morta(lane), "viva")
-        self.assertFalse((lane / "proof_morta").exists())
-        bash = f"cd {shlex.quote(str(wt))} && sleep 30 > .lane/proof.log 2>&1"
-        proc = subprocess.Popen(["/bin/bash", "-c", bash], cwd=wt, start_new_session=True)
-        self.procs.append(proc)
-        self.assertIsNotNone(d.registrar_prova(wt, proc.pid))
-        os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait(timeout=5)
-        (lane / "proof_pid").write_text(str(proc.pid), encoding="utf-8")
-        self.assertEqual(d.decidir_prova_morta(lane), "refazer")
-        self.assertTrue((lane / "proof_morta").exists())
-        self.assertEqual(d.decidir_prova_morta(lane), "esgotou")
+        vivo = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        self.procs.append(vivo)
+        st = {"lane": "claude", "card": "FRA-9", "run_id": "runmorta01"}
+        prova = d.preparar_prova_dir(st, wt)
+        d.registrar_prova(prova, vivo.pid, "sleep")
+        os.kill(vivo.pid, signal.SIGKILL)
+        vivo.wait(timeout=5)
+        self.assertEqual(d.decidir_prova_morta(prova), "refazer")
+        self.assertTrue((prova / "proof_morta").exists())
+        self.assertEqual(d.decidir_prova_morta(prova), "esgotou")
         # a repetição também morta encerra; uma terceira não começa
-        st = {"lane": "claude", "card": "FRA-1"}
         self.assertEqual(d.acompanhar_prova(st, wt, ["FooTests"]), "morta")
 
     def test_start_proof_grava_o_pid(self):
@@ -1834,12 +1837,15 @@ class ProvaPresa(unittest.TestCase):
             id="x", nome="Falso", repo=str(wt), worktrees=str(wt),
             prova="sleep 30", prova_tentativas=1)]
         self.addCleanup(d.projetos._resetar_cache)
+        st = {"lane": "claude", "card": "FRA-1", "run_id": "runstart01"}
         try:
-            d.start_proof(wt, ["FooTests"])
-            pid = int((wt / ".lane" / "proof_pid").read_text())
+            d.start_proof(wt, ["FooTests"], st)
+            pid = d.pid_validado(d.prova_dir(st))
+            self.assertIsNotNone(pid)
             self.assertTrue(d.prova_viva(pid))
-            d.matar_prova(wt)
+            d.matar_prova(st)
             self.assertFalse(d.prova_viva(pid))
+            self.assertFalse((wt / ".lane" / "proof_pid").exists())
         finally:
             d.projetos._CACHE.pop("lista", None)
 
@@ -2123,14 +2129,15 @@ class LaneParadaEPrompts(unittest.TestCase):
         self.assertTrue(d.log_sem_saida(str(log), time.time() + 600, limite=10 * 60))
 
     def test_prompt_com_espacos_e_aspas_chega_inteiro_na_opencode(self):
-        cmd = d.texto_do_agente("opencode", "medio")
-        self.assertIn('-- "$(cat .lane/prompt.md)"', cmd)
-        wt = self.tmp / "wt"
-        (wt / ".lane").mkdir(parents=True)
+        prompt = self.tmp / "prompt.md"
+        cmd = d.texto_do_agente("opencode", "medio", prompt)
+        self.assertNotIn(".lane/prompt.md", cmd)
+        self.assertIn(f'-- "$(cat {prompt})"', cmd)
         texto = 'um prompt com espaços e "aspas" e $HOME'
-        (wt / ".lane" / "prompt.md").write_text(texto, encoding="utf-8")
-        out = subprocess.run(["bash", "-c", 'printf %s "$(cat .lane/prompt.md)"'],
-                             cwd=wt, capture_output=True, text=True, check=True)
+        prompt.write_text(texto, encoding="utf-8")
+        expr = cmd.split(" -- ", 1)[1]
+        out = subprocess.run(["bash", "-c", "printf %s " + expr],
+                             capture_output=True, text=True, check=True)
         self.assertEqual(out.stdout, texto)
 
     def test_prompt_opencode_nao_faz_pergunta(self):
@@ -2335,6 +2342,196 @@ class SuitesEstritas(unittest.TestCase):
         self.assertEqual(d.proof_suites({"tests": ["../../tmp/x"]}), ["tests.test_parser", "FooTests"])
         self.assertEqual(d.proof_suites({"tests": ["foo-bar"]}), ["tests.test_parser", "FooTests"])
         self.assertNotIn("../../tmp/x", d.proof_suites({"tests": ["../../tmp/x", "FooTests"]}))
+
+
+class ProvaForaDoAgente(unittest.TestCase):
+    """FRA-595: prova, exit e agent_cmd não estão sob o controle do agente."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.antes = d.STATE_DIR
+        d.STATE_DIR = self.tmp / "state"
+        d.STATE_DIR.mkdir()
+        self.addCleanup(setattr, d, "STATE_DIR", self.antes)
+        self.procs = []
+        self.addCleanup(self._mata)
+
+    def _mata(self):
+        for proc in self.procs:
+            if proc.poll() is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                proc.wait(timeout=2)
+
+    def test_pasta_da_prova_e_0700_e_fora_do_worktree(self):
+        wt = self.tmp / "wt"
+        wt.mkdir()
+        st = {"lane": "claude", "card": "FRA-595", "run_id": "abc123"}
+        prova = d.preparar_prova_dir(st, wt)
+        self.assertEqual(prova.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(prova, d.STATE_DIR / "provas" / "claude" / "FRA-595" / "abc123")
+        self.assertFalse(d._caminho_dentro(prova, wt))
+
+    def test_symlink_de_lane_e_de_card_md_e_recusado(self):
+        wt = self.tmp / "wt"
+        lane = wt / ".lane"
+        lane.mkdir(parents=True)
+        segredo = self.tmp / "segredo.txt"
+        segredo.write_text("segredo-nao-ler", encoding="utf-8")
+        (lane / "card.md").symlink_to(segredo)
+        with self.assertRaises(RuntimeError) as ctx:
+            d.ler_arquivo_lane(lane / "card.md")
+        self.assertIn("symlink", str(ctx.exception))
+        self.assertEqual(segredo.read_text(encoding="utf-8"), "segredo-nao-ler")
+
+        fora = self.tmp / "fora"
+        fora.mkdir()
+        (fora / "card.md").write_text("via-symlink", encoding="utf-8")
+        lane.rename(self.tmp / "lane-real")
+        (wt / ".lane").symlink_to(fora, target_is_directory=True)
+        with self.assertRaises(RuntimeError):
+            d.ler_arquivo_lane(wt / ".lane" / "card.md")
+        with self.assertRaises(RuntimeError):
+            d.preparar_lane_do_agente(wt)
+
+    def test_proof_plantado_no_worktree_nao_gera_done(self):
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "proof.log").write_text(
+            "[prova] FooTests: 1ª tentativa\nExecuted 4 tests, with 0 failures\n",
+            encoding="utf-8")
+        (wt / ".lane" / "proof_exit").write_text("0\n", encoding="utf-8")
+        (wt / ".lane" / "proof_started").write_text(str(time.time()), encoding="utf-8")
+        (wt / ".lane" / "exit_code").write_text("0\n", encoding="utf-8")
+        (wt / ".lane" / "result.json").write_text(json.dumps({
+            "status": "done", "summary": "plantei", "tests": ["FooTests"],
+        }), encoding="utf-8")
+        st = {
+            "lane": "claude", "card": "FRA-595", "run_id": "rundone01",
+            "issue_id": "id", "title": "t", "url": "u", "branch": "b",
+            "worktree": str(wt), "base": "abc", "effort": "medio",
+            "log": str(self.tmp / "log"), "session": "lane-claude",
+            "started": time.time(),
+        }
+        (self.tmp / "log").write_text("", encoding="utf-8")
+        d.escrever_exclusivo(d.preparar_prova_dir(st, wt) / "exit_code", "0\n")
+        chamadas = []
+        with mock.patch.object(d, "git_summary", return_value={
+            "ahead": 1, "new": 1, "files": ["a.py"], "lane_files": ["a.py"],
+            "dirty": [], "sha": "abc1234",
+        }), mock.patch.object(d, "touched_protected", return_value=[]), \
+                mock.patch.object(d, "start_proof", side_effect=lambda *a, **k: chamadas.append(a)), \
+                mock.patch.object(d, "linear", return_value={}), \
+                mock.patch.object(d, "sh", side_effect=AssertionError("não era para enviar")):
+            outcome = d.finalize(st)
+        self.assertIsNone(outcome)
+        self.assertEqual(len(chamadas), 1)
+
+    def test_exit_code_do_worktree_nao_fecha_o_card(self):
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "exit_code").write_text("0\n", encoding="utf-8")
+        (wt / ".lane" / "result.json").write_text(
+            json.dumps({"status": "done", "tests": ["FooTests"]}), encoding="utf-8")
+        st = {
+            "lane": "claude", "card": "FRA-595", "run_id": "runexit01",
+            "worktree": str(wt), "log": "l", "effort": "medio", "started": time.time(),
+        }
+        d.preparar_prova_dir(st, wt)
+        with self.assertRaises(FileNotFoundError):
+            d.finalize(st)
+
+    def test_veredito_nao_le_o_log_plantado(self):
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "proof.log").write_text(
+            "[prova] FooTests\nExecuted 4 tests, with 0 failures\n", encoding="utf-8")
+        (wt / ".lane" / "proof_exit").write_text("0\n", encoding="utf-8")
+        st = {"lane": "claude", "card": "FRA-595", "run_id": "runverde01"}
+        prova = d.preparar_prova_dir(st, wt)
+        self.assertEqual(d.proof_veredito(wt, "0", prova), "sem-dado")
+
+    def test_pid_alheio_nao_e_morto(self):
+        vitima = subprocess.Popen(["sleep", "120"], start_new_session=True)
+        self.procs.append(vitima)
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "proof_pid").write_text(str(vitima.pid), encoding="utf-8")
+        st = {"lane": "claude", "card": "FRA-595", "run_id": "runpid01"}
+        prova = d.preparar_prova_dir(st, wt)
+        (prova / "proof_meta.json").write_text(json.dumps({
+            "pid": vitima.pid, "uid": os.getuid(), "start": "0", "marcador": "nao-e-o-comando",
+        }), encoding="utf-8")
+        (prova / "proof_pid").write_text(str(vitima.pid), encoding="utf-8")
+        d.matar_prova(st)
+        self.assertTrue(d.prova_viva(vitima.pid))
+        (prova / "proof_meta.json").unlink()
+        d.matar_prova(st)
+        self.assertTrue(d.prova_viva(vitima.pid))
+
+    def test_agent_cmd_alterado_nao_muda_o_runner(self):
+        home = self.tmp / "home"
+        lanes = home / ".transcentia" / "lanes"
+        lanes.mkdir(parents=True)
+        origem = Path(d.__file__).resolve().parent
+        shutil.copy(origem / "lane_view.py", lanes / "lane_view.py")
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "agent_cmd").write_text("echo INVADIDO > marker\n", encoding="utf-8")
+        (wt / ".lane" / "prompt.md").write_text("prompt-do-worktree\n", encoding="utf-8")
+        st = {"lane": "claude", "card": "FRA-595", "run_id": "runcmd01"}
+        run = d.preparar_prova_dir(st, wt)
+        (run / "prompt.md").write_text("prompt-confiavel\n", encoding="utf-8")
+        (run / "finalized").write_text("teste\n", encoding="utf-8")
+        cmd = run / "agent_cmd.nonce"
+        cmd.write_text("echo CONFIAVEL > marker\n", encoding="utf-8")
+        log = run / "agent.jsonl"
+        texto = (origem / "run_lane.sh").read_text(encoding="utf-8")
+        self.assertNotIn("cat .lane/agent_cmd", texto)
+        self.assertNotIn(".lane/proof.log", texto)
+        env = dict(os.environ, HOME=str(home), USER=os.environ.get("USER", "teste"))
+        saida = self.tmp / "out"
+        erro = self.tmp / "err"
+        with saida.open("w", encoding="utf-8") as out, erro.open("w", encoding="utf-8") as err:
+            proc = subprocess.Popen(
+                ["bash", str(origem / "run_lane.sh"), "claude", str(wt), "FRA-595",
+                 str(log), str(cmd), str(run)],
+                env=env, stdout=out, stderr=err, start_new_session=True,
+            )
+        self.procs.append(proc)
+        marker = wt / "marker"
+        for _ in range(50):
+            if marker.exists() or proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        self.assertTrue(marker.exists(), erro.read_text(encoding="utf-8") if erro.exists() else "")
+        self.assertEqual(marker.read_text(encoding="utf-8").strip(), "CONFIAVEL")
+
+    def test_symlink_no_log_da_prova_nao_e_seguido(self):
+        wt = self.tmp / "wt"
+        (wt / "scripts").mkdir(parents=True)
+        falso = wt / "scripts" / "prova-falsa.sh"
+        falso.write_text("#!/bin/bash\necho rodou\n", encoding="utf-8")
+        falso.chmod(0o755)
+        alvo = self.tmp / "alvo"
+        alvo.write_text("segredo", encoding="utf-8")
+        prova = self.tmp / "prova"
+        prova.mkdir()
+        (prova / "proof.log").symlink_to(alvo)
+        d.projetos._resetar_cache()
+        d.projetos._CACHE["lista"] = [d.projetos.Projeto(
+            id="x", nome="Falso", repo=str(wt), worktrees=str(wt),
+            prova="./scripts/prova-falsa.sh test {suite}", prova_tentativas=1)]
+        self.addCleanup(d.projetos._resetar_cache)
+        script = d.proof_script(wt, ["FooTests"], prova)
+        proc = subprocess.run(["/bin/bash", "-c", script], check=False, capture_output=True, text=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("recusada", proc.stderr)
+        self.assertEqual(alvo.read_text(encoding="utf-8"), "segredo")
+        self.assertTrue((prova / "proof.log").is_symlink())
 
 
 if __name__ == "__main__":

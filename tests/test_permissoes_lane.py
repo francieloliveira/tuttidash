@@ -130,8 +130,11 @@ class PermissoesMinimasLane(unittest.TestCase):
         self.assertNotIn("auth.json", d.PERFIL_SANDBOX_TOML)
 
     def test_comando_nao_usa_accept_edits_e_aponta_o_settings_do_repo(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            d.agent_command("grok", "medio")
+        self.assertIn("fora do worktree", str(ctx.exception))
         claude = d.agent_command("claude", "medio")
-        grok = d.agent_command("grok", "medio")
+        grok = d.agent_command("grok", "medio", prompt=self.tmp / "prompt.md")
         self.assertEqual(claude[claude.index("--permission-mode") + 1], "dontAsk")
         self.assertEqual(grok[grok.index("--permission-mode") + 1], "dontAsk")
         self.assertNotIn("acceptEdits", claude)

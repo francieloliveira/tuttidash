@@ -11,7 +11,8 @@ Divisão de trabalho (E3):
               faz push para a URL do cadastro, abre o PR, comenta DONE com o SHA completo
               e move para In Review
   agente      edita, testa, faz commit LOCAL e grava .lane/result.json.
-              Não fala com Linear nem GitHub.
+              Não fala com Linear nem GitHub. A prova, o exit_code e o
+              agent_cmd ficam fora do worktree (FRA-595).
 
 Fonte da verdade: este repo (`tuttidash`), `lanes/`.
 Cópia instalada: ~/.transcentia/lanes/ (tools/install.sh neste repo). O repo
@@ -28,9 +29,11 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -1088,11 +1091,16 @@ def deepseek_resumo(effort: str) -> str:
     return f"{modelo_da_lane('deepseek', effort) or 'deepseek-flash'} · reasoning {deepseek_esforco(effort)}"
 
 
-def agent_command(lane: str, effort: str) -> list[str]:
-    """Comando headless do agente (claude, grok e opencode são executadas de verdade)."""
+def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
+                  patch: Optional[Path] = None) -> list[str]:
+    """Comando headless do agente (claude, grok e opencode são executadas de verdade).
+
+    `prompt` e `patch` são caminhos fora do worktree. O agente não pode trocar
+    o arquivo que o runner vai ler.
+    """
     if lane == "claude":
         return [
-            "claude", "-p",  # prompt chega pelo stdin (run_lane.sh < .lane/prompt.md)
+            "claude", "-p",  # prompt chega pelo stdin, do RUN_DIR (FRA-595)
             "--output-format", "stream-json", "--verbose",
             "--permission-mode", MODO_PERMISSAO,
             "--settings", str(caminho_settings()),
@@ -1101,9 +1109,11 @@ def agent_command(lane: str, effort: str) -> list[str]:
             *flags_da_lane("claude", effort),
         ]
     if lane == "grok":
+        if prompt is None or ".lane" in Path(prompt).parts:
+            raise RuntimeError("o prompt da lane fica fora do worktree")
         perms = lane_permissions()
         cmd = [
-            "grok", "--prompt-file", ".lane/prompt.md",
+            "grok", "--prompt-file", str(prompt),
             "--output-format", "streaming-messages-json",
             "--permission-mode", MODO_PERMISSAO,
             "--sandbox", PERFIL_SANDBOX,
@@ -1121,10 +1131,10 @@ def agent_command(lane: str, effort: str) -> list[str]:
     if lane == "opencode":
         # FRA-374: `run` lê eventos JSON
         # linha a linha (--format json). O prompt vai como argumento (o `run` não
-        # documenta leitura do stdin). `texto_do_agente` põe "$(cat .lane/prompt.md)"
-        # entre aspas: o bash expande, e espaços e aspas do arquivo chegam num
-        # argumento só. O run_lane.sh continua redirecionando o stdin por
-        # compatibilidade com as outras lanes.
+        # documenta leitura do stdin). `texto_do_agente` põe "$(cat <prompt>)"
+        # entre aspas, com o prompt fora do worktree: o bash expande, e espaços
+        # e aspas do arquivo chegam num argumento só. O run_lane.sh continua
+        # redirecionando o stdin por compatibilidade com as outras lanes.
         # Modelo pode ser customizado pelo usuário no config do TuttiDash
         # (chave lanes.modelo.opencode).
         modelo = modelo_da_lane("opencode", effort)
@@ -1153,20 +1163,24 @@ def agent_command(lane: str, effort: str) -> list[str]:
         # stdout e sai. O prompt vai como argumento posicional (texto_do_agente).
         # O patch escrito no claim liga a conta e fixa modelo/reasoningEffort.
         # Sem `--max-budget-usd` e sem stream JSON: o ledger não mede esta lane.
-        return ["dsh", "--profile", "headless", "--patch", ".lane/deepseek.yml"]
+        # O yml fica no RUN_DIR: o agente não reescreve o patch.
+        if patch is None:
+            raise RuntimeError("o patch do dsh fica fora do worktree")
+        return ["dsh", "--profile", "headless", "--patch", str(patch)]
     # cursor não tem CLI headless público para execução de lanes; fica como
     # placeholder até existir comando equivalente.
     raise NotImplementedError(f"lane {lane} não tem comando de agente")
 
 
-def texto_do_agente(lane: str, effort: str) -> str:
-    """Linha que o `run_lane.sh` executa no worktree.
+def texto_do_agente(lane: str, effort: str, prompt: Path,
+                    patch: Optional[Path] = None) -> str:
+    """Linha que o `run_lane.sh` executa. O prompt é um arquivo fora do worktree.
 
     Na opencode e no dsh o prompt entra entre aspas. Sem aspas, um espaço ou uma
     aspa do card partia o argumento e o CLI lia lixo (ou uma flag)."""
-    agent_text = shlex.join(agent_command(lane, effort))
+    agent_text = shlex.join(agent_command(lane, effort, prompt=prompt, patch=patch))
     if lane in ("opencode", "deepseek"):
-        agent_text += ' -- "$(cat .lane/prompt.md)"'
+        agent_text += f' -- "$(cat {shlex.quote(str(prompt))})"'
     return agent_text
 
 
@@ -1462,10 +1476,11 @@ def comando_e_prova(wt: Path, command: str) -> bool:
         texto = str(wt)
     if not _no_comando_com_fronteira(command, str(wt)) and not _no_comando_com_fronteira(command, texto):
         return False
-    return ".lane/proof.log" in command
+    # `.lane/proof.log` (FRA-600) ou o log na pasta da rodada (FRA-595).
+    return "proof.log" in command
 
 
-def registrar_prova(wt: Path, pid: int) -> Optional[dict]:
+def registrar_foto(wt: Path, pid: int) -> Optional[dict]:
     """Grava dono, início e command da prova fora do worktree. Sem isto não há sinal."""
     foto = foto_processo(pid)
     if not foto or not comando_e_prova(wt, foto["command"]):
@@ -2114,7 +2129,7 @@ def prepare_worktree(branch: str, identifier: str) -> Path:
         sh(["git", "worktree", "add", "-q", str(wt), branch], cwd=repo)
     else:
         sh(["git", "worktree", "add", "-q", "-b", branch, str(wt), "origin/main"], cwd=repo)
-    # .lane/ (prompt, resultado, código de saída) nunca vai para o git.
+    # .lane/ (só o result.json do agente) nunca vai para o git.
     exclude = Path(sh(["git", "rev-parse", "--git-path", "info/exclude"], cwd=wt))
     if not exclude.is_absolute():
         exclude = wt / exclude
@@ -2225,17 +2240,12 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
             f"a branch `{card['branchName']}` não tem ancestral comum com a `origin/main` (histórico "
             f"antigo do repositório). Nada foi rodado. Se ela não tem trabalho a salvar, recrie-a no "
             f"worktree com `git checkout -B {card['branchName']} origin/main` e devolva o card à fila")
-    lane_dir = wt / ".lane"
-    if lane_dir.exists():
-        for f in ("exit_code", "result.json", "finalized", "triagem_reprova"):  # triagem_reprova: rodadas antigas
-            (lane_dir / f).unlink(missing_ok=True)
-        archive_old_proofs(lane_dir, ident)
-    lane_dir.mkdir(exist_ok=True)
+    # FRA-595: a prova e o comando nascem fora do worktree. `.lane` só existe
+    # para o agente gravar result.json; o dispatcher não escreve esse arquivo.
+    run_id = secrets.token_hex(16)
+    prova = preparar_prova_dir({"lane": lane, "card": ident, "run_id": run_id}, wt)
+    preparar_lane_do_agente(wt)
 
-    (lane_dir / "card.md").write_text(
-        f"# {ident} — {card['title']}\n\n{card['url']}\n\n{card.get('description') or ''}\n",
-        encoding="utf-8",
-    )
     base_prompt = caminho_prompt("lane-prompt.md")
     template = base_prompt.read_text(encoding="utf-8") if base_prompt.is_file() else ""
     extra = caminho_prompt(f"lane-prompt-{lane}.md")   # regras específicas do agente
@@ -2245,12 +2255,16 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
               .replace("{{BRANCH}}", card["branchName"]).replace("{{WORKTREE}}", str(wt)))
     prompt += resume_note(wt)
     prompt += nota_main
-    prompt_file = lane_dir / "prompt.md"
-    prompt_file.write_text(prompt, encoding="utf-8")
+    escrever_exclusivo(prova / "card.md",
+                       f"# {ident} — {card['title']}\n\n{card['url']}\n\n{card.get('description') or ''}\n")
+    prompt_file = prova / "prompt.md"
+    escrever_exclusivo(prompt_file, prompt)
 
     # dsh: o patch do perfil (conta + modelo + esforço) vai junto com o prompt.
+    patch_file = None
     if lane == "deepseek":
-        (lane_dir / "deepseek.yml").write_text(deepseek_patch(effort), encoding="utf-8")
+        patch_file = prova / "deepseek.yml"
+        escrever_exclusivo(patch_file, deepseek_patch(effort))
 
     # FRA-598: o perfil do Grok tem de existir antes do processo. Sem ele o CLI
     # recusa subir, em vez de rodar sem o deny de `security` e dos segredos.
@@ -2259,11 +2273,14 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
 
     # FRA-374: o `--` fecha o parsing de flags do CLI. Sem ele, um token do
     # prompt como `--check` (git diff --check) é lido como flag e o CLI aborta.
-    agent_text = texto_do_agente(lane, effort)
+    # FRA-595: o comando fica no RUN_DIR, com nonce no nome. O runner recebe o
+    # caminho por argv e não lê `.lane/agent_cmd`.
+    agent_text = texto_do_agente(lane, effort, prompt_file, patch_file)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LANE_LOG_DIR.mkdir(parents=True, exist_ok=True)
     lane_log = LANE_LOG_DIR / f"{ident}-{lane}-{stamp}.jsonl"
-    (lane_dir / "agent_cmd").write_text(agent_text)
+    cmd_path = prova / f"agent_cmd.{secrets.token_hex(16)}"
+    escrever_exclusivo(cmd_path, agent_text + "\n")
 
     # FRA-267: commit de partida. O caminho protegido se confere só no que a lane fez
     # depois dele: a branch pode já trazer commits de pessoas (ex.: FRA-13).
@@ -2274,7 +2291,8 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
           "modelo_fixo": aviso_modelo(lane, effort) == "modelo fixo",
           "aviso_modelo": aviso_modelo(lane, effort),
           "started": time.time(), "started_at": now(),
-          "log": str(lane_log), "session": f"lane-{lane}"}
+          "log": str(lane_log), "session": f"lane-{lane}",
+          "run_id": run_id, "agent_cmd": str(cmd_path)}
     save_state(lane, st)
     gravar_claim(lane, st)
 
@@ -2293,7 +2311,11 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
         sh(["tmux", "kill-session", "-t", session], check=False)
     runner = STATE_DIR / "run_lane.sh"
     sh(["tmux", "new-session", "-d", "-s", session, "-c", str(wt),
-        f"bash {shlex.quote(str(runner))} {lane} {shlex.quote(str(wt))} {ident} {shlex.quote(str(lane_log))}"])
+        " ".join([
+            "bash", shlex.quote(str(runner)),
+            shlex.quote(lane), shlex.quote(str(wt)), shlex.quote(ident),
+            shlex.quote(str(lane_log)), shlex.quote(str(cmd_path)), shlex.quote(str(prova)),
+        ])])
     # Janela única 'lanes' (claude em cima, grok embaixo). Fechar não para a lane.
     st["window_ok"] = _show_in_lanes_window(lane, session, ident)
     save_state(lane, st)
@@ -2317,10 +2339,280 @@ def _show_in_lanes_window(lane: str, session: str, card: str) -> bool:
     return ok
 
 
-def archive_old_proofs(lane_dir: Path, ident: str) -> None:
-    """Ao reassumir um card, move .lane/proof* da rodada anterior para fora do
-    worktree (STATE_DIR/stale-proof-<card>-<HHMM>), para a prova nova não ler lixo."""
-    old = sorted(lane_dir.glob("proof*"))
+# FRA-595: higiene no mesmo usuário. Não isola processo — o fechamento real é
+# a fase 5 do FRA-589. O que este código faz é não confiar em arquivo que o
+# agente escreve no worktree.
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_NOME_SEGURO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
+_LIXO_LANE = (
+    "exit_code", "result.json", "finalized", "triagem_reprova", "agent_cmd",
+    "freio.txt", "card.md", "prompt.md", "deepseek.yml", "proof_exit", "proof_pid",
+    "proof_started", "proof.log", "proof_morta", "proof_retries",
+)
+
+
+def nome_seguro(valor: str) -> str:
+    if not isinstance(valor, str) or not _NOME_SEGURO.fullmatch(valor):
+        raise RuntimeError(f"nome recusado: {valor!r}")
+    return valor
+
+
+def _caminho_dentro(filho: Path, pai: Path) -> bool:
+    """True se `filho` está em `pai`, sem seguir symlink."""
+    f = filho.absolute().parts
+    p = pai.absolute().parts
+    return len(f) >= len(p) and f[:len(p)] == p
+
+
+def exigir_dir_real(path: Path, mode: int = 0o700) -> None:
+    """Cria ou confere um diretório. Symlink é recusado. O modo sai por fchmod."""
+    if path.is_symlink():
+        raise RuntimeError(f"symlink recusado: {path}")
+    if not path.exists():
+        path.mkdir(mode=mode)
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise RuntimeError(f"não é diretório real: {path}")
+        os.fchmod(fd, mode)
+        info = os.fstat(fd)
+        if (info.st_mode & 0o777) != mode:
+            raise RuntimeError(f"permissão de {path} não ficou {mode:04o}")
+    finally:
+        os.close(fd)
+
+
+def prova_dir(st: dict) -> Path:
+    """STATE_DIR/provas/<lane>/<card>/<run_id>. Não cria a pasta."""
+    lane = nome_seguro(str(st["lane"]))
+    card = nome_seguro(str(st["card"]))
+    run_id = nome_seguro(str(st["run_id"]))
+    return STATE_DIR / "provas" / lane / card / run_id
+
+
+def preparar_prova_dir(st: dict, wt: Optional[Path] = None) -> Path:
+    """Pasta 0700 da rodada, fora do worktree. O agente não escreve aqui."""
+    leaf = prova_dir(st)
+    if wt is not None and _caminho_dentro(leaf, wt):
+        raise RuntimeError("a prova não pode ficar no worktree")
+    if STATE_DIR.is_symlink():
+        raise RuntimeError(f"symlink recusado: {STATE_DIR}")
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    base = STATE_DIR / "provas"
+    for parte in (base, base / nome_seguro(str(st["lane"])),
+                  base / nome_seguro(str(st["lane"])) / nome_seguro(str(st["card"])), leaf):
+        exigir_dir_real(parte, 0o700)
+    return leaf
+
+
+def escrever_exclusivo(path: Path, texto: str, mode: int = 0o600) -> None:
+    """Cria o arquivo com O_NOFOLLOW|O_EXCL. Não segue symlink e não sobrescreve."""
+    if path.is_symlink() or path.parent.is_symlink():
+        raise RuntimeError(f"symlink recusado: {path}")
+    data = texto.encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW
+    fd = os.open(path, flags, mode)
+    try:
+        view = memoryview(data)
+        while view:
+            n = os.write(fd, view)
+            if n <= 0:
+                raise OSError(f"escrita vazia em {path}")
+            view = view[n:]
+    finally:
+        os.close(fd)
+
+
+def ler_sem_seguir(path: Path, limite: int = 8_000_000) -> str:
+    """Lê um arquivo regular. Symlink no pai ou no arquivo é recusado."""
+    if path.is_symlink() or path.parent.is_symlink():
+        raise RuntimeError(f"symlink recusado: {path}")
+    fd = os.open(path, os.O_RDONLY | _NOFOLLOW)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise RuntimeError(f"não é arquivo regular: {path}")
+        blocos = []
+        total = 0
+        while total < limite:
+            pedaco = os.read(fd, min(1 << 20, limite - total))
+            if not pedaco:
+                break
+            blocos.append(pedaco)
+            total += len(pedaco)
+        return b"".join(blocos).decode("utf-8", "replace")
+    finally:
+        os.close(fd)
+
+
+def ler_arquivo_lane(path: Path) -> str:
+    """Lê um arquivo de `.lane` depois de lstat no diretório e no arquivo.
+
+    Recusa symlink. O dispatcher não grava `result.json`; só lê o que o agente
+    deixou, e só se for um arquivo regular.
+    """
+    lane = path.parent
+    if lane.name != ".lane" or lane.is_symlink():
+        raise RuntimeError(f"symlink recusado: {lane}")
+    info = lane.lstat()
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        raise RuntimeError(f"symlink recusado: {lane}")
+    if path.is_symlink():
+        raise RuntimeError(f"symlink recusado: {path}")
+    return ler_sem_seguir(path)
+
+
+def preparar_lane_do_agente(wt: Path) -> Path:
+    """`.lane` real, vazio de arquivos de controle. Não cria `result.json`."""
+    lane = wt / ".lane"
+    if lane.is_symlink():
+        raise RuntimeError(f"symlink recusado: {lane}")
+    if lane.exists():
+        info = lane.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise RuntimeError(f"symlink recusado: {lane}")
+        for nome in _LIXO_LANE:
+            alvo = lane / nome
+            if alvo.is_symlink() or (alvo.exists() and not alvo.is_dir()):
+                alvo.unlink()
+        for alvo in list(lane.glob("proof*")):
+            if alvo.is_symlink() or alvo.is_file():
+                alvo.unlink()
+    else:
+        lane.mkdir(mode=0o755)
+    info = lane.lstat()
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        raise RuntimeError(f"symlink recusado: {lane}")
+    return lane
+
+
+def identidade_do_processo(pid: int) -> Optional[dict]:
+    """uid, início e comando. None se o pid não existe. Não mata ninguém."""
+    if not isinstance(pid, int) or pid <= 1:
+        return None
+    if sys.platform == "linux" and Path(f"/proc/{pid}/stat").exists():
+        try:
+            status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8", errors="replace")
+            stat_txt = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+            cmd = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(
+                "utf-8", "replace").strip()
+        except OSError:
+            return None
+        uid = None
+        for linha in status.splitlines():
+            if linha.startswith("Uid:"):
+                partes = linha.split()
+                if len(partes) >= 2:
+                    uid = int(partes[1])
+        depois = stat_txt.rsplit(")", 1)
+        if uid is None or len(depois) != 2:
+            return None
+        campos = depois[1].split()
+        if len(campos) < 20:
+            return None
+        return {"uid": uid, "start": campos[19], "cmd": cmd}
+    try:
+        out = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "uid=,lstart=,command="],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    linha = out.stdout.strip()
+    if out.returncode != 0 or not linha:
+        return None
+    partes = linha.split(None, 1)
+    if len(partes) < 2:
+        return None
+    resto = partes[1]
+    pedacos = resto.split(None, 5)
+    if len(pedacos) < 6:
+        return None
+    try:
+        uid = int(partes[0])
+    except ValueError:
+        return None
+    return {"uid": uid, "start": " ".join(pedacos[:5]), "cmd": pedacos[5]}
+
+
+def registrar_prova(prova: Path, pid: int, marcador: str) -> None:
+    """Grava pid, dono, início e comando. O marcador tem que estar no cmdline."""
+    if not marcador:
+        raise RuntimeError("prova sem marcador")
+    ident = identidade_do_processo(pid)
+    if ident is None:
+        meta = {"pid": pid, "uid": os.getuid(), "start": None, "marcador": marcador}
+    else:
+        if ident["uid"] != os.getuid() or marcador not in ident["cmd"]:
+            raise RuntimeError("o processo da prova não confere com o comando")
+        meta = {"pid": pid, "uid": ident["uid"], "start": ident["start"], "marcador": marcador}
+    escrever_exclusivo(prova / "proof_meta.json", json.dumps(meta))
+    escrever_exclusivo(prova / "proof_pid", f"{pid}\n")
+    escrever_exclusivo(prova / "proof_started", f"{time.time()}\n")
+
+
+def _meta_da_prova(prova: Path) -> Optional[dict]:
+    try:
+        meta = json.loads(ler_sem_seguir(prova / "proof_meta.json"))
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def classificar_pid(prova: Path) -> str:
+    """'nosso-vivo', 'nosso-morto', 'alheio' ou 'ausente'. Não mata."""
+    meta = _meta_da_prova(prova)
+    if not meta:
+        return "ausente"
+    pid = meta.get("pid")
+    if not isinstance(pid, int) or pid <= 1 or meta.get("uid") != os.getuid():
+        return "alheio"
+    ident = identidade_do_processo(pid)
+    if ident is None:
+        return "nosso-morto"
+    if ident["uid"] != meta.get("uid") or str(ident["start"]) != str(meta.get("start")):
+        return "alheio"
+    if not prova_viva(pid):
+        return "nosso-morto"
+    marcador = str(meta.get("marcador") or "")
+    if not marcador or marcador not in ident["cmd"]:
+        return "alheio"
+    return "nosso-vivo"
+
+
+def pid_validado(prova: Path) -> Optional[int]:
+    """Pid do grupo da prova, só se dono, início e comando conferem."""
+    if classificar_pid(prova) != "nosso-vivo":
+        return None
+    meta = _meta_da_prova(prova)
+    if not meta:
+        return None
+    pid = meta.get("pid")
+    return pid if isinstance(pid, int) else None
+
+
+def archive_old_proofs(prova: Path, ident: str) -> None:
+    """Move proof* da pasta da rodada para STATE_DIR/stale-proof-<card>-<HHMM>.
+
+    Não lê `.lane/proof*`: arquivo plantado no worktree não entra no histórico
+    que o painel conta.
+    """
+    if not prova.exists() or prova.is_symlink():
+        return
+    try:
+        info = prova.lstat()
+    except OSError:
+        return
+    if not stat.S_ISDIR(info.st_mode):
+        return
+    old = []
+    for candidato in sorted(prova.iterdir()):
+        if not candidato.name.startswith("proof") or candidato.is_symlink():
+            continue
+        if candidato.is_file():
+            old.append(candidato)
     if not old:
         return
     dest = STATE_DIR / f"stale-proof-{ident.lower()}-{dt.datetime.now():%H%M}"
@@ -2330,19 +2622,19 @@ def archive_old_proofs(lane_dir: Path, ident: str) -> None:
     log(f"{ident}: {len(old)} proof* antigos arquivados em {dest}")
 
 
-def discard_stale_proof(lane_dir: Path, ident: str, round_started: float) -> bool:
+def discard_stale_proof(prova: Path, ident: str, round_started: float) -> bool:
     """FRA-282: só vale a prova desta rodada. Se o proof_started é mais velho que o início
     da rodada (ou ilegível), arquiva os proof* e devolve True; a prova roda de novo."""
-    ps = lane_dir / "proof_started"
-    if not ps.exists():
+    ps = prova / "proof_started"
+    if ps.is_symlink() or not ps.is_file():
         return False
     try:
-        when = float(ps.read_text() or 0)
-    except ValueError:
+        when = float(ler_sem_seguir(ps) or 0)
+    except (OSError, RuntimeError, ValueError):
         when = 0.0
     if when >= round_started:
         return False
-    archive_old_proofs(lane_dir, ident)
+    archive_old_proofs(prova, ident)
     return True
 
 
@@ -2397,9 +2689,9 @@ def git_summary(wt: Path, base: Optional[str] = None) -> dict:
 
 
 def read_result(wt: Path) -> Optional[dict]:
-    f = wt / ".lane" / "result.json"
+    """O agente grava `.lane/result.json`. Symlink é recusado; o dispatcher não escreve o arquivo."""
     try:
-        r = json.loads(f.read_text(encoding="utf-8"))
+        r = json.loads(ler_arquivo_lane(wt / ".lane" / "result.json"))
         return r if isinstance(r, dict) else None
     except Exception:  # noqa: BLE001
         return None
@@ -3189,8 +3481,34 @@ def proof_suites(res: dict) -> list[str]:
     return list(PROOF_DEFAULT_SUITES)
 
 
-def proof_script(wt: Path, suites: list[str]) -> str:
-    """Comando de prova das suítes, gravado em `.lane/proof.log`.
+_ABRE_PROVA = r"""
+import os, subprocess, sys
+log, saida, cmd = sys.argv[1], sys.argv[2], sys.argv[3]
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+try:
+    fd = os.open(log, flags, 0o600)
+except OSError as exc:
+    sys.stderr.write(f"prova recusada: {exc}\n")
+    sys.exit(1)
+try:
+    proc = subprocess.run(["/bin/bash", "-c", cmd], stdout=fd, stderr=subprocess.STDOUT)
+    rc = proc.returncode
+finally:
+    os.close(fd)
+try:
+    efd = os.open(saida, flags, 0o600)
+except OSError as exc:
+    sys.stderr.write(f"proof_exit recusado: {exc}\n")
+    sys.exit(1)
+os.write(efd, (str(rc) + "\n").encode())
+os.close(efd)
+"""
+
+_ARQUIVOS_PROVA = ("proof.log", "proof_exit", "proof_pid", "proof_started", "proof_meta.json")
+
+
+def proof_script(wt: Path, suites: list[str], prova: Path) -> str:
+    """Comando de prova. O log e o exit nascem em `prova`, com O_NOFOLLOW|O_EXCL.
 
     `prova_tentativas >= 2` repete a 2ª vez sem `SKIP_PREFLIGHT` — é o que o
     `safe_xcodebuild.sh` precisa (o preflight é caro e faz a 1ª passar rápido).
@@ -3213,22 +3531,33 @@ def proof_script(wt: Path, suites: list[str]) -> str:
                 f"{{ echo {segunda}; "
                 f"{comando}; }}; }}")
     loop = " && ".join(um(x) for x in suites)
-    return f"cd {shlex.quote(str(wt))} && {{ {loop}; }} > .lane/proof.log 2>&1; echo $? > .lane/proof_exit"
+    py = shlex.quote(sys.executable)
+    log = shlex.quote(str(prova / "proof.log"))
+    saida = shlex.quote(str(prova / "proof_exit"))
+    return (f"cd {shlex.quote(str(wt))} && "
+            f"{py} - {log} {saida} {shlex.quote(loop)} <<'PY'\n"
+            f"{_ABRE_PROVA}PY\n")
 
 
-def start_proof(wt: Path, suites: list[str]) -> None:
-    """Roda o comando de prova em segundo plano, fora do terminal do agente.
+def _apagar_regular(path: Path) -> None:
+    if path.is_symlink():
+        raise RuntimeError(f"symlink recusado: {path}")
+    if path.exists():
+        path.unlink()
 
-    Grava .lane/proof.log e, ao final, .lane/proof_exit (0 = verde). O pid fica
-    em .lane/proof_pid e a foto (dono, início, command) fora do worktree. Quem
-    decide se a prova vive é a foto; o arquivo do worktree não manda. O processo
-    é líder do grupo (`start_new_session`), e `matar_prova` mata o grupo inteiro.
-    O xcodebuild filho morre junto e solta o build lock.
+
+def start_proof(wt: Path, suites: list[str], st: dict) -> None:
+    """Roda a prova em segundo plano. Log, exit e pid ficam na pasta 0700 da rodada.
+
+    O processo é líder do grupo (`start_new_session`). `matar_prova` só mata
+    esse grupo se dono, início e comando conferem com o registro.
     """
-    lane_dir = wt / ".lane"
-    lane_dir.mkdir(exist_ok=True)
-    (lane_dir / "proof_exit").unlink(missing_ok=True)
-    script = proof_script(wt, suites)
+    prova = preparar_prova_dir(st, wt)
+    for nome in _ARQUIVOS_PROVA:
+        alvo = prova / nome
+        if alvo.is_symlink() or alvo.exists():
+            raise RuntimeError(f"{nome} já existe na prova; recusado")
+    script = proof_script(wt, suites, prova)
     proc = subprocess.Popen(["/bin/bash", "-c", script], start_new_session=True,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             env=dict(os.environ, PATH=TOOL_PATH))
@@ -3236,18 +3565,23 @@ def start_proof(wt: Path, suites: list[str]) -> None:
     # Popen avisa que o processo ainda roda: a gente não espera aqui.
     pid = proc.pid
     proc.returncode = 0
-    (lane_dir / "proof_pid").write_text(str(pid))
-    (lane_dir / "proof_started").write_text(str(time.time()))
-    if registrar_prova(wt, pid) is None:
-        log(f"prova: pid {pid} sem foto confiável (dono, início ou comando); não sinalizo este pid")
-
-
-def ler_proof_pid(lane_dir: Path) -> Optional[int]:
     try:
-        pid = int((lane_dir / "proof_pid").read_text().strip())
-    except (OSError, ValueError):
-        return None
-    return pid if pid > 0 else None
+        registrar_prova(prova, pid, str(st["run_id"]))
+        if registrar_foto(wt, pid) is None:
+            log(f"prova: pid {pid} sem foto confiável (dono, início ou comando); não sinalizo este pid")
+    except Exception:
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except OSError:
+            pass
+        raise
+
+
+def ler_proof_exit(prova: Path) -> str:
+    path = prova / "proof_exit"
+    if path.is_symlink():
+        raise RuntimeError(f"symlink recusado: {path}")
+    return ler_sem_seguir(path).strip()
 
 
 def prova_viva(pid: int) -> bool:
@@ -3280,26 +3614,33 @@ def prova_viva(pid: int) -> bool:
     return waited != pid
 
 
-def matar_prova(wt: Path) -> None:
-    """Mata o grupo da prova. O build lock sai junto com o xcodebuild.
+def _pid_escrito_na_worktree(wt: Path) -> Optional[int]:
+    """Pid que o agente deixou em `.lane`. Não é o que o dispatcher sinaliza."""
+    path = wt / ".lane" / "proof_pid"
+    if not path.is_file() or path.is_symlink():
+        return None
+    try:
+        pid = int(ler_sem_seguir(path).strip())
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return pid if pid > 0 else None
 
-    O pid do worktree não manda: só sinaliza o processo que `start_proof` gravou,
-    e só se dono, início e command ainda são os da prova deste worktree.
-    """
-    lane_dir = wt / ".lane"
+
+def _avisar_pid_da_worktree(wt: Path) -> None:
+    """O arquivo em `.lane` não escolhe o processo. Se divergir da foto, fica no log."""
+    lane_pid = _pid_escrito_na_worktree(wt)
+    if lane_pid is None:
+        return
     foto = _ler_foto(arquivo_prova_proc(wt))
-    pid_arquivo = ler_proof_pid(lane_dir)
-    if not foto:
-        if pid_arquivo is not None:
-            log(f"prova: pid {pid_arquivo} sem registro do dispatcher; não sinalizo")
-        return
-    pid = foto["pid"]
-    if pid_arquivo is not None and pid_arquivo != pid:
-        log(f"prova: proof_pid {pid_arquivo} não é o gravado ({pid}); não sinalizo o arquivo")
-    if not pid_autorizado(pid, foto, lambda comando: comando_e_prova(wt, comando)):
-        log(f"prova: pid {pid} recusado (dono, início ou comando); não sinalizo")
-        return
+    real = foto.get("pid") if foto else None
+    if isinstance(real, int) and lane_pid != real:
+        log(f"prova: proof_pid {lane_pid} não é o da foto ({real}); ignoro o arquivo")
+
+
+def _sinalizar_grupo(pid: int, prova: Optional[Path]) -> None:
     for sig in (signal.SIGTERM, signal.SIGKILL):
+        if prova is not None and pid_validado(prova) not in (None, pid):
+            break
         if not prova_viva(pid):
             break
         try:
@@ -3315,87 +3656,113 @@ def matar_prova(wt: Path) -> None:
             if not prova_viva(pid):
                 break
             time.sleep(0.05)
-    (lane_dir / "proof_pid").unlink(missing_ok=True)
+    if prova is not None:
+        alvo = prova / "proof_pid"
+        if not alvo.is_symlink():
+            alvo.unlink(missing_ok=True)
+
+
+def matar_prova(st: dict) -> None:
+    """Mata o grupo da prova só se a foto fora do worktree autoriza.
+
+    O pid em `.lane/proof_pid` nunca é o alvo. Sem foto, vale o registro da
+    pasta da rodada (`pid_validado`). Foto de um processo que não é a prova
+    deste worktree não recebe sinal.
+    """
     try:
-        arquivo_prova_proc(wt).unlink(missing_ok=True)
-    except OSError:
-        pass
+        prova = prova_dir(st)
+    except (KeyError, RuntimeError):
+        prova = None
+    wt = Path(st["worktree"]) if st.get("worktree") else None
+    if wt is not None:
+        _avisar_pid_da_worktree(wt)
+        foto = _ler_foto(arquivo_prova_proc(wt))
+        if foto:
+            pid = foto.get("pid")
+            if not isinstance(pid, int) or not pid_autorizado(
+                    pid, foto, lambda comando: comando_e_prova(wt, comando)):
+                log(f"prova: pid {pid} recusado (dono, início ou comando); não sinalizo")
+                return
+            _sinalizar_grupo(pid, prova)
+            if prova is not None:
+                alvo = prova / "proof_pid"
+                if not alvo.is_symlink():
+                    alvo.unlink(missing_ok=True)
+            return
+    if prova is None:
+        return
+    pid = pid_validado(prova)
+    if pid is None:
+        return
+    _sinalizar_grupo(pid, prova)
+    alvo = prova / "proof_pid"
+    if not alvo.is_symlink():
+        alvo.unlink(missing_ok=True)
 
 
-def _foto_da_prova(lane_dir: Path) -> tuple[Optional[dict], Optional[int]]:
-    """Foto em `STATE_DIR` e o pid dela. `.lane/proof_pid` divergente é ignorado."""
-    foto = _ler_foto(arquivo_prova_proc(lane_dir.parent))
-    pid = foto.get("pid") if foto else None
-    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
-        return None, None
-    pid_arquivo = ler_proof_pid(lane_dir)
-    if pid_arquivo is not None and pid_arquivo != pid:
-        log(f"prova: proof_pid {pid_arquivo} não é o da foto ({pid}); ignoro o arquivo")
-    return foto, pid
-
-
-def decidir_prova_morta(lane_dir: Path) -> str:
+def decidir_prova_morta(prova: Path) -> str:
     """'viva', 'refazer' (uma única vez) ou 'esgotou'.
 
-    O pid é o da foto fora do worktree. Sem foto, segue como viva: o arquivo
-    `.lane/proof_pid` não decide. `os.kill` e `waitpid` só nesse pid, e só
-    quando `pid_autorizado` confirma o processo. Ausente no `ps`, a prova morreu.
+    Pid alheio não conta como prova morta e não é morto. Sem o nosso pid, segue viva.
     """
-    wt = lane_dir.parent
-    foto, pid = _foto_da_prova(lane_dir)
-    autorizada = bool(
-        foto is not None and pid is not None
-        and pid_autorizado(pid, foto, lambda comando: comando_e_prova(wt, comando))
-    )
-    if (lane_dir / "proof_exit").exists():
-        # A prova acabou: colhe o zumbi do bash para não vazar um por card.
-        if autorizada and pid is not None:
+    saida = prova / "proof_exit"
+    if saida.is_symlink():
+        return "esgotou"
+    if saida.is_file():
+        meta = _meta_da_prova(prova)
+        pid = meta.get("pid") if meta else None
+        if isinstance(pid, int) and pid > 1:
             prova_viva(pid)
         return "viva"
-    if pid is None or (autorizada and prova_viva(pid)):
+    classe = classificar_pid(prova)
+    if classe in ("ausente", "nosso-vivo", "alheio"):
         return "viva"
-    if (lane_dir / "proof_morta").exists():
+    morta = prova / "proof_morta"
+    if morta.is_symlink() or morta.exists():
         return "esgotou"
     try:
-        (lane_dir / "proof_morta").write_text("1", encoding="utf-8")
+        escrever_exclusivo(morta, "1\n")
     except OSError:
         return "esgotou"
     return "refazer"
 
 
 def acompanhar_prova(st: dict, wt: Path, suites: list[str]) -> str:
-    """Estado da prova já disparada.
+    """Estado da prova já disparada, lida na pasta da rodada e não em `.lane`.
 
     'rodando': ainda no prazo. 'refeita': a prova morta começou de novo.
-    'timeout', 'stop' e 'morta': o grupo já foi morto (o build lock sai com ele).
+    'timeout', 'stop' e 'morta': o grupo já foi morto, se ainda era o nosso.
     'pronta': tem proof_exit para o veredito.
     """
-    lane_dir = wt / ".lane"
+    prova = preparar_prova_dir(st, wt)
+    _avisar_pid_da_worktree(wt)
     stop_file = STATE_DIR / f"stop-{st['lane']}"
     if stop_file.exists():
         stop_file.unlink(missing_ok=True)
-        matar_prova(wt)
+        matar_prova(st)
         return "stop"
-    decisao = decidir_prova_morta(lane_dir)
+    decisao = decidir_prova_morta(prova)
     if decisao == "refazer":
-        # Mata com a foto antiga ainda no disco. `start_proof` troca o registro;
-        # sem isto o grupo que a foto autorizava fica sem sinal e segura o lock.
-        matar_prova(wt)
-        (lane_dir / "proof_exit").unlink(missing_ok=True)
-        (lane_dir / "proof.log").unlink(missing_ok=True)
+        # Mata com a foto ainda no disco. Sem isto o grupo autorizado fica sem sinal.
+        matar_prova(st)
+        for nome in ("proof_exit", "proof.log", "proof_pid", "proof_started", "proof_meta.json"):
+            _apagar_regular(prova / nome)
         log(f"lane:{st['lane']} {st['card']}: prova morreu sem terminar; refaz uma vez")
-        start_proof(wt, suites)
+        start_proof(wt, suites, st)
         return "refeita"
     if decisao == "esgotou":
-        matar_prova(wt)
+        matar_prova(st)
         return "morta"
-    if not (lane_dir / "proof_exit").exists():
+    saida = prova / "proof_exit"
+    if saida.is_symlink():
+        return "morta"
+    if not saida.is_file():
         try:
-            started = float((lane_dir / "proof_started").read_text() or 0)
-        except (OSError, ValueError):
+            started = float(ler_sem_seguir(prova / "proof_started") or 0)
+        except (OSError, RuntimeError, ValueError):
             started = 0.0
         if started and (time.time() - started) / 60 > PROOF_TIMEOUT_MIN:
-            matar_prova(wt)
+            matar_prova(st)
             return "timeout"
         return "rodando"
     return "pronta"
@@ -3420,16 +3787,22 @@ def evidencia(linha: str) -> bool:
     return not TRECHO_RE.match(linha) and bool(EVIDENCIA_RE.search(linha))
 
 
-def proof_attempts(wt: Path) -> list[list[str]]:
+def proof_attempts(wt: Path, prova: Optional[Path] = None) -> list[list[str]]:
     """O `proof.log` quebrado em tentativas, na ordem em que rodaram.
 
     `proof_script` anuncia cada tentativa com `[prova] <suíte>: ...` antes de rodar,
     então cada tentativa é o bloco que começa num desses anúncios. Sem o bloco, o
     log inteiro é uma tentativa só (prova de 1 tentativa, ou log antigo).
+
+    Produção passa `prova` (a pasta da rodada). Sem isso, o parser de teste lê
+    `.lane/proof.log`. O `finalize` não usa esse caminho.
     """
+    log = (prova if prova is not None else wt / ".lane") / "proof.log"
     try:
-        lines = (wt / ".lane" / "proof.log").read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
+        if log.is_symlink() or log.parent.is_symlink():
+            return []
+        lines = ler_sem_seguir(log).splitlines()
+    except (OSError, RuntimeError):
         return []
     blocos: list[list[str]] = []
     for linha in lines:
@@ -3477,13 +3850,13 @@ def suite_provada(bloco: list[str]) -> bool:
     return False
 
 
-def prova_e22(wt: Path) -> bool:
+def prova_e22(wt: Path, prova: Optional[Path] = None) -> bool:
     """Cada suíte, na última tentativa, provou que rodou teste de verdade."""
-    blocos = ultimas_tentativas(proof_attempts(wt))
+    blocos = ultimas_tentativas(proof_attempts(wt, prova))
     return bool(blocos) and all(suite_provada(b) for b in blocos)
 
 
-def proof_veredito(wt: Path, rc: str = "") -> str:
+def proof_veredito(wt: Path, rc: str = "", prova: Optional[Path] = None) -> str:
     """O que a prova diz de verdade: 'verde', 'vermelho', 'preflight' ou 'sem-dado'.
 
     Exit 0 (melhoria 1, 21/10/2026, e E22): manda o código de saída. Só vira `vermelho`
@@ -3498,14 +3871,14 @@ def proof_veredito(wt: Path, rc: str = "") -> str:
        (máquina ocupada: vale repetir, não é teste vermelho);
     3. falhou sem nenhum dos dois: `vermelho` mesmo assim.
     """
-    blocos = proof_attempts(wt)
+    blocos = proof_attempts(wt, prova)
     if not blocos:
         return "sem-dado"
     if rc == "0":
         if any(evidencia(l) for b in ultimas_tentativas(blocos) for l in b):
             return "vermelho"
         # Exit 0 sem a linha do E22 não é prova: log vazio ou 0 testes não fecham o card.
-        if prova_e22(wt):
+        if prova_e22(wt, prova):
             return "verde"
         return "sem-prova"
     if any(evidencia(l) for b in blocos for l in b):
@@ -3515,13 +3888,13 @@ def proof_veredito(wt: Path, rc: str = "") -> str:
     return "vermelho"
 
 
-def proof_failures(wt: Path) -> str:
+def proof_failures(wt: Path, prova: Optional[Path] = None) -> str:
     """Resumo das linhas que explicam a falha, da tentativa que manda.
 
     Teste vermelho tem precedência sobre abort de preflight: se alguma tentativa
     deu erro de teste, o resumo mostra essa, senão o do preflight.
     """
-    blocos = proof_attempts(wt)
+    blocos = proof_attempts(wt, prova)
     com_erro = [b for b in blocos if any(evidencia(l) for l in b)]
     com_preflight = [b for b in blocos if any("abortado pelo preflight" in l for l in b)]
     escolhido = com_erro[-1] if com_erro else (com_preflight[-1] if com_preflight else None)
@@ -3532,14 +3905,28 @@ def proof_failures(wt: Path) -> str:
     return "\n".join(f"  - `{h[:200]}`" for h in hits[-10:])
 
 
+def ler_exit_code(st: dict) -> str:
+    """Código de saída da rodada. Ignora `.lane/exit_code`."""
+    path = prova_dir(st) / "exit_code"
+    if path.is_symlink():
+        raise RuntimeError(f"symlink recusado: {path}")
+    return ler_sem_seguir(path).strip()
+
+
 def finalize(st: dict) -> Optional[str]:
-    """Fecha o card. None = ainda não (a prova do dispatcher está rodando)."""
+    """Fecha o card. None = ainda não (a prova do dispatcher está rodando).
+
+    `.lane/proof_*` e `.lane/exit_code` não entram: a rodada mora em
+    `STATE_DIR/provas/<lane>/<card>/<run_id>`.
+    """
     wt = Path(st["worktree"])
-    # A recusa do config antecede o primeiro git do fechamento (fetch e status).
+    # FRA-594: config que executa código (helper, fsmonitor, pushurl) recusa
+    # antes da prova. Origem e histórico seguem no fim, depois do veredito.
     motivo_cfg, _origem = diagnostico_config(wt)
     if motivo_cfg:
         return fail(st, f"nada foi enviado: {motivo_cfg}", causa="push-barrado")
-    code = (wt / ".lane" / "exit_code").read_text().strip()
+    prova = preparar_prova_dir(st, wt)
+    code = ler_exit_code(st)
     res = read_result(wt)
     g = git_summary(wt, st.get("base"))
 
@@ -3548,8 +3935,8 @@ def finalize(st: dict) -> Optional[str]:
         return fail(st, f"tocou caminho protegido ({', '.join(prot)}); nada foi enviado")
     if code == "freio":
         try:
-            detalhe = (wt / ".lane" / "freio.txt").read_text(encoding="utf-8").strip()
-        except OSError:
+            detalhe = ler_sem_seguir(prova / "freio.txt").strip()
+        except (OSError, RuntimeError):
             detalhe = ""
         return fail(st, detalhe or "freio do card", causa="freio-card")
     if code.lstrip("-").isdigit() and (code != "0" or not res or res.get("status") not in ("done", "needs_dono")):
@@ -3592,48 +3979,58 @@ def finalize(st: dict) -> Optional[str]:
     if g["dirty"]:
         return fail(st, "result=done mas há mudanças sem commit")
 
-    # FRA-269: a prova é do dispatcher, não do terminal do agente.
-    lane_dir = wt / ".lane"
+    # FRA-269 / FRA-595: a prova é do dispatcher, na pasta da rodada.
+    # `.lane/proof_*` plantado pelo agente não pula o start_proof nem vira verde.
     suites = proof_suites(res)
-    discard_stale_proof(lane_dir, st["card"], st.get("started", 0))
-    if not (lane_dir / "proof_started").exists():
-        start_proof(wt, suites)
+    discard_stale_proof(prova, st["card"], st.get("started", 0))
+    inicio = prova / "proof_started"
+    if inicio.is_symlink():
+        return fail(st, "proof_started é symlink", causa="prova-symlink")
+    if not inicio.is_file():
+        start_proof(wt, suites, st)
         return None  # volta no próximo ciclo
     fase = acompanhar_prova(st, wt, suites)
+    log_prova = prova / "proof.log"
     if fase in ("rodando", "refeita"):
         return None
     if fase == "timeout":
         return stop(st, f"a prova ({', '.join(suites)}) passou de {PROOF_TIMEOUT_MIN} min",
-                    "- log da prova: `.lane/proof.log` no worktree\n", causa="prova-timeout")
+                    f"- log da prova: `{log_prova}`\n", causa="prova-timeout")
     if fase == "stop":
         return stop(st, "parada manual (menu)", causa="parada-manual")
     if fase == "morta":
         return stop(st, "a prova morreu sem terminar e a repetição também não terminou",
-                    "- log da prova: `.lane/proof.log` no worktree\n", causa="prova-morta")
+                    f"- log da prova: `{log_prova}`\n", causa="prova-morta")
     if fase != "pronta":
         raise RuntimeError(f"fase de prova desconhecida: {fase}")
-    proof_rc = (lane_dir / "proof_exit").read_text().strip()
-    veredito = proof_veredito(wt, proof_rc)
+    proof_rc = ler_proof_exit(prova)
+    veredito = proof_veredito(wt, proof_rc, prova)
     if proof_rc != "0" and veredito == "preflight":
         # Mac ocupado (load/RAM): a barra nenhuma foi teste vermelho. Tenta de novo, até 3 vezes.
-        tries_f = lane_dir / "proof_retries"
-        tries = int(tries_f.read_text() or 0) if tries_f.exists() else 0
+        tries_f = prova / "proof_retries"
+        if tries_f.is_symlink():
+            return fail(st, "proof_retries é symlink", causa="prova-symlink")
+        try:
+            tries = int(ler_sem_seguir(tries_f) or 0) if tries_f.is_file() else 0
+        except (OSError, RuntimeError, ValueError):
+            tries = 0
         if tries < 3:
-            tries_f.write_text(str(tries + 1))
-            (lane_dir / "proof_started").unlink(missing_ok=True)
-            (lane_dir / "proof_exit").unlink(missing_ok=True)
+            _apagar_regular(tries_f)
+            escrever_exclusivo(tries_f, f"{tries + 1}\n")
+            for nome in ("proof_started", "proof_exit", "proof.log", "proof_pid", "proof_meta.json"):
+                _apagar_regular(prova / nome)
             return None
         return stop(st, "a prova foi barrada 4 vezes pelo preflight (Mac ocupado)",
-                    f"- log da prova: `{wt / '.lane' / 'proof.log'}`\n")
+                    f"- log da prova: `{log_prova}`\n")
     if proof_rc != "0" or veredito == "vermelho":
         # Falha: código de saída não-zero OU evidência forte na última tentativa (mesmo com código 0).
         return fail(st, f"a prova do dispatcher falhou ({', '.join(suites)}, código {proof_rc})",
-                    f"- resumo:\n{proof_failures(wt)}\n"
-                    f"- log completo: `{wt / '.lane' / 'proof.log'}`\n", causa="prova-vermelha")
+                    f"- resumo:\n{proof_failures(wt, prova)}\n"
+                    f"- log completo: `{log_prova}`\n", causa="prova-vermelha")
     if veredito != "verde":
         # Exit 0 com log vazio, 0 testes, ou suíte sem a linha do E22 não é DONE.
         return fail(st, "a prova não contou Executed N tests, with 0 failures (N>0) em cada suíte",
-                    f"- log completo: `{wt / '.lane' / 'proof.log'}`\n", causa="prova-sem-contagem")
+                    f"- log completo: `{log_prova}`\n", causa="prova-sem-contagem")
     res = dict(res, verification=f"dispatcher: {projeto().prova.replace('{suite}', '')}"
                                  f"{' '.join(suites)} → verde"
                                  + (f"; agente: {res['verification']}" if res.get("verification") else ""))
@@ -3698,7 +4095,15 @@ def watch(lane: str, st: dict) -> None:
     if st.get("stuck"):
         return  # precisa de ação humana: ver log; apagar lane-<x>.json libera a lane
     wt = Path(st["worktree"])
-    exit_file = wt / ".lane" / "exit_code"
+    try:
+        prova = preparar_prova_dir(st, wt)
+    except (KeyError, RuntimeError) as exc:
+        log(f"lane:{lane} {st.get('card')}: sem pasta de prova ({exc}); não leio .lane/exit_code")
+        return
+    exit_file = prova / "exit_code"
+    if exit_file.is_symlink():
+        log(f"lane:{lane} {st.get('card')}: exit_code é symlink; recusado")
+        return
     stop_file = STATE_DIR / f"stop-{lane}"
     if not exit_file.exists() and tmux_alive(st["session"]) and not st.get("window_ok"):
         st["window_ok"] = _show_in_lanes_window(lane, st["session"], st["card"])
@@ -3709,14 +4114,14 @@ def watch(lane: str, st: dict) -> None:
         if not reason:
             return
         # Motivo gravado ANTES de matar: o runner não sobrescreve exit_code existente.
-        exit_file.parent.mkdir(exist_ok=True)
         if freio:
-            (exit_file.parent / "freio.txt").write_text(f"freio do card ({freio})", encoding="utf-8")
-            exit_file.write_text("freio")
+            escrever_exclusivo(prova / "freio.txt", f"freio do card ({freio})\n")
+            escrever_exclusivo(exit_file, "freio\n")
         else:
-            exit_file.write_text(reason)
+            texto = reason if reason.endswith("\n") else reason + "\n"
+            escrever_exclusivo(exit_file, texto)
         kill_lane_tree(st["session"])
-        matar_prova(wt)
+        matar_prova(st)
         stop_file.unlink(missing_ok=True)
     try:
         outcome = finalize(st)
@@ -3752,12 +4157,16 @@ def watch(lane: str, st: dict) -> None:
             save_state(lane, st)
             log(f"lane:{lane} TRAVADA em {st['card']}: {st['stuck']}")
             return
-    (wt / ".lane" / "finalized").write_text(outcome)
+    destino = prova / "finalized"
+    if destino.is_symlink():
+        raise RuntimeError(f"symlink recusado: {destino}")
+    if not destino.exists():
+        escrever_exclusivo(destino, outcome)
     # Arquiva a prova na pasta de estado antes de soltar a lane: o painel lê
     # `stale-proof-*` para o histórico e para o contador de testes do dia. Sem
     # isso a prova some quando o `lane-<lane>.json` passa a apontar para outro card.
     try:
-        archive_old_proofs(wt / ".lane", st["card"])
+        archive_old_proofs(prova, st["card"])
     except Exception as exc:  # noqa: BLE001 — o fechamento não pode falhar por causa do histórico
         log(f"lane:{lane} {st['card']}: não arquivei a prova ({exc})")
     soltar_lane(lane)

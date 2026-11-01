@@ -212,6 +212,10 @@ class EstadoLaneJson(unittest.TestCase):
             sh.assert_not_called()
         self.assertIn("não é lane-<lane>", d.LOG_FILE.read_text(encoding="utf-8"))
 
+    def _st_prova(self, run_id: str) -> dict:
+        return {"lane": "claude", "card": "FRA-600", "run_id": run_id,
+                "worktree": str(self.wt)}
+
     def test_proof_pid_forjado_nao_sinaliza(self):
         vitima = self._vigiar(subprocess.Popen(
             ["sleep", "30"], start_new_session=True,
@@ -222,7 +226,7 @@ class EstadoLaneJson(unittest.TestCase):
         path = d.arquivo_prova_proc(self.wt)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(foto), encoding="utf-8")
-        d.matar_prova(self.wt)
+        d.matar_prova(self._st_prova("runforja"))
         self.assertTrue(d.prova_viva(vitima.pid))
         self.assertIn("não sinalizo", d.LOG_FILE.read_text(encoding="utf-8"))
 
@@ -233,9 +237,12 @@ class EstadoLaneJson(unittest.TestCase):
             ["/bin/bash", "-c", bash_cmd], cwd=self.wt, start_new_session=True,
         ))
         time.sleep(0.2)
-        self.assertIsNotNone(d.registrar_prova(self.wt, bash.pid))
+        st = self._st_prova("runreg")
+        prova = d.preparar_prova_dir(st, self.wt)
+        d.registrar_prova(prova, bash.pid, "proof.log")
+        self.assertIsNotNone(d.registrar_foto(self.wt, bash.pid))
         (self.wt / ".lane" / "proof_pid").write_text(str(vitima.pid), encoding="utf-8")
-        d.matar_prova(self.wt)
+        d.matar_prova(st)
         self.assertTrue(d.prova_viva(vitima.pid))
         self.assertFalse(d.prova_viva(bash.pid))
 
@@ -285,12 +292,14 @@ class EstadoLaneJson(unittest.TestCase):
         bash = self._vigiar(subprocess.Popen(
             ["/bin/bash", "-c", bash_cmd], cwd=self.wt, start_new_session=True,
         ))
-        self.assertIsNotNone(d.registrar_prova(self.wt, bash.pid))
+        st = self._st_prova("runmorto")
+        prova = d.preparar_prova_dir(st, self.wt)
+        d.registrar_prova(prova, bash.pid, "proof.log")
+        self.assertIsNotNone(d.registrar_foto(self.wt, bash.pid))
         morto = subprocess.Popen(["sleep", "0"])
         morto.wait(timeout=5)
         (self.wt / ".lane" / "proof_pid").write_text(str(morto.pid), encoding="utf-8")
         (self.wt / ".lane" / "proof_started").write_text(str(time.time()), encoding="utf-8")
-        st = {"lane": "claude", "card": "FRA-600"}
         with mock.patch.object(d, "start_proof") as start:
             self.assertEqual(d.acompanhar_prova(st, self.wt, ["FooTests"]), "rodando")
         start.assert_not_called()
@@ -304,7 +313,10 @@ class EstadoLaneJson(unittest.TestCase):
         bash = self._vigiar(subprocess.Popen(
             ["/bin/bash", "-c", bash_cmd], cwd=self.wt, start_new_session=True,
         ))
-        self.assertIsNotNone(d.registrar_prova(self.wt, bash.pid))
+        st = self._st_prova("runrefaz")
+        prova = d.preparar_prova_dir(st, self.wt)
+        d.registrar_prova(prova, bash.pid, "proof.log")
+        self.assertIsNotNone(d.registrar_foto(self.wt, bash.pid))
         os.killpg(bash.pid, signal.SIGKILL)
         bash.wait(timeout=5)
         (self.wt / ".lane" / "proof_pid").write_text(str(bash.pid), encoding="utf-8")
@@ -312,15 +324,14 @@ class EstadoLaneJson(unittest.TestCase):
         ordem = []
         original = d.matar_prova
 
-        def mata(wt):
+        def mata(estado):
             ordem.append("matar")
-            self.assertTrue(d.arquivo_prova_proc(wt).is_file())
-            return original(wt)
+            self.assertTrue(d.arquivo_prova_proc(self.wt).is_file())
+            return original(estado)
 
-        def comeca(wt, suites):
+        def comeca(wt, suites, estado):
             ordem.append("start")
 
-        st = {"lane": "claude", "card": "FRA-600"}
         with mock.patch.object(d, "matar_prova", side_effect=mata), \
                 mock.patch.object(d, "start_proof", side_effect=comeca):
             self.assertEqual(d.acompanhar_prova(st, self.wt, ["FooTests"]), "refeita")

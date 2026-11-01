@@ -161,7 +161,7 @@ class ControleDoBundle(unittest.TestCase):
         self.assertNotIn(str(antigo_lanes / "claude-settings.json"), cmd)
         self.assertNotIn(str(antigo_lanes / "lane-mcp.json"), cmd)
 
-        grok = d.agent_command("grok", "medio")
+        grok = d.agent_command("grok", "medio", prompt=self.tmp / "prompt.md")
         self.assertEqual(grok[grok.index("--allow") + 1], "SoBundle")
         self.assertEqual(grok[grok.index("--deny") + 1], "SoBundleDeny")
         self.assertNotIn("Bash(git push:*)", grok)
