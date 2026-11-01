@@ -1,4 +1,5 @@
 """Funções puras do vigia (bots/watch.py): sem rede, sem Linear, sem gh."""
+import ast
 import importlib.util
 import json
 import tempfile
@@ -1419,3 +1420,12 @@ class MergeSoClean(unittest.TestCase):
         self.arquivos = ".github/workflows/ci.yml\n"
         self.assertEqual(watch.pr_paths({"number": 7}), [".github/workflows/ci.yml"])
         self.assertEqual(watch.pr_files({"number": 7}), {"ci.yml"})
+
+
+class CompilaNoPython39Test(unittest.TestCase):
+    """FRA-590: o `/usr/bin/python3` do Mac é 3.9. Uma f-string com `{expr or {}}`
+    e o `.get` fora da interpolação não compila, e o vigia não sobe."""
+
+    def test_watch_py_compila(self):
+        src = (Path(__file__).resolve().parents[1] / "bots" / "watch.py").read_text(encoding="utf-8")
+        ast.parse(src)

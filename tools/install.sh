@@ -15,7 +15,8 @@ ROOT="$(cd "$HERE/.." && pwd)"
 T="$HOME/.transcentia/tools"; B="$HOME/.transcentia/bots"
 LAUNCHERS="$HOME/Library/Application Support/AgentesLocais"
 DOMAIN="gui/$(id -u)"
-mkdir -p "$T" "$B/prompts" "$LAUNCHERS" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/TranscentIA"
+mkdir -p "$T" "$B/prompts" "$LAUNCHERS" "$HOME/Library/LaunchAgents" \
+  "$HOME/Library/Logs/TranscentIA" "$HOME/Library/Logs/TuttiDash"
 
 # O cfg acha o arquivo por gasto_lanes/config.py. A cópia fica ao lado do cfg
 # instalado (no checkout ele usa ../gasto_lanes/config.py).
@@ -62,10 +63,14 @@ if [ -d "$LANES_DIR" ]; then
   for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh; do
     install -m 755 "$ROOT/lanes/$f" "$LANES_DIR/$f"
   done
+  install -m 644 "$ROOT/lanes/permissao.py" "$LANES_DIR/permissao.py"
   for f in "$ROOT"/lanes/lane-prompt.md "$ROOT"/lanes/lane-prompt-*.md; do
     [ -f "$f" ] || continue
     install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
   done
+  if [ -f "$ROOT/lanes/claude-settings.json" ]; then
+    install -m 644 "$ROOT/lanes/claude-settings.json" "$LANES_DIR/claude-settings.json"
+  fi
 fi
 # Espelho antigo. A execução (app, dispatcher, vigia) não lê esta pasta (FRA-614):
 # o manifesto que vale é o do bundle assinado. O rsync não é a fonte.
