@@ -40,25 +40,45 @@ cp Resources/LaunchAgents/*.plist "$APP/Contents/Library/LaunchAgents/"
 xcrun clang -O2 -Wall -mmacosx-version-min=14.0 -o "$APP/Contents/MacOS/tuttidash-agente" Agente/agente.c
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-echo "==> manifests de agente (agents.d/)"
+echo "==> manifests de agente (agents.d/, 0600 no bundle)"
 AGENTS_D="$(cd "$HERE/../.." && pwd)/agents.d"
-if [[ -d "$AGENTS_D" ]]; then
-  mkdir -p "$APP/Contents/Resources/agents.d"
-  cp "$AGENTS_D"/*.json "$APP/Contents/Resources/agents.d/"
-else
-  echo "AVISO: agents.d/ não encontrado em $AGENTS_D (o app cai no registry embutido)"
+if [[ ! -d "$AGENTS_D" ]]; then
+  echo "ERRO: agents.d/ não encontrado em $AGENTS_D" >&2
+  exit 1
 fi
+mkdir -p "$APP/Contents/Resources/agents.d"
+install -m 600 "$AGENTS_D"/*.json "$APP/Contents/Resources/agents.d/"
+
+echo "==> settings e MCP (bundle, 0600; sem fixture de teste)"
+if [[ ! -f "$HERE/Resources/claude-settings.json" || ! -f "$HERE/Resources/lane-mcp.json" ]]; then
+  echo "ERRO: falta o template de produção Resources/claude-settings.json ou lane-mcp.json" >&2
+  exit 1
+fi
+install -m 600 "$HERE/Resources/claude-settings.json" "$APP/Contents/Resources/claude-settings.json"
+# O lane-mcp.json versionado não leva caminho de máquina e é o único que entra
+# no bundle. Um override local apontaria para um script fora do bundle, gravável
+# pelo usuário (FRA-614). O comando, quando existir, fica em Contents/Resources.
+install -m 600 "$HERE/Resources/lane-mcp.json" "$APP/Contents/Resources/lane-mcp.json"
+
+echo "==> proxy do Linear (o app sobe o processo; a chave entra pelo stdin)"
+# O processo só enxerga o bundle: estes módulos ficam ao lado do script.
+cp "$HERE/../../gasto_lanes/proxy_linear.py" "$APP/Contents/Resources/proxy_linear.py"
+cp "$HERE/../../gasto_lanes/linear_ids.py" "$APP/Contents/Resources/linear_ids.py"
+cp "$HERE/../../gasto_lanes/config.py" "$APP/Contents/Resources/config.py"
 
 echo "==> plano de controle (scripts no bundle assinado, FRA-613)"
 REPO="$(cd "$HERE/../.." && pwd)"
 CTRL="$APP/Contents/Resources/controle"
 mkdir -p "$CTRL/lanes" "$CTRL/bots" "$CTRL/tools"
 install -m 755 "$REPO/lanes/dispatcher.py" "$CTRL/lanes/dispatcher.py"
+install -m 644 "$REPO/lanes/permissao.py" "$CTRL/lanes/permissao.py"
 install -m 755 "$REPO/lanes/lane_view.py" "$CTRL/lanes/lane_view.py"
 install -m 755 "$REPO/lanes/lanes_window.py" "$CTRL/lanes/lanes_window.py"
 install -m 755 "$REPO/lanes/lanes_ctl.py" "$CTRL/lanes/lanes_ctl.py"
 install -m 755 "$REPO/lanes/run_lane.sh" "$CTRL/lanes/run_lane.sh"
 install -m 755 "$REPO/bots/watch.py" "$CTRL/bots/watch.py"
+install -m 644 "$REPO/bots/caixa_leitura.py" "$CTRL/bots/caixa_leitura.py"
+install -m 755 "$REPO/bots/git-leitura" "$CTRL/bots/git-leitura"
 install -m 755 "$REPO/tools/bots-chave" "$CTRL/tools/bots-chave"
 install -m 755 "$REPO/tools/lanes.command" "$CTRL/tools/lanes.command"
 install -m 644 "$REPO/tools/script-controle.sh" "$CTRL/tools/script-controle.sh"
