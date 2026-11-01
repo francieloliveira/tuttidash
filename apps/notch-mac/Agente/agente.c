@@ -1,11 +1,31 @@
 // Lançador compilado dos agentes do TuttiDash (SMAppService). Uso: tuttidash-agente <dispatcher|vigia|chave>
 // Só faz exec do script atual em ~/.transcentia; não lê nem grava `enabled` ou PAUSE.
 #include <fcntl.h>
+#include <mach-o/dyld.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+/* Resources do próprio .app. O dispatcher e o catálogo leem settings, MCP e
+   agents.d daqui (FRA-614), não de ~/.transcentia. Não mexe em enabled nem PAUSE. */
+static void definir_recursos(void) {
+    char exe[4096];
+    uint32_t n = (uint32_t)sizeof exe;
+    if (_NSGetExecutablePath(exe, &n) != 0) return;
+    char real[4096];
+    if (!realpath(exe, real)) return;
+    char *marca = strstr(real, ".app/Contents/MacOS/");
+    if (!marca) return;
+    size_t prefixo = (size_t)(marca - real) + strlen(".app/Contents");
+    if (prefixo + strlen("/Resources") >= sizeof real) return;
+    char recursos[4096];
+    memcpy(recursos, real, prefixo);
+    memcpy(recursos + prefixo, "/Resources", strlen("/Resources") + 1);
+    if (strstr(recursos, "/.transcentia/")) return;
+    setenv("TUTTIDASH_RECURSOS", recursos, 1);
+}
 
 int main(int argc, char **argv) {
     const char *home = getenv("HOME");
@@ -21,6 +41,7 @@ int main(int argc, char **argv) {
     snprintf(arq, sizeof arq, "%s/%s", dir, log);
     int fd = open(arq, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); close(fd); }
+    definir_recursos();
     snprintf(alvo, sizeof alvo, "%s/%s", home, script);
     char *args[] = { "/usr/bin/python3", alvo, (char *)extra, NULL };
     execv("/usr/bin/python3", args);

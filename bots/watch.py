@@ -8,7 +8,8 @@ Espelho, nunca em paralelo: com ~/.transcentia/bots/PAUSE presente não faz nada
 
 Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
   0. Instalação no aparelho em andamento/terminada -> registra o resultado no card
-     (só com `watch.instalar_comando` configurado).
+     (só com `watch.instalar_comando` configurado: lista de argv; texto antigo
+     ainda vale via shlex.split, sem shell, e gera aviso de migração).
   1. Card em In Review com a prova do dispatcher verde (comentário DONE com o SHA
      completo de 40 hex igual ao head, escrito pelo viewer do token Linear, e
      "→ verde" no corpo) -> merge (um por vez) só com `mergeStateStatus`
@@ -100,8 +101,6 @@ LOG_FILE = HOME / "Library" / "Logs" / "TranscentIA" / "bots-watch.log"
 RUN_LOG_DIR = HOME / "Library" / "Logs" / "TranscentIA" / "bots"
 PATH_ENV = f"/opt/homebrew/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-LINEAR_API = "https://api.linear.app/graphql"
-KEYCHAIN_SERVICE = _cfg("linear.keychain_service", "linear-transcentia-lanes")
 # Projeto que o vigia consulta no Linear. Vem do cadastro `projetos`; sem a
 # chave na config vale o iOS, como antes. Lido a cada ciclo.
 def projeto_linear():
@@ -177,6 +176,7 @@ try:
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
+    import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
 except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
     sys.exit(f"{_falta.name} não encontrado ao lado do watch.py — "
              "rode tools/install.sh para instalar o catálogo de agentes e projetos")
@@ -275,9 +275,42 @@ AGENT_MONTHLY_PAUSE_S = _cfg("watch.pausa_limite_mensal_s", 6 * 3600)
 NEEDS_RECHECK_S = _cfg("watch.reconferir_needs_s", 30 * 60)
 INSTALL_SESSION = "instalar-aparelho"
 INSTALL_SCRIPT = STATE_DIR / "instalar.sh"
-# Comando que instala o app no aparelho, rodado no worktree `install-main` do projeto
-# (ex.: "./scripts/instalar-no-iphone.sh"). Vazio = o vigia não instala nada (FRA-565).
-INSTALL_COMMAND = str(_cfg("watch.instalar_comando", "") or "").strip()
+# Comando que instala o app no aparelho, no worktree `install-main` do projeto.
+# Lista de argv (ex.: ["./scripts/instalar-no-iphone.sh"]). Vazio = não instala (FRA-565).
+# Texto antigo ainda vale, partido com shlex.split e com aviso para migrar à lista.
+# O comando por projeto é o FRA-585: aqui continua a chave global, sem duplicar isso.
+
+
+def instalar_argv(bruto=None) -> tuple[list[str], str]:
+    """(argv, aviso). Lista = argv direto. Texto = shlex.split, sem shell, com aviso.
+
+    O aviso pede a migração para a lista. Vazio não avisa e não instala.
+    Item que não é texto desliga a instalação em vez de rodar um comando pela metade.
+    """
+    if bruto is None:
+        bruto = _cfg("watch.instalar_comando", [])
+    if isinstance(bruto, str):
+        texto = bruto.strip()
+        if not texto:
+            return [], ""
+        try:
+            partes = shlex.split(texto)
+        except ValueError as exc:
+            return [], (f"watch.instalar_comando ilegível ({exc}); instalação desligada. "
+                        "Migre para uma lista de argv.")
+        if not partes:
+            return [], ""
+        return partes, ("watch.instalar_comando ainda é texto; migre para uma lista de argv "
+                        "(programa e argumentos). O texto foi partido com shlex.split, sem shell.")
+    if isinstance(bruto, list):
+        partes = []
+        for item in bruto:
+            if not isinstance(item, str) or not item.strip():
+                return [], ("watch.instalar_comando: a lista só aceita textos não vazios; "
+                            "instalação desligada.")
+            partes.append(item)
+        return partes, ""
+    return [], "watch.instalar_comando: use uma lista de argv; instalação desligada."
 
 
 PANEL_LOG = HOME / "Library" / "Logs" / "TranscentIA" / "lanes-dispatcher.log"
@@ -333,33 +366,15 @@ def save_state(st: dict) -> None:
 
 
 # ---------- Linear ----------
-def linear_key() -> str:
-    out = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-                         capture_output=True, text=True, check=False)
-    if out.returncode != 0 or not out.stdout.strip():
-        raise RuntimeError("chave do Linear não encontrada no Keychain")
-    return out.stdout.strip()
-
-
 def linear(query: str, variables: dict) -> dict:
-    body = json.dumps({"query": query, "variables": variables}).encode()
-    req = urllib.request.Request(LINEAR_API, data=body, method="POST",
-                                 headers={"Content-Type": "application/json", "Authorization": linear_key()})
+    """Pede a consulta ao proxy local. O token não passa por este processo."""
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Linear HTTP {exc.code}: {exc.read()[:300]!r}") from None
-    if data.get("errors"):
-        raise RuntimeError(f"Linear: {data['errors'][0].get('message')}")
-    return data["data"]
+        return proxy_linear.executar_consulta(query, variables)
+    except proxy_linear.ErroProxy as exc:
+        raise RuntimeError(str(exc)) from None
 
 
-ISSUE_FIELDS = """id identifier title description url priority sortOrder startedAt createdAt updatedAt dueDate estimate
-      branchName assignee{ id name } parent{ identifier }
-      state{ id name type } labels{ nodes{ id name parent{ name } } } project{ id name }
-      comments(first:30, orderBy: createdAt){ nodes{ id body createdAt user { id } } }
-      inverseRelations(first:30){ nodes{ type issue{ identifier state{ type } } } }"""
+ISSUE_FIELDS = proxy_linear.ISSUE_FIELDS
 
 
 def em_ordem(ci: dict | None) -> dict | None:
@@ -376,16 +391,14 @@ def em_ordem(ci: dict | None) -> dict | None:
 
 def issue(ident: str) -> dict | None:
     try:
-        return em_ordem(linear(f"query($id:String!){{ issue(id:$id){{ {ISSUE_FIELDS} }} }}", {"id": ident})["issue"])
+        return em_ordem(linear(proxy_linear.consulta("issue"), {"id": ident})["issue"])
     except RuntimeError as exc:
         log(f"issue {ident}: {exc}")
         return None
 
 
 def project_issues(state_names: list[str] | None = None) -> list[dict]:
-    flt = "project:{ id:{ eq:$p } }, state:{ type:{ nin:[\"completed\",\"canceled\"] } }"
-    q = f"""query($p:ID!, $after:String){{ issues(first:100, after:$after, filter:{{ {flt} }})
-          {{ pageInfo{{ hasNextPage endCursor }} nodes{{ {ISSUE_FIELDS} }} }} }}"""
+    q = proxy_linear.consulta("issues_projeto")
     nodes: list[dict] = []
     after = None
     # Board grande não pode sumir depois dos 100 primeiros. O teto de 10 páginas
@@ -407,27 +420,24 @@ def labels_of(ci: dict) -> set[str]:
 
 
 def comment(issue_id: str, body: str) -> None:
-    linear("mutation($i:CommentCreateInput!){ commentCreate(input:$i){ success } }",
-           {"i": {"issueId": issue_id, "body": body}})
+    linear(proxy_linear.consulta("comentar_vigia"), {"i": {"issueId": issue_id, "body": body}})
 
 
 def add_label(issue_id: str, name: str) -> None:
     if not LABEL_IDS.get(name):
         log(f"linear: etiqueta «{name}» sem id; não apliquei")
         return
-    linear("mutation($id:String!,$l:String!){ issueAddLabel(id:$id, labelId:$l){ success } }",
-           {"id": issue_id, "l": LABEL_IDS[name]})
+    linear(proxy_linear.consulta("adicionar_etiqueta_vigia"), {"id": issue_id, "l": LABEL_IDS[name]})
 
 
 def remove_label(issue_id: str, name: str) -> None:
     if not LABEL_IDS.get(name):
         return
-    linear("mutation($id:String!,$l:String!){ issueRemoveLabel(id:$id, labelId:$l){ success } }",
-           {"id": issue_id, "l": LABEL_IDS[name]})
+    linear(proxy_linear.consulta("remover_etiqueta_vigia"), {"id": issue_id, "l": LABEL_IDS[name]})
 
 
 def prepend_description(ci: dict, text: str) -> None:
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
+    linear(proxy_linear.consulta("atualizar_issue"),
            {"id": ci["id"], "i": {"description": text + (ci.get("description") or "")}})
 
 
@@ -435,18 +445,17 @@ def set_state(issue_id: str, state_id: str) -> None:
     if not state_id:
         log("linear: estado sem id; não mudei o card")
         return
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
-           {"id": issue_id, "i": {"stateId": state_id}})
+    linear(proxy_linear.consulta("atualizar_issue"), {"id": issue_id, "i": {"stateId": state_id}})
 
 
 def diary_append(lines: list[str]) -> None:
     if not lines or not DIARY_DOC_ID:
         return
     try:
-        doc = linear("query($id:String!){ document(id:$id){ content } }", {"id": DIARY_DOC_ID})["document"]
+        doc = linear(proxy_linear.consulta("ler_documento"), {"id": DIARY_DOC_ID})["document"]
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         block = f"\n\n### {stamp} BRT — vigia dos bots (por evento)\n\n" + "\n".join(f"- {l}" for l in lines)
-        linear("mutation($id:String!,$i:DocumentUpdateInput!){ documentUpdate(id:$id,input:$i){ success } }",
+        linear(proxy_linear.consulta("atualizar_documento"),
                {"id": DIARY_DOC_ID, "i": {"content": (doc.get("content") or "") + block}})
     except RuntimeError as exc:
         log(f"diário: {exc}")
@@ -456,7 +465,7 @@ def known_errors() -> str:
     if not KNOWN_ERRORS_DOC_ID:
         return "(sem lista de erros conhecidos: linear.erros_conhecidos_doc_id vazio)"
     try:
-        doc = linear("query($id:String!){ document(id:$id){ content } }", {"id": KNOWN_ERRORS_DOC_ID})["document"]
+        doc = linear(proxy_linear.consulta("ler_documento"), {"id": KNOWN_ERRORS_DOC_ID})["document"]
         return (doc.get("content") or "")[:12000]
     except RuntimeError as exc:
         log(f"erros conhecidos: {exc}")
@@ -464,8 +473,7 @@ def known_errors() -> str:
 
 
 def done_state_id(team_issue: dict) -> str | None:
-    q = """query($id:String!){ issue(id:$id){ team{ states{ nodes{ id type name } } } } }"""
-    nodes = linear(q, {"id": team_issue["id"]})["issue"]["team"]["states"]["nodes"]
+    nodes = linear(proxy_linear.consulta("estados_do_card"), {"id": team_issue["id"]})["issue"]["team"]["states"]["nodes"]
     for n in nodes:
         if n["type"] == "completed" and n["name"].lower() == "done":
             return n["id"]
@@ -780,8 +788,7 @@ def limpar_retomadas(desc: str) -> tuple[str, list[str]]:
 
 
 def set_description(ci: dict, text: str) -> None:
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
-           {"id": ci["id"], "i": {"description": text}})
+    linear(proxy_linear.consulta("atualizar_issue"), {"id": ci["id"], "i": {"description": text}})
 
 
 def expirar_retomadas(issues: list[dict], st: dict, diary: list[str]) -> None:
@@ -838,17 +845,29 @@ def tmux_alive(session: str) -> bool:
 
 
 def start_install(ref: str, tag: str, card_id: str | None, st: dict, diary: list[str]) -> bool:
-    """Instala no aparelho numa sessão tmux própria (E14), no worktree `<worktrees>/install-main` do projeto."""
-    if not INSTALL_COMMAND:
+    """Instala no aparelho numa sessão tmux própria (E14), no worktree `<worktrees>/install-main`.
+
+    O comando entra como argv, cada pedaço citado para o tmux não reabrir um shell.
+    Repo e worktree são conferidos contra o cadastro antes de abrir a sessão.
+    """
+    argv, aviso = instalar_argv()
+    if aviso:
+        log(aviso)
+    if not argv:
         return False
     if tmux_alive(INSTALL_SESSION):
         log(f"instalação {tag}: outra instalação em andamento, fica para o próximo tick")
         return False
-    out = HOME / "Library/Logs/TranscentIA" / f"device-build-{tag}-{datetime.now():%Y%m%d-%H%M%S}.log"
     p = projeto()
-    sh(["tmux", "new-session", "-d", "-s", INSTALL_SESSION,
-        " ".join(shlex.quote(x) for x in ["/bin/bash", str(INSTALL_SCRIPT), ref, str(out), str(p.repo),
-                                         str(p.worktrees / "install-main"), INSTALL_COMMAND])])
+    wt = p.worktrees / "install-main"
+    codigo, detalhe = projetos.checar_alvo_instalar(p.repo, wt, cadastro=p)
+    if codigo:
+        log(f"instalação {tag} recusada: {detalhe.splitlines()[0]}")
+        return False
+    out = HOME / "Library/Logs/TranscentIA" / f"device-build-{tag}-{datetime.now():%Y%m%d-%H%M%S}.log"
+    cmdline = " ".join(shlex.quote(x) for x in
+                       ["/bin/bash", str(INSTALL_SCRIPT), ref, str(out), str(p.repo), str(wt), *argv])
+    sh(["tmux", "new-session", "-d", "-s", INSTALL_SESSION, cmdline])
     st["installs"]["atual"] = {"ref": ref, "tag": tag, "card_id": card_id, "log": str(out),
                                "inicio": datetime.now().isoformat(timespec="seconds")}
     diary.append(f"Gestor · instalação no aparelho iniciada ({ref}); log {out.name}")
@@ -887,7 +906,7 @@ def id_viewer_linear() -> str:
     if cache:
         return cache
     try:
-        viewer = (linear("query{ viewer{ id } }", {}).get("viewer") or {})
+        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
     except RuntimeError as exc:
         log(f"prova: não li o viewer do Linear ({exc})")
         return ""
@@ -1704,17 +1723,14 @@ def estado_cancelado_id(st: dict) -> str:
     time_id = linear_ids.time_do_projeto(lambda q, v: linear(q, v), projeto_linear())
     if not time_id:
         return ""
-    nos = ((linear("query($id:String!){ team(id:$id){ states{ nodes{ id type } } } }", {"id": time_id})
+    nos = ((linear(proxy_linear.consulta("estados_time_tipo"), {"id": time_id})
             .get("team") or {}).get("states") or {}).get("nodes") or []
     st["estado_cancelado_id"] = next((n["id"] for n in nos if n.get("type") == "canceled"), "")
     return st["estado_cancelado_id"]
 
 
 def cancelados_recentes() -> list[dict]:
-    flt = ("project:{ id:{ eq:$p } }, state:{ type:{ eq:\"canceled\" } }, "
-           "updatedAt:{ gt:\"-P7D\" }")
-    q = f"""query($p:ID!){{ issues(first:50, filter:{{ {flt} }}){{ nodes{{ {ISSUE_FIELDS} }} }} }}"""
-    return [em_ordem(n) for n in linear(q, {"p": projeto_linear()})["issues"]["nodes"]]
+    return [em_ordem(n) for n in linear(proxy_linear.consulta("cancelados"), {"p": projeto_linear()})["issues"]["nodes"]]
 
 
 def limpar_cancelados(cancelados: list[dict], st: dict, diary: list[str]) -> None:
@@ -1950,7 +1966,7 @@ def viewer_linear(st: dict) -> str:
     if st.get("viewer_id"):
         return str(st["viewer_id"])
     try:
-        viewer = (linear("query{ viewer{ id } }", {}).get("viewer") or {})
+        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
         st["viewer_id"] = viewer.get("id") or ""
     except RuntimeError as exc:
         log(f"fila: não li o viewer do Linear ({exc})")
@@ -2325,8 +2341,9 @@ def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
         os.unlink(settings)
         os.unlink(saida)
     (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(out)
-    manifesto = manifesto_revisao(agente) or {}
-    log(f"agente {tag} [{agente}/{manifesto.get('modelo_padrao', 'padrao')}/{esforco or '-'}]: "
+    # FRA-590: o log usa `m` (padrão do manifesto). `{... or {} }.get(...)` na
+    # f-string não compila no Python 3.9 do Mac.
+    log(f"agente {tag} [{agente}/{m.get('modelo_padrao', 'padrao')}/{esforco or '-'}]: "
         f"{int(time.time() - started)} s, {len(out)} chars")
     return limpar_saida(out)
 
