@@ -206,7 +206,6 @@ SLEEP_GAP_S = 5 * 60
 # FRA-269: a prova (safe_xcodebuild.sh test) roda fora do terminal do agente, pelo
 # dispatcher, em segundo plano. Teto próprio: um build não incremental passa de 30 min.
 PROOF_TIMEOUT_MIN = 150
-PROOF_DEFAULT_SUITES = ["TranscentIATests"]
 # FRA-611. O mesmo nome do check que o workflow publica (FRA-610).
 # A prova local em `.lane/proof_*` não autoriza In Review.
 NOME_CHECK_REMOTO = "prova-remota"
@@ -3597,9 +3596,8 @@ def proof_suites(res: dict) -> list[str]:
     if suites:
         return suites
     # Sem suíte válida na lane: vale a lista do projeto, nunca a de outro projeto.
-    if declaradas:
-        return declaradas
-    return list(PROOF_DEFAULT_SUITES)
+    # Sem lista no projeto não há suíte padrão (TD-24): `TranscentIATests` era do iOS.
+    return declaradas
 
 
 _ABRE_PROVA = r"""

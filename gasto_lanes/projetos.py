@@ -42,7 +42,7 @@ Regras:
   - `suites`: lista fechada da prova. Se o projeto declara, a lane só roda um
     nome que esteja nela e que passe no formato (sem `/`, `..`, `-` ou espaço).
     Sem nome válido no `result.json`, roda essa lista. Sem a chave, vale o nome
-    que a lane pedir no formato certo, ou `TranscentIATests` (projeto iOS).
+    que a lane pedir no formato certo; sem nome válido, não há suíte padrão.
   - `copiar_para_worktree`: arquivos que ficam fora do git no `repo` (ex.: um
     `AGENTS.md` gerado na máquina) e que cada worktree de lane precisa. São
     caminhos relativos; o dispatcher copia os que existem e nunca sobrescreve.
