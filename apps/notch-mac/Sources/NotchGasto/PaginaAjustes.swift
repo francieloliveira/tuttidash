@@ -13,8 +13,19 @@ final class NavegacaoPainel: ObservableObject {
     @Published var busca = ""
     var aoSalvar: () -> Void = {}
 
+    /// Grupo aberto pela busca. A página expande e o painel rola até ele; depois zera.
+    @Published var grupoFoco: String?
+
     func abrirAjustes(_ s: IdSecaoAjustes? = nil) {
         if let s { secao = s }
+        pagina = .ajustes
+    }
+
+    /// Abre a seção e leva ao grupo do bloco (FRA-608).
+    func abrirBloco(_ s: IdSecaoAjustes, grupo: String) {
+        secao = s
+        grupoFoco = grupo
+        busca = ""
         pagina = .ajustes
     }
 }
@@ -53,6 +64,12 @@ struct PaginaAjustes: View {
         .frame(maxWidth: .infinity)
         .id(secao.id)
         .transition(.opacity.combined(with: .offset(y: 6)))
+        .onAppear {
+            if let grupo = nav.grupoFoco { abertos.insert(grupo) }
+        }
+        .onChange(of: nav.grupoFoco) { _, grupo in
+            if let grupo { abertos.insert(grupo) }
+        }
     }
 
     private var rodape: some View {
@@ -78,12 +95,14 @@ struct PaginaAjustes: View {
                 }
                 if aberto { conteudo(g) }
             }
+            .id(g.id)
         } else {
             Section {
                 conteudo(g)
             } header: {
                 CabecalhoGrupo(grupo: g, estado: estado, aoSalvar: aoSalvar)
             }
+            .id(g.id)
         }
     }
 
@@ -118,7 +137,7 @@ struct PaginaAjustes: View {
 
 // MARK: - Cabeçalhos dos grupos
 
-/// Cabeçalho de um grupo aberto: título, explicação e «Restaurar padrão» quando há campos.
+/// Cabeçalho de um grupo aberto: título, explicação e «Restaurar padrão dos campos».
 private struct CabecalhoGrupo: View {
     let grupo: GrupoAjustes
     @ObservedObject var estado: EstadoAjustes
@@ -138,13 +157,13 @@ private struct CabecalhoGrupo: View {
                 Button { estado.restaurar(grupo.campos, aoSalvar: aoSalvar) } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.counterclockwise").font(.system(size: 10, weight: .semibold))
-                        Text(String(localized: "Restaurar padrão"))
+                        Text(CatalogoAjustes.rotuloRestaurarCampos)
                     }
                     .font(PV.fonte(11.5))
                     .foregroundStyle(PV.mudo)
                 }
                 .buttonStyle(.plain)
-                .help(String(localized: "Volta os campos deste grupo ao padrão"))
+                .help(String(localized: "Volta os campos deste grupo ao padrão. Não restaura o bloco."))
             }
         }
         .padding(.bottom, 3)
@@ -152,7 +171,7 @@ private struct CabecalhoGrupo: View {
 }
 
 /// Linha de um grupo de «Avançado»: abre e fecha com animação. O clique fica só na
-/// parte do título, para não disparar junto com o botão «Restaurar padrão».
+/// parte do título, para não disparar junto com o botão «Restaurar padrão dos campos».
 private struct LinhaGrupoRecolhivel: View {
     let grupo: GrupoAjustes
     let aberto: Bool
@@ -188,7 +207,7 @@ private struct LinhaGrupoRecolhivel: View {
             .accessibilityAddTraits(.isButton)
 
             if aberto && !grupo.campos.isEmpty {
-                Button(String(localized: "Restaurar padrão")) { estado.restaurar(grupo.campos, aoSalvar: aoSalvar) }
+                Button(CatalogoAjustes.rotuloRestaurarCampos) { estado.restaurar(grupo.campos, aoSalvar: aoSalvar) }
                     .buttonStyle(.link)
                     .font(PV.fonte(11.5))
             } else if !grupo.campos.isEmpty {
@@ -268,8 +287,7 @@ struct ResultadosBusca: View {
                     ForEach(r) { item in
                         VStack(alignment: .leading, spacing: DS.e2) {
                             Button {
-                                NavegacaoPainel.compartilhada.busca = ""
-                                NavegacaoPainel.compartilhada.abrirAjustes(item.secao)
+                                NavegacaoPainel.compartilhada.abrirBloco(item.secao, grupo: item.grupo)
                             } label: {
                                 HStack(spacing: 5) {
                                     Image(systemName: "arrow.turn.down.right")
@@ -280,8 +298,12 @@ struct ResultadosBusca: View {
                                 .foregroundStyle(PV.azul)
                             }
                             .buttonStyle(.plain)
-                            LinhaCampoAjuste(campo: item.campo, estado: estado, aoSalvar: aoSalvar,
-                                            mostrarChave: item.secao == .avancado)
+                            if let campo = item.campo {
+                                LinhaCampoAjuste(campo: campo, estado: estado, aoSalvar: aoSalvar,
+                                                mostrarChave: item.secao == .avancado)
+                            } else if let bloco = item.bloco {
+                                Text(bloco.nome).font(PV.fonte(13, .semibold)).foregroundStyle(PV.texto)
+                            }
                         }
                         .padding(.vertical, 3)
                     }

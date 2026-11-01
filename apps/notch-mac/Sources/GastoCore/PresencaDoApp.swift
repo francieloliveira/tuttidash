@@ -6,6 +6,36 @@ import Foundation
 /// chave só trabalham enquanto o PID estiver vivo: no boot, sem o app aberto,
 /// eles saem sem assumir card. No `Sair`, o app também interrompe as lanes e os
 /// agentes que ainda estiverem rodando.
+/// 0600 em arquivo de config/estado e 0700 em `~/.transcentia` (FRA-608).
+enum Permissoes {
+    static func arquivo(_ url: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    static func pasta(_ url: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    }
+
+    /// Aperta `~/.transcentia` quando `url` está dentro dela. Fora disso, não mexe.
+    static func casa(contendo url: URL) {
+        var atual = url.standardizedFileURL
+        let fm = FileManager.default
+        while atual.path != "/" {
+            if atual.lastPathComponent == ".transcentia" {
+                if !fm.fileExists(atPath: atual.path) {
+                    try? fm.createDirectory(at: atual, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700])
+                }
+                pasta(atual)
+                return
+            }
+            let pai = atual.deletingLastPathComponent()
+            if pai.path == atual.path { return }
+            atual = pai
+        }
+    }
+}
+
 public enum PresencaDoApp {
     public static func arquivo(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         home.appendingPathComponent(".transcentia/lanes/app.pid")
@@ -19,10 +49,12 @@ public enum PresencaDoApp {
         try? FileManager.default.createDirectory(
             at: pasta, withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700])
+        Permissoes.pasta(pasta)
+        Permissoes.casa(contendo: url)
         let quando = ISO8601DateFormatter().string(from: Date())
         let texto = "\(pid) \(quando)\n"
         try? texto.write(to: url, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        Permissoes.arquivo(url)
     }
 
     public static func fechar(home: URL = FileManager.default.homeDirectoryForCurrentUser) {

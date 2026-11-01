@@ -54,7 +54,10 @@ public enum LanesHabilitadas {
         let conhecidos = Set(Agentes.ordem)
         let lista = Agentes.ordem.filter { lanes.contains($0) && conhecidos.contains($0) }
         try FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
-        try (lista.joined(separator: " ") + "\n").write(to: arquivo(stateDir: stateDir),
-                                                        atomically: true, encoding: .utf8)
+        let destino = arquivo(stateDir: stateDir)
+        try (lista.joined(separator: " ") + "\n").write(to: destino, atomically: true, encoding: .utf8)
+        Permissoes.arquivo(destino)
+        Permissoes.pasta(stateDir)
+        Permissoes.casa(contendo: stateDir)
     }
 }

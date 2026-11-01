@@ -319,7 +319,66 @@ LAST_DECISION_FILE = STATE_DIR / "last_decision.sha"
 LOG_DIR = HOME / "Library" / "Logs" / "TranscentIA"
 LOG_FILE = LOG_DIR / "lanes-dispatcher.log"
 LANE_LOG_DIR = LOG_DIR / "lanes"
-TOOL_PATH = f"{HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# FRA-608: ~/.local/bin é gravável e não pode ficar na frente de git/gh/tmux.
+# O diretório continua no fim, para um CLI instalado ali ainda ser achado.
+_BINS_CONFIAVEIS = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
+TOOL_PATH = ":".join((*_BINS_CONFIAVEIS, "/usr/sbin", "/sbin", f"{HOME}/.local/bin"))
+_SESSAO_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
+
+
+def ferramenta(nome: str) -> str:
+    """Caminho absoluto fora de diretório gravável. Sem achar, fica em /usr/bin."""
+    for pasta in _BINS_CONFIAVEIS:
+        caminho = os.path.join(pasta, nome)
+        if os.path.isfile(caminho) and os.access(caminho, os.X_OK):
+            return caminho
+    return f"/usr/bin/{nome}"
+
+
+GIT = ferramenta("git")
+GH = ferramenta("gh")
+TMUX = ferramenta("tmux")
+
+
+def sessao_citavel(sid: str) -> bool:
+    return bool(sid) and _SESSAO_RE.fullmatch(sid) is not None
+
+
+def _privar(path: Path) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def _apertar_casa() -> None:
+    """0700 na pasta de estado e em ~/.transcentia, quando o estado mora ali."""
+    estado = STATE_DIR
+    estado.mkdir(parents=True, exist_ok=True)
+    pastas = [estado]
+    for pai in estado.parents:
+        if pai.name == ".transcentia":
+            pastas.append(pai)
+            break
+    for pasta in pastas:
+        try:
+            os.chmod(pasta, 0o700)
+        except OSError:
+            pass
+
+
+def _trava_ciclo():
+    """Lock exclusivo, sem esperar. None se outro ciclo já segura dispatcher.lock."""
+    _apertar_casa()
+    path = STATE_DIR / "dispatcher.lock"
+    fh = open(path, "a")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fh.close()
+        return None
+    _privar(path)
+    return fh
 
 # Textos fixos da allowlist do proxy (FRA-607). O script não escolhe a consulta.
 QUERY_CANDIDATES = proxy_linear.consulta("candidatos")
@@ -367,9 +426,12 @@ def argv_git(args: list[str]) -> list[str]:
     no meio do envio. O merge da main também dispara hook, então o mesmo `-c`
     vale para qualquer subcomando.
     """
-    if not args or args[0] != "git":
+    if not args or args[0] not in ("git", GIT):
         return list(args)
-    return ["git", "-c", "core.hooksPath=/dev/null", *args[1:]]
+    resto = args[1:]
+    if resto[:2] == ["-c", "core.hooksPath=/dev/null"]:
+        return [GIT, *resto]
+    return [GIT, "-c", "core.hooksPath=/dev/null", *resto]
 
 
 def sh(args: list[str], cwd: Optional[Path] = None, check: bool = True, timeout: int = 120) -> str:
@@ -988,6 +1050,7 @@ def reconciliar_modelos_sumidos() -> list[str]:
                 mudou.append(lane)
         if alterou:
             cfg_path.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+            _privar(cfg_path)
         break
     return mudou
 
@@ -1214,7 +1277,9 @@ def save_state(lane: str, st: dict) -> None:
     f = state_file(lane)
     tmp = f.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(st, ensure_ascii=False, indent=2))
+    _privar(tmp)
     tmp.replace(f)
+    _privar(f)
 
 
 # FRA-600. O `lane-<lane>.json` mora no home, gravável pelo mesmo usuário do agente.
@@ -1295,9 +1360,9 @@ def _resolvido_sob(caminho: str, raiz: Path) -> Optional[Path]:
 def _commit_alcancavel(wt: Path, base: str) -> bool:
     try:
         out = subprocess.run(
-            ["git", "cat-file", "-e", f"{base}^{{commit}}"],
+            argv_git(["git", "cat-file", "-e", f"{base}^{{commit}}"]),
             cwd=wt, capture_output=True, text=True, timeout=30,
-            env=dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0"),
+            env=ambiente_git(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -1591,7 +1656,7 @@ def enabled_lanes() -> set[str]:
 
 
 def tmux_alive(session: str) -> bool:
-    return subprocess.run(["tmux", "has-session", "-t", session], capture_output=True,
+    return subprocess.run([TMUX, "has-session", "-t", session], capture_output=True,
                           env=dict(os.environ, PATH=TOOL_PATH)).returncode == 0
 
 
@@ -1610,7 +1675,7 @@ def kill_lane_tree(session: str) -> None:
         log(f"recuso matar sessão {session!r}: não é lane-<lane>")
         return
     try:
-        panes = sh(["tmux", "list-panes", "-t", session, "-F", "#{pane_pid}"], check=False)
+        panes = sh([TMUX, "list-panes", "-t", session, "-F", "#{pane_pid}"], check=False)
     except Exception:  # noqa: BLE001
         panes = ""
     pids: list[int] = []
@@ -2119,14 +2184,14 @@ def prepare_worktree(branch: str, identifier: str) -> Path:
     if wt.exists():
         copiar_para_worktree(repo, wt, projeto().copiar_para_worktree)
         return wt
-    sh(["git", "fetch", "-q", "origin", "main"], cwd=repo)
-    remote = sh(["git", "ls-remote", "--heads", "origin", branch], cwd=repo, check=False)
-    local = sh(["git", "branch", "--list", branch], cwd=repo, check=False)
+    sh([GIT, "fetch", "-q", "origin", "main"], cwd=repo)
+    remote = sh([GIT, "ls-remote", "--heads", "origin", branch], cwd=repo, check=False)
+    local = sh([GIT, "branch", "--list", branch], cwd=repo, check=False)
     if remote:
-        sh(["git", "fetch", "-q", "origin", f"{branch}:{branch}"], cwd=repo, check=False)
-        sh(["git", "worktree", "add", "-q", str(wt), branch], cwd=repo)
+        sh([GIT, "fetch", "-q", "origin", f"{branch}:{branch}"], cwd=repo, check=False)
+        sh([GIT, "worktree", "add", "-q", str(wt), branch], cwd=repo)
     elif local:
-        sh(["git", "worktree", "add", "-q", str(wt), branch], cwd=repo)
+        sh([GIT, "worktree", "add", "-q", str(wt), branch], cwd=repo)
     else:
         sh(["git", "worktree", "add", "-q", "-b", branch, str(wt), "origin/main"], cwd=repo)
     # .lane/ (só o result.json do agente) nunca vai para o git.
@@ -2284,7 +2349,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
 
     # FRA-267: commit de partida. O caminho protegido se confere só no que a lane fez
     # depois dele: a branch pode já trazer commits de pessoas (ex.: FRA-13).
-    base = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    base = sh([GIT, "rev-parse", "HEAD"], cwd=wt)
     st = {"lane": lane, "card": ident, "issue_id": card["id"], "title": card["title"],
           "url": card["url"], "branch": card["branchName"], "worktree": str(wt), "base": base,
           "effort": effort, "modelo": modelo_da_lane(lane, effort),
@@ -2308,9 +2373,9 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
 
     session = st["session"]
     if tmux_alive(session):
-        sh(["tmux", "kill-session", "-t", session], check=False)
+        sh([TMUX, "kill-session", "-t", session], check=False)
     runner = STATE_DIR / "run_lane.sh"
-    sh(["tmux", "new-session", "-d", "-s", session, "-c", str(wt),
+    sh([TMUX, "new-session", "-d", "-s", session, "-c", str(wt),
         " ".join([
             "bash", shlex.quote(str(runner)),
             shlex.quote(lane), shlex.quote(str(wt)), shlex.quote(ident),
@@ -2646,10 +2711,9 @@ def nomes_do_diff(wt: Path, spec: str) -> list[str]:
     `fnmatch` não casa o glob do cadastro. `-z` separa por NUL; a decodificação
     é UTF-8 para o acento não depender do locale do processo.
     """
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
     out = subprocess.run(
-        ["git", "-c", "core.quotepath=false", "diff", "--name-only", "-z", spec],
-        cwd=wt, capture_output=True, env=env, timeout=120,
+        argv_git([GIT, "-c", "core.quotepath=false", "diff", "--name-only", "-z", spec]),
+        cwd=wt, capture_output=True, env=ambiente_git(), timeout=120,
     )
     if out.returncode != 0:
         erro = out.stderr.decode("utf-8", "replace").strip()[:300]
@@ -2671,7 +2735,7 @@ def git_summary(wt: Path, base: Optional[str] = None) -> dict:
     ahead = int(sh(["git", "rev-list", "--count", "origin/main..HEAD"], cwd=wt) or 0)
     files = nomes_do_diff(wt, "origin/main...HEAD")
     if base:
-        new = int(sh(["git", "rev-list", "--count", f"{base}..HEAD"], cwd=wt) or 0)
+        new = int(sh([GIT, "rev-list", "--count", f"{base}..HEAD"], cwd=wt) or 0)
         desde_base = nomes_do_diff(wt, f"{base}..HEAD")
         # A lane pode trazer a main para dentro da branch. O merge põe no
         # `base..HEAD` arquivos que são da main, não dela — foi assim que a
@@ -2904,9 +2968,9 @@ def measures_cached(real: bool) -> dict:
 def resume_note(wt: Path) -> str:
     """Prompt da retomada: worktree com trabalho de rodada anterior não pode ser refeito."""
     try:
-        dirty = [l for l in sh(["git", "status", "--porcelain"], cwd=wt, check=False).splitlines()
+        dirty = [l for l in sh([GIT, "status", "--porcelain"], cwd=wt, check=False).splitlines()
                  if l.strip() and ".lane/" not in l]
-        ahead = sh(["git", "rev-list", "--count", "origin/main..HEAD"], cwd=wt, check=False).strip()
+        ahead = sh([GIT, "rev-list", "--count", "origin/main..HEAD"], cwd=wt, check=False).strip()
     except Exception:  # noqa: BLE001
         return ""
     ahead_n = int(ahead) if ahead.isdigit() else 0
@@ -2939,10 +3003,13 @@ def resume_line(st: dict) -> str:
     """Linha do comentário com o comando pronto para retomar a sessão do agente;
     vazia quando o log não tem o id."""
     sid = agent_session_id(st.get("log", ""))
-    if not sid or st["lane"] == "deepseek":
+    # O id vem do log do agente: sem o formato seguro, a linha não entra no comentário.
+    if not sid or not sessao_citavel(sid) or st["lane"] == "deepseek":
         return ""   # o dsh headless não expõe `--resume` nem session_id no stdout
     cli = "grok" if st["lane"] == "grok" else "claude"
-    return f"- retomar o agente: `cd {shlex.quote(st['worktree'])} && {cli} --resume {sid}`\n"
+    return (
+        f"- retomar o agente: `cd {shlex.quote(st['worktree'])} && {cli} --resume {shlex.quote(sid)}`\n"
+    )
 
 
 def pending_lines(st: dict) -> str:
@@ -2956,9 +3023,9 @@ def pending_lines(st: dict) -> str:
     if motivo:
         return ""
     try:
-        dirty = [l for l in sh(["git", "status", "--porcelain"], cwd=wt, check=False).splitlines() if l.strip()]
+        dirty = [l for l in sh([GIT, "status", "--porcelain"], cwd=wt, check=False).splitlines() if l.strip()]
         base = st.get("base")
-        commits = (sh(["git", "log", "--oneline", f"{base}..HEAD"], cwd=wt, check=False).splitlines()
+        commits = (sh([GIT, "log", "--oneline", f"{base}..HEAD"], cwd=wt, check=False).splitlines()
                    if base else [])
     except Exception:  # noqa: BLE001
         return ""
@@ -3388,9 +3455,9 @@ def card_ja_comecou(st: dict) -> bool:
         base = st.get("base")
         novo = 0
         if base:
-            saida = sh(["git", "rev-list", "--count", f"{base}..HEAD"], cwd=wt)
+            saida = sh([GIT, "rev-list", "--count", f"{base}..HEAD"], cwd=wt)
             novo = int(saida or 0)
-        dirty = [l for l in sh(["git", "status", "--porcelain"], cwd=wt).splitlines()
+        dirty = [l for l in sh([GIT, "status", "--porcelain"], cwd=wt).splitlines()
                  if l.strip() and ".lane/" not in l]
     except Exception:  # noqa: BLE001
         return True
@@ -4049,10 +4116,10 @@ def finalize(st: dict) -> Optional[str]:
     # Idempotente: se o fechamento anterior caiu depois de abrir o PR, reaproveita.
     # Só PR aberto: `gh pr view <branch>` também acha PR fechado ou mergeado, e o card ia para
     # In Review apontando para ele, sem PR aberto para o vigia mergear.
-    pr = sh(["gh", "pr", "view", st["branch"], "--json", "url,state", "-q",
+    pr = sh([GH, "pr", "view", st["branch"], "--json", "url,state", "-q",
              'select(.state == "OPEN") | .url'], cwd=wt, check=False)
     if not pr:
-        pr = sh(["gh", "pr", "create", "--base", "main", "--head", st["branch"],
+        pr = sh([GH, "pr", "create", "--base", "main", "--head", st["branch"],
                  "--title", f"[{st['card']}] {st['title']}", "--body", body], cwd=wt, timeout=120)
     linear(MUT_COMMENT, {"id": st["issue_id"], "body":
         f"DONE {g['sha']}\n\n{res.get('summary', '')}\n\nPR: {pr}\n\n"
@@ -4442,6 +4509,19 @@ def keep_awake(has_work: bool) -> None:
 
 
 def run(real: bool, verbose: bool) -> int:
+    """Um ciclo por vez. Sem o lock, dois launchd se atropelam e matam a sessão um do outro."""
+    fh = _trava_ciclo()
+    if fh is None:
+        log("ciclo: outro dispatcher segura dispatcher.lock; não mato sessão nem worktree")
+        return 0
+    try:
+        return _ciclo(real, verbose)
+    finally:
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        fh.close()
+
+
+def _ciclo(real: bool, verbose: bool) -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     if not app_aberta():
         # Boot sem o app, ou app encerrado/caiu: interrompe o que tiver ficado e sai.
@@ -4460,6 +4540,7 @@ def run(real: bool, verbose: bool) -> int:
         if previous != aviso:
             log(aviso)
             MODE_FILE.write_text(aviso)
+            _privar(MODE_FILE)
         return 0
     lanes_on, ignored = effective_lanes(enabled_lanes()) if real else (set(), [])
     try:
@@ -4481,12 +4562,14 @@ def run(real: bool, verbose: bool) -> int:
                                           "project": projeto().id,
                                           "project_name": projeto().nome,
                                           "implemented": [l for l in LANES if lane_runnable(l)]}))
+    _privar(HEARTBEAT_FILE)
     mode = (f"{'real' if real else 'simulação'} · projeto: {projeto().nome} · "
             f"lanes: {', '.join(sorted(lanes_on)) or 'nenhuma'}")
     previous_mode = MODE_FILE.read_text().strip() if MODE_FILE.exists() else ""
     if mode != previous_mode:
         log(f"MODO {mode}" + (f" (habilitada sem execução real, ignorada: {', '.join(ignored)})" if ignored else ""))
         MODE_FILE.write_text(mode)
+        _privar(MODE_FILE)
 
     if real:
         for lane in LANES:

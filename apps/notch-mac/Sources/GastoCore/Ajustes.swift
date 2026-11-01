@@ -304,6 +304,7 @@ public final class ModeloAjustes {
         try FileManager.default.createDirectory(at: arquivo.deletingLastPathComponent(), withIntermediateDirectories: true)
         let saida = try JSONSerialization.data(withJSONObject: dados, options: [.prettyPrinted, .sortedKeys])
         try saida.write(to: arquivo, options: .atomic)
+        Permissoes.arquivo(arquivo)
     }
 }
 

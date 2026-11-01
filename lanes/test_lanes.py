@@ -301,10 +301,12 @@ class UrlExplicitaDoCadastro(unittest.TestCase):
         self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
 
     def test_argv_git_desliga_hooks_e_deixa_o_resto(self):
+        # FRA-608: o binário é absoluto (fora de ~/.local/bin) e o hook continua desligado.
         self.assertEqual(d.argv_git(["git", "fetch", "-q", "origin", "main"])[:3],
-                         ["git", "-c", "core.hooksPath=/dev/null"])
+                         [d.GIT, "-c", "core.hooksPath=/dev/null"])
         self.assertEqual(d.argv_git(["git", "push", "-q", "https://github.com/dono/app.git", "HEAD:b"])[:3],
-                         ["git", "-c", "core.hooksPath=/dev/null"])
+                         [d.GIT, "-c", "core.hooksPath=/dev/null"])
+        self.assertTrue(os.path.isabs(d.argv_git(["git", "status"])[0]))
         self.assertEqual(d.argv_git(["gh", "pr", "view"]), ["gh", "pr", "view"])
 
 

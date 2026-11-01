@@ -15,10 +15,31 @@ public enum BlocoAjustes: Sendable, Equatable {
          jobsAgendados, linear, linearLeitura, manifestos, ferramentas, revisaoAtual
 
     /// Chaves do config que o bloco edita com controle próprio (contam como alcançáveis).
+    /// Só `quemCuida` tem chave. O botão de restaurar não apaga bloco: continua nos campos.
     public var chaves: [String] {
         switch self {
         case .quemCuida: return [ModoForcado.chave]
-        default: return []
+        case .lanesHabilitadas, .modeloLanes, .projetos, .contas, .agentesSegundoPlano,
+             .jobsAgendados, .linear, .linearLeitura, .manifestos, .ferramentas, .revisaoAtual:
+            return []
+        }
+    }
+
+    /// Nome visível do bloco. A busca usa este texto além do título do grupo.
+    public var nome: String {
+        switch self {
+        case .lanesHabilitadas: return String(localized: "Lanes ligadas")
+        case .modeloLanes: return String(localized: "Modelo de cada lane")
+        case .projetos: return String(localized: "Projetos")
+        case .contas: return String(localized: "Contas acompanhadas")
+        case .quemCuida: return String(localized: "Quem cuida das lanes")
+        case .agentesSegundoPlano: return String(localized: "Agentes em segundo plano")
+        case .jobsAgendados: return String(localized: "Agendamentos")
+        case .linear: return String(localized: "Linear")
+        case .linearLeitura: return String(localized: "Detalhes do Linear")
+        case .manifestos: return String(localized: "Ferramentas (agents.d)")
+        case .ferramentas: return String(localized: "Ferramentas e logins")
+        case .revisaoAtual: return String(localized: "Modelo e esforço da lane revisora")
         }
     }
 }
@@ -49,12 +70,23 @@ public struct SecaoAjustes: Identifiable, Sendable {
     public var mostraChaves: Bool { id == .avancado }
 }
 
-/// Um resultado da busca nos Ajustes.
+/// Um resultado da busca nos Ajustes. Campo ou bloco: bloco não tem chave para restaurar.
 public struct ResultadoBuscaAjuste: Identifiable, Sendable {
-    public var id: String { campo.chave }
+    public var id: String {
+        if let campo { return campo.chave }
+        return "bloco:\(secao.rawValue):\(grupo):\(bloco.map { String(describing: $0) } ?? "")"
+    }
     public let secao: IdSecaoAjustes
     public let grupo: String
-    public let campo: CampoAjuste
+    public let campo: CampoAjuste?
+    public let bloco: BlocoAjustes?
+
+    public init(secao: IdSecaoAjustes, grupo: String, campo: CampoAjuste? = nil, bloco: BlocoAjustes? = nil) {
+        self.secao = secao
+        self.grupo = grupo
+        self.campo = campo
+        self.bloco = bloco
+    }
 }
 
 extension CatalogoAjustes {
@@ -230,7 +262,11 @@ extension CatalogoAjustes {
         "agendas": .avancado, "maquinas": .avancado, "integracoes": .contas, "painel": .geral,
     ]
 
-    /// Busca por nome, explicação, grupo ou chave, sem diferenciar acento e maiúscula.
+    /// Rótulo do botão que devolve só os campos do grupo ao padrão. Não restaura bloco.
+    public static let rotuloRestaurarCampos = String(localized: "Restaurar padrão dos campos")
+
+    /// Busca por nome, explicação, grupo, bloco ou chave, sem diferenciar acento e maiúscula.
+    /// Grupo só com bloco (Projetos, Contas acompanhadas) também volta, para a navegação abrir o bloco.
     public static func buscar(_ termo: String, em secoes: [SecaoAjustes] = secoes()) -> [ResultadoBuscaAjuste] {
         let normal = { (s: String) in s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "pt_BR")) }
         let t = normal(termo.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -238,8 +274,12 @@ extension CatalogoAjustes {
         var r: [ResultadoBuscaAjuste] = []
         for s in secoes {
             for g in s.grupos {
+                let grupoBate = normal(g.nome).contains(t)
                 for c in g.campos where [c.rotulo, c.ajuda, g.nome, c.chave].contains(where: { normal($0).contains(t) }) {
                     r.append(ResultadoBuscaAjuste(secao: s.id, grupo: g.nome, campo: c))
+                }
+                for b in g.blocos where grupoBate || normal(b.nome).contains(t) {
+                    r.append(ResultadoBuscaAjuste(secao: s.id, grupo: g.nome, bloco: b))
                 }
             }
         }
