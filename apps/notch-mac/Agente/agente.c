@@ -546,10 +546,13 @@ static int assinatura_ok(const char *app) {
     char saida[8192];
     int codigo = -1;
     char *argv_d[] = {"codesign", "-d", "-r-", (char *)app, NULL};
-    char *argv_v[] = {"codesign", "--verify", "--strict", "-R", (char *)REQUISITO, (char *)app, NULL};
+    /* `-R` sem `=` lê o argumento como caminho de arquivo; com `=` é o requisito em texto. */
+    char requisito[sizeof REQUISITO + 1];
+    char *argv_v[] = {"codesign", "--verify", "--strict", "-R", requisito, (char *)app, NULL};
     const char *marca;
     const char *fim;
     if (access("/usr/bin/codesign", X_OK) != 0) return 0;
+    snprintf(requisito, sizeof requisito, "=%s", REQUISITO);
     if (ler_saida("/usr/bin/codesign", argv_d, saida, sizeof saida, &codigo) != 0 || codigo != 0) return 0;
     marca = strstr(saida, "designated =>");
     if (!marca) return 0;
