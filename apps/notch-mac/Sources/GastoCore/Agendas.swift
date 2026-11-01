@@ -77,13 +77,19 @@ public final class SistemaReal: SistemaAgendas {
     public func existe(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
     public func ler(_ url: URL) -> Data? { try? Data(contentsOf: url) }
     public func launchctl(_ args: [String]) -> (Int32, String) {
+        // Sem `waitUntilExit`: na MainActor ele reentra no run loop (FRA-608).
+        // A espera é o semáforo; stdout e stderr seguem no mesmo pipe.
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = args
-        let out = Pipe(); p.standardOutput = out; p.standardError = out
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = out
+        let fim = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in fim.signal() }
         do { try p.run() } catch { return (-1, error.localizedDescription) }
         let d = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
+        fim.wait()
         return (p.terminationStatus, String(data: d, encoding: .utf8) ?? "")
     }
 }
@@ -156,6 +162,8 @@ public final class GerenciadorAgendas {
             "RunAtLoad": t.runAtLoad,
             "ProcessType": "Background",
             "LowPriorityIO": true,
+            // umask 077 (63 decimal): o job não cria arquivo legível pelo resto da máquina.
+            "Umask": 63,
             // Itens de Login: mostra o job sob o ícone do TuttiDash.
             "AssociatedBundleIdentifiers": ["app.tuttidash.mac"],
         ]

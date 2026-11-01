@@ -59,14 +59,30 @@ final class EstadoAgendas: ObservableObject {
         }
     }
 
-    func executarApp(_ f: (AgentesDoApp) throws -> Void) {
-        do { try f(AgentesDoApp(registro: RegistroSMAppService())); erro = nil } catch { erro = error.localizedDescription }
-        atualizar()
+    func executarApp(_ f: @escaping (AgentesDoApp) throws -> Void) {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var falha: String?
+            do { try f(AgentesDoApp(registro: RegistroSMAppService())) } catch { falha = error.localizedDescription }
+            let msg = falha
+            await MainActor.run { [weak self] in
+                self?.erro = msg
+                self?.atualizar()
+            }
+        }
     }
 
-    func executar(_ f: (GerenciadorAgendas) throws -> Void) {
-        do { try f(gerenciador); erro = nil } catch { erro = error.localizedDescription }
-        atualizar()
+    /// `launchctl` fica fora da MainActor: `waitUntilExit` reentra no run loop (FRA-608).
+    func executar(_ f: @escaping (GerenciadorAgendas) throws -> Void) {
+        let g = gerenciador
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var falha: String?
+            do { try f(g) } catch { falha = error.localizedDescription }
+            let msg = falha
+            await MainActor.run { [weak self] in
+                self?.erro = msg
+                self?.atualizar()
+            }
+        }
     }
 }
 

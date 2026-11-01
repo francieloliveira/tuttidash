@@ -8,9 +8,11 @@ Espelho, nunca em paralelo: com ~/.transcentia/bots/PAUSE presente não faz nada
 
 Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
   0. Instalação no aparelho em andamento/terminada -> registra o resultado no card
-     (só com `watch.instalar_comando` configurado).
-  1. Card em In Review com a prova do dispatcher verde (comentário DONE <sha> = head
-     do PR e "→ verde" no corpo) -> merge (um por vez) só com `mergeStateStatus`
+     (só com `watch.instalar_comando` configurado: lista de argv; texto antigo
+     ainda vale via shlex.split, sem shell, e gera aviso de migração).
+  1. Card em In Review com a prova do dispatcher verde (comentário DONE com o SHA
+     completo de 40 hex igual ao head, escrito pelo viewer do token Linear, e
+     "→ verde" no corpo) -> merge (um por vez) só com `mergeStateStatus`
      CLEAN e `statusCheckRollup` sem FAILURE/PENDING. UNSTABLE espera. HAS_HOOKS
      segura e chama o dono (não é CI vermelho). Caminho protegido no PR não mergeia.
      Depois: Done e instala a main no aparelho (SKIP_PREFLIGHT=1 primeiro; se falhar,
@@ -23,7 +25,8 @@ Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
      (até 2 tarefas ao mesmo tempo, uma por lane; a lane é escolhida pelo dispatcher
      via lanepct-auto, menor %). Menos de 2 cards prontos no Todo -> pede à triagem
      (comentário no Linear).
-  6. PR aberto sem revisão [Revisor] no head -> revisão (SOLID + erros conhecidos E1..).
+  6. PR aberto sem revisão [Revisor] do usuário do gh, citando o SHA completo do
+     head -> revisão (SOLID + erros conhecidos E1..).
 
 A IA (claude -p) só lê e devolve texto; quem publica, mergeia e instala é este script.
 Nunca toca caminhos protegidos — a lista é a do projeto no cadastro (`projetos.py`),
@@ -98,8 +101,6 @@ LOG_FILE = HOME / "Library" / "Logs" / "TranscentIA" / "bots-watch.log"
 RUN_LOG_DIR = HOME / "Library" / "Logs" / "TranscentIA" / "bots"
 PATH_ENV = f"/opt/homebrew/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-LINEAR_API = "https://api.linear.app/graphql"
-KEYCHAIN_SERVICE = _cfg("linear.keychain_service", "linear-transcentia-lanes")
 # Projeto que o vigia consulta no Linear. Vem do cadastro `projetos`; sem a
 # chave na config vale o iOS, como antes. Lido a cada ciclo.
 def projeto_linear():
@@ -175,6 +176,7 @@ try:
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
+    import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
 except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
     sys.exit(f"{_falta.name} não encontrado ao lado do watch.py — "
              "rode tools/install.sh para instalar o catálogo de agentes e projetos")
@@ -182,6 +184,9 @@ try:
     import privacidade  # noqa: E402  privacidade por modelo do OpenCode (21/10/2026)
 except ModuleNotFoundError:  # pragma: no cover
     privacidade = None
+if str(_AQUI) not in sys.path:
+    sys.path.insert(0, str(_AQUI))
+import caixa_leitura as caixa  # noqa: E402  caixa do revisor (FRA-599)
 
 # --- Projeto em que o vigia trabalha ----------------------------------------
 # Vem do cadastro `projetos` da config do TuttiDash, o mesmo que o dispatcher
@@ -273,9 +278,42 @@ AGENT_MONTHLY_PAUSE_S = _cfg("watch.pausa_limite_mensal_s", 6 * 3600)
 NEEDS_RECHECK_S = _cfg("watch.reconferir_needs_s", 30 * 60)
 INSTALL_SESSION = "instalar-aparelho"
 INSTALL_SCRIPT = STATE_DIR / "instalar.sh"
-# Comando que instala o app no aparelho, rodado no worktree `install-main` do projeto
-# (ex.: "./scripts/instalar-no-iphone.sh"). Vazio = o vigia não instala nada (FRA-565).
-INSTALL_COMMAND = str(_cfg("watch.instalar_comando", "") or "").strip()
+# Comando que instala o app no aparelho, no worktree `install-main` do projeto.
+# Lista de argv (ex.: ["./scripts/instalar-no-iphone.sh"]). Vazio = não instala (FRA-565).
+# Texto antigo ainda vale, partido com shlex.split e com aviso para migrar à lista.
+# O comando por projeto é o FRA-585: aqui continua a chave global, sem duplicar isso.
+
+
+def instalar_argv(bruto=None) -> tuple[list[str], str]:
+    """(argv, aviso). Lista = argv direto. Texto = shlex.split, sem shell, com aviso.
+
+    O aviso pede a migração para a lista. Vazio não avisa e não instala.
+    Item que não é texto desliga a instalação em vez de rodar um comando pela metade.
+    """
+    if bruto is None:
+        bruto = _cfg("watch.instalar_comando", [])
+    if isinstance(bruto, str):
+        texto = bruto.strip()
+        if not texto:
+            return [], ""
+        try:
+            partes = shlex.split(texto)
+        except ValueError as exc:
+            return [], (f"watch.instalar_comando ilegível ({exc}); instalação desligada. "
+                        "Migre para uma lista de argv.")
+        if not partes:
+            return [], ""
+        return partes, ("watch.instalar_comando ainda é texto; migre para uma lista de argv "
+                        "(programa e argumentos). O texto foi partido com shlex.split, sem shell.")
+    if isinstance(bruto, list):
+        partes = []
+        for item in bruto:
+            if not isinstance(item, str) or not item.strip():
+                return [], ("watch.instalar_comando: a lista só aceita textos não vazios; "
+                            "instalação desligada.")
+            partes.append(item)
+        return partes, ""
+    return [], "watch.instalar_comando: use uma lista de argv; instalação desligada."
 
 
 PANEL_LOG = HOME / "Library" / "Logs" / "TranscentIA" / "lanes-dispatcher.log"
@@ -331,33 +369,15 @@ def save_state(st: dict) -> None:
 
 
 # ---------- Linear ----------
-def linear_key() -> str:
-    out = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-                         capture_output=True, text=True, check=False)
-    if out.returncode != 0 or not out.stdout.strip():
-        raise RuntimeError("chave do Linear não encontrada no Keychain")
-    return out.stdout.strip()
-
-
 def linear(query: str, variables: dict) -> dict:
-    body = json.dumps({"query": query, "variables": variables}).encode()
-    req = urllib.request.Request(LINEAR_API, data=body, method="POST",
-                                 headers={"Content-Type": "application/json", "Authorization": linear_key()})
+    """Pede a consulta ao proxy local. O token não passa por este processo."""
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Linear HTTP {exc.code}: {exc.read()[:300]!r}") from None
-    if data.get("errors"):
-        raise RuntimeError(f"Linear: {data['errors'][0].get('message')}")
-    return data["data"]
+        return proxy_linear.executar_consulta(query, variables)
+    except proxy_linear.ErroProxy as exc:
+        raise RuntimeError(str(exc)) from None
 
 
-ISSUE_FIELDS = """id identifier title description url priority sortOrder startedAt createdAt updatedAt dueDate estimate
-      branchName assignee{ id name } parent{ identifier }
-      state{ id name type } labels{ nodes{ id name parent{ name } } } project{ id name }
-      comments(first:30, orderBy: createdAt){ nodes{ id body createdAt } }
-      inverseRelations(first:30){ nodes{ type issue{ identifier state{ type } } } }"""
+ISSUE_FIELDS = proxy_linear.ISSUE_FIELDS
 
 
 def em_ordem(ci: dict | None) -> dict | None:
@@ -374,16 +394,14 @@ def em_ordem(ci: dict | None) -> dict | None:
 
 def issue(ident: str) -> dict | None:
     try:
-        return em_ordem(linear(f"query($id:String!){{ issue(id:$id){{ {ISSUE_FIELDS} }} }}", {"id": ident})["issue"])
+        return em_ordem(linear(proxy_linear.consulta("issue"), {"id": ident})["issue"])
     except RuntimeError as exc:
         log(f"issue {ident}: {exc}")
         return None
 
 
 def project_issues(state_names: list[str] | None = None) -> list[dict]:
-    flt = "project:{ id:{ eq:$p } }, state:{ type:{ nin:[\"completed\",\"canceled\"] } }"
-    q = f"""query($p:ID!, $after:String){{ issues(first:100, after:$after, filter:{{ {flt} }})
-          {{ pageInfo{{ hasNextPage endCursor }} nodes{{ {ISSUE_FIELDS} }} }} }}"""
+    q = proxy_linear.consulta("issues_projeto")
     nodes: list[dict] = []
     after = None
     # Board grande não pode sumir depois dos 100 primeiros. O teto de 10 páginas
@@ -405,27 +423,24 @@ def labels_of(ci: dict) -> set[str]:
 
 
 def comment(issue_id: str, body: str) -> None:
-    linear("mutation($i:CommentCreateInput!){ commentCreate(input:$i){ success } }",
-           {"i": {"issueId": issue_id, "body": body}})
+    linear(proxy_linear.consulta("comentar_vigia"), {"i": {"issueId": issue_id, "body": body}})
 
 
 def add_label(issue_id: str, name: str) -> None:
     if not LABEL_IDS.get(name):
         log(f"linear: etiqueta «{name}» sem id; não apliquei")
         return
-    linear("mutation($id:String!,$l:String!){ issueAddLabel(id:$id, labelId:$l){ success } }",
-           {"id": issue_id, "l": LABEL_IDS[name]})
+    linear(proxy_linear.consulta("adicionar_etiqueta_vigia"), {"id": issue_id, "l": LABEL_IDS[name]})
 
 
 def remove_label(issue_id: str, name: str) -> None:
     if not LABEL_IDS.get(name):
         return
-    linear("mutation($id:String!,$l:String!){ issueRemoveLabel(id:$id, labelId:$l){ success } }",
-           {"id": issue_id, "l": LABEL_IDS[name]})
+    linear(proxy_linear.consulta("remover_etiqueta_vigia"), {"id": issue_id, "l": LABEL_IDS[name]})
 
 
 def prepend_description(ci: dict, text: str) -> None:
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
+    linear(proxy_linear.consulta("atualizar_issue"),
            {"id": ci["id"], "i": {"description": text + (ci.get("description") or "")}})
 
 
@@ -433,18 +448,17 @@ def set_state(issue_id: str, state_id: str) -> None:
     if not state_id:
         log("linear: estado sem id; não mudei o card")
         return
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
-           {"id": issue_id, "i": {"stateId": state_id}})
+    linear(proxy_linear.consulta("atualizar_issue"), {"id": issue_id, "i": {"stateId": state_id}})
 
 
 def diary_append(lines: list[str]) -> None:
     if not lines or not DIARY_DOC_ID:
         return
     try:
-        doc = linear("query($id:String!){ document(id:$id){ content } }", {"id": DIARY_DOC_ID})["document"]
+        doc = linear(proxy_linear.consulta("ler_documento"), {"id": DIARY_DOC_ID})["document"]
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         block = f"\n\n### {stamp} BRT — vigia dos bots (por evento)\n\n" + "\n".join(f"- {l}" for l in lines)
-        linear("mutation($id:String!,$i:DocumentUpdateInput!){ documentUpdate(id:$id,input:$i){ success } }",
+        linear(proxy_linear.consulta("atualizar_documento"),
                {"id": DIARY_DOC_ID, "i": {"content": (doc.get("content") or "") + block}})
     except RuntimeError as exc:
         log(f"diário: {exc}")
@@ -454,7 +468,7 @@ def known_errors() -> str:
     if not KNOWN_ERRORS_DOC_ID:
         return "(sem lista de erros conhecidos: linear.erros_conhecidos_doc_id vazio)"
     try:
-        doc = linear("query($id:String!){ document(id:$id){ content } }", {"id": KNOWN_ERRORS_DOC_ID})["document"]
+        doc = linear(proxy_linear.consulta("ler_documento"), {"id": KNOWN_ERRORS_DOC_ID})["document"]
         return (doc.get("content") or "")[:12000]
     except RuntimeError as exc:
         log(f"erros conhecidos: {exc}")
@@ -462,8 +476,7 @@ def known_errors() -> str:
 
 
 def done_state_id(team_issue: dict) -> str | None:
-    q = """query($id:String!){ issue(id:$id){ team{ states{ nodes{ id type name } } } } }"""
-    nodes = linear(q, {"id": team_issue["id"]})["issue"]["team"]["states"]["nodes"]
+    nodes = linear(proxy_linear.consulta("estados_do_card"), {"id": team_issue["id"]})["issue"]["team"]["states"]["nodes"]
     for n in nodes:
         if n["type"] == "completed" and n["name"].lower() == "done":
             return n["id"]
@@ -486,31 +499,104 @@ def open_prs(repo: dict) -> list[dict]:
     return [p for p in json.loads(raw) if not p.get("isDraft")]
 
 
-def revisor_ja_revisou(repo: dict, pr: dict) -> bool:
+# SHA completo, com fronteira: prefixo de 7 hex dentro do head não casa, nem um
+# hex a mais. A comparação do gate é igualdade, nunca startswith.
+_SHA40_RE = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])")
+_DONE_RE = re.compile(r"^\s*DONE\s+([0-9a-f]{40})(?![0-9a-f])")
+
+
+def cita_sha_completo(texto: str, sha: str) -> bool:
+    """O texto cita `sha` como token de 40 hex. Igualdade, não prefixo."""
+    alvo = (sha or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", alvo):
+        return False
+    return any(tok == alvo for tok in _SHA40_RE.findall((texto or "").lower()))
+
+
+def login_do_gh() -> str:
+    """Login do usuário autenticado no `gh`. Cache só em memória; vazio se a leitura falhar."""
+    cache = getattr(login_do_gh, "cache", None)
+    if cache is not None:
+        return cache
+    try:
+        login = sh(["gh", "api", "user", "--jq", ".login"]).strip()
+    except (RuntimeError, OSError):
+        return ""
+    if login:
+        login_do_gh.cache = login  # type: ignore[attr-defined]
+    return login
+
+
+def comentario_confiavel(c: dict) -> bool:
+    """O comentário é do usuário autenticado no `gh`.
+
+    `gh pr view --json comments` traz `viewerDidAuthor` em cada comentário: True
+    é esse usuário, False é outra pessoa, sem outra chamada. Sem o campo, vale
+    `author.login` igual ao login do `gh`. Sem os dois, a autoria é desconhecida
+    e o comentário não conta.
+
+    No modelo de mesmo usuário, um agente comprometido ainda comenta com o mesmo
+    token. A barreira real é o isolamento (FRA-589, fase 5).
+    """
+    if not isinstance(c, dict):
+        return False
+    viu = c.get("viewerDidAuthor")
+    if viu is False:
+        return False
+    if viu is True:
+        return True
+    autor = c.get("author") if isinstance(c.get("author"), dict) else {}
+    login = str(autor.get("login") or "")
+    if not login:
+        return False
+    esperado = login_do_gh()
+    return bool(esperado) and login.lower() == esperado.lower()
+
+
+def comentarios_do_pr(repo: dict, pr: dict) -> list[dict]:
     raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "comments"], cwd=repo["dir"])
-    sha7 = pr["headRefOid"][:7]
-    return any(tem_tag(c["body"], TAG_REVISOR) and sha7 in c["body"] for c in json.loads(raw)["comments"])
+    dados = json.loads(raw).get("comments") or []
+    return [c for c in dados if isinstance(c, dict)]
+
+
+def _comentarios_revisor_do_head(repo: dict, pr: dict) -> list[dict]:
+    sha = pr.get("headRefOid") or ""
+    return [c for c in comentarios_do_pr(repo, pr)
+            if tem_tag(c.get("body") or "", TAG_REVISOR)
+            and comentario_confiavel(c)
+            and cita_sha_completo(c.get("body") or "", sha)]
+
+
+def revisor_ja_revisou(repo: dict, pr: dict) -> bool:
+    """Há [Revisor] do usuário do gh citando o SHA completo deste head."""
+    return bool(_comentarios_revisor_do_head(repo, pr))
 
 
 def veredito_publicado(repo: dict, pr: dict) -> str | None:
-    """Veredito do último comentário [Revisor] no PR que cita o head atual; None sem nenhum."""
-    raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "comments"], cwd=repo["dir"])
-    sha7 = pr["headRefOid"][:7]
-    achados = [c["body"] for c in json.loads(raw)["comments"]
-               if tem_tag(c["body"], TAG_REVISOR) and sha7 in c["body"]]
-    return veredito_de(achados[-1][achar_tag(achados[-1], TAG_REVISOR):]) if achados else None
+    """Veredito do último [Revisor] confiável que cita o SHA completo do head; None sem nenhum."""
+    achados = _comentarios_revisor_do_head(repo, pr)
+    if not achados:
+        return None
+    body = achados[-1].get("body") or ""
+    return veredito_de(body[achar_tag(body, TAG_REVISOR):])
 
 
 def veredito_do_head(repo: dict, pr: dict, st: dict) -> str | None:
-    """APROVADO, AJUSTES ou None (sem veredito). `ja-tinha` (estado antigo) é resolvido
-    lendo o comentário do revisor no PR."""
-    v = st["reviewed"].get(pr["headRefOid"])
-    if v in ("APROVADO", "AJUSTES"):
-        return v
-    if v == "ja-tinha":
-        v = veredito_publicado(repo, pr)
-        if v:
-            st["reviewed"][pr["headRefOid"]] = v
+    """APROVADO, AJUSTES ou None (sem veredito).
+
+    `APROVADO` e `ja-tinha` gravados não trazem autoria. Sem um comentário do
+    usuário do gh com o SHA completo, não aprovam e a revisão pode repetir.
+    """
+    head = pr["headRefOid"]
+    v = st["reviewed"].get(head)
+    if v in ("APROVADO", "ja-tinha"):
+        publicado = veredito_publicado(repo, pr)
+        if publicado in ("APROVADO", "AJUSTES"):
+            st["reviewed"][head] = publicado
+            return publicado
+        st["reviewed"].pop(head, None)
+        return None
+    if v == "AJUSTES":
         return v
     return None
 
@@ -549,16 +635,41 @@ def card_of(title: str, branch: str) -> str | None:
 
 
 # ---------- agente ----------
+# FRA-599: a triagem (`run_agent`) e o revisor compartilham esta lista. Sem cat/head/tail/grep/ls
+# e sem `git show/diff/log` cru (`--output` escreve arquivo). O git passa por `git-leitura`.
+# O revisor ainda entra na caixa (disco só do repo, rede negada); a triagem usa a lista e a redação.
 READ_ONLY_SETTINGS = {
     "permissions": {
-        "allow": ["Read", "Glob", "Grep", "Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)",
-                  "Bash(git ls-tree:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
-                  "Bash(wc:*)", "Bash(ls:*)"],
-        "deny": ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Bash(git push:*)",
-                 "Bash(git commit:*)", "Bash(git merge:*)", "Bash(git rebase:*)", "Bash(git checkout:*)",
-                 "Bash(git reset:*)", "Bash(gh:*)", "Bash(rm:*)", "Bash(curl:*)", "Bash(osascript:*)",
-                 "Bash(xcodebuild:*)", "Bash(sudo:*)", "Bash(git worktree:*)", "Bash(git clone:*)"],
-    }
+        "defaultMode": "dontAsk",
+        "allow": ["Read(./**)", "Glob(./**)", "Grep(./**)", "Bash(git-leitura:*)"],
+        "deny": ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch",
+                 "Bash(cat:*)", "Bash(/bin/cat:*)", "Bash(head:*)", "Bash(tail:*)",
+                 "Bash(grep:*)", "Bash(ls:*)", "Bash(wc:*)",
+                 "Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git ls-tree:*)",
+                 "Bash(git push:*)", "Bash(git commit:*)", "Bash(git merge:*)", "Bash(git rebase:*)",
+                 "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(gh:*)", "Bash(rm:*)",
+                 "Bash(curl:*)", "Bash(wget:*)", "Bash(osascript:*)", "Bash(xcodebuild:*)",
+                 "Bash(sudo:*)", "Bash(git worktree:*)", "Bash(git clone:*)",
+                 "Read(**/.ssh/**)", "Read(**/.config/gh/**)", "Read(**/.aws/**)", "Read(**/.gnupg/**)",
+                 "Grep(**/.ssh/**)", "Grep(**/.config/gh/**)", "Grep(**/.aws/**)", "Grep(**/.gnupg/**)"],
+    },
+    "sandbox": {
+        "enabled": True,
+        "failIfUnavailable": True,
+        "autoAllowBashIfSandboxed": False,
+        "allowUnsandboxedCommands": False,
+        "excludedCommands": [],
+        "network": {
+            "allowedDomains": [],
+            "deniedDomains": ["*"],
+            "strictAllowlist": True,
+            "allowLocalBinding": False,
+        },
+        "filesystem": {
+            "denyRead": ["~/.ssh", "~/.config/gh", "~/.aws", "~/.gnupg"],
+            "denyWrite": [".git"],
+        },
+    },
 }
 
 
@@ -630,13 +741,36 @@ def run_agent(text: str, cwd: Path, tag: str, agente: str | None = None, modelo:
     try:
         out = sh(args, cwd=cwd, timeout=CLAUDE_TIMEOUT_S, inp=text)
     except Exception as exc:  # noqa: BLE001
+        if caixa.tem_segredo(str(exc)):
+            _log_saida_agente(tag, str(exc))
         note_agent_failure(exc)
         raise
     finally:
         os.unlink(settings)
-    (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(out)
+    _log_saida_agente(tag, out)
     log(f"agente {tag} [{modelo}/{args[-1]}]: {int(time.time() - started)} s, {len(out)} chars")
     return out.strip()
+
+
+def _log_saida_agente(tag: str, texto: str) -> None:
+    """Grava o log já redigido. Se havia credencial, não devolve o texto para publicar."""
+    RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(caixa.redigir(texto))
+    if caixa.tem_segredo(texto):
+        raise caixa.SegredoDetectado()
+
+
+def chamar_dono_segredo(ci: dict | None, diary: list[str] | None, onde: str) -> None:
+    """Não publica a saída. Avisa o dono sem repetir o texto que vazaria."""
+    msg = (f"[Gestor] {onde}: a saída do agente trazia credencial ou chave. "
+           f"Não publiquei. Confira e tire `{OWNER_LABEL}`.")
+    panel(msg)
+    if diary is not None:
+        diary.append(msg)
+    if not ci:
+        return
+    add_label(ci["id"], OWNER_LABEL)
+    comment(ci["id"], msg)
 
 
 def lane_of(ci: dict | None) -> str:
@@ -705,8 +839,7 @@ def limpar_retomadas(desc: str) -> tuple[str, list[str]]:
 
 
 def set_description(ci: dict, text: str) -> None:
-    linear("mutation($id:String!,$i:IssueUpdateInput!){ issueUpdate(id:$id,input:$i){ success } }",
-           {"id": ci["id"], "i": {"description": text}})
+    linear(proxy_linear.consulta("atualizar_issue"), {"id": ci["id"], "i": {"description": text}})
 
 
 def expirar_retomadas(issues: list[dict], st: dict, diary: list[str]) -> None:
@@ -763,17 +896,29 @@ def tmux_alive(session: str) -> bool:
 
 
 def start_install(ref: str, tag: str, card_id: str | None, st: dict, diary: list[str]) -> bool:
-    """Instala no aparelho numa sessão tmux própria (E14), no worktree `<worktrees>/install-main` do projeto."""
-    if not INSTALL_COMMAND:
+    """Instala no aparelho numa sessão tmux própria (E14), no worktree `<worktrees>/install-main`.
+
+    O comando entra como argv, cada pedaço citado para o tmux não reabrir um shell.
+    Repo e worktree são conferidos contra o cadastro antes de abrir a sessão.
+    """
+    argv, aviso = instalar_argv()
+    if aviso:
+        log(aviso)
+    if not argv:
         return False
     if tmux_alive(INSTALL_SESSION):
         log(f"instalação {tag}: outra instalação em andamento, fica para o próximo tick")
         return False
-    out = HOME / "Library/Logs/TranscentIA" / f"device-build-{tag}-{datetime.now():%Y%m%d-%H%M%S}.log"
     p = projeto()
-    sh(["tmux", "new-session", "-d", "-s", INSTALL_SESSION,
-        " ".join(shlex.quote(x) for x in ["/bin/bash", str(INSTALL_SCRIPT), ref, str(out), str(p.repo),
-                                         str(p.worktrees / "install-main"), INSTALL_COMMAND])])
+    wt = p.worktrees / "install-main"
+    codigo, detalhe = projetos.checar_alvo_instalar(p.repo, wt, cadastro=p)
+    if codigo:
+        log(f"instalação {tag} recusada: {detalhe.splitlines()[0]}")
+        return False
+    out = HOME / "Library/Logs/TranscentIA" / f"device-build-{tag}-{datetime.now():%Y%m%d-%H%M%S}.log"
+    cmdline = " ".join(shlex.quote(x) for x in
+                       ["/bin/bash", str(INSTALL_SCRIPT), ref, str(out), str(p.repo), str(wt), *argv])
+    sh(["tmux", "new-session", "-d", "-s", INSTALL_SESSION, cmdline])
     st["installs"]["atual"] = {"ref": ref, "tag": tag, "card_id": card_id, "log": str(out),
                                "inicio": datetime.now().isoformat(timespec="seconds")}
     diary.append(f"Gestor · instalação no aparelho iniciada ({ref}); log {out.name}")
@@ -802,14 +947,52 @@ def check_install(st: dict, diary: list[str]) -> None:
     # Falha não reinstala sozinha em laço: fica no card/diário para a próxima rodada de merge ou para o gestor.
 
 
-def proof_passed(ci: dict, pr: dict) -> bool:
-    """Prova do dispatcher verde no head atual: comentário DONE <sha> e '→ verde' no corpo do PR."""
+def id_viewer_linear() -> str:
+    """Id do viewer do token Linear, lido da API.
+
+    Cache só em memória deste processo. Não lê a config nem o state.json:
+    `linear.actor_id` seria gravável por quem edita o aparelho.
+    """
+    cache = getattr(id_viewer_linear, "cache", None)
+    if cache:
+        return cache
+    try:
+        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
+    except RuntimeError as exc:
+        log(f"prova: não li o viewer do Linear ({exc})")
+        return ""
+    ident = str(viewer.get("id") or "")
+    if ident:
+        id_viewer_linear.cache = ident  # type: ignore[attr-defined]
+    return ident
+
+
+def proof_passed(ci: dict, pr: dict, viewer_id: str | None = None) -> bool:
+    """Prova verde no head: DONE com o SHA completo, escrito pelo viewer do token.
+
+    O primeiro comentário `DONE` + 40 hex decide. SHA diferente do head não passa,
+    nem prefixo, nem autor ausente ou diferente do viewer. Sem `→ verde` no corpo
+    do PR, não passa.
+    """
     if "→ verde" not in (pr.get("body") or ""):
         return False
-    for n in reversed(ci["comments"]["nodes"]):
-        m = re.match(r"\s*DONE\s+([0-9a-f]{7,40})", n["body"])
-        if m:
-            return pr["headRefOid"].startswith(m.group(1))
+    head = (pr.get("headRefOid") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", head):
+        return False
+    viewer = id_viewer_linear() if viewer_id is None else viewer_id
+    if not viewer:
+        return False
+    nodes = ((ci.get("comments") or {}).get("nodes") or [])
+    for n in reversed(nodes):
+        if not isinstance(n, dict):
+            continue
+        m = _DONE_RE.match(n.get("body") or "")
+        if not m:
+            continue
+        if m.group(1).lower() != head:
+            return False
+        user = n.get("user") if isinstance(n.get("user"), dict) else {}
+        return str(user.get("id") or "") == str(viewer)
     return False
 
 
@@ -1128,7 +1311,12 @@ def handle_stops(ci: dict, label: str, st: dict, diary: list[str]) -> bool:
     # Conta Claude no limite não segura mais a análise: só pula a etapa do Claude.
     try:
         text, quem = analisar_parada(ci, label, st, cid, count, reason)
+        caixa.exigir_sem_segredo(text)
         problem = None
+    except caixa.SegredoDetectado:
+        chamar_dono_segredo(ci, diary, f"{ci['identifier']} {label}")
+        seen()
+        return True
     except Exception as exc:  # noqa: BLE001
         problem = str(exc)[:160]
     if problem:
@@ -1298,6 +1486,8 @@ def encadear(tarefa: str, card: str, etapas: list[tuple]) -> tuple[str, str, lis
         except Pular as exc:
             tentativas.append({"etapa": nome, "pulou": str(exc)[:160]})
             continue
+        except caixa.SegredoDetectado:
+            raise
         except Exception as exc:  # noqa: BLE001
             tentativas.append({"etapa": nome, "erro": str(exc)[:160], "s": round(time.time() - t0, 1)})
             log(f"{tarefa} {card}: {nome} falhou ({str(exc)[:120]}); tento a próxima")
@@ -1454,6 +1644,10 @@ def recheck_needs(ci: dict, st: dict, diary: list[str]) -> bool:
     p = needs_prompt(ci, log_name, tail)
     try:
         text, quem = analisar_needs(ci, p)
+        caixa.exigir_sem_segredo(text)
+    except caixa.SegredoDetectado:
+        chamar_dono_segredo(ci, diary, f"{ci['identifier']} reconferência")
+        return True
     except Exception as exc:  # noqa: BLE001
         panel(f"{ci['identifier']} {OWNER_LABEL}: reconferência sem resposta ({str(exc)[:140]}); tento quando o card mudar")
         return True
@@ -1591,17 +1785,14 @@ def estado_cancelado_id(st: dict) -> str:
     time_id = linear_ids.time_do_projeto(lambda q, v: linear(q, v), projeto_linear())
     if not time_id:
         return ""
-    nos = ((linear("query($id:String!){ team(id:$id){ states{ nodes{ id type } } } }", {"id": time_id})
+    nos = ((linear(proxy_linear.consulta("estados_time_tipo"), {"id": time_id})
             .get("team") or {}).get("states") or {}).get("nodes") or []
     st["estado_cancelado_id"] = next((n["id"] for n in nos if n.get("type") == "canceled"), "")
     return st["estado_cancelado_id"]
 
 
 def cancelados_recentes() -> list[dict]:
-    flt = ("project:{ id:{ eq:$p } }, state:{ type:{ eq:\"canceled\" } }, "
-           "updatedAt:{ gt:\"-P7D\" }")
-    q = f"""query($p:ID!){{ issues(first:50, filter:{{ {flt} }}){{ nodes{{ {ISSUE_FIELDS} }} }} }}"""
-    return [em_ordem(n) for n in linear(q, {"p": projeto_linear()})["issues"]["nodes"]]
+    return [em_ordem(n) for n in linear(proxy_linear.consulta("cancelados"), {"p": projeto_linear()})["issues"]["nodes"]]
 
 
 def limpar_cancelados(cancelados: list[dict], st: dict, diary: list[str]) -> None:
@@ -1837,7 +2028,7 @@ def viewer_linear(st: dict) -> str:
     if st.get("viewer_id"):
         return str(st["viewer_id"])
     try:
-        viewer = (linear("query{ viewer{ id } }", {}).get("viewer") or {})
+        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
         st["viewer_id"] = viewer.get("id") or ""
     except RuntimeError as exc:
         log(f"fila: não li o viewer do Linear ({exc})")
@@ -2186,34 +2377,45 @@ def limpar_saida(out: str) -> str:
 
 def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
                 esforco: str | None = None) -> str:
-    """Revisão só leitura em qualquer agente com `revisao` no manifesto."""
+    """Revisão na caixa: Grok (`read_file,grep,list_dir`), Codex e os outros só enxergam o repo."""
     RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
     m = manifesto_revisao(agente) or {}
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
-        json.dump(READ_ONLY_SETTINGS, fh)
-        settings = fh.name
-    fd, saida = tempfile.mkstemp(suffix=".md")
-    os.close(fd)
-    mcp = STATE_DIR / "empty-mcp.json"
-    if not mcp.exists():
-        mcp.write_text('{"mcpServers":{}}')
-    argv, entrada = comando_revisao(agente, conf, {"prompt": texto, "saida": saida, "settings": settings,
-                                                    "mcp": str(mcp)}, esforco=esforco)
+    scratch = Path(tempfile.mkdtemp(prefix="revisor-"))
+    settings = scratch / "settings.json"
+    saida = scratch / "saida.md"
+    mcp = scratch / "mcp.json"
+    settings.write_text(json.dumps(READ_ONLY_SETTINGS), encoding="utf-8")
+    saida.write_text("", encoding="utf-8")
+    mcp.write_text('{"mcpServers":{}}', encoding="utf-8")
+    argv, entrada = comando_revisao(agente, conf, {"prompt": texto, "saida": str(saida),
+                                                    "settings": str(settings), "mcp": str(mcp)},
+                                     esforco=esforco)
     started = time.time()
+    out = ""
     try:
-        out = sh(argv, cwd=cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada)
+        proc = caixa.executar(argv, cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada, escritas=[scratch])
+        out = proc.stdout or ""
+        err = proc.stderr or ""
         if m.get("saida") == "arquivo":
-            out = Path(saida).read_text(encoding="utf-8", errors="replace")
+            out = saida.read_text(encoding="utf-8", errors="replace")
+        if caixa.tem_segredo(out) or caixa.tem_segredo(err):
+            _log_saida_agente(tag, out + "\n" + err)
+        if proc.returncode != 0:
+            raise RuntimeError(f"{' '.join(argv[:3])}… ({proc.returncode}): {caixa.redigir(err)[:300]}")
+    except caixa.SegredoDetectado:
+        raise
     except Exception as exc:  # noqa: BLE001
+        if caixa.tem_segredo(str(exc)):
+            _log_saida_agente(tag, str(exc))
         if agente == "claude":
             note_agent_failure(exc)
         raise
     finally:
-        os.unlink(settings)
-        os.unlink(saida)
-    (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(out)
-    manifesto = manifesto_revisao(agente) or {}
-    log(f"agente {tag} [{agente}/{manifesto.get('modelo_padrao', 'padrao')}/{esforco or '-'}]: "
+        shutil.rmtree(scratch, ignore_errors=True)
+    _log_saida_agente(tag, out)
+    # FRA-590: o log usa `m` (padrão do manifesto). `{... or {} }.get(...)` na
+    # f-string não compila no Python 3.9 do Mac.
+    log(f"agente {tag} [{agente}/{m.get('modelo_padrao', 'padrao')}/{esforco or '-'}]: "
         f"{int(time.time() - started)} s, {len(out)} chars")
     return limpar_saida(out)
 
@@ -2252,6 +2454,8 @@ def revisar(texto: str, cwd: Path, tag: str, revisor: str, conf: dict, so_sozinh
             continue
         try:
             out = run_revisor(a, texto, cwd, tag, conf, esforco=esforco)
+        except caixa.SegredoDetectado:
+            raise
         except Exception as exc:  # noqa: BLE001
             log(f"{tag}: revisor {a} falhou ({str(exc)[:160]}); tento o próximo")
             erros.append(f"{a}: {str(exc)[:80]}")
@@ -2348,7 +2552,8 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         mesmo = lane in AGENTES and fornecedor(rev) == fornecedor(lane)
         return prompt("revisor").format(
             number=pr["number"], repo_slug=repo["slug"], title=pr["title"], branch=pr["headRefName"],
-            sha=pr["headRefOid"], sha7=pr["headRefOid"][:7], merge_state=pr.get("mergeStateStatus"),
+            # sha7 continua no format: prompt já instalado pedia {sha7}. Agora recebe os 40 hex.
+            sha=pr["headRefOid"], sha7=pr["headRefOid"], merge_state=pr.get("mergeStateStatus"),
             card=card or "(nenhum no título/branch)", card_desc=(ci or {}).get("description", "")[:6000] or "(sem card)",
             card_comments=fmt_comments(ci), stat=stat, protected=", ".join(protected()), lane=lane,
             known_errors=known_errors(),
@@ -2366,7 +2571,16 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         # Head já aprovado na segunda opinião: vai direto para a confirmação, sem revisar de novo.
         text, revisor = TAG_REVISOR + " REVISOR: APROVADO", guardadas[head]["revisor"]
     else:
-        text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf, esforco=esforco)
+        try:
+            text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf, esforco=esforco)
+        except caixa.SegredoDetectado:
+            chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
+            st["reviewed"][head] = "segredo"
+            return
+        if caixa.tem_segredo(text):
+            chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
+            st["reviewed"][head] = "segredo"
+            return
         if text.startswith(TAG_REVISOR) and papel(revisor, conf) == "segunda_opiniao" and veredito_de(text) == "APROVADO":
             guardadas[head] = {"revisor": revisor, "quando": time.time(), "pr": pr["number"]}
             save_state(st)  # uma falha da confirmação não apaga a segunda opinião
@@ -2378,9 +2592,18 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         # Segunda opinião só bloqueia; aprovar exige um revisor que aprova sozinho.
         primeiro = revisor
         conf_rev, obs2 = escolher_revisor(lane, conf, so_sozinho=True)
-        text, revisor = revisar(montar(conf_rev), rdir, tag + "-confirma", conf_rev, conf, so_sozinho=True,
-                                esforco=esforco)
+        try:
+            text, revisor = revisar(montar(conf_rev), rdir, tag + "-confirma", conf_rev, conf, so_sozinho=True,
+                                    esforco=esforco)
+        except caixa.SegredoDetectado:
+            chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
+            st["reviewed"][head] = "segredo"
+            return
         extra = f"confirmou a aprovação de {primeiro}" + (f"; {obs2}" if obs2 else "")
+    if caixa.tem_segredo(text):
+        chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
+        st["reviewed"][head] = "segredo"
+        return
     if not text.startswith(TAG_REVISOR):
         sha = pr["headRefOid"]
         if not format_failure(st, sha):

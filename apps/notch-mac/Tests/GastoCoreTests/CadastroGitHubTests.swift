@@ -1,3 +1,4 @@
+import Security
 import XCTest
 @testable import GastoCore
 
@@ -5,8 +6,10 @@ import XCTest
 final class ChaveiroFalso: ChaveiroScripts, @unchecked Sendable {
     var itens: [String: (conta: String, segredo: String)] = [:]
     var falhar = false
+    var gravacoes = 0
     func ler(servico: String) -> String? { itens[servico]?.segredo }
     func gravar(_ segredo: String, servico: String, conta: String) throws {
+        gravacoes += 1
         if falhar { throw ErroLinear.resposta("falhou") }
         itens[servico] = (conta, segredo)
     }
@@ -14,59 +17,128 @@ final class ChaveiroFalso: ChaveiroScripts, @unchecked Sendable {
 }
 
 final class TokenUnicoTests: XCTestCase {
-    func cofre() -> Cofre { Cofre(servico: "com.transcentia.testes.app-\(UUID().uuidString)") }
-
-    func testSalvarGravaSoNoItemDosScripts() throws {
-        let ch = ChaveiroFalso(), cf = cofre()
-        let tk = TokenLinear(cofre: cf, servico: "svc-teste", chaveiro: ch)
-        defer { tk.apagar() }
-        try cf.salvar("velho", conta: TokenLinear.conta)
-        try tk.salvar(" novo \n")
-        XCTAssertEqual(ch.itens["svc-teste"]?.segredo, "novo")
-        XCTAssertNil(cf.ler(conta: TokenLinear.conta), "o item antigo do app some")
-        XCTAssertEqual(tk.ler(), "novo")
+    func cofre() -> Cofre {
+        Cofre(servico: "com.transcentia.testes.app-\(UUID().uuidString)", migrarLegado: false)
     }
 
-    func testLerMigraOItemAntigo() throws {
+    func token(_ ch: ChaveiroFalso, _ cf: Cofre) -> TokenLinear {
+        TokenLinear(cofre: cf, cofreAntigo: cf, servicoSecurity: TokenLinear.servicoSecurityAposentado, chaveiro: ch)
+    }
+
+    func testSalvarGravaNoCofreDedicadoEApagaOItemDoSecurity() throws {
         let ch = ChaveiroFalso(), cf = cofre()
-        let tk = TokenLinear(cofre: cf, servico: "svc-teste", chaveiro: ch)
+        let tk = token(ch, cf)
+        defer { tk.apagar() }
+        try ch.gravar("velho", servico: TokenLinear.servicoSecurityAposentado, conta: "eu")
+        try cf.salvar("sobra", conta: TokenLinear.contaAntiga)
+        try tk.salvar(" novo \n")
+        XCTAssertEqual(ch.gravacoes, 1, "só o teste plantou o item; o app não grava no security")
+        XCTAssertNil(ch.itens[TokenLinear.servicoSecurityAposentado])
+        XCTAssertNil(cf.ler(conta: TokenLinear.contaAntiga))
+        XCTAssertEqual(cf.ler(conta: TokenLinear.conta), "novo")
+        XCTAssertEqual(tk.ler(), "novo")
+        XCTAssertNil(ch.itens[TokenLinear.servicoSecurityAposentado])
+    }
+
+    func testLerMigraDoCofreAntigoSemCopiarParaOSecurity() throws {
+        let ch = ChaveiroFalso(), cf = cofre()
+        let tk = token(ch, cf)
         defer { tk.apagar() }
         XCTAssertNil(tk.ler())
-        try cf.salvar("antigo", conta: TokenLinear.conta)
+        try cf.salvar("antigo", conta: TokenLinear.contaAntiga)
         XCTAssertEqual(tk.ler(), "antigo")
-        XCTAssertEqual(ch.itens["svc-teste"]?.segredo, "antigo")
-        XCTAssertNil(cf.ler(conta: TokenLinear.conta))
+        XCTAssertEqual(cf.ler(conta: TokenLinear.conta), "antigo")
+        XCTAssertNil(cf.ler(conta: TokenLinear.contaAntiga))
+        XCTAssertTrue(ch.itens.isEmpty)
+        XCTAssertEqual(ch.gravacoes, 0)
     }
 
-    func testItemAntigoIgualSaiItemAntigoDiferenteFica() throws {
+    func testLerImportaDoSecurityEApagaOItem() throws {
         let ch = ChaveiroFalso(), cf = cofre()
-        let tk = TokenLinear(cofre: cf, servico: "svc-teste", chaveiro: ch)
+        let tk = token(ch, cf)
         defer { tk.apagar() }
-        try ch.gravar("t", servico: "svc-teste", conta: "x")
-        try cf.salvar("outro", conta: TokenLinear.conta)
-        XCTAssertEqual(tk.ler(), "t")
-        XCTAssertEqual(cf.ler(conta: TokenLinear.conta), "outro", "valor diferente: não apaga")
-        try cf.salvar("t", conta: TokenLinear.conta)
-        XCTAssertEqual(tk.ler(), "t")
-        XCTAssertNil(cf.ler(conta: TokenLinear.conta))
+        try ch.gravar("do-script", servico: TokenLinear.servicoSecurityAposentado, conta: "eu")
+        XCTAssertEqual(tk.ler(), "do-script")
+        XCTAssertEqual(cf.ler(conta: TokenLinear.conta), "do-script")
+        XCTAssertNil(ch.itens[TokenLinear.servicoSecurityAposentado], "security find-generic-password não acha mais")
+        XCTAssertEqual(ch.gravacoes, 1)
     }
 
-    func testMigracaoQueFalhaNaoPerdeOToken() throws {
+    func testContaAntigaDiferenteNaoEApagadaESecuritySome() throws {
         let ch = ChaveiroFalso(), cf = cofre()
-        ch.falhar = true
-        let tk = TokenLinear(cofre: cf, servico: "svc-teste", chaveiro: ch)
+        let tk = token(ch, cf)
         defer { tk.apagar() }
-        try cf.salvar("antigo", conta: TokenLinear.conta)
-        XCTAssertEqual(tk.ler(), "antigo")
-        XCTAssertEqual(cf.ler(conta: TokenLinear.conta), "antigo", "sem gravar o novo, o antigo fica")
+        try tk.salvar("dedicado")
+        try cf.salvar("outro", conta: TokenLinear.contaAntiga)
+        try ch.gravar("vazado", servico: TokenLinear.servicoSecurityAposentado, conta: "eu")
+        XCTAssertEqual(tk.ler(), "dedicado")
+        XCTAssertEqual(cf.ler(conta: TokenLinear.contaAntiga), "outro")
+        XCTAssertNil(ch.itens[TokenLinear.servicoSecurityAposentado])
     }
 
-    func testApagarLimpaOsDois() throws {
+    func testApagarLimpaDedicadoAntigoESecurity() throws {
         let ch = ChaveiroFalso(), cf = cofre()
-        let tk = TokenLinear(cofre: cf, servico: "svc-teste", chaveiro: ch)
-        try tk.salvar("x"); try cf.salvar("y", conta: TokenLinear.conta)
+        let tk = token(ch, cf)
+        try tk.salvar("x")
+        try cf.salvar("y", conta: TokenLinear.contaAntiga)
+        try ch.gravar("z", servico: TokenLinear.servicoSecurityAposentado, conta: "eu")
         tk.apagar()
-        XCTAssertNil(ch.itens["svc-teste"]); XCTAssertNil(cf.ler(conta: TokenLinear.conta))
+        XCTAssertNil(cf.ler(conta: TokenLinear.conta))
+        XCTAssertNil(cf.ler(conta: TokenLinear.contaAntiga))
+        XCTAssertNil(ch.itens[TokenLinear.servicoSecurityAposentado])
+    }
+
+    func testSecurityNaoGravaMais() {
+        XCTAssertThrowsError(try ChaveiroSecurity().gravar("x", servico: "s", conta: "a"))
+    }
+
+    func testAtributosPedemProtecaoDeDadosEGrupo() {
+        let q = TokenLinear.atributos()
+        XCTAssertEqual(q[kSecClass as String] as? String, kSecClassGenericPassword as String)
+        XCTAssertEqual(q[kSecAttrAccount as String] as? String, TokenLinear.conta)
+        XCTAssertEqual(q[kSecAttrService as String] as? String, Cofre.servicoPadrao)
+        XCTAssertEqual(q[kSecUseDataProtectionKeychain as String] as? Bool, true)
+        let grupo = q[kSecAttrAccessGroup as String] as? String
+        XCTAssertEqual(grupo, AtributosChaveiro.grupoDoProcesso())
+        XCTAssertTrue(grupo?.hasSuffix(AtributosChaveiro.sufixoGrupo) == true)
+        XCTAssertNotEqual(q[kSecAttrService as String] as? String, TokenLinear.servicoSecurityAposentado)
+    }
+
+    func testGrupoDoEntitlementCasaComOAccessGroup() {
+        let adhoc = NSDictionary(dictionary: [
+            "entitlements-dict": NSDictionary(dictionary: ["keychain-access-groups": [AtributosChaveiro.sufixoGrupo]]),
+        ])
+        XCTAssertEqual(AtributosChaveiro.grupo(em: adhoc), AtributosChaveiro.sufixoGrupo)
+        let time = NSDictionary(dictionary: [
+            "entitlements-dict": NSDictionary(dictionary: ["keychain-access-groups": ["ABCDE12345.app.tuttidash.mac"]]),
+        ])
+        XCTAssertEqual(AtributosChaveiro.grupo(em: time), "ABCDE12345.app.tuttidash.mac")
+        XCTAssertEqual(AtributosChaveiro.grupo(em: NSDictionary(dictionary: ["teamid": "TEAMID99"])),
+                       "TEAMID99.app.tuttidash.mac")
+        XCTAssertEqual(AtributosChaveiro.grupo(em: NSDictionary()), AtributosChaveiro.grupoLinear)
+        let plist = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Resources/TuttiDash.entitlements")
+        let texto = (try? String(contentsOf: plist, encoding: .utf8)) ?? ""
+        XCTAssertTrue(texto.contains("$(AppIdentifierPrefix)\(AtributosChaveiro.sufixoGrupo)"))
+        XCTAssertFalse(texto.contains("<string>\(AtributosChaveiro.sufixoGrupo)</string>"))
+    }
+
+    func testGravaELeOItemProtegidoDeVerdade() throws {
+        let servico = "app.tuttidash.teste.\(UUID().uuidString)"
+        let cf = Cofre(servico: servico, migrarLegado: false, protecaoDeDados: true,
+                       grupo: AtributosChaveiro.grupoDoProcesso())
+        defer { cf.apagar(conta: TokenLinear.conta) }
+        do {
+            try cf.salvar("segredo-real", conta: TokenLinear.conta)
+        } catch let erro as NSError where erro.code == Int(errSecMissingEntitlement) {
+            throw XCTSkip("processo sem o entitlement keychain-access-groups")
+        }
+        XCTAssertEqual(cf.ler(conta: TokenLinear.conta), "segredo-real")
+        let r = Subprocesso.rodar("/usr/bin/security",
+                                  ["find-generic-password", "-s", servico, "-a", TokenLinear.conta, "-w"])
+        XCTAssertNotEqual(r.codigo, 0)
+        XCTAssertFalse(r.texto.contains("segredo-real"))
     }
 }
 
