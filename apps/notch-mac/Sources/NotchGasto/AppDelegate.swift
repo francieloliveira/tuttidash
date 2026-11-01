@@ -45,12 +45,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var caminhoFoto: URL?
     /// «Atualizar agora» no cabeçalho: avisa quando a leitura termina.
     private var avisarAoAtualizar = false
+    /// Proxy do Linear. O delegate recebe o protocolo; o padrão é o processo único do app.
+    let proxy: any ControleProxyLinear
+
+    init(proxy: any ControleProxyLinear = ServicoProxyLinear.compartilhado) {
+        self.proxy = proxy
+        super.init()
+    }
 
     // Intervalos (dados 30 s, uso 120 s: endpoints limitados por IP) vivem em `PoliticaAtualizacao`.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // O dispatcher/vigia/chave só trabalham enquanto este PID estiver vivo.
         PresencaDoApp.marcarAberta()
+        // O proxy lê o token no Keychain do app e não o devolve aos scripts (FRA-607).
+        let proxy = self.proxy
+        Task.detached(priority: .utility) { proxy.ligar() }
         EstadoCaixa.compartilhada.iniciar()  // caixa do dono: contador do sino e aviso do macOS
         NSApp.setActivationPolicy(.accessory)
         Configuracao.copiarPastaAntiga()
@@ -59,10 +69,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Agentes passam a viver dentro do app (SMAppService); reverte sozinho se falhar.
         // Se uma tentativa já foi revertida, não tenta de novo a cada abertura (evita bootout repetido).
         if !UserDefaults.standard.bool(forKey: "agentesSMAppServiceRevertido") { Task.detached(priority: .utility) {
+            let veredito = IntegridadeControle.atual()
+            if !veredito.confere {
+                let detalhe = veredito.aviso ?? "integridade: divergencia"
+                await MainActor.run {
+                    CentralAvisos.compartilhada.erro(String(localized: "Integridade do plano de controle"), detalhe)
+                }
+            }
             let a = AgentesDoApp(registro: RegistroSMAppService())
             let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/TranscentIA/tuttidash-agentes.log")
             for l in AgentesDoApp.todos {
                 let r = a.migrar(l)
+                // Divergência de integridade não gruda a flag: o aviso continua e a migração
+                // volta a ser tentada quando a âncora e a assinatura conferirem.
                 if case .revertido = r { UserDefaults.standard.set(true, forKey: "agentesSMAppServiceRevertido") }
                 let linha = "\(Date()) \(l.novo): \(r) status=\(a.registro.status(l.plist))\n"
                 if let h = try? FileHandle(forWritingTo: log) { h.seekToEndOfFile(); h.write(Data(linha.utf8)); try? h.close() }
@@ -162,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// «Sair» encerra o trabalho automático junto com o app. Fechar o painel não.
     func applicationWillTerminate(_ notification: Notification) {
+        proxy.parar()
         PresencaDoApp.pararTudo()
     }
 
@@ -468,9 +488,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alerta.addButton(withTitle: "Desativar")
         NSApp.activate(ignoringOtherApps: true)
         guard alerta.runModal() == .alertSecondButtonReturn else { return }
-        let script = modelo.config.stateDir.appendingPathComponent("lanes_ctl.py").path
-        guard FileManager.default.fileExists(atPath: script) else {
-            modelo.avisoCtl = "Não achei o lanes_ctl.py. Nada foi alterado."
+        guard let script = caminhoLanesCtl() else {
+            modelo.avisoCtl = "Não achei o lanes_ctl.py no bundle. Nada foi alterado."
             return
         }
         modelo.avisoCtl = "Desativando \(lane)…"
@@ -501,9 +520,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Reativa a lane pelo `lanes_ctl.py enable <lane>`. Sem confirmação (ação reversível).
     private func ativar(_ lane: String) {
-        let script = modelo.config.stateDir.appendingPathComponent("lanes_ctl.py").path
-        guard FileManager.default.fileExists(atPath: script) else {
-            modelo.avisoCtl = "Não achei o lanes_ctl.py. Nada foi alterado."
+        guard let script = caminhoLanesCtl() else {
+            modelo.avisoCtl = "Não achei o lanes_ctl.py no bundle. Nada foi alterado."
             return
         }
         modelo.avisoCtl = "Ativando \(lane)…"
@@ -537,6 +555,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func acaoAtualizar() { atualizar(forcar: true, mostrarIndicador: true); atualizarUso(mostrarIndicador: true) }
     @objc private func acaoConfig() { abrirConfig() }
     @objc private func acaoSair() { PresencaApp.sair() }
+
+    /// `lanes_ctl.py` do bundle assinado. Não usa a cópia em ~/.transcentia.
+    private func caminhoLanesCtl() -> String? {
+        let url = ScriptsDoBundle.obrigatorio("lanes/lanes_ctl.py")
+        guard FileManager.default.isReadableFile(atPath: url.path), !url.path.contains(".transcentia") else {
+            return nil
+        }
+        return url.path
+    }
     @objc private func acaoTela(_ item: NSMenuItem) {
         ControladorNotch.usarTelaPrincipal.toggle()
         item.state = ControladorNotch.usarTelaPrincipal ? .on : .off

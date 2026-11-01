@@ -13,10 +13,36 @@ public enum LanesHabilitadas {
         stateDir.appendingPathComponent("enabled")
     }
 
-    /// Verifica se o dispatcher existe no Mac (pasta ~/.transcentia/lanes/dispatcher.py).
+    /// Verifica se o dispatcher está no bundle assinado ou, no teste, ao lado do estado.
+    /// A cópia em `stateDir` não é o que o launchd executa (FRA-613).
     public static func dispatcherExiste(stateDir: URL) -> Bool {
-        let dispatcher = stateDir.appendingPathComponent("dispatcher.py")
-        return FileManager.default.fileExists(atPath: dispatcher.path)
+        if ScriptsDoBundle.url("lanes/dispatcher.py") != nil { return true }
+        let legado = stateDir.appendingPathComponent("dispatcher.py")
+        return FileManager.default.fileExists(atPath: legado.path)
+    }
+
+    /// Peças que o app exige antes de oferecer o interruptor (FRA-591).
+    /// O `tools/install.sh` não cria a pasta numa instalação limpa e não copia
+    /// runner, view nem settings.
+    public static let arquivosDaInstalacao = [
+        "dispatcher.py", "run_lane.sh", "lane_view.py",
+        "claude-settings.json", "lane-mcp.json",
+    ]
+
+    /// Nomes que ainda não estão na pasta, na ordem de `arquivosDaInstalacao`.
+    /// Os scripts contam também quando estão no bundle assinado (FRA-613).
+    public static func ausentes(stateDir: URL) -> [String] {
+        arquivosDaInstalacao.filter {
+            if $0.hasSuffix(".py") || $0.hasSuffix(".sh"), ScriptsDoBundle.url("lanes/" + $0) != nil {
+                return false
+            }
+            return !FileManager.default.fileExists(atPath: stateDir.appendingPathComponent($0).path)
+        }
+    }
+
+    /// Dispatcher, runner, view e os dois JSON. Sem isso o app não oferece ligar lane.
+    public static func instalacaoPronta(stateDir: URL) -> Bool {
+        ausentes(stateDir: stateDir).isEmpty
     }
 
     public static func ler(stateDir: URL) -> Set<String> {
@@ -35,7 +61,10 @@ public enum LanesHabilitadas {
         let conhecidos = Set(Agentes.ordem)
         let lista = Agentes.ordem.filter { lanes.contains($0) && conhecidos.contains($0) }
         try FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
-        try (lista.joined(separator: " ") + "\n").write(to: arquivo(stateDir: stateDir),
-                                                        atomically: true, encoding: .utf8)
+        let destino = arquivo(stateDir: stateDir)
+        try (lista.joined(separator: " ") + "\n").write(to: destino, atomically: true, encoding: .utf8)
+        Permissoes.arquivo(destino)
+        Permissoes.pasta(stateDir)
+        Permissoes.casa(contendo: stateDir)
     }
 }

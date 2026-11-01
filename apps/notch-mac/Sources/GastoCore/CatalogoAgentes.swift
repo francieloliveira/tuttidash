@@ -8,9 +8,10 @@ import Foundation
 /// 1 arquivo JSON em `agents.d/`, sem tocar em código. O Swift e o Python leem o
 /// mesmo diretório, então a paridade dos dois registries é estrutural.
 ///
-/// Os manifests versionados no repo são a fonte (E13). Em runtime o app lê a cópia
-/// instalada em `~/.transcentia/agents.d/` só quando o hash e o dono batem com o
-/// `agents.d` do bundle assinado (FRA-604). Sem isso, vale o bundle — ou nada.
+/// Os manifests versionados no repo são a fonte. Em execução real o app lê os do
+/// bundle assinado, **só leitura**. A cópia em `~/.transcentia/agents.d/` não entra
+/// nessa busca (FRA-614): a lane consegue reescrevê-la. Quem compara uma cópia com
+/// o bundle só a aceita quando o hash e o dono batem (FRA-604).
 public enum CatalogoAgentes {
 
     // MARK: - Manifesto
@@ -146,21 +147,31 @@ public enum CatalogoAgentes {
 
     // MARK: - Descoberta
 
+    /// Diretórios de manifesto para execução real, em ordem.
+    /// O bundle assinado vem primeiro. Fora do `.app` (teste e `swift run`), entra
+    /// também o `agents.d` do repositório. `~/.transcentia/agents.d` não entra.
+    public static func diretorios(bundle: URL? = nil, repo: URL? = nil) -> [URL] {
+        var saida: [URL] = []
+        let doBundle = bundle ?? Bundle.main.resourceURL?.appendingPathComponent("agents.d")
+        let doRepo = repo ?? repoDev()
+        for url in [doBundle, doRepo].compactMap({ $0 }) where confiavel(url) {
+            if !saida.contains(where: { $0.path == url.path }) { saida.append(url) }
+        }
+        return saida
+    }
+
     /// `cli` que pode virar executável. Fora disto o campo é ignorado (não vira comando).
     public static func cliValido(_ cli: String) -> Bool {
         cli.range(of: #"^[a-z0-9][a-z0-9-]*$"#, options: .regularExpression) != nil
     }
 
-    /// Diretórios de manifesto em que o app confia, em ordem de precedência.
-    ///
-    /// O bundle só entra se a assinatura do processo for válida. A cópia instalada
-    /// (E13) só entra na frente quando cada JSON é arquivo regular, do mesmo uid,
-    /// e o SHA-256 é igual ao do bundle. `dono` e `hash` existem para o teste
-    /// simular dono errado sem `chown`.
+    /// Cópia instalada só entra na frente do bundle quando cada JSON é arquivo regular,
+    /// do mesmo uid, e o SHA-256 é igual ao do bundle (FRA-604). Sem assinatura, nada.
+    /// `instalado` e `fallback` não têm default: `diretorios()` sem argumento é a busca
+    /// de execução (FRA-614), que não lê `~/.transcentia`.
     public static func diretorios(
-        instalado: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".transcentia/agents.d"),
-        fallback: URL? = Bundle.main.resourceURL?.appendingPathComponent("agents.d"),
+        instalado: URL,
+        fallback: URL?,
         bundleAssinado: Bool? = nil,
         uid: uid_t = getuid(),
         dono: ((URL) -> uid_t?)? = nil,
@@ -176,6 +187,28 @@ public enum CatalogoAgentes {
             saida.insert(instalado, at: 0)
         }
         return saida
+    }
+
+    /// No `.app`, nil: o binário não lê o checkout, que a lane pode editar.
+    static func repoDev() -> URL? {
+        var caminho = Bundle.main.bundleURL.path
+        if caminho.hasSuffix("/") { caminho.removeLast() }
+        if caminho.hasSuffix(".app") { return nil }
+        return URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // GastoCore
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // notch-mac
+            .deletingLastPathComponent() // apps
+            .deletingLastPathComponent() // raiz do repo
+            .appendingPathComponent("agents.d")
+    }
+
+    /// A cópia em `~/.transcentia` e o fixture de teste não são fonte de execução.
+    static func confiavel(_ url: URL) -> Bool {
+        let partes = url.pathComponents
+        if partes.contains(".transcentia") { return false }
+        if partes.contains("tests") && partes.contains("fixtures") { return false }
+        return true
     }
 
     /// Assinatura do processo, calculada uma vez. Testes passam `bundleAssinado` e não chegam aqui.
@@ -199,8 +232,8 @@ public enum CatalogoAgentes {
 
     /// Lê o primeiro diretório que tiver manifests válidos. Lista vazia = nenhum achado.
     ///
-    /// Sem `caminhos`, a busca é a de `diretorios()` (bundle assinado ou cópia conferida).
-    /// `caminhos` explícito é de quem já escolheu a pasta — os testes do repo usam isso.
+    /// Sem `caminhos`, a busca é a de `diretorios()` (bundle e, no dev, o repo).
+    /// `~/.transcentia` não entra. `caminhos` explícito é de quem já escolheu a pasta.
     public static func carregar(caminhos: [URL]? = nil) -> [ModeloAgente] {
         for dir in caminhos ?? diretorios() {
             if let lista = try? ler(diretorio: dir), !lista.isEmpty { return lista }

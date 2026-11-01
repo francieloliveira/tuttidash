@@ -79,14 +79,7 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
 
     func decidir(_ decisao: CaixaDono.Decisao, item: ItemCaixa) {
-        guard let token = TokenLinear().ler() else {
-            erros[item.card] = ErroLinear.semToken.localizedDescription
-            return
-        }
-        erros[item.card] = nil
-        enviando.insert(item.card)
         let conta = { () -> Bool in if case .responder(_, liberar: false) = decisao { return false }; return true }()
-        if conta { respondidas.insert(item.perguntaId) }
         // FRA-601: o identifier da tela vai ao Linear. Os ids de etiqueta saem da config e do
         // cache do vigia, não do caixa-dono.json. O token é o mesmo item do FRA-568.
         let cfg = Configuracao.resolver()
@@ -96,18 +89,32 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
         let ids = CaixaDono.idsDoApp(config: bruto,
                                     cache: CaixaDono.lerCacheIds(CaixaDono.caminhoCacheIds(home: cfg.home, projetoID: cfg.projetoPadrao?.projetoID ?? "")),
                                     rotuloDono: rotulo)
-        Task {
-            do {
-                let cliente = HTTPClienteLinear()
-                let resolucao = try await CaixaDono.resolver(identifier: item.card, rotuloDono: rotulo, cliente: cliente, token: token)
-                let passos = try CaixaDono.mutacoes(decisao, item: item, resolucao: resolucao, ids: ids, rotuloDono: rotulo)
-                if !passos.isEmpty { try await CaixaDono.executar(passos, cliente: cliente, token: token) }
-                enviando.remove(item.card)
-                CentralAvisos.compartilhada.ok(String(localized: "\(item.card): decisão enviada"))
-            } catch {
-                enviando.remove(item.card)
-                respondidas.remove(item.perguntaId)
-                erros[item.card] = error.localizedDescription
+        // `security` sai da MainActor: ler o token aqui travava a interface (FRA-608).
+        Task.detached {
+            let token = TokenLinear().ler()
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard let token else {
+                    self.erros[item.card] = ErroLinear.semToken.localizedDescription
+                    return
+                }
+                self.erros[item.card] = nil
+                self.enviando.insert(item.card)
+                if conta { self.respondidas.insert(item.perguntaId) }
+                Task {
+                    do {
+                        let cliente = HTTPClienteLinear()
+                        let resolucao = try await CaixaDono.resolver(identifier: item.card, rotuloDono: rotulo, cliente: cliente, token: token)
+                        let passos = try CaixaDono.mutacoes(decisao, item: item, resolucao: resolucao, ids: ids, rotuloDono: rotulo)
+                        if !passos.isEmpty { try await CaixaDono.executar(passos, cliente: cliente, token: token) }
+                        self.enviando.remove(item.card)
+                        CentralAvisos.compartilhada.ok(String(localized: "\(item.card): decisão enviada"))
+                    } catch {
+                        self.enviando.remove(item.card)
+                        self.respondidas.remove(item.perguntaId)
+                        self.erros[item.card] = error.localizedDescription
+                    }
+                }
             }
         }
     }

@@ -330,24 +330,40 @@ public enum ListaModelos {
         return texto
     }
 
+    /// Pasta de `privacidade.py` que o dispatcher também importa
+    /// (`controle/gasto_lanes`). Recusa `~/.transcentia`.
+    static func pastaPrivacidade(home: URL, modulos: URL? = nil) -> URL? {
+        let pasta = (modulos ?? ScriptsDoBundle.modulosAssinados())?.resolvingSymlinksInPath()
+        guard let pasta else { return nil }
+        let caminho = pasta.path
+        if caminho.contains(".transcentia") || caminho.contains("..") { return nil }
+        let gravavel = home.standardizedFileURL.appendingPathComponent(".transcentia").path
+        let prefixo = gravavel.hasSuffix("/") ? gravavel : gravavel + "/"
+        if caminho == gravavel || caminho.hasPrefix(prefixo) { return nil }
+        let py = pasta.appendingPathComponent("privacidade.py").resolvingSymlinksInPath().path
+        if py.contains(".transcentia") || !FileManager.default.isReadableFile(atPath: py) { return nil }
+        return pasta
+    }
+
     /// nil = o Python da privacidade não rodou; a lista do OpenCode não é trocada.
-    static func privacidade(_ modelos: [String], home: URL) -> [String: Bool]? {
+    /// A cópia é a do bundle, a mesma do dispatcher. `modulos` só existe para o teste.
+    static func privacidade(_ modelos: [String], home: URL, modulos: URL? = nil) -> [String: Bool]? {
         guard !modelos.isEmpty else { return [:] }
-        let casas = [
-            home.appendingPathComponent(".transcentia/lanes").path,
-            home.appendingPathComponent(".transcentia/tools").path,
-        ].joined(separator: ":")
+        guard let pasta = pastaPrivacidade(home: home, modulos: modulos) else { return nil }
         let script = """
         import json, sys
-        for p in sys.argv[1].split(":"):
-            if p and p not in sys.path:
-                sys.path.insert(0, p)
+        pasta = sys.argv[1]
+        if (not pasta) or (".transcentia" in pasta) or (".." in pasta):
+            raise SystemExit(1)
+        sys.path = [p for p in sys.path if ".transcentia" not in p]
+        if pasta not in sys.path:
+            sys.path.insert(0, pasta)
         import privacidade
         nomes = json.load(sys.stdin)
         print(json.dumps({m: bool(privacidade.pode_receber_codigo(m)[0]) for m in nomes}))
         """
         guard let entrada = try? JSONSerialization.data(withJSONObject: modelos),
-              let saida = rodarPython(script, argumentos: [casas], entrada: entrada),
+              let saida = rodarPython(script, argumentos: [pasta.path], entrada: entrada),
               let obj = try? JSONSerialization.jsonObject(with: saida) as? [String: Any] else { return nil }
         var mapa: [String: Bool] = [:]
         for (nome, valor) in obj { mapa[nome] = JV.verdadeiro(valor) }

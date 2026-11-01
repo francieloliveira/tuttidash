@@ -135,7 +135,7 @@ public enum CatalogoAjustes {
                 CampoAjuste("preflight.skip_preflight_first", String(localized: "Primeira tentativa sem checagem"), .booleano, "true"),
             ], nota: nil),
             AbaAjustes(nome: String(localized: "Integrações"), simbolo: "link", campos: [],
-                       nota: String(localized: "O token do Linear fica só no Keychain, nunca no arquivo."), linear: true),
+                       nota: String(localized: "A chave do Linear fica no Keychain do app (proteção de dados), nunca no arquivo. O dispatcher e o vigia usam o proxy local."), linear: true),
             AbaAjustes(nome: String(localized: "Agendas"), simbolo: "clock", campos: [
                 CampoAjuste("agendas.dispatcher_s", String(localized: "Dispatcher das lanes (s)"), n(15, 86_400), "60"),
                 CampoAjuste("agendas.watch_s", String(localized: "Vigia dos bots (s)"), n(15, 86_400), "180"),
@@ -149,7 +149,7 @@ public enum CatalogoAjustes {
                 CampoAjuste("painel.gestor_log_glob", String(localized: "Logs dos testes manuais (padrão)"), .texto, "/tmp/fra*-*.log"),
                 CampoAjuste("painel.filtro", String(localized: "Filtro das linhas (regex)"), .texto, "Test Case|error:|Executed|BLOCK|TEST (SUCCEEDED|FAILED)|abortado"),
                 CampoAjuste("painel.intervalo_s", String(localized: "Intervalo de troca (s)"), n(1, 3600), "10"),
-                CampoAjuste("estresse.intervalo_s", String(localized: "Intervalo da medição de estresse (s)"), n(1, 3600), "15"),
+                CampoAjuste("estresse.intervalo_s", String(localized: "Intervalo da medição de carga do Mac (s)"), n(1, 3600), "15"),
                 CampoAjuste("lane_view.pensamento", String(localized: "Mostrar o raciocínio do agente"), .booleano, "true"),
                 CampoAjuste("lane_view.pensamento_linhas", String(localized: "Linhas de raciocínio por bloco"), n(0, 200), "14"),
                 CampoAjuste("lane_view.diff", String(localized: "Mostrar o diff de cada edição"), .booleano, "true"),
@@ -304,6 +304,7 @@ public final class ModeloAjustes {
         try FileManager.default.createDirectory(at: arquivo.deletingLastPathComponent(), withIntermediateDirectories: true)
         let saida = try JSONSerialization.data(withJSONObject: dados, options: [.prettyPrinted, .sortedKeys])
         try saida.write(to: arquivo, options: .atomic)
+        Permissoes.arquivo(arquivo)
     }
 }
 

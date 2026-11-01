@@ -2,7 +2,8 @@ import SwiftUI
 import GastoCore
 
 /// Lista viva de modelos, atualizada uma vez ao abrir os Ajustes. A espera do CLI
-/// fica fora da thread da interface.
+/// fica fora da thread da interface. A privacidade sai de
+/// `controle/gasto_lanes/privacidade.py`, a mesma cópia do dispatcher (FRA-615).
 @MainActor
 final class EstadoListaModelos: ObservableObject {
     @Published var cache: CacheModelos
@@ -175,7 +176,7 @@ struct BlocoModeloLane: View {
                 }
                 Spacer()
                 if cfg.modo == .auto {
-                    Button(String(localized: "Restaurar padrão"), action: restaurar).buttonStyle(.link).font(.caption)
+                    Button(String(localized: "Restaurar automático"), action: restaurar).buttonStyle(.link).font(.caption)
                 }
                 Picker(String(localized: "Modelo de \(ClarezaCota.titulo(nome: agente.nome, rotulo: agente.rotulo))"), selection: modo) {
                     Text(String(localized: "Automático")).tag(ModoModelo.auto)
