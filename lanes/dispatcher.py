@@ -703,6 +703,61 @@ def lane_settings() -> dict:
     return json.loads(caminho_settings().read_text(encoding="utf-8"))
 
 
+# --- Modo bancada (FRA-618) -----------------------------------------------------
+# Hardware na USB (ex.: ESP32). Liga só com as três condições juntas; sem elas, a
+# lane recebe os settings estritos de sempre. A lane ganha um único comando, que
+# o Claude Code roda fora do sandbox só quando a linha inteira casa com o caminho
+# absoluto do bundle. As validações ficam no próprio comando (lanes/bancada.py).
+ETIQUETA_BANCADA = "lane:bancada"
+COMANDO_BANCADA = _AQUI / "bancada.py"
+
+
+def bancada_ativa(lane: str, issue: dict) -> bool:
+    """Lane `claude` + etiqueta `lane:bancada` no card + `bancada.ativo` no cadastro."""
+    if lane != "claude":
+        return False
+    nomes = {str(l.get("name") or "") for l in (issue.get("labels") or {}).get("nodes") or []
+             if isinstance(l, dict)}
+    if ETIQUETA_BANCADA not in nomes:
+        return False
+    try:
+        return projeto().bancada is True
+    except Exception:  # noqa: BLE001 — sem cadastro legível, o modo fica desligado
+        return False
+
+
+def settings_bancada(base: dict, comando: Path = COMANDO_BANCADA) -> dict:
+    """Os settings estritos mais o comando `bancada`. Nada além disso muda."""
+    caminho = str(comando)
+    if (".transcentia" in caminho or not os.path.isabs(caminho) or any(c.isspace() for c in caminho)
+            or not os.path.isfile(caminho) or not os.access(caminho, os.X_OK)):
+        raise RuntimeError(f"comando da bancada recusado: {caminho}")
+    novo = json.loads(json.dumps(base))
+    regra = f"{caminho} *"
+    novo.setdefault("permissions", {}).setdefault("allow", []).append(f"Bash({regra})")
+    novo.setdefault("sandbox", {})["excludedCommands"] = [regra]
+    return novo
+
+
+TEXTO_BANCADA = """
+
+## Modo bancada (hardware na USB)
+
+Este card roda no modo bancada. O único acesso a hardware é o comando abaixo,
+sempre pelo caminho completo, sozinho na linha (sem `&&`, `|`, `>`, `cd` nem `$(...)`):
+
+    {comando} portas
+    {comando} chip [--porta P] [--chip esp32s3]
+    {comando} gravar [--porta P] [--chip esp32s3] 0x0 caminho/no/worktree/firmware.bin
+    {comando} serial [--porta P] [--baud 115200] SEGUNDOS
+
+- O firmware tem de ser um `.bin` dentro deste worktree. A serial lê no máximo 120 s.
+- Não existe outro acesso: sem rede, sem Docker, sem Python e sem shell livre.
+- Cada uso fica registrado fora do worktree. Confirmações de privacidade e assinaturas
+  são do dono: escreva o que falta em `residual_risk` ou peça com `needs_dono`.
+"""
+
+
 def lane_permissions() -> dict:
     """Mesmas regras para claude e grok (allow/deny/defaultMode)."""
     return lane_settings()["permissions"]
@@ -1208,7 +1263,7 @@ def deepseek_resumo(effort: str) -> str:
 
 
 def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
-                  patch: Optional[Path] = None) -> list[str]:
+                  patch: Optional[Path] = None, settings: Optional[Path] = None) -> list[str]:
     """Comando headless do agente (claude, grok e opencode são executadas de verdade).
 
     `prompt` e `patch` são caminhos fora do worktree. O agente não pode trocar
@@ -1219,7 +1274,7 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
             "claude", "-p",  # prompt chega pelo stdin, do RUN_DIR (FRA-595)
             "--output-format", "stream-json", "--verbose",
             "--permission-mode", MODO_PERMISSAO,
-            "--settings", str(caminho_settings()),
+            "--settings", str(settings or caminho_settings()),
             "--strict-mcp-config", "--mcp-config", str(caminho_controle("lane-mcp.json")),
             "--max-budget-usd", str(BUDGET_USD[effort]),
             *flags_da_lane("claude", effort),
@@ -1289,12 +1344,12 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
 
 
 def texto_do_agente(lane: str, effort: str, prompt: Path,
-                    patch: Optional[Path] = None) -> str:
+                    patch: Optional[Path] = None, settings: Optional[Path] = None) -> str:
     """Linha que o `run_lane.sh` executa. O prompt é um arquivo fora do worktree.
 
     Na opencode e no dsh o prompt entra entre aspas. Sem aspas, um espaço ou uma
     aspa do card partia o argumento e o CLI lia lixo (ou uma flag)."""
-    agent_text = shlex.join(agent_command(lane, effort, prompt=prompt, patch=patch))
+    agent_text = shlex.join(agent_command(lane, effort, prompt=prompt, patch=patch, settings=settings))
     if lane in ("opencode", "deepseek"):
         agent_text += f' -- "$(cat {shlex.quote(str(prompt))})"'
     return agent_text
@@ -2373,6 +2428,9 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
               .replace("{{BRANCH}}", card["branchName"]).replace("{{WORKTREE}}", str(wt)))
     prompt += resume_note(wt)
     prompt += nota_main
+    bancada = bancada_ativa(lane, issue)
+    if bancada:
+        prompt += TEXTO_BANCADA.replace("{comando}", str(COMANDO_BANCADA))
     escrever_exclusivo(prova / "card.md",
                        f"# {ident} — {card['title']}\n\n{card['url']}\n\n{card.get('description') or ''}\n")
     prompt_file = prova / "prompt.md"
@@ -2384,6 +2442,12 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
         patch_file = prova / "deepseek.yml"
         escrever_exclusivo(patch_file, deepseek_patch(effort))
 
+    # FRA-618: settings do modo bancada no RUN_DIR (fora do worktree, a lane não reescreve).
+    settings_file = None
+    if bancada:
+        settings_file = prova / "claude-settings-bancada.json"
+        escrever_exclusivo(settings_file, json.dumps(settings_bancada(lane_settings()), indent=2))
+
     # FRA-598: o perfil do Grok tem de existir antes do processo. Sem ele o CLI
     # recusa subir, em vez de rodar sem o deny de `security` e dos segredos.
     if lane == "grok":
@@ -2393,7 +2457,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     # prompt como `--check` (git diff --check) é lido como flag e o CLI aborta.
     # FRA-595: o comando fica no RUN_DIR, com nonce no nome. O runner recebe o
     # caminho por argv e não lê `.lane/agent_cmd`.
-    agent_text = texto_do_agente(lane, effort, prompt_file, patch_file)
+    agent_text = texto_do_agente(lane, effort, prompt_file, patch_file, settings_file)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LANE_LOG_DIR.mkdir(parents=True, exist_ok=True)
     lane_log = LANE_LOG_DIR / f"{ident}-{lane}-{stamp}.jsonl"
@@ -2410,7 +2474,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
           "aviso_modelo": aviso_modelo(lane, effort),
           "started": time.time(), "started_at": now(),
           "log": str(lane_log), "session": f"lane-{lane}",
-          "run_id": run_id, "agent_cmd": str(cmd_path)}
+          "run_id": run_id, "agent_cmd": str(cmd_path), "bancada": bancada}
     save_state(lane, st)
     gravar_claim(lane, st)
 
@@ -2421,7 +2485,9 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
         f"- esforço `{effort}` → `{flags}`, {limit_text(lane, effort)}, timeout {LANE_TIMEOUT_MIN} min\n"
         f"- branch `{card['branchName']}`, worktree local\n"
         + linha_main
-        + (f"- lane escolhida pela medida: {measure}\n" if measure else "") +
+        + (f"- lane escolhida pela medida: {measure}\n" if measure else "")
+        + ("- 🔌 modo bancada: só o comando `bancada` (USB), com auditoria fora do worktree\n"
+           if bancada else "") +
         f"- o agente não fala com Linear/GitHub; o dispatcher fecha o card ao final"})
 
     session = st["session"]

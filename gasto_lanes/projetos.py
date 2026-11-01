@@ -50,6 +50,8 @@ Regras:
   - `antes_do_push`: comando que roda no worktree antes de cada push da lane (ex.: a
     conferência de publicação de um repositório público). Saiu diferente de 0, nada
     é enviado e o card fica com `lane:falhou`. Vazio = sem conferência.
+  - `bancada`: `{"ativo": true}` libera o modo bancada (FRA-618) neste projeto. Só vale
+    junto com a etiqueta `lane:bancada` no card e a lane `claude`. Desligado por padrão.
 
 Somente Python 3 da stdlib.
 """
@@ -90,12 +92,13 @@ class Projeto:
     """Um projeto que o dispatcher pode trabalhar."""
 
     __slots__ = ("id", "nome", "ativo", "padrao", "repo", "github", "worktrees",
-                 "prova", "prova_tentativas", "suites", "protegidos", "copiar_para_worktree", "antes_do_push")
+                 "prova", "prova_tentativas", "suites", "protegidos", "copiar_para_worktree", "antes_do_push",
+                 "bancada")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
                  repo: str = "", worktrees: str = "", github: str = "", prova: str = "python3 {suite}",
                  prova_tentativas: int = 1, suites=None, protegidos=None, copiar_para_worktree=None,
-                 antes_do_push: str = ""):
+                 antes_do_push: str = "", bancada: bool = False):
         self.id = id
         self.nome = nome or id
         self.ativo = ativo
@@ -110,6 +113,9 @@ class Projeto:
         self.protegidos = list(protegidos) if protegidos else list(PROTEGIDOS_PADRAO)
         self.copiar_para_worktree = [str(c) for c in (copiar_para_worktree or []) if str(c).strip()]
         self.antes_do_push = str(antes_do_push or "").strip()
+        # FRA-618: o modo bancada só liga com isto no cadastro (que a lane não escreve),
+        # mais a etiqueta `lane:bancada` no card e a lane `claude`.
+        self.bancada = bancada is True
 
     def comando_prova(self, suite: str) -> str:
         """Comando completo da prova de uma suíte, já com o placeholder trocado.
@@ -178,8 +184,14 @@ def _do_registro(bruto: dict) -> list:
             suites=item.get("suites") if isinstance(item.get("suites"), list) else None,
             protegidos=prot if isinstance(prot, list) else None,
             copiar_para_worktree=copiar if isinstance(copiar, list) else None,
-            antes_do_push=str(item.get("antes_do_push") or "")))
+            antes_do_push=str(item.get("antes_do_push") or ""),
+            bancada=_bancada_ativa(item.get("bancada"))))
     return saida
+
+
+def _bancada_ativa(bruto) -> bool:
+    """`"bancada": {"ativo": true}` no cadastro. Qualquer outra forma fica desligada."""
+    return isinstance(bruto, dict) and bruto.get("ativo") is True
 
 
 #: Sem cadastro: um projeto vazio, inativo, só para quem chama ter o que ler.

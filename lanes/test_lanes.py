@@ -2803,5 +2803,64 @@ class ProvaForaDoAgente(unittest.TestCase):
         self.assertTrue((prova / "proof.log").is_symlink())
 
 
+class ModoBancada(unittest.TestCase):
+    """FRA-618: o modo bancada só liga com as três condições e só acrescenta o comando."""
+
+    def setUp(self):
+        d.projetos._resetar_cache()
+        self.addCleanup(d.projetos._resetar_cache)
+
+    def _projeto(self, bancada):
+        d.projetos._CACHE["lista"] = [d.projetos.Projeto(
+            id="x", nome="X", repo="/tmp/x", padrao=True, bancada=bancada)]
+
+    @staticmethod
+    def _card(*nomes):
+        return {"labels": {"nodes": [{"name": n} for n in nomes]}}
+
+    def test_tres_condicoes(self):
+        self._projeto(True)
+        self.assertTrue(d.bancada_ativa("claude", self._card("alto", "lane:bancada")))
+        self.assertFalse(d.bancada_ativa("grok", self._card("lane:bancada")))
+        self.assertFalse(d.bancada_ativa("claude", self._card("alto")))
+        self.assertFalse(d.bancada_ativa("claude", {}))
+        self._projeto(False)
+        self.assertFalse(d.bancada_ativa("claude", self._card("lane:bancada")))
+
+    def test_settings_so_ganham_o_comando(self):
+        base = d.lane_settings()
+        antes = json.dumps(base, sort_keys=True)
+        novo = d.settings_bancada(base)
+        self.assertEqual(json.dumps(base, sort_keys=True), antes)  # base intacta
+        regra = f"{d.COMANDO_BANCADA} *"
+        self.assertEqual(novo["permissions"]["allow"], base["permissions"]["allow"] + [f"Bash({regra})"])
+        self.assertEqual(novo["sandbox"]["excludedCommands"], [regra])
+        self.assertEqual(novo["permissions"]["deny"], base["permissions"]["deny"])
+        self.assertEqual(novo["sandbox"]["network"], base["sandbox"]["network"])
+        self.assertEqual(novo["sandbox"]["filesystem"], base["sandbox"]["filesystem"])
+        self.assertEqual(novo["permissions"]["defaultMode"], base["permissions"]["defaultMode"])
+
+    def test_comando_recusado(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sem_exec = Path(tmp) / "bancada.py"
+            sem_exec.write_text("x")
+            for caminho in (Path("lanes/bancada.py"), Path(tmp) / "nao-existe", sem_exec,
+                            Path.home() / ".transcentia" / "lanes" / "bancada.py"):
+                with self.subTest(caminho=caminho), self.assertRaises(RuntimeError):
+                    d.settings_bancada({"permissions": {"allow": []}, "sandbox": {}}, caminho)
+
+    def test_agent_command_usa_os_settings_da_bancada(self):
+        alvo = Path("/tmp/run/claude-settings-bancada.json")
+        cmd = d.agent_command("claude", "medio", settings=alvo)
+        self.assertEqual(cmd[cmd.index("--settings") + 1], str(alvo))
+        padrao = d.agent_command("claude", "medio")
+        self.assertEqual(padrao[padrao.index("--settings") + 1], str(d.caminho_settings()))
+
+    def test_prompt_cita_o_caminho_do_comando(self):
+        texto = d.TEXTO_BANCADA.replace("{comando}", str(d.COMANDO_BANCADA))
+        self.assertIn(f"{d.COMANDO_BANCADA} gravar", texto)
+        self.assertNotIn("{comando}", texto)
+
+
 if __name__ == "__main__":
     unittest.main()
