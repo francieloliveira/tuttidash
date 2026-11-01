@@ -26,6 +26,7 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
 - **It runs agents unattended with your accounts.** They edit code, run commands and spend money or quota.
   Try it on a throwaway project first, keep every lane disabled until a dry run looks right, and set
   budgets (`lanes.budget_usd`) and protected paths (`protegidos`).
+  The check `prova-remota` is the remote proof for merging into `main`; branch protection has to require it. It does not stop a lane from reading `~/.ssh` or `~/.config/gh`.
 - **Account limits come only from official or local sources**: the GitHub Copilot billing API and the local
   OpenCode session database. Claude Code, Codex, Grok and Gemini subscriptions have no official public
   quota API, so TuttiDash does not show their limits. The reading engine is pluggable (`FonteUso`, see
@@ -100,6 +101,17 @@ python3 -m unittest discover -s tests -t .
 python3 -m unittest lanes.test_lanes
 cd apps/notch-mac && swift test
 ```
+
+## Remote proof
+
+A pull request into `main` runs the check `prova-remota` on GitHub Actions. The workflow
+is `pull_request`, with read-only contents permission and no secrets. The script that runs
+is the blob `scripts/prova-remota.sh` from the pull request's base commit. The head is
+checked out beside it and its scripts are not executed. The check is recorded on the full
+head SHA.
+
+That check is the proof of the merge once branch protection on `main` requires it.
+A lane still runs as the owner of the machine.
 
 ## Project layout
 
