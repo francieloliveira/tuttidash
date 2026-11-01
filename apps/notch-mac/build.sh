@@ -118,12 +118,33 @@ else
   echo "==> codesign ad-hoc (identidade $SIGN_IDENTITY não encontrada)"
   SIGN_IDENTITY="-"
 fi
-codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
-  --identifier app.tuttidash.agente "$APP/Contents/MacOS/tuttidash-agente"
-codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
-  --entitlements Resources/TuttiDash.entitlements "$APP"
-codesign --verify --verbose=1 "$APP"
 REQ='anchor apple generic and certificate leaf[subject.OU] = "3QA76CY27W" and certificate leaf[field.1.2.840.113635.100.6.1.12]'
+# O designated requirement padrão cita o certificado pelo nome (subject.CN). O agente e o app
+# (FRA-616) exigem o da equipe: assina com ele explícito. Ad-hoc não tem como atender.
+DR_ARGS=()
+if [[ "$SIGN_IDENTITY" != "-" ]]; then
+  DR_ARGS=(--requirements "=designated => $REQ")
+fi
+codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
+  ${DR_ARGS[@]+"${DR_ARGS[@]}"} --identifier app.tuttidash.agente "$APP/Contents/MacOS/tuttidash-agente"
+# keychain-access-groups (FRA-607) é restrito: sem provisioning profile embutido o macOS
+# mata o app no lançamento (spawn failed, POSIX 162). O profile fica fora do repositório,
+# em Privado/TuttiDash.provisionprofile. Sem ele, assina sem entitlements: o Cofre já
+# grava sem o access group quando o entitlement falta (errSecMissingEntitlement).
+PERFIL="$HERE/Privado/TuttiDash.provisionprofile"
+ENT_ARGS=()
+if [[ "$SIGN_IDENTITY" != "-" && -f "$PERFIL" ]]; then
+  PREFIXO="$(security cms -D -i "$PERFIL" | plutil -extract ApplicationIdentifierPrefix.0 raw -)"
+  cp "$PERFIL" "$APP/Contents/embedded.provisionprofile"
+  sed "s/\$(AppIdentifierPrefix)/$PREFIXO./" Resources/TuttiDash.entitlements > "$OUT/TuttiDash.entitlements"
+  ENT_ARGS=(--entitlements "$OUT/TuttiDash.entitlements")
+  echo "==> entitlements com o profile de $PREFIXO (keychain-access-groups)"
+else
+  echo "AVISO: sem Privado/TuttiDash.provisionprofile; assina sem keychain-access-groups (o Cofre grava sem o access group)"
+fi
+codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
+  ${DR_ARGS[@]+"${DR_ARGS[@]}"} ${ENT_ARGS[@]+"${ENT_ARGS[@]}"} "$APP"
+codesign --verify --verbose=1 "$APP"
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
   echo "AVISO: ad-hoc não atende o designated requirement da equipe 3QA76CY27W; o lançador aborta até assinar com Apple Development"
 else
