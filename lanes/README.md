@@ -118,9 +118,11 @@ mudam. O verificador do aceite do card não entra aqui.
 
 ## Permissões mínimas (FRA-598)
 
-Fonte: `lanes/claude-settings.json`, ao lado do dispatcher (a cópia em
-`~/.transcentia/lanes/` é o que o `tools/install.sh` instala). Claude e Grok
-usam o mesmo allow/deny. O modo é `dontAsk`, não `acceptEdits`.
+Fonte: o bundle assinado (`Contents/Resources/claude-settings.json`) ou, no
+checkout, `apps/notch-mac/Resources/claude-settings.json`. O perfil é o
+estrito da FRA-598. A cópia em `lanes/` e em `~/.transcentia/lanes/` não
+manda na lane. Claude e Grok usam o mesmo allow/deny. O modo é `dontAsk`,
+não `acceptEdits`.
 
 O que a lane pode rodar no terminal é `git status`, `git diff`, `git add` e
 `git commit`. O allow é `Bash(git diff *)` (espaço antes do `*`): no CLI,

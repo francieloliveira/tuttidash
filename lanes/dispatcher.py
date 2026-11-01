@@ -569,13 +569,96 @@ def effective_lanes(enabled: set) -> tuple:
             sorted(l for l in enabled if not lane_runnable(l)))
 
 
+def _template_producao(nome: str) -> Optional[Path]:
+    """Template versionado no repo. Não é o fixture de teste nem a cópia em ~/.transcentia."""
+    aqui = Path(__file__).resolve()
+    if ".transcentia" in aqui.parts:
+        return None
+    raiz = None
+    for pai in aqui.parents:
+        if (pai / ".git").exists():
+            raiz = pai
+            break
+    if raiz is None:
+        return None
+    caminho = raiz / "apps" / "notch-mac" / "Resources" / nome
+    try:
+        resolvido = caminho.resolve()
+    except OSError:
+        return None
+    if "fixtures" in resolvido.parts or ".transcentia" in resolvido.parts or not resolvido.is_file():
+        return None
+    return resolvido
+
+
+def _recusar_mcp_fora_do_bundle(arq: Path) -> None:
+    """Comando absoluto do MCP tem de ficar dentro do `Contents/Resources` deste arquivo.
+
+    Caminho de outra máquina, ou script fora do bundle, não sobe na próxima lane.
+    Comando relativo (nome no PATH, ou relativo a este diretório) continua.
+    """
+    try:
+        dados = json.loads(arq.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(dados, dict):
+        return
+    servidores = dados.get("mcpServers") or {}
+    if not isinstance(servidores, dict):
+        return
+    raiz = arq.parent.resolve()
+    for spec in servidores.values():
+        if not isinstance(spec, dict):
+            continue
+        candidatos = [spec.get("command")]
+        args = spec.get("args")
+        if isinstance(args, list):
+            candidatos.extend(args)
+        for bruto in candidatos:
+            if not isinstance(bruto, str) or not bruto.startswith("/"):
+                continue
+            try:
+                alvo = Path(bruto).resolve()
+            except OSError:
+                raise FileNotFoundError(f"comando MCP fora do bundle: {bruto}") from None
+            if alvo != raiz and raiz not in alvo.parents:
+                raise FileNotFoundError(f"comando MCP fora do bundle: {bruto}")
+
+
+def caminho_controle(nome: str) -> Path:
+    """`claude-settings.json` ou `lane-mcp.json` do bundle assinado; senão, o template do repo.
+
+    A cópia em `~/.transcentia/lanes` e o fixture de teste não servem: a lane escreve
+    na primeira, e o fixture é um stub (`allow: ["Read"]`).
+    """
+    if nome not in ("claude-settings.json", "lane-mcp.json"):
+        raise ValueError(nome)
+    recursos = catalogo.recursos_do_bundle()
+    if recursos is not None:
+        arq = (recursos / nome).resolve()
+        if arq.is_file() and "fixtures" not in arq.parts and ".transcentia" not in arq.parts:
+            if nome == "lane-mcp.json":
+                _recusar_mcp_fora_do_bundle(arq)
+            return arq
+    repo = _template_producao(nome)
+    if repo is not None:
+        if nome == "lane-mcp.json":
+            _recusar_mcp_fora_do_bundle(repo)
+        return repo
+    raise FileNotFoundError(
+        f"{nome} não está no bundle assinado nem no template de produção; "
+        "não uso ~/.transcentia nem o fixture de teste")
+
+
+
 def caminho_settings() -> Path:
-    """Settings versionados ao lado deste arquivo. A cópia em STATE_DIR é reserva
-    de um install antigo: se o arquivo do repo existe, ele ganha."""
-    local = _AQUI / "claude-settings.json"
-    if local.is_file():
-        return local
-    return STATE_DIR / "claude-settings.json"
+    """Settings que a lane usa: o bundle assinado, ou o template de produção.
+
+    Não lê `lanes/claude-settings.json` nem `~/.transcentia`: a lane consegue
+    reescrever as duas. O template carrega o perfil estrito da main (dontAsk,
+    sandbox, sem allow global).
+    """
+    return caminho_controle("claude-settings.json")
 
 
 def lane_settings() -> dict:
@@ -1094,7 +1177,7 @@ def agent_command(lane: str, effort: str) -> list[str]:
             "--output-format", "stream-json", "--verbose",
             "--permission-mode", MODO_PERMISSAO,
             "--settings", str(caminho_settings()),
-            "--strict-mcp-config", "--mcp-config", str(STATE_DIR / "lane-mcp.json"),
+            "--strict-mcp-config", "--mcp-config", str(caminho_controle("lane-mcp.json")),
             "--max-budget-usd", str(BUDGET_USD[effort]),
             *flags_da_lane("claude", effort),
         ]

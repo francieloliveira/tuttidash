@@ -137,7 +137,8 @@ class PermissoesMinimasLane(unittest.TestCase):
         self.assertNotIn("acceptEdits", claude)
         self.assertNotIn("acceptEdits", grok)
         settings = Path(claude[claude.index("--settings") + 1])
-        self.assertEqual(settings, Path(d.__file__).resolve().parent / "claude-settings.json")
+        self.assertEqual(settings, d.caminho_controle("claude-settings.json"))
+        self.assertNotIn(".transcentia", settings.parts)
         self.assertEqual(grok[grok.index("--sandbox") + 1], "lane")
         allows = [grok[i + 1] for i, flag in enumerate(grok) if flag == "--allow"]
         for solto in ("Read", "Grep", "Bash(python3:*)", "Bash(cat:*)"):

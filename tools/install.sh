@@ -72,6 +72,8 @@ if [ -d "$LANES_DIR" ]; then
     install -m 644 "$ROOT/lanes/claude-settings.json" "$LANES_DIR/claude-settings.json"
   fi
 fi
+# Espelho antigo. A execução (app, dispatcher, vigia) não lê esta pasta (FRA-614):
+# o manifesto que vale é o do bundle assinado. O rsync não é a fonte.
 mkdir -p "$HOME/.transcentia/agents.d"
 rsync -a --delete "$ROOT/agents.d/" "$HOME/.transcentia/agents.d/"
 

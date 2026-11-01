@@ -11,12 +11,13 @@ das lanes leem estes mesmos arquivos.
 
 | Consumidor | Quando lê |
 |---|---|
-| `apps/notch-mac` (GastoCore → `CatalogoAgentes`) | `~/.transcentia/agents.d/`, depois `agents.d/` dentro do bundle |
-| `gasto_lanes/catalogo.py` | `~/.transcentia/agents.d/`, depois `agents.d/` na raiz do repo, depois o fallback embutido no próprio arquivo |
+| `apps/notch-mac` (GastoCore → `CatalogoAgentes`) | `agents.d/` dentro do bundle assinado; no dev, o `agents.d/` do repo. Não lê `~/.transcentia/agents.d/` |
+| `gasto_lanes/catalogo.py` | no checkout, `agents.d/` do repo (não vasculha `/Applications`); na cópia instalada, o bundle (`TUTTIDASH_RECURSOS` ou `/Applications` e `~/Applications`); senão, o fallback embutido |
 | `lanes/dispatcher.py`, `lanes/lanes_window.py`, `bots/watch.py` | importam o `catalogo.py` que o `tools/install.sh` instala ao lado deles |
 
-A cópia instalada (`~/.transcentia/`) é gerada pelo `tools/install.sh` a partir
-do repo (E13). Ninguém edita a cópia viva.
+A execução não usa a cópia em `~/.transcentia/agents.d/` (FRA-614): a lane consegue
+reescrevê-la. O que vale é o que o `build.sh` coloca no bundle, modo `0600`.
+O `tools/install.sh` ainda espelha a pasta, mas esse espelho não manda no CLI.
 
 ## Campos
 
@@ -62,7 +63,8 @@ quando a lane é exercida, e há teste cobrindo isso.
 1. Crie `agents.d/<nome>.json` com `schema: 1`.
 2. Se for lane de execução: `prioridade`, `execucao`, `cli`, `resume` e os três
    níveis de `modelos`.
-3. `bash tools/install.sh --sem-launchd` (atualiza a cópia instalada).
+3. `bash tools/install.sh --sem-launchd` atualiza o espelho antigo. O app que roda
+   lê o bundle gerado por `apps/notch-mac/build.sh`, não esse espelho.
 4. `python3 -m unittest tests.test_catalogo` e `python3 lanes/test_lanes.py`.
 5. Se a lane roda de verdade, acrescente o comando em
    `dispatcher.agent_command` — o teste `test_toda_lane_do_manifesto_tem_comando_no_dispatcher`
