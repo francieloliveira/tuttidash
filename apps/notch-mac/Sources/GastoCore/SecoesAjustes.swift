@@ -146,7 +146,7 @@ extension CatalogoAjustes {
                 ]),
                 GrupoAjustes(String(localized: "Contas das lanes"), ajuda: String(localized: "Quanto de cada conta já foi usado. SuperGrok (via Cursor) e Grok CLI são cotas separadas."),
                              blocos: [.contas], campos: [campo("uso_contas", ajuda: String(localized: "Lê a % de uso de cada conta para equilibrar as lanes."))]),
-                GrupoAjustes(String(localized: "Linear"), ajuda: String(localized: "O token fica só no Chaveiro, nunca no arquivo."), blocos: [.linear]),
+                GrupoAjustes(String(localized: "Linear"), ajuda: String(localized: "A chave fica no Keychain do app (proteção de dados), nunca no arquivo. O dispatcher e o vigia usam o proxy local."), blocos: [.linear]),
             ]),
             SecaoAjustes(id: .revisao, nome: String(localized: "Revisão"), simbolo: "checkmark.seal",
                          subtitulo: String(localized: "Quem revisa os PRs antes do merge"), grupos: [
@@ -250,6 +250,6 @@ extension CatalogoAjustes {
     public static let chavesLinearLeitura = [
         "linear.workspace_url", "linear.state_in_progress_name",
         "linear.state_in_review_name", "linear.owner_label", "linear.alert_labels", "linear.blocking_labels",
-        "linear.diary_doc_id", "linear.keychain_service",
+        "linear.diary_doc_id",
     ]
 }

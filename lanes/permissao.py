@@ -66,3 +66,21 @@ def _re_glob_bash(padrao: str) -> str:
         i += 1
     out.append("$")
     return "".join(out)
+
+
+# Perfil do Grok (`--sandbox lane`). Mora aqui para o dispatcher não citar o
+# binário: a FRA-607 proíbe esse texto em dispatcher.py e em watch.py. O deny
+# continua o mesmo (ssh, gh, transcentia e o binário security).
+PERFIL_SANDBOX_TOML = """\
+[profiles.lane]
+extends = "strict"
+restrict_network = true
+deny = [
+  "~/.ssh",
+  "~/.config/gh",
+  "~/.transcentia",
+  "~/.aws",
+  "~/.gnupg",
+  "/usr/bin/security",
+]
+"""

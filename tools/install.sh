@@ -48,7 +48,7 @@ install -m 644 "$ROOT/bots/prompts/"*.md "$B/prompts/"
 # projetos que o dispatcher enxerga (Swift, dispatcher e vigia leem o mesmo).
 # Os dois módulos são stdlib puro e precisam estar ao lado de cada script que roda
 # isolado (o dispatcher e o vigia não enxergam o pacote).
-for mod in catalogo fila projetos privacidade linear_ids config; do
+for mod in catalogo fila projetos privacidade linear_ids config proxy_linear; do
   install -m 644 "$ROOT/gasto_lanes/$mod.py" "$B/$mod.py"
 done
 # Build pessoal (FRA-565): módulo opcional fora do repositório aberto, ao lado do catálogo.
@@ -58,7 +58,7 @@ PRIVADO_PY="$ROOT/apps/notch-mac/Privado/python/gasto_privado.py"
 # prompts. Não copia run_lane.sh, lane_view.py nem os JSON de settings.
 LANES_DIR="$HOME/.transcentia/lanes"
 if [ -d "$LANES_DIR" ]; then
-  for mod in catalogo fila projetos privacidade linear_ids config; do
+  for mod in catalogo fila projetos privacidade linear_ids config proxy_linear; do
     install -m 644 "$ROOT/gasto_lanes/$mod.py" "$LANES_DIR/$mod.py"
   done
   [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$LANES_DIR/gasto_privado.py"
@@ -70,9 +70,6 @@ if [ -d "$LANES_DIR" ]; then
     [ -f "$f" ] || continue
     install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
   done
-  if [ -f "$ROOT/lanes/claude-settings.json" ]; then
-    install -m 644 "$ROOT/lanes/claude-settings.json" "$LANES_DIR/claude-settings.json"
-  fi
 fi
 # Espelho antigo. A execução (app, dispatcher, vigia) não lê esta pasta (FRA-614):
 # o manifesto que vale é o do bundle assinado. O rsync não é a fonte.
