@@ -25,3 +25,16 @@ jobs:
       - name: Testes Swift
         working-directory: apps/notch-mac
         run: swift test
+
+  vigia-py39:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Vigia compila no Python 3.9
+        run: |
+          python3 -m py_compile bots/watch.py
+          python3 -c 'import ast; ast.parse(open("bots/watch.py").read())'

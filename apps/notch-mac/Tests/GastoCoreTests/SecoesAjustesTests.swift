@@ -78,6 +78,24 @@ final class SecoesAjustesTests: XCTestCase {
         XCTAssertTrue(avancado.campos.contains { $0.chave == "agendas.env.dispatcher.SKIP_PREFLIGHT" })
     }
 
+    /// A carga do Mac continua nas chaves antigas; o texto visível não fala de estresse humano.
+    func testCargaDoMac() {
+        let avancado = CatalogoAjustes.secoes().first { $0.id == .avancado }!
+        let grupo = avancado.grupos.first { $0.campos.contains { $0.chave == "estresse.saida" } }
+        let intervalo = avancado.campos.first { $0.chave == "estresse.intervalo_s" }
+        let saida = avancado.campos.first { $0.chave == "estresse.saida" }
+        XCTAssertEqual(grupo?.nome, "Carga do Mac")
+        XCTAssertEqual(grupo?.campos.map(\.chave), ["estresse.intervalo_s", "estresse.saida"])
+        XCTAssertEqual(intervalo?.rotulo, "Intervalo da medição de carga do Mac (s)")
+        XCTAssertEqual(saida?.rotulo, "Arquivo da medição de carga do Mac")
+        XCTAssertEqual(saida?.padrao, "~/Library/Logs/TuttiDash/carga-mac.tsv")
+        XCTAssertFalse(avancado.grupos.contains { $0.nome == "Medição de estresse" })
+        for texto in [grupo?.nome, intervalo?.rotulo, saida?.rotulo, saida?.padrao].compactMap({ $0 }) {
+            XCTAssertFalse(texto.localizedCaseInsensitiveContains("estresse"), texto)
+            XCTAssertFalse(texto.localizedCaseInsensitiveContains("TranscentIA"), texto)
+        }
+    }
+
     func testSecaoAntigaApontaParaUmaNova() {
         for antiga in ["lanes", "contas", "revisao", "agentes", "agendas", "maquinas", "integracoes", "painel"] {
             XCTAssertNotNil(CatalogoAjustes.secaoNovaDaAntiga[antiga], antiga)

@@ -28,7 +28,8 @@ Regras:
   - `id` é obrigatório: sem ele o projeto é ignorado (e registrado como inválido).
     É o id do projeto no Linear; o time sai dele (FRA-567).
   - `github`: o repositório no GitHub (`dono/repo`, ou o link). O dispatcher só envia
-    a branch se o `origin` da pasta for este repositório.
+    a branch se o `origin` da pasta for este repositório, e o push vai para a URL
+    explícita desse cadastro (sem `pushurl`).
   - `ativo: false` deixa o projeto listado para o app mostrar, sem dispatch.
   - `padrao: true` marca o projeto que o dispatcher trabalha neste ciclo. Sem
     `padrao`, vale o primeiro `ativo` da lista — a ordem da lista é a ordem de
@@ -277,6 +278,105 @@ def resumo() -> str:
         sufixo = f" [{', '.join(marcas)}]" if marcas else ""
         linhas.append(f"{p.nome} ({p.id[:8]}…){sufixo} → {p.repo}")
     return "; ".join(linhas) if linhas else "nenhum projeto cadastrado"
+
+
+def _com_quebra(valor) -> bool:
+    """Quebra de linha ou retorno de carro no caminho.
+
+    O shell parte a saída no primeiro fim de linha e o `git clean` cairia
+    na linha seguinte, que a checagem não conferiu.
+    """
+    if valor is None:
+        return False
+    texto = str(valor)
+    return "\n" in texto or "\r" in texto
+
+
+def _resolver(valor) -> Path | None:
+    """Caminho absoluto com symlinks resolvidos. Relativo, vazio, laço ou quebra de linha: None."""
+    if valor is None or _com_quebra(valor):
+        return None
+    texto = str(valor).strip()
+    if not texto:
+        return None
+    p = Path(texto).expanduser()
+    if not p.is_absolute():
+        return None
+    try:
+        return p.resolve()
+    except (OSError, RuntimeError):
+        return None
+
+
+def _raiz_insegura(caminho: Path) -> bool:
+    """`/` e o home não servem de raiz: `git clean` ali apaga a máquina ou a casa."""
+    return caminho == Path("/").resolve() or caminho == Path.home().resolve()
+
+
+def _dentro(caminho: Path, raiz: Path) -> bool:
+    """Descendente estrito. A raiz em si não vale: o clean apagaria todas as worktrees."""
+    if _raiz_insegura(caminho) or _raiz_insegura(raiz):
+        return False
+    try:
+        rel = caminho.relative_to(raiz)
+    except ValueError:
+        return False
+    return rel != Path(".")
+
+
+def cadastro_da_instalacao():
+    """Projeto que o `instalar.sh` confere.
+
+    Sem `TUTTIDASH_INSTALAR_CONFIG`, é o projeto padrão do cadastro. Com a variável
+    (caminho absoluto de um JSON de prova), lê só esse arquivo. Não cai no cadastro
+    real se o override falhar, e não dispensa a raiz segura.
+    """
+    override = os.environ.get("TUTTIDASH_INSTALAR_CONFIG", "").strip()
+    if not override:
+        return padrao()
+    caminho = Path(override).expanduser()
+    if not caminho.is_absolute() or not caminho.is_file():
+        return None
+    ativos_ = [p for p in ler_registro([caminho]) if p.ativo]
+    if not ativos_:
+        return None
+    for p in ativos_:
+        if p.padrao:
+            return p
+    return ativos_[0]
+
+
+def checar_alvo_instalar(repo, worktree, cadastro=None) -> tuple[int, str]:
+    """Confere REPO e WT antes de `git reset`/`git clean`.
+
+    0 e duas linhas (repo e worktree resolvidos) quando os dois batem com o
+    cadastro, a pasta de worktrees não é `/` nem o home, e o worktree é um
+    descendente estrito dessa pasta. Caminho com quebra de linha ou retorno
+    de carro é recusado: o shell não pode partir essa saída e limpar outra
+    linha. Qualquer outra coisa: código 2 e o motivo.
+    `cadastro` explícito (o projeto que o vigia já escolheu) não relê a config.
+    """
+    if cadastro is None:
+        cadastro = cadastro_da_instalacao()
+    if cadastro is None or not getattr(cadastro, "id", ""):
+        return 2, "nenhum projeto cadastrado; instalação recusada"
+    if any(_com_quebra(v) for v in (repo, worktree, cadastro.repo, cadastro.worktrees)):
+        return 2, "repo ou worktree recusado: caminho com quebra de linha"
+    repo_r, wt_r = _resolver(repo), _resolver(worktree)
+    if repo_r is None or wt_r is None:
+        return 2, "repo ou worktree recusado: caminho ausente ou relativo"
+    repo_cad, wts_cad = _resolver(cadastro.repo), _resolver(cadastro.worktrees)
+    if repo_cad is None or wts_cad is None:
+        return 2, "repo ou worktrees do cadastro não é um caminho absoluto"
+    if _raiz_insegura(repo_cad) or _raiz_insegura(wts_cad):
+        return 2, "repo ou worktrees do cadastro é / ou o home; recusado"
+    if _raiz_insegura(repo_r) or _raiz_insegura(wt_r):
+        return 2, "repo ou worktree é / ou o home; recusado"
+    if repo_r != repo_cad:
+        return 2, "repo não é o do projeto cadastrado"
+    if not _dentro(wt_r, wts_cad):
+        return 2, "worktree fora das worktrees do projeto (ou igual à raiz); recusado"
+    return 0, f"{repo_r}\n{wt_r}"
 
 
 if __name__ == "__main__":  # conferência à mão: python3 -m gasto_lanes.projetos

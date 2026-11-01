@@ -35,7 +35,9 @@ Se o estado de merge for DIRTY, o PR está em conflito com a main: isso é bloqu
 O código foi escrito pela lane {lane}; você é Claude.{same_model}
 
 Devolva SOMENTE o texto da revisão em Markdown, nesta forma, sem nada antes:
-[Revisor] REVISOR: APROVADO · head `{sha7}`   (ou AJUSTES no lugar de APROVADO)
+[Revisor] REVISOR: APROVADO · head `{sha}`   (ou AJUSTES no lugar de APROVADO)
+
+O head dessa linha é o SHA completo de 40 caracteres hexadecimais mostrado acima. Não use só os 7 primeiros.
 
 > Revisão automática por evento (vigia dos bots).
 
