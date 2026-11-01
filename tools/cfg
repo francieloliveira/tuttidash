@@ -240,11 +240,28 @@ NOMES_ANTIGOS = {"TranscentIA Lanes (dispatcher)": "TuttiDash Dispatcher",
                  "TranscentIA Bots (vigia)": "TuttiDash Vigia", "TranscentIA Chave Bots": "TuttiDash Chave"}
 
 
+# FRA-613: o app recusa script em ~/.transcentia e some com o job dos Ajustes.
+# A cópia que vale é a do bundle assinado.
+SCRIPTS_ANTIGOS = {
+    ".transcentia/lanes/dispatcher.py": "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/dispatcher.py",
+    ".transcentia/bots/watch.py": "/Applications/TuttiDash.app/Contents/Resources/controle/bots/watch.py",
+    ".transcentia/tools/bots-chave": "/Applications/TuttiDash.app/Contents/Resources/controle/tools/bots-chave",
+}
+
+
 def _renomear_jobs(d):
-    """FRA-523: troca os nomes antigos dos lançadores (Itens de Login) pelos do TuttiDash."""
+    """FRA-523: troca os nomes antigos dos lançadores (Itens de Login) pelos do TuttiDash.
+    FRA-613: script em ~/.transcentia passa para o do bundle."""
     for j in (d.get("agendas", {}) or {}).get("jobs", []) or []:
-        if isinstance(j, dict) and j.get("nome") in NOMES_ANTIGOS:
+        if not isinstance(j, dict):
+            continue
+        if j.get("nome") in NOMES_ANTIGOS:
             j["nome"] = NOMES_ANTIGOS[j["nome"]]
+        script = j.get("script")
+        if isinstance(script, str):
+            for antigo, bundle in SCRIPTS_ANTIGOS.items():
+                if script in ("~/" + antigo, str(Path.home() / antigo)):
+                    j["script"] = bundle
     return d
 
 
