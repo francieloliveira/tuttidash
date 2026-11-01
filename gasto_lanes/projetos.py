@@ -50,6 +50,8 @@ Regras:
   - `antes_do_push`: comando que roda no worktree antes de cada push da lane (ex.: a
     conferência de publicação de um repositório público). Saiu diferente de 0, nada
     é enviado e o card fica com `lane:falhou`. Vazio = sem conferência.
+  - `prova_remota`: `{"pastas_do_app": ["App/", "App.xcodeproj/"]}` diz ao
+    `tools/instalar-prova-remota` quais pastas só o Mac prova (FRA-620).
   - `bancada`: `{"ativo": true}` libera o modo bancada (FRA-618) neste projeto. Só vale
     junto com a etiqueta `lane:bancada` no card e a lane `claude`. Desligado por padrão.
 
@@ -93,12 +95,12 @@ class Projeto:
 
     __slots__ = ("id", "nome", "ativo", "padrao", "repo", "github", "worktrees",
                  "prova", "prova_tentativas", "suites", "protegidos", "copiar_para_worktree", "antes_do_push",
-                 "bancada")
+                 "bancada", "pastas_do_app")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
                  repo: str = "", worktrees: str = "", github: str = "", prova: str = "python3 {suite}",
                  prova_tentativas: int = 1, suites=None, protegidos=None, copiar_para_worktree=None,
-                 antes_do_push: str = "", bancada: bool = False):
+                 antes_do_push: str = "", bancada: bool = False, pastas_do_app=None):
         self.id = id
         self.nome = nome or id
         self.ativo = ativo
@@ -116,6 +118,9 @@ class Projeto:
         # FRA-618: o modo bancada só liga com isto no cadastro (que a lane não escreve),
         # mais a etiqueta `lane:bancada` no card e a lane `claude`.
         self.bancada = bancada is True
+        # FRA-620: pastas que só o Mac prova. A prova-remota no Linux fica vermelha nelas.
+        self.pastas_do_app = [str(p).strip().strip("/") for p in (pastas_do_app or [])
+                              if str(p).strip().strip("/") and ".." not in str(p)]
 
     def comando_prova(self, suite: str) -> str:
         """Comando completo da prova de uma suíte, já com o placeholder trocado.
@@ -185,8 +190,16 @@ def _do_registro(bruto: dict) -> list:
             protegidos=prot if isinstance(prot, list) else None,
             copiar_para_worktree=copiar if isinstance(copiar, list) else None,
             antes_do_push=str(item.get("antes_do_push") or ""),
-            bancada=_bancada_ativa(item.get("bancada"))))
+            bancada=_bancada_ativa(item.get("bancada")),
+            pastas_do_app=_pastas_do_app(item.get("prova_remota"))))
     return saida
+
+
+def _pastas_do_app(bruto) -> list:
+    """`"prova_remota": {"pastas_do_app": [...]}` no cadastro; qualquer outra forma é vazia."""
+    if not isinstance(bruto, dict) or not isinstance(bruto.get("pastas_do_app"), list):
+        return []
+    return [str(p) for p in bruto["pastas_do_app"] if isinstance(p, str)]
 
 
 def _bancada_ativa(bruto) -> bool:

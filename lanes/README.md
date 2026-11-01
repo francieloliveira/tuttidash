@@ -233,3 +233,27 @@ aparelho da porta escolhida. Por isso a etiqueta é do dono, por card. A primeir
 execução do `esptool` baixa a versão fixa do PyPI (fora do sandbox).
 Confirmação de privacidade e assinatura continuam com o dono.
 
+## prova-remota em outros projetos (FRA-620)
+
+O dispatcher só leva o card a In Review com o check `prova-remota` verde no PR
+(FRA-611), e o vigia só mergeia com ele. Projeto cujo app não compila no CI
+(app da Apple em repositório privado, Xcode beta) recebe a prova no Linux:
+
+```bash
+tools/instalar-prova-remota "TranscentIA iOS" --pr      # worktree, commit, push e PR no repo do projeto
+tools/instalar-prova-remota "TranscentIA iOS" --saida /tmp/x   # só gera os arquivos
+```
+
+O modelo fica em `tools/prova-remota-linux/`; o projeto recebe
+`.github/workflows/prova-remota.yml` e `.github/prova-remota/` (script,
+classificador e `config.json`). As pastas do app vêm do cadastro
+(`"prova_remota": {"pastas_do_app": [...]}`).
+
+A prova roda num container de imagem fixa, `--network none`, `--read-only`,
+com o código do PR só leitura. Fica **verde** só quando todos os arquivos do PR
+são Python, shell, docs ou dados fora das pastas do app (compila os `.py`,
+`bash -n` nos `.sh`, roda os `test_*.py` das pastas tocadas). Arquivo do app,
+tipo fora da lista ou `.github/` deixam o check **vermelho** ("precisa da prova
+no Mac"): nunca há verde sem teste. Ponha `.github/*` nos `protegidos` do
+projeto. Para mudar a prova, mude o modelo aqui e reinstale.
+
