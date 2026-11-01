@@ -25,10 +25,11 @@ Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
      (até 2 tarefas ao mesmo tempo, uma por lane; a lane é escolhida pelo dispatcher
      via lanepct-auto, menor %). Menos de 2 cards prontos no Todo -> pede à triagem
      (comentário no Linear).
-  6. PR aberto sem revisão [Revisor] do usuário do gh, citando o SHA completo do
-     head -> revisão (SOLID + erros conhecidos E1..).
+  6. PR aberto -> publica o comentário [Revisor] que o runner limpo já redigiu,
+     citando o SHA completo do head. A IA da revisão não roda neste processo e não vê o home.
 
-A IA (claude -p) só lê e devolve texto; quem publica, mergeia e instala é este script.
+A IA de triagem (claude -p) só lê e devolve texto; quem publica, mergeia e instala é este script.
+A revisão de PR sai do check `revisao-ia` (runner limpo, token de leitura).
 Nunca toca caminhos protegidos — a lista é a do projeto no cadastro (`projetos.py`),
 relida a cada uso. Vai no prompt do agente e, no merge, casa o caminho completo
 do PR (`fnmatch`) com essa lista.
@@ -180,7 +181,7 @@ def _ativar_modulos() -> Path:
     if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
         sys.exit("catalogo não está no bundle; import recusado")
     for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
-                 "proxy_linear.py", "gasto_privado.py"):
+                 "proxy_linear.py", "revisao_ia.py", "gasto_privado.py"):
         arq = pasta / nome
         if not arq.exists():
             continue
@@ -209,6 +210,7 @@ try:
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
     import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
+    import revisao_ia  # noqa: E402
 except ModuleNotFoundError as _falta:  # pragma: no cover - bundle incompleto
     sys.exit(f"{_falta.name} não está no bundle; import recusado")
 try:
@@ -1085,6 +1087,118 @@ def segurar_has_hooks(ci: dict, pr: dict, st: dict, diary: list[str]) -> None:
     log(f"{ci['identifier']} PR #{pr['number']}: HAS_HOOKS, merge seguro, dono chamado")
 
 
+def rollup_de(pr: dict, repo: dict | None = None) -> list:
+    """`statusCheckRollup` já no PR, ou a consulta ao gh quando o campo não veio."""
+    if "statusCheckRollup" in pr:
+        return revisao_ia.normalizar_rollup(pr.get("statusCheckRollup"))
+    repo = repo or REPOS["app"]
+    try:
+        raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "statusCheckRollup"], cwd=repo["dir"])
+        return revisao_ia.normalizar_rollup(json.loads(raw).get("statusCheckRollup"))
+    except (RuntimeError, ValueError, OSError):
+        return []
+
+
+def chamar_dono_revisao(st: dict, ci: dict, pr: dict) -> None:
+    """Check vermelho ou segredo: uma vez por SHA. O texto não leva o corpo da revisão."""
+    sha = str(pr.get("headRefOid") or "")
+    ja = st.setdefault("revisao_ia_dono", {})
+    if sha and ja.get(sha):
+        return
+    if sha:
+        ja[sha] = time.time()
+    add_label(ci["id"], OWNER_LABEL)
+    comment(ci["id"],
+            f"[Gestor] PR #{pr.get('number')} head `{sha}`: o check `{revisao_ia.NOME_DO_CHECK}` "
+            f"não deixou publicar a revisão. Nada de segredo foi para o PR. "
+            f"Veja o check e tire `{OWNER_LABEL}`.")
+
+
+def comentarios_de(pr: dict, repo: dict) -> list[str]:
+    if isinstance(pr.get("comments"), list):
+        return [str(c.get("body") or "") for c in pr["comments"] if isinstance(c, dict)]
+    raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "comments"], cwd=repo["dir"])
+    nodes = json.loads(raw).get("comments") or []
+    return [str(c.get("body") or "") for c in nodes if isinstance(c, dict)]
+
+
+def log_da_revisao(repo: dict, sha: str) -> str:
+    if not revisao_ia.sha_completo(sha):
+        return ""
+    raw = sh(["gh", "run", "list", "--commit", sha, "--workflow", "revisao-ia.yml",
+              "--json", "databaseId,headSha,conclusion", "--limit", "5"],
+             cwd=repo["dir"], check=False)
+    if not raw:
+        return ""
+    try:
+        runs = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    for item in runs if isinstance(runs, list) else []:
+        if str(item.get("headSha") or "").lower() != sha:
+            continue
+        if str(item.get("conclusion") or "").upper() != "SUCCESS":
+            continue
+        ident = str(item.get("databaseId") or "")
+        if not ident.isdigit():
+            continue
+        return sh(["gh", "run", "view", ident, "--log"], cwd=repo["dir"], check=False, timeout=180)
+    return ""
+
+
+def publicar_comentario_redigido(repo: dict, pr: dict, corpo: str) -> None:
+    sha = str(pr.get("headRefOid") or "")
+    if revisao_ia.detectar_segredo(corpo) or not revisao_ia.comentario_deste_sha(corpo, sha):
+        raise RuntimeError("recusei publicar a revisão")
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+        fh.write(corpo)
+        caminho = fh.name
+    try:
+        sh(["gh", "pr", "comment", str(pr["number"]), "--body-file", caminho], cwd=repo["dir"])
+    finally:
+        os.unlink(caminho)
+
+
+def listar_prs_revisao(repo: dict) -> list:
+    raw = sh(["gh", "pr", "list", "--state", "open", "--limit", "30", "--json",
+              "number,title,headRefOid,headRefName,statusCheckRollup"], cwd=repo["dir"])
+    data = json.loads(raw)
+    return data if isinstance(data, list) else []
+
+
+def _publicar_uma_revisao(repo: dict, st: dict, diary: list[str], pr: dict) -> None:
+    sha = str(pr.get("headRefOid") or "")
+    rollup = rollup_de(pr, repo)
+    comentarios: list[str] = []
+    log = ""
+    if revisao_ia.veredito_check(sha, sha, rollup) == "verde":
+        comentarios = comentarios_de(pr, repo)
+        if not any(revisao_ia.comentario_deste_sha(c, sha) for c in comentarios):
+            log = log_da_revisao(repo, sha)
+    acao = revisao_ia.acao_da_revisao(sha, sha, rollup, log, comentarios)
+    if acao["acao"] == "comentar" and acao["corpo"]:
+        publicar_comentario_redigido(repo, pr, acao["corpo"])
+        diary.append(f"Revisor · PR #{pr.get('number')} head `{sha}` publicado do runner limpo")
+        return
+    if acao["acao"] != "dono":
+        return
+    card = card_of(str(pr.get("title") or ""), str(pr.get("headRefName") or ""))
+    ci = issue(card) if card else None
+    if ci:
+        chamar_dono_revisao(st, ci, pr)
+        return
+    panel(f"PR #{pr.get('number')}: revisão remota não publicada; sem card para chamar o dono")
+
+
+def publicar_revisoes_remotas(repo: dict, st: dict, diary: list[str]) -> None:
+    """Publica o comentário já redigido no runner. Segredo ou check vermelho chama o dono."""
+    for pr in listar_prs_revisao(repo):
+        try:
+            _publicar_uma_revisao(repo, st, diary, pr)
+        except Exception as exc:  # noqa: BLE001
+            log(f"revisão remota PR #{pr.get('number')}: {exc}")
+
+
 def merge_ready(st: dict, diary: list[str]) -> None:
     repo = REPOS["app"]
     prs = {card_of(p["title"], p["headRefName"]): p for p in open_prs(repo)}
@@ -1108,6 +1222,16 @@ def merge_ready(st: dict, diary: list[str]) -> None:
             continue  # a revisão pediu ajustes no head atual
         if veredito != "APROVADO":
             segurar_sem_aprovacao(ci, pr, st, diary)
+            continue
+        sha_head = str(pr.get("headRefOid") or "")
+        revisao = revisao_ia.veredito_check(sha_head, sha_head, rollup_de(pr, repo))
+        if revisao == "vermelho":
+            # Check falho bloqueia o merge e chama o dono. O corpo da revisão não entra aqui.
+            chamar_dono_revisao(st, ci, pr)
+            log(f"{ci['identifier']} PR #{pr['number']}: merge bloqueado (check {revisao_ia.NOME_DO_CHECK})")
+            continue
+        if revisao != "verde":
+            log(f"{ci['identifier']} PR #{pr['number']}: merge adiado ({revisao_ia.NOME_DO_CHECK} pendente)")
             continue
         estado = pr.get("mergeStateStatus")
         if estado == "HAS_HOOKS":
@@ -2801,31 +2925,13 @@ def main() -> int:
         step("worktrees", avisar_worktrees_fora, st, diary)
         step("fila", keep_lanes_busy, atuais, st, diary)
         heads_abertos: set[str] = set()
-        for key, repo in REPOS.items():
+        for repo in REPOS.values():
             prs_abertos = open_prs(repo)
             heads_abertos |= {p["headRefOid"] for p in prs_abertos}
             for pr in prs_abertos:
                 avisar_pr_sem_card(pr, st)
-            if runs >= MAX_RUNS_PER_TICK:
-                continue
-            for pr in prs_abertos:
-                if runs >= MAX_RUNS_PER_TICK:
-                    break
-                if not revisao_pode_tentar(st, pr["headRefOid"]):
-                    continue
-                if st["reviewed"].get(pr["headRefOid"]) is None and revisor_ja_revisou(repo, pr):
-                    st["reviewed"][pr["headRefOid"]] = "ja-tinha"
-                    continue
-                runs += 1
-                try:
-                    if review_pr(key, repo, pr, st, diary) is False:
-                        runs -= 1  # só esperou quem confirma: não gastou IA, não conta no ciclo
-                except Exception as exc:  # noqa: BLE001
-                    log(f"revisão PR #{pr['number']} falhou: {exc}")
-                    if agent_paused():
-                        continue  # limite da conta: não marca, revisa quando a conta voltar
-                    st["reviewed"][pr["headRefOid"]] = f"erro {datetime.now():%m-%d %H:%M}"
-                    st.setdefault("erros_revisao", {})[pr["headRefOid"]] = time.time()
+            # FRA-612: a revisão de IA roda no runner limpo. Aqui só se publica o texto já redigido.
+            step("revisao remota", publicar_revisoes_remotas, repo, st, diary)
         limpar_revisoes_fechadas(st, heads_abertos)
     except Exception as exc:  # noqa: BLE001
         log(f"tick falhou: {exc}")

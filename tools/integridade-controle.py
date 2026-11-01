@@ -51,6 +51,7 @@ COPIAS = (
     ("gasto_lanes/fila.py", "gasto_lanes/fila.py", 0o644),
     ("gasto_lanes/config.py", "gasto_lanes/config.py", 0o644),
     ("gasto_lanes/proxy_linear.py", "gasto_lanes/proxy_linear.py", 0o644),
+    ("gasto_lanes/revisao_ia.py", "gasto_lanes/revisao_ia.py", 0o644),
 )
 PRIVADO = (
     "apps/notch-mac/Privado/python/gasto_privado.py",

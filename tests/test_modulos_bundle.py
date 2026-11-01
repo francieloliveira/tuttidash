@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = "/usr/bin/python3"
 MODULOS = ("catalogo.py", "projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
-           "proxy_linear.py")
+           "proxy_linear.py", "revisao_ia.py")
 
 GANCHO = (
     "\nimport os as _fra_os, sys as _fra_sys\n"

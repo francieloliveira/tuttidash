@@ -57,6 +57,33 @@ Timeout ou erro chama o dono. PR em rascunho não é mergeado.
 Não limita a lane. A lane continua rodando como o dono da máquina e pode ler
 `~/.ssh` e `~/.config/gh`.
 
+## Remote review / Revisão remota
+
+Pull requests into `main` also run the check `revisao-ia`. The workflow is
+`pull_request` (never `pull_request_target`), with `contents: read` and no
+secrets. The reviewer script is the git blob `scripts/revisao-ia.sh` at the
+base SHA. It receives the diff and the pull request context. It does not
+receive the home directory, and it has no Bash, no global Read, no `security`
+and no write-capable `gh`. The output is redacted before a comment is
+published. If a secret is detected, the comment is not published and the
+owner is called. The `[Revisor]` comment carries the full head SHA.
+
+Branch protection on `main` has to require the check `revisao-ia` before
+merge. This workflow does not create that ruleset: the token cannot change
+branch protection. A failed check blocks the merge.
+
+PRs para a `main` também rodam o check `revisao-ia`. O workflow dispara em
+`pull_request` (nunca `pull_request_target`), com `contents: read` e sem
+secrets. O script é o blob `scripts/revisao-ia.sh` no SHA da base. Ele recebe
+o diff e o contexto do PR. Não recebe o home, e não tem Bash, Read global,
+`security` nem `gh` de escrita. A saída é redigida antes do comentário. Se
+detectar segredo, o comentário não sai e o dono é chamado. O comentário
+`[Revisor]` traz o SHA completo do head.
+
+A proteção da `main` tem de exigir o check `revisao-ia` antes do merge. Este
+workflow não cria esse ruleset: o token não altera a proteção da branch.
+Check vermelho bloqueia o merge.
+
 ## Reviewer approval and DONE (FRA-593)
 
 A `[Revisor]` comment approves a head only when GitHub reports that the authenticated `gh` user wrote it (`viewerDidAuthor`, or `author.login` of that user when the flag is absent) and the comment cites that head as a full 40-hex SHA. Equality, not a prefix: seven hex digits do not approve. A `DONE` comment on the card counts only when its `user.id` is the Linear token's `viewer.id` and the SHA is the full head. That viewer id is read from the token. It is not a config field.

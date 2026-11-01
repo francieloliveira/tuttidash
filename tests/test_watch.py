@@ -1480,18 +1480,24 @@ class MergeSoClean(unittest.TestCase):
             return self.arquivos
         return ""
 
+    SHA = "abc1234" + ("f" * 33)
+
     def _pr(self, **extra):
-        pr = {"number": 7, "headRefOid": "abc1234ffff" + "0" * 29, "headRefName": "lane/fra-7",
+        pr = {"number": 7, "headRefOid": self.SHA, "headRefName": "lane/fra-7",
               "title": "FRA-7 algo", "mergeStateStatus": "CLEAN",
               "body": "dispatcher → verde", "labels": [],
-              "statusCheckRollup": [{"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}]}
+              "statusCheckRollup": [
+                  {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"},
+                  {"name": watch.revisao_ia.NOME_DO_CHECK, "status": "COMPLETED",
+                   "conclusion": "SUCCESS", "sha": self.SHA},
+              ]}
         pr.update(extra)
         return pr
 
     def _ci(self):
         return {"id": "id-7", "identifier": "FRA-7", "sortOrder": 1,
                 "labels": {"nodes": []},
-                "comments": {"nodes": [{"id": "c1", "body": "DONE " + ("abc1234ffff" + "0" * 29) + "\n\nok",
+                "comments": {"nodes": [{"id": "c1", "body": "DONE " + self.SHA + "\n\nok",
                                        "user": {"id": "viewer-teste"}}]}}
 
     def _rodar(self, st=None):
@@ -1566,6 +1572,43 @@ class MergeSoClean(unittest.TestCase):
         self.arquivos = ".github/workflows/ci.yml\n"
         self.assertEqual(watch.pr_paths({"number": 7}), [".github/workflows/ci.yml"])
         self.assertEqual(watch.pr_files({"number": 7}), {"ci.yml"})
+
+    def test_check_vermelho_bloqueia_merge_e_chama_o_dono(self):
+        self.pr = self._pr(statusCheckRollup=[
+            {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"},
+            {"name": watch.revisao_ia.NOME_DO_CHECK, "status": "COMPLETED",
+             "conclusion": "FAILURE", "sha": self.SHA},
+        ])
+        st = self._rodar()
+        self.assertFalse(self._mergeou())
+        self.assertEqual(self.labels, [watch.OWNER_LABEL])
+        self.assertNotIn("SENTINEL-SSH-NAO-PUBLICAR", self.comentarios[0])
+        self.labels.clear()
+        self.comentarios.clear()
+        self.chamadas.clear()
+        self._rodar(st)
+        self.assertFalse(self._mergeou())
+        self.assertEqual(self.labels, [])
+        self.assertEqual(self.comentarios, [])
+
+    def test_check_de_outro_sha_nao_mergeia(self):
+        outro = "b" * 40
+        self.pr = self._pr(statusCheckRollup=[
+            {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"},
+            {"name": watch.revisao_ia.NOME_DO_CHECK, "status": "COMPLETED",
+             "conclusion": "SUCCESS", "sha": outro},
+        ])
+        self._rodar()
+        self.assertFalse(self._mergeou())
+        self.assertEqual(self.labels, [])
+
+    def test_check_ausente_nao_mergeia(self):
+        self.pr = self._pr(statusCheckRollup=[
+            {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"},
+        ])
+        self._rodar()
+        self.assertFalse(self._mergeou())
+        self.assertEqual(self.labels, [])
 
 
 class CompilaNoPython39Test(unittest.TestCase):

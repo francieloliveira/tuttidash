@@ -14,7 +14,7 @@ trabalhar de um desenvolvedor, e isso aparece. [Read in English](README.md).
 | Parte | Onde | O que faz |
 |---|---|---|
 | Dispatcher | `lanes/dispatcher.py` | A cada 60 s pega um card pronto do projeto no Linear, cria o worktree e roda o agente sem interface no tmux (Claude Code, Codex, OpenCode, DeepSeek Harness, Grok CLI…). Faz o push e abre o PR em rascunho. O card só vai para *In Review* quando o check remoto `prova-remota` está verde no SHA completo. Prova local e comentário DONE não autorizam essa passagem. Timeout ou erro chama o dono. O agente não fala com o Linear nem com o GitHub. |
-| Vigia | `bots/watch.py` | Revisa os PRs, faz o merge quando a prova está verde, faz a triagem das lanes paradas ou com falha e só chama o dono (etiqueta `needs:dono`) quando a mesma falha se repete. A IA só lê e devolve texto (`claude -p`, modelo local ou OpenCode); quem age é o script. |
+| Vigia | `bots/watch.py` | Faz o merge quando a prova remota e a revisão no runner limpo estão verdes, faz a triagem das lanes paradas ou com falha e chama o dono (etiqueta `needs:dono`) quando a revisão acha segredo ou a mesma falha pede uma pessoa. A revisão de IA roda no GitHub Actions, não neste processo. |
 | App do notch | `apps/notch-mac` | App SwiftUI/AppKit no notch e na barra de menus: lanes, builds, testes, entregas, custo tirado dos logs das lanes, limites de conta quando há fonte oficial, e os Ajustes. |
 | CLI `gasto` | `gasto.py`, `gasto_lanes/` | Ledger de custo a partir dos logs das lanes, por dia, semana, card e lane. Veja [docs/gasto.md](docs/gasto.md). |
 | Catálogo de agentes | `agents.d/*.json` | Um manifesto por agente (CLI, tipo de custo, modelos por esforço, comando de revisão). O Python e o Swift leem os mesmos arquivos. |
@@ -110,6 +110,16 @@ dele não rodam. O check fica no SHA completo do head.
 
 Esse check é a prova do merge quando a proteção da `main` o exige. A lane continua
 rodando como o dono da máquina.
+
+## Revisão remota
+
+Um PR para a `main` também roda `revisao-ia` num runner limpo do GitHub Actions.
+O workflow é `pull_request`, com permissão só de leitura e sem secrets. O revisor
+recebe o diff e o contexto do PR. Não recebe o home, nem Bash, nem Read global,
+nem `security`, nem `gh` de escrita. O comentário é redigido antes de sair. Segredo
+detectado não é publicado, e o dono é chamado. O comentário `[Revisor]` traz o SHA
+completo. A proteção da branch precisa exigir o check `revisao-ia`; este repositório
+não cria esse ruleset. Check vermelho bloqueia o merge.
 
 ## Estrutura
 

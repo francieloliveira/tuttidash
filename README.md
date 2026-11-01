@@ -15,7 +15,7 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
 | Part | Where | What it does |
 |---|---|---|
 | Dispatcher | `lanes/dispatcher.py` | Every 60 s it takes a ready card from the Linear project, creates a worktree and runs the agent headless in tmux (Claude Code, Codex, OpenCode, DeepSeek Harness, Grok CLI…). It pushes and opens a draft PR. The card moves to *In Review* only after the remote check `prova-remota` is green on the full head SHA. A local proof or a DONE comment is not authority. Timeout or error calls the owner. The agent itself never talks to Linear or GitHub. |
-| Watcher | `bots/watch.py` | Reviews PRs, merges when the proof is green, triages stopped or failed lanes and only calls the owner (`needs:dono` label) after the same failure repeats. The AI only reads and returns text (`claude -p`, local model or OpenCode); the script does every action. |
+| Watcher | `bots/watch.py` | Merges when the remote proof and the clean-runner review are green, triages stopped or failed lanes and calls the owner (`needs:dono`) when a review secret or a repeated failure needs a person. The AI review runs on GitHub Actions, not in this process. |
 | Notch app | `apps/notch-mac` | SwiftUI/AppKit app in the notch and menu bar: lanes, builds, tests, deliveries, cost from the lane logs, account limits where an official source exists, and the settings. |
 | `gasto` CLI | `gasto.py`, `gasto_lanes/` | Cost ledger built from the lane logs, by day, week, card and lane. See [docs/gasto.md](docs/gasto.md). |
 | Agent catalog | `agents.d/*.json` | One manifest per agent (CLI, cost type, models per effort, review command). Python and Swift read the same files. |
@@ -112,6 +112,17 @@ head SHA.
 
 That check is the proof of the merge once branch protection on `main` requires it.
 A lane still runs as the owner of the machine.
+
+## Remote review
+
+A pull request into `main` also runs `revisao-ia` on a clean GitHub-hosted runner.
+The workflow is `pull_request`, with read-only contents permission and no secrets.
+The reviewer gets the diff and the pull request context. It does not get the home
+directory, Bash, a global Read, `security` or a write-capable `gh`. The comment is
+redacted before it is published. A detected secret is not published, and the owner
+is called. The `[Revisor]` comment includes the full head SHA. Branch protection
+has to require the check `revisao-ia`; this repository does not create that ruleset.
+A failed check blocks the merge.
 
 ## Project layout
 
