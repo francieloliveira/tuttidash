@@ -30,6 +30,10 @@ final class EstadoProjetos: ObservableObject {
     @Published var avisoGitHub: String?
     @Published var carregandoListas = false
     @Published var clonando: UUID?
+    /// FRA-620: se o repositório de cada projeto tem o check `prova-remota`, por id do Linear.
+    @Published var provaRemota: [String: ProvaRemotaProjeto.Estado] = [:]
+    @Published var instalandoProva: String?
+    @Published var avisoProva: [String: String] = [:]
 
     init(modelo: ModeloAjustes, servico: ServicoLinear = ServicoLinear(), tokens: TokenLinear = TokenLinear()) {
         self.modelo = modelo
@@ -70,6 +74,34 @@ final class EstadoProjetos: ObservableObject {
         erro = nil
         aviso = texto ?? String(localized: "Salvo. As lanes usam isso a partir do próximo ciclo (até 60 s).")
         return true
+    }
+
+    /// Confere a prova remota de cada projeto gravado, fora da thread da interface.
+    func conferirProvaRemota() async {
+        let lista = projetos.map { ($0.projetoID, $0.repo) }
+        let home = modelo.home
+        let achados = await Task.detached {
+            Dictionary(lista.map { ($0.0, ProvaRemotaProjeto.estado(repo: $0.1, home: home)) },
+                       uniquingKeysWith: { a, _ in a })
+        }.value
+        provaRemota = achados
+    }
+
+    /// Só no clique: o instalador do bundle gera a prova no projeto e abre o PR no repositório dele.
+    func instalarProvaRemota(_ projetoID: String) async {
+        guard let cmd = ProvaRemotaProjeto.comandoInstalar(projetoID: projetoID) else {
+            avisoProva[projetoID] = String(localized: "O instalador não está no app. Reinstale o TuttiDash.")
+            return
+        }
+        instalandoProva = projetoID
+        defer { instalandoProva = nil }
+        let r = await Task.detached {
+            Subprocesso.rodar(cmd[0], Array(cmd.dropFirst()), ambiente: ProvaRemotaProjeto.ambiente)
+        }.value
+        let texto = r.texto.trimmingCharacters(in: .whitespacesAndNewlines)
+        avisoProva[projetoID] = r.codigo == 0
+            ? String(localized: "PR aberto no repositório do projeto. A prova vale depois do merge: \(texto)")
+            : (texto.isEmpty ? String(localized: "A instalação falhou (código \(r.codigo)).") : texto)
     }
 
     /// Carrega as duas listas fora da thread da interface.
@@ -270,7 +302,10 @@ struct SecaoProjetos: View {
                 }
             }
         }
-        .task { await estado.carregarListas() }
+        .task {
+            await estado.carregarListas()
+            await estado.conferirProvaRemota()
+        }
     }
 
     @ViewBuilder
@@ -384,6 +419,8 @@ private struct LinhaProjeto: View {
         campoPasta
         TextField(String(localized: "Nome"), text: $linha.rascunho.nome, prompt: Text(String(localized: "Como aparece no TuttiDash")))
         campoProva
+        campoBancada
+        campoProvaRemota
         DisclosureGroup(String(localized: "Avançado")) {
             TextField(String(localized: "Pasta dos worktrees"), text: $linha.rascunho.worktrees,
                       prompt: Text(p.repo.isEmpty ? String(localized: "vazio = <pasta>-worktrees") : p.worktreesEfetivo))
@@ -400,6 +437,45 @@ private struct LinhaProjeto: View {
                         valores: $linha.rascunho.copiarParaWorktree)
         }
         acoes
+    }
+
+    /// FRA-618: só libera; quem usa é o card com a etiqueta `lane:bancada`, na lane claude.
+    private var campoBancada: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Toggle(String(localized: "Modo bancada (hardware na USB)"), isOn: $linha.rascunho.bancada)
+            Text(String(localized: "Ligado, os cards com a etiqueta lane:bancada dão à lane claude só o comando bancada: listar portas USB, ler o chip, gravar um .bin do worktree e ler a serial por até 120 s. Cada uso fica registrado. Rede, Docker e shell continuam fechados."))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// FRA-620: sem o check, o card não chega a In Review nem é mergeado.
+    @ViewBuilder private var campoProvaRemota: some View {
+        if let s = linha.salvo {
+            let estadoProva = estado.provaRemota[s.projetoID]
+            VStack(alignment: .leading, spacing: 3) {
+                LabeledContent(String(localized: "Prova remota")) {
+                    HStack(spacing: 8) {
+                        Text(estadoProva?.rotulo ?? String(localized: "conferindo…"))
+                            .foregroundStyle(estadoProva == .instalada ? Color.secondary : (estadoProva == nil ? .secondary : .orange))
+                        if estadoProva == .falta {
+                            if estado.instalandoProva == s.projetoID {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Button(String(localized: "Instalar")) {
+                                    Task { await estado.instalarProvaRemota(s.projetoID) }
+                                }
+                                .disabled(s.github.isEmpty || estado.instalandoProva != nil)
+                                .help(String(localized: "Gera a prova no repositório do projeto e abre um PR. O merge é seu."))
+                            }
+                        }
+                    }
+                }
+                if let aviso = estado.avisoProva[s.projetoID] {
+                    Text(aviso).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 
     @ViewBuilder private var campoLinear: some View {

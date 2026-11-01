@@ -13,6 +13,7 @@ public enum ScriptsDoBundle {
         "lanes/run_lane.sh",
         "bots/watch.py",
         "tools/bots-chave",
+        "tools/instalar-prova-remota",
     ]
 
     /// Caminho no bundle deste processo, se o arquivo estiver lá e for legível.

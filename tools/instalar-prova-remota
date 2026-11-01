@@ -21,6 +21,7 @@ a lane não pode alterar a própria prova.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,8 @@ MODELO = RAIZ / "tools" / "prova-remota-linux"
 sys.path.insert(0, str(RAIZ / "gasto_lanes"))
 import projetos  # noqa: E402
 
+# O app chama este script fora do terminal: git e gh vêm de um PATH fixo.
+AMBIENTE = dict(os.environ, PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
 BRANCH = "tuttidash/prova-remota"
 TITULO = "[TuttiDash] prova-remota no Linux (FRA-620)"
 ARQUIVOS = {
@@ -71,7 +74,7 @@ def gravar(p, destino: Path) -> list[str]:
 
 
 def git(args: list[str], cwd: Path, check: bool = True) -> str:
-    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=AMBIENTE)
     if check and r.returncode:
         raise SystemExit(f"git {' '.join(args)} falhou: {r.stderr.strip()[:300]}")
     return r.stdout.strip()
@@ -118,18 +121,29 @@ def abrir_pr(p) -> str:
     git(["push", "-q", "-f", "-u", "origin", f"HEAD:{BRANCH}"], wt)
     existente = subprocess.run(
         ["gh", "pr", "list", "--repo", p.github, "--head", BRANCH, "--state", "open", "--json", "url",
-         "--jq", ".[0].url"], capture_output=True, text=True).stdout.strip()
+         "--jq", ".[0].url"], capture_output=True, text=True, env=AMBIENTE).stdout.strip()
     if existente:
         return f"PR atualizado: {existente}"
     r = subprocess.run(["gh", "pr", "create", "--repo", p.github, "--base", "main", "--head", BRANCH,
                         "--title", TITULO, "--body", corpo_do_pr(p, arquivos)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=AMBIENTE)
     if r.returncode:
         raise SystemExit(f"gh pr create falhou: {r.stderr.strip()[:300]}")
     return r.stdout.strip()
 
 
 def main(argv: list[str]) -> int:
+    # O app só lê o stdout: o motivo de uma recusa sai por ele, com código 1.
+    try:
+        return _main(argv)
+    except SystemExit as exc:
+        if isinstance(exc.code, str):
+            print(f"erro: {exc.code}")
+            return 1
+        raise
+
+
+def _main(argv: list[str]) -> int:
     if len(argv) == 3 and argv[1] == "--saida":
         p = achar_projeto(argv[0])
         for rel in gravar(p, Path(argv[2])):
