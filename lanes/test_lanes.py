@@ -6,6 +6,7 @@ import datetime as dt
 import fcntl
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -162,6 +163,30 @@ class CopiarParaWorktree(unittest.TestCase):
         self.assertEqual(list(self.wt.iterdir()), [])
 
 
+def isolar_home(teste: unittest.TestCase, raiz: Path) -> Path:
+    """HOME e XDG só deste teste, sem GIT_DIR nem GIT_CONFIG_* do ambiente."""
+    home = raiz / "home"
+    (home / "xdg").mkdir(parents=True)
+    chaves = ["HOME", "XDG_CONFIG_HOME"]
+    chaves += [k for k in os.environ if k in ("GIT_DIR", "GIT_WORK_TREE") or k.startswith("GIT_CONFIG")]
+    antigo = {k: os.environ.get(k) for k in chaves}
+    for k in chaves:
+        if k not in ("HOME", "XDG_CONFIG_HOME"):
+            os.environ.pop(k, None)
+    os.environ["HOME"] = str(home)
+    os.environ["XDG_CONFIG_HOME"] = str(home / "xdg")
+
+    def restaurar() -> None:
+        for chave, valor in antigo.items():
+            if valor is None:
+                os.environ.pop(chave, None)
+            else:
+                os.environ[chave] = valor
+
+    teste.addCleanup(restaurar)
+    return home
+
+
 class TravaAntesDoPush(unittest.TestCase):
     """Nada vai para o origin sem a main atual na história nem com a conferência vermelha."""
 
@@ -172,12 +197,16 @@ class TravaAntesDoPush(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        home = isolar_home(self, self.tmp)
         origem, self.wt = self.tmp / "origem.git", self.tmp / "wt"
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origem)], check=True)
         subprocess.run(["git", "clone", "-q", str(origem), str(self.wt)], check=True, capture_output=True)
-        # O origin fica com o link do GitHub; o git troca pelo caminho local ao buscar e enviar.
+        # O origin fica com o link do GitHub. O insteadOf que aponta para o bare
+        # local fica no HOME do teste: no config da pasta, reescrever o GitHub é recusado.
         self.git("remote", "set-url", "origin", "https://github.com/dono/app.git", cwd=self.wt)
-        self.git("config", f"url.{origem}.insteadOf", "https://github.com/dono/app.git", cwd=self.wt)
+        (home / ".gitconfig").write_text(
+            f'[url "{origem}"]\n\tinsteadOf = https://github.com/dono/app.git\n',
+            encoding="utf-8")
         (self.wt / "a.txt").write_text("a", encoding="utf-8")
         self.git("add", "a.txt", cwd=self.wt)
         self.git("commit", "-q", "-m", "main", cwd=self.wt)
@@ -216,6 +245,347 @@ class TravaAntesDoPush(unittest.TestCase):
         self.assertIn("achou nome pessoal", motivo)
 
 
+class UrlExplicitaDoCadastro(unittest.TestCase):
+    """A URL de push sai do `dono/repo` do cadastro, no esquema do origin."""
+
+    def test_https_quando_o_origin_e_https_ou_http(self):
+        self.assertEqual(d.url_explicita("dono/app", "https://github.com/Dono/App.git"),
+                         "https://github.com/dono/app.git")
+        self.assertEqual(d.url_explicita("https://github.com/Dono/App", "http://github.com/dono/app.git"),
+                         "https://github.com/dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", ""), "https://github.com/dono/app.git")
+
+    def test_ssh_no_formato_do_origin(self):
+        self.assertEqual(d.url_explicita("dono/app", "git@github.com:Dono/App.git"),
+                         "git@github.com:dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", "ssh://git@github.com/Dono/App.git"),
+                         "ssh://git@github.com/dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", "ssh://git@ssh.github.com:443/Dono/App.git"),
+                         "ssh://git@ssh.github.com:443/dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", "git@ssh.github.com:Dono/App.git"),
+                         "git@ssh.github.com:dono/app.git")
+
+    def test_host_que_nao_e_github_nao_sai_na_url(self):
+        self.assertEqual(d.url_explicita("dono/app", "git@gitlab.com:dono/app.git"),
+                         "git@github.com:dono/app.git")
+        self.assertEqual(d.url_explicita("dono/app", "ssh://git@gitlab.com/dono/app.git"),
+                         "ssh://git@github.com/dono/app.git")
+
+    def test_slug_ilegivel_nao_vira_url(self):
+        self.assertEqual(d.url_explicita("", "https://github.com/dono/app.git"), "")
+        self.assertEqual(d.url_explicita("so-um-pedaco", "https://github.com/dono/app.git"), "")
+
+    def test_insteadof_que_rewescreve_o_github(self):
+        self.assertTrue(d._reescreve_github("https://github.com/outro/repo.git"))
+        self.assertTrue(d._reescreve_github("https://github.co"))
+        self.assertTrue(d._reescreve_github("git@github.com:dono/app.git"))
+        self.assertTrue(d._reescreve_github("http"))
+        self.assertFalse(d._reescreve_github("https://gitlab.com/dono/app.git"))
+        self.assertFalse(d._reescreve_github("https://github.com.evil.com/x"))
+        self.assertFalse(d._reescreve_github(""))
+
+    def test_ambiente_git_limpa_dir_e_config(self):
+        os.environ["GIT_DIR"] = "/tmp/outro"
+        os.environ["GIT_WORK_TREE"] = "/tmp/outro"
+        os.environ["GIT_CONFIG_COUNT"] = "1"
+        os.environ["GIT_CONFIG_KEY_0"] = "core.sshCommand"
+        os.environ["GIT_CONFIG_VALUE_0"] = "evil"
+        try:
+            env = d.ambiente_git()
+        finally:
+            for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
+                os.environ.pop(k, None)
+        self.assertNotIn("GIT_DIR", env)
+        self.assertNotIn("GIT_WORK_TREE", env)
+        self.assertFalse(any(k.startswith("GIT_CONFIG") for k in env))
+        self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+
+    def test_argv_git_desliga_hooks_e_deixa_o_resto(self):
+        # FRA-608: o binário é absoluto (fora de ~/.local/bin) e o hook continua desligado.
+        self.assertEqual(d.argv_git(["git", "fetch", "-q", "origin", "main"])[:3],
+                         [d.GIT, "-c", "core.hooksPath=/dev/null"])
+        self.assertEqual(d.argv_git(["git", "push", "-q", "https://github.com/dono/app.git", "HEAD:b"])[:3],
+                         [d.GIT, "-c", "core.hooksPath=/dev/null"])
+        self.assertTrue(os.path.isabs(d.argv_git(["git", "status"])[0]))
+        self.assertEqual(d.argv_git(["gh", "pr", "view"]), ["gh", "pr", "view"])
+
+
+class PushSoParaOCadastro(unittest.TestCase):
+    """FRA-594: pushurl não entrega no outro remote; helper não roda; push limpo chega no cadastro."""
+
+    def git(self, *args, cwd):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd,
+                       check=True, capture_output=True, text=True)
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = isolar_home(self, self.tmp)
+        self.esperado = self.tmp / "esperado.git"
+        self.atacante = self.tmp / "atacante.git"
+        self.wt = self.tmp / "wt"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.esperado)], check=True)
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.atacante)], check=True)
+        subprocess.run(["git", "clone", "-q", str(self.esperado), str(self.wt)], check=True, capture_output=True)
+        (self.wt / "a.txt").write_text("a\n", encoding="utf-8")
+        self.git("add", "a.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "main", cwd=self.wt)
+        self.git("push", "-q", "origin", "HEAD:main", cwd=self.wt)
+        self.git("remote", "set-url", "origin", "https://github.com/dono/app.git", cwd=self.wt)
+        (self.home / ".gitconfig").write_text(
+            f'[url "{self.esperado}"]\n\tinsteadOf = https://github.com/dono/app.git\n',
+            encoding="utf-8")
+        self.git("checkout", "-q", "-b", "fra-1", cwd=self.wt)
+        (self.wt / "b.txt").write_text("b\n", encoding="utf-8")
+        self.git("add", "b.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "lane", cwd=self.wt)
+        self.conf = mock.patch.object(d, "projeto", lambda: d.projetos.Projeto(
+            id="x", repo=str(self.wt), github="dono/app"))
+        self.conf.start()
+        self.addCleanup(self.conf.stop)
+
+    def _tem(self, bare: Path, branch: str) -> bool:
+        r = subprocess.run(
+            ["git", "--git-dir", str(bare), "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+            capture_output=True, text=True)
+        return r.returncode == 0
+
+    def _script(self, nome: str, marcador: Path) -> Path:
+        script = self.tmp / nome
+        script.write_text(f"#!/bin/sh\ntouch {marcador}\n", encoding="utf-8")
+        script.chmod(0o755)
+        return script
+
+    def test_pushurl_recusado_e_o_outro_remote_nao_recebe(self):
+        self.git("config", "remote.origin.pushurl", str(self.atacante), cwd=self.wt)
+        self.assertIn("pushurl", d.motivo_para_nao_enviar(self.wt))
+        self.assertIn("pushurl", d.enviar_branch(self.wt, "fra-1"))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+        self.assertFalse(self._tem(self.esperado, "fra-1"))
+
+    def test_credential_helper_malicioso_nao_executa(self):
+        marcador = self.tmp / "helper-rodou"
+        script = self._script("helper.sh", marcador)
+        self.git("config", "credential.helper", f"!/bin/sh {script}", cwd=self.wt)
+        marcador.unlink(missing_ok=True)
+        self.assertIn("credential.helper", d.motivo_para_nao_enviar(self.wt))
+        self.assertIn("credential.helper", d.enviar_branch(self.wt, "fra-1"))
+        self.assertFalse(marcador.exists())
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+        self.assertFalse(self._tem(self.esperado, "fra-1"))
+
+    def test_push_normal_cai_no_repo_esperado(self):
+        self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+        with mock.patch.object(d, "sh", wraps=d.sh) as espiao:
+            self.assertEqual(d.enviar_branch(self.wt, "fra-1"), "")
+        argv = [c.args[0] for c in espiao.call_args_list]
+        self.assertIn(["git", "push", "-q", "https://github.com/dono/app.git", "HEAD:fra-1"], argv)
+        self.assertFalse(any(item == "-u" for lista in argv for item in lista))
+        self.assertTrue(self._tem(self.esperado, "fra-1"))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+        remoto = subprocess.run(["git", "config", "--get", "branch.fra-1.remote"], cwd=self.wt,
+                                check=True, capture_output=True, text=True).stdout.strip()
+        merge = subprocess.run(["git", "config", "--get", "branch.fra-1.merge"], cwd=self.wt,
+                               check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(remoto, "origin")
+        self.assertEqual(merge, "refs/heads/fra-1")
+
+    def test_upstream_de_branch_com_barra_aponta_para_origin(self):
+        self.git("checkout", "-q", "-b", "dono/fra-1", cwd=self.wt)
+        (self.wt / "c.txt").write_text("c\n", encoding="utf-8")
+        self.git("add", "c.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "barra", cwd=self.wt)
+        self.assertEqual(d.enviar_branch(self.wt, "dono/fra-1"), "")
+        remoto = subprocess.run(["git", "config", "--get", "branch.dono/fra-1.remote"], cwd=self.wt,
+                                check=True, capture_output=True, text=True).stdout.strip()
+        merge = subprocess.run(["git", "config", "--get", "branch.dono/fra-1.merge"], cwd=self.wt,
+                               check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(remoto, "origin")
+        self.assertEqual(merge, "refs/heads/dono/fra-1")
+        self.assertTrue(self._tem(self.esperado, "dono/fra-1"))
+
+    def test_chaves_que_desviam_ou_executam_sao_recusadas(self):
+        marcador = self.tmp / "executou"
+        script = self._script("exec.sh", marcador)
+        cfg = self.wt / ".git" / "config"
+        original = cfg.read_text(encoding="utf-8")
+        casos = [
+            ("core.sshCommand", f"/bin/sh {script}", "sshCommand"),
+            ("core.fsmonitor", str(script), "fsmonitor"),
+            ("include.path", str(self.tmp / "outro.gitconfig"), "include"),
+            ("filter.evil.clean", str(script), "filter"),
+        ]
+        for chave, valor, trecho in casos:
+            with self.subTest(chave=chave):
+                self.git("config", chave, valor, cwd=self.wt)
+                try:
+                    marcador.unlink(missing_ok=True)
+                    self.assertIn(trecho, d.motivo_para_nao_enviar(self.wt))
+                    self.assertIn(trecho, d.enviar_branch(self.wt, "fra-1"))
+                    self.assertFalse(marcador.exists())
+                    self.assertFalse(self._tem(self.atacante, "fra-1"))
+                finally:
+                    cfg.write_text(original, encoding="utf-8")
+                    marcador.unlink(missing_ok=True)
+
+    def test_insteadof_para_outro_repo_github_e_recusado(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8")
+            + '\n[url "https://github.com/outro/repo.git"]\n'
+            + "\tinsteadOf = https://github.com/dono/app.git\n",
+            encoding="utf-8")
+        self.assertIn("insteadOf", d.motivo_para_nao_enviar(self.wt))
+
+    def test_pushinsteadof_para_outro_host_e_recusado(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8")
+            + f'\n[url "{self.atacante}"]\n'
+            + "\tpushInsteadOf = https://github.com/dono/app.git\n",
+            encoding="utf-8")
+        self.assertIn("pushInsteadOf", d.motivo_para_nao_enviar(self.wt))
+        self.assertIn("pushInsteadOf", d.enviar_branch(self.wt, "fra-1"))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+
+    def test_insteadof_que_nao_e_github_nao_barra(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8")
+            + '\n[url "https://exemplo.invalid/"]\n'
+            + "\tinsteadOf = https://gitlab.com/\n",
+            encoding="utf-8")
+        self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+
+    def test_pushurl_escrito_a_mao_com_aspas_e_recusado(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8") + f'\n[remote "origin"]\n\tpushURL = "{self.atacante}"\n',
+            encoding="utf-8")
+        self.assertIn("pushurl", d.motivo_para_nao_enviar(self.wt))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+
+    def test_prefixo_curto_de_github_e_recusado(self):
+        cfg = self.wt / ".git" / "config"
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8") + '\n[url "/tmp/x"]\n\tinsteadOf = https://github.co\n',
+            encoding="utf-8")
+        self.assertIn("insteadOf", d.motivo_para_nao_enviar(self.wt))
+
+    def test_comentario_no_valor_sem_aspas_nao_esconde_o_prefixo(self):
+        """`#` e `;` comentam até o fim da linha. O git vê o prefixo; o guard também."""
+        self.assertEqual(d._valor_config("https://github.com#x"), "https://github.com")
+        self.assertEqual(d._valor_config("https://github.co;m"), "https://github.co")
+        self.assertEqual(d._valor_config('"https://github.com#x"'), "https://github.com#x")
+        cfg = self.wt / ".git" / "config"
+        original = cfg.read_text(encoding="utf-8")
+        casos = (
+            ("insteadOf", "https://github.com#x", "insteadOf"),
+            ("pushInsteadOf", "https://github.co;m", "pushInsteadOf"),
+        )
+        for chave, valor, trecho in casos:
+            with self.subTest(valor=valor):
+                for bare in (self.atacante, self.esperado):
+                    subprocess.run(
+                        ["git", "--git-dir", str(bare), "update-ref", "-d", "refs/heads/fra-1"],
+                        check=False, capture_output=True)
+                cfg.write_text(
+                    original + f'\n[url "{self.atacante}"]\n\t{chave} = {valor}\n',
+                    encoding="utf-8")
+                self.assertIn(trecho, d.motivo_para_nao_enviar(self.wt))
+                self.assertIn(trecho, d.enviar_branch(self.wt, "fra-1"))
+                self.assertFalse(self._tem(self.atacante, "fra-1"))
+                self.assertFalse(self._tem(self.esperado, "fra-1"))
+
+    def test_fechamento_nao_roda_helper_nem_fsmonitor(self):
+        """O guard recusa antes do git do fechamento, do resumo e do fail."""
+        marcador = self.tmp / "fechamento-rodou"
+        script = self._script("fechamento.sh", marcador)
+        self.git("config", "credential.helper", f"!/bin/sh {script}", cwd=self.wt)
+        self.git("config", "core.fsmonitor", str(script), cwd=self.wt)
+        marcador.unlink(missing_ok=True)
+        d.git_summary(self.wt)
+        self.assertFalse(marcador.exists(), "git_summary rodou o script do config")
+
+        antigo = (d.STATE_DIR, d.linear, d.LEDGER_FILE)
+        estado = self.tmp / "state"
+        estado.mkdir()
+        d.STATE_DIR = estado
+        d.LEDGER_FILE = estado / "ledger.jsonl"
+        d.linear = lambda *_a, **_k: {}
+        self.addCleanup(lambda: (
+            setattr(d, "STATE_DIR", antigo[0]),
+            setattr(d, "linear", antigo[1]),
+            setattr(d, "LEDGER_FILE", antigo[2]),
+        ))
+        st = {
+            "lane": "grok", "card": "FRA-594", "issue_id": "id-594",
+            "log": str(self.tmp / "lane.log"), "worktree": str(self.wt),
+            "effort": "alto", "branch": "fra-1", "base": "HEAD",
+            "started": 1_700_000_000, "agora": 1_700_000_060,
+        }
+        self.assertIn("lane:falhou", d.fail(st, "nada foi enviado: o config local tem `credential.helper`"))
+        self.assertFalse(marcador.exists(), "o fail rodou o script do config")
+        lane = self.wt / ".lane"
+        lane.mkdir(exist_ok=True)
+        (lane / "exit_code").write_text("0", encoding="utf-8")
+        (lane / "result.json").write_text(
+            json.dumps({"status": "done", "summary": "x"}), encoding="utf-8")
+        saida = d.finalize(dict(st, log=str(self.tmp / "lane-fecha.log")))
+        self.assertTrue("credential.helper" in saida or "fsmonitor" in saida, saida)
+        self.assertFalse(marcador.exists(), "o finalize rodou o script do config")
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+        self.assertFalse(self._tem(self.esperado, "fra-1"))
+
+    def test_pushurl_no_worktree_ligado_e_recusado(self):
+        lane = self.tmp / "lane"
+        self.git("worktree", "add", "-q", "-b", "fra-wt", str(lane), "HEAD", cwd=self.wt)
+        self.git("config", "remote.origin.pushurl", str(self.atacante), cwd=lane)
+        self.assertIn("pushurl", d.motivo_para_nao_enviar(lane))
+        self.assertIn("pushurl", d.enviar_branch(lane, "fra-wt"))
+        self.assertFalse(self._tem(self.atacante, "fra-wt"))
+
+    def test_helper_no_config_worktree_nao_executa(self):
+        marcador = self.tmp / "helper-wt"
+        script = self._script("helper-wt.sh", marcador)
+        # config.worktree é o arquivo do worktree; o config comum continua limpo.
+        (self.wt / ".git" / "config.worktree").write_text(
+            f"[credential]\n\thelper = !/bin/sh {script}\n", encoding="utf-8")
+        marcador.unlink(missing_ok=True)
+        self.assertIn("worktree", d.motivo_para_nao_enviar(self.wt))
+        self.assertIn("credential.helper", d.enviar_branch(self.wt, "fra-1"))
+        self.assertFalse(marcador.exists())
+
+    def test_git_dir_e_git_config_do_ambiente_nao_desviam(self):
+        os.environ["GIT_DIR"] = str(self.atacante)
+        os.environ["GIT_WORK_TREE"] = str(self.tmp)
+        os.environ["GIT_CONFIG_COUNT"] = "1"
+        os.environ["GIT_CONFIG_KEY_0"] = f"url.{self.atacante}.insteadof"
+        os.environ["GIT_CONFIG_VALUE_0"] = "https://github.com/dono/app.git"
+        try:
+            self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+            self.assertEqual(d.enviar_branch(self.wt, "fra-1"), "")
+        finally:
+            for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_CONFIG_COUNT",
+                      "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
+                os.environ.pop(k, None)
+        self.assertTrue(self._tem(self.esperado, "fra-1"))
+        self.assertFalse(self._tem(self.atacante, "fra-1"))
+
+    def test_pre_push_nao_roda(self):
+        hooks = self.tmp / "hooks"
+        hooks.mkdir()
+        marcador = self.tmp / "hook-rodou"
+        hook = hooks / "pre-push"
+        hook.write_text(f"#!/bin/sh\ntouch {marcador}\n", encoding="utf-8")
+        hook.chmod(0o755)
+        self.git("config", "core.hooksPath", str(hooks), cwd=self.wt)
+        self.assertEqual(d.motivo_para_nao_enviar(self.wt), "")
+        self.assertEqual(d.enviar_branch(self.wt, "fra-1"), "")
+        self.assertFalse(marcador.exists())
+        self.assertTrue(self._tem(self.esperado, "fra-1"))
+
+
 class Comandos(unittest.TestCase):
     def setUp(self):
         sem_ajustes_reais(self)
@@ -247,10 +617,14 @@ class Comandos(unittest.TestCase):
 
     def test_deepseek_headless_texto(self):
         # dsh headless: sessão nova, prompt como argumento e patch de conta/modelo.
-        self.assertEqual(d.agent_command("deepseek", "medio"),
-                         ["dsh", "--profile", "headless", "--patch", ".lane/deepseek.yml"])
-        self.assertEqual(d.texto_do_agente("deepseek", "medio"),
-                         'dsh --profile headless --patch .lane/deepseek.yml -- "$(cat .lane/prompt.md)"')
+        # FRA-595: prompt e patch ficam fora do worktree.
+        prompt = Path("/tmp/provas/deepseek/FRA-1/run/prompt.md")
+        patch = Path("/tmp/provas/deepseek/FRA-1/run/deepseek.yml")
+        self.assertEqual(d.agent_command("deepseek", "medio", patch=patch),
+                         ["dsh", "--profile", "headless", "--patch", str(patch)])
+        self.assertEqual(d.texto_do_agente("deepseek", "medio", prompt, patch),
+                         f'dsh --profile headless --patch {patch} -- "$(cat {prompt})"')
+        self.assertNotIn(".lane/", d.texto_do_agente("deepseek", "medio", prompt, patch))
         for effort in ("baixo", "medio", "alto"):
             self.assertEqual(d.limit_text("deepseek", effort), "sem teto de gasto no CLI")
 
@@ -408,10 +782,13 @@ class FreioDeCaminhoProtegido(unittest.TestCase):
                 id="x", nome="Falso", repo=str(wt), worktrees=str(wt),
                 prova="./scripts/prova-falsa.sh test {suite}", prova_tentativas=2)]
             try:
-                script = d.proof_script(wt, ["FooTests"])
+                prova = wt / "prova-fora"
+                prova.mkdir()
+                script = d.proof_script(wt, ["FooTests"], prova)
                 subprocess.run(["/bin/bash", "-c", script], check=False)
-                saida = (wt / ".lane" / "proof.log").read_text(encoding="utf-8")
-                codigo = (wt / ".lane" / "proof_exit").read_text(encoding="utf-8").strip()
+                saida = (prova / "proof.log").read_text(encoding="utf-8")
+                codigo = (prova / "proof_exit").read_text(encoding="utf-8").strip()
+                self.assertFalse((wt / ".lane" / "proof.log").exists())
             finally:
                 d.projetos._CACHE.pop("lista", None)
                 d.projetos._resetar_cache()
@@ -459,6 +836,8 @@ class FreioDeCaminhoProtegido(unittest.TestCase):
         self.assertNotIn("protegido.md", g["lane_files"],
                          "arquivo que veio da main não é da lane")
         self.assertEqual(d.touched_protected(g["lane_files"]), [])
+        self.assertEqual(len(g["sha"]), 40)
+        self.assertTrue(all(c in "0123456789abcdef" for c in g["sha"]))
 
     def test_freio_eh_do_projeto_que_a_lane_trabalha(self):
         """O alcance do freio acompanha o projeto: o worktree e os globs saem juntos.
@@ -1372,7 +1751,10 @@ class ProvaPresa(unittest.TestCase):
                     pass
                 proc.wait(timeout=2)
 
-    def _segura_lock(self) -> tuple[Path, subprocess.Popen]:
+    def _st(self, card: str = "FRA-1") -> dict:
+        return {"lane": "claude", "card": card, "run_id": "runlock01", "session": "lane-claude"}
+
+    def _segura_lock(self) -> tuple[Path, subprocess.Popen, dict]:
         wt = _lane_dir(self)
         lock = wt / "build.lock"
         ready = wt / "ready"
@@ -1384,18 +1766,29 @@ class ProvaPresa(unittest.TestCase):
             "f.flush()\n"
             "time.sleep(60)\n"
         )
-        proc = subprocess.Popen([sys.executable, "-c", codigo, str(lock), str(ready)],
-                                start_new_session=True)
+        script = wt / "segura.py"
+        script.write_text(codigo, encoding="utf-8")
+        # O command tem de ser o bash da prova deste worktree: é o que o dispatcher sinaliza.
+        bash = (
+            f"cd {shlex.quote(str(wt))} && "
+            f"{shlex.quote(sys.executable)} {shlex.quote(str(script))} "
+            f"{shlex.quote(str(lock))} {shlex.quote(str(ready))} "
+            f"> .lane/proof.log 2>&1"
+        )
+        proc = subprocess.Popen(["/bin/bash", "-c", bash], cwd=wt, start_new_session=True)
         self.procs.append(proc)
         for _ in range(50):
             if ready.exists():
                 break
             time.sleep(0.05)
         self.assertTrue(ready.exists(), "a prova de teste não segurou o lock")
+        st = self._st()
+        prova = d.preparar_prova_dir(st, wt)
+        d.registrar_prova(prova, proc.pid, str(lock))
+        (prova / "proof_started").write_text(str(time.time() - d.PROOF_TIMEOUT_MIN * 60 - 30),
+                                            encoding="utf-8")
         (wt / ".lane" / "proof_pid").write_text(str(proc.pid), encoding="utf-8")
-        (wt / ".lane" / "proof_started").write_text(str(time.time() - d.PROOF_TIMEOUT_MIN * 60 - 30),
-                                                   encoding="utf-8")
-        return wt, proc
+        return wt, proc, st
 
     def _lock_livre(self, lock: Path) -> bool:
         fd = os.open(lock, os.O_RDWR | os.O_CREAT)
@@ -1409,33 +1802,34 @@ class ProvaPresa(unittest.TestCase):
             os.close(fd)
 
     def test_timeout_mata_o_grupo_e_solta_o_lock(self):
-        wt, proc = self._segura_lock()
-        st = {"lane": "claude", "card": "FRA-1", "session": "lane-claude"}
+        wt, proc, st = self._segura_lock()
         self.assertEqual(d.acompanhar_prova(st, wt, ["FooTests"]), "timeout")
         self.assertFalse(d.prova_viva(proc.pid))
         self.assertTrue(self._lock_livre(wt / "build.lock"))
-        self.assertFalse((wt / ".lane" / "proof_pid").exists())
+        self.assertFalse((d.prova_dir(st) / "proof_pid").exists())
+        self.assertTrue((wt / ".lane" / "proof_pid").exists(),
+                        "o pid plantado no worktree não é o que a prova mata")
 
     def test_stop_mata_o_grupo_e_solta_o_lock(self):
-        wt, proc = self._segura_lock()
+        wt, proc, st = self._segura_lock()
         (self.tmp_state / "stop-claude").write_text("1", encoding="utf-8")
-        st = {"lane": "claude", "card": "FRA-1", "session": "lane-claude"}
         self.assertEqual(d.acompanhar_prova(st, wt, ["FooTests"]), "stop")
         self.assertFalse(d.prova_viva(proc.pid))
         self.assertTrue(self._lock_livre(wt / "build.lock"))
 
     def test_prova_morta_refeita_uma_vez(self):
         wt = _lane_dir(self)
-        morto = subprocess.Popen(["sleep", "0"])
-        morto.wait(timeout=5)
-        lane = wt / ".lane"
-        (lane / "proof_pid").write_text(str(morto.pid), encoding="utf-8")
-        (lane / "proof_started").write_text(str(time.time()), encoding="utf-8")
-        self.assertEqual(d.decidir_prova_morta(lane), "refazer")
-        self.assertTrue((lane / "proof_morta").exists())
-        self.assertEqual(d.decidir_prova_morta(lane), "esgotou")
+        vivo = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        self.procs.append(vivo)
+        st = {"lane": "claude", "card": "FRA-9", "run_id": "runmorta01"}
+        prova = d.preparar_prova_dir(st, wt)
+        d.registrar_prova(prova, vivo.pid, "sleep")
+        os.kill(vivo.pid, signal.SIGKILL)
+        vivo.wait(timeout=5)
+        self.assertEqual(d.decidir_prova_morta(prova), "refazer")
+        self.assertTrue((prova / "proof_morta").exists())
+        self.assertEqual(d.decidir_prova_morta(prova), "esgotou")
         # a repetição também morta encerra; uma terceira não começa
-        st = {"lane": "claude", "card": "FRA-1"}
         self.assertEqual(d.acompanhar_prova(st, wt, ["FooTests"]), "morta")
 
     def test_start_proof_grava_o_pid(self):
@@ -1445,12 +1839,15 @@ class ProvaPresa(unittest.TestCase):
             id="x", nome="Falso", repo=str(wt), worktrees=str(wt),
             prova="sleep 30", prova_tentativas=1)]
         self.addCleanup(d.projetos._resetar_cache)
+        st = {"lane": "claude", "card": "FRA-1", "run_id": "runstart01"}
         try:
-            d.start_proof(wt, ["FooTests"])
-            pid = int((wt / ".lane" / "proof_pid").read_text())
+            d.start_proof(wt, ["FooTests"], st)
+            pid = d.pid_validado(d.prova_dir(st))
+            self.assertIsNotNone(pid)
             self.assertTrue(d.prova_viva(pid))
-            d.matar_prova(wt)
+            d.matar_prova(st)
             self.assertFalse(d.prova_viva(pid))
+            self.assertFalse((wt / ".lane" / "proof_pid").exists())
         finally:
             d.projetos._CACHE.pop("lista", None)
 
@@ -1734,14 +2131,15 @@ class LaneParadaEPrompts(unittest.TestCase):
         self.assertTrue(d.log_sem_saida(str(log), time.time() + 600, limite=10 * 60))
 
     def test_prompt_com_espacos_e_aspas_chega_inteiro_na_opencode(self):
-        cmd = d.texto_do_agente("opencode", "medio")
-        self.assertIn('-- "$(cat .lane/prompt.md)"', cmd)
-        wt = self.tmp / "wt"
-        (wt / ".lane").mkdir(parents=True)
+        prompt = self.tmp / "prompt.md"
+        cmd = d.texto_do_agente("opencode", "medio", prompt)
+        self.assertNotIn(".lane/prompt.md", cmd)
+        self.assertIn(f'-- "$(cat {prompt})"', cmd)
         texto = 'um prompt com espaços e "aspas" e $HOME'
-        (wt / ".lane" / "prompt.md").write_text(texto, encoding="utf-8")
-        out = subprocess.run(["bash", "-c", 'printf %s "$(cat .lane/prompt.md)"'],
-                             cwd=wt, capture_output=True, text=True, check=True)
+        prompt.write_text(texto, encoding="utf-8")
+        expr = cmd.split(" -- ", 1)[1]
+        out = subprocess.run(["bash", "-c", "printf %s " + expr],
+                             capture_output=True, text=True, check=True)
         self.assertEqual(out.stdout, texto)
 
     def test_prompt_opencode_nao_faz_pergunta(self):
@@ -1905,6 +2303,16 @@ class CaminhoNonAsciiProtegido(unittest.TestCase):
         self.assertEqual([nfc(p) for p in tocados], ["docs/arquivo/relatório.docx"])
 
 
+class ShaCompletoDoDone(unittest.TestCase):
+    """FRA-593: o SHA que vai no DONE é o `git rev-parse HEAD`, sem --short."""
+
+    def test_git_summary_nao_encurta_o_sha(self):
+        import inspect
+        src = inspect.getsource(d.git_summary)
+        self.assertNotIn("--short", src)
+        self.assertIn('["git", "rev-parse", "HEAD"]', src)
+
+
 class SuitesEstritas(unittest.TestCase):
     """FRA-596: a prova não executa caminho, flag nem nome fora da lista do projeto."""
 
@@ -1936,6 +2344,196 @@ class SuitesEstritas(unittest.TestCase):
         self.assertEqual(d.proof_suites({"tests": ["../../tmp/x"]}), ["tests.test_parser", "FooTests"])
         self.assertEqual(d.proof_suites({"tests": ["foo-bar"]}), ["tests.test_parser", "FooTests"])
         self.assertNotIn("../../tmp/x", d.proof_suites({"tests": ["../../tmp/x", "FooTests"]}))
+
+
+class ProvaForaDoAgente(unittest.TestCase):
+    """FRA-595: prova, exit e agent_cmd não estão sob o controle do agente."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.antes = d.STATE_DIR
+        d.STATE_DIR = self.tmp / "state"
+        d.STATE_DIR.mkdir()
+        self.addCleanup(setattr, d, "STATE_DIR", self.antes)
+        self.procs = []
+        self.addCleanup(self._mata)
+
+    def _mata(self):
+        for proc in self.procs:
+            if proc.poll() is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                proc.wait(timeout=2)
+
+    def test_pasta_da_prova_e_0700_e_fora_do_worktree(self):
+        wt = self.tmp / "wt"
+        wt.mkdir()
+        st = {"lane": "claude", "card": "FRA-595", "run_id": "abc123"}
+        prova = d.preparar_prova_dir(st, wt)
+        self.assertEqual(prova.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(prova, d.STATE_DIR / "provas" / "claude" / "FRA-595" / "abc123")
+        self.assertFalse(d._caminho_dentro(prova, wt))
+
+    def test_symlink_de_lane_e_de_card_md_e_recusado(self):
+        wt = self.tmp / "wt"
+        lane = wt / ".lane"
+        lane.mkdir(parents=True)
+        segredo = self.tmp / "segredo.txt"
+        segredo.write_text("segredo-nao-ler", encoding="utf-8")
+        (lane / "card.md").symlink_to(segredo)
+        with self.assertRaises(RuntimeError) as ctx:
+            d.ler_arquivo_lane(lane / "card.md")
+        self.assertIn("symlink", str(ctx.exception))
+        self.assertEqual(segredo.read_text(encoding="utf-8"), "segredo-nao-ler")
+
+        fora = self.tmp / "fora"
+        fora.mkdir()
+        (fora / "card.md").write_text("via-symlink", encoding="utf-8")
+        lane.rename(self.tmp / "lane-real")
+        (wt / ".lane").symlink_to(fora, target_is_directory=True)
+        with self.assertRaises(RuntimeError):
+            d.ler_arquivo_lane(wt / ".lane" / "card.md")
+        with self.assertRaises(RuntimeError):
+            d.preparar_lane_do_agente(wt)
+
+    def test_proof_plantado_no_worktree_nao_gera_done(self):
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "proof.log").write_text(
+            "[prova] FooTests: 1ª tentativa\nExecuted 4 tests, with 0 failures\n",
+            encoding="utf-8")
+        (wt / ".lane" / "proof_exit").write_text("0\n", encoding="utf-8")
+        (wt / ".lane" / "proof_started").write_text(str(time.time()), encoding="utf-8")
+        (wt / ".lane" / "exit_code").write_text("0\n", encoding="utf-8")
+        (wt / ".lane" / "result.json").write_text(json.dumps({
+            "status": "done", "summary": "plantei", "tests": ["FooTests"],
+        }), encoding="utf-8")
+        st = {
+            "lane": "claude", "card": "FRA-595", "run_id": "rundone01",
+            "issue_id": "id", "title": "t", "url": "u", "branch": "b",
+            "worktree": str(wt), "base": "abc", "effort": "medio",
+            "log": str(self.tmp / "log"), "session": "lane-claude",
+            "started": time.time(),
+        }
+        (self.tmp / "log").write_text("", encoding="utf-8")
+        d.escrever_exclusivo(d.preparar_prova_dir(st, wt) / "exit_code", "0\n")
+        chamadas = []
+        with mock.patch.object(d, "git_summary", return_value={
+            "ahead": 1, "new": 1, "files": ["a.py"], "lane_files": ["a.py"],
+            "dirty": [], "sha": "abc1234",
+        }), mock.patch.object(d, "touched_protected", return_value=[]), \
+                mock.patch.object(d, "start_proof", side_effect=lambda *a, **k: chamadas.append(a)), \
+                mock.patch.object(d, "linear", return_value={}), \
+                mock.patch.object(d, "sh", side_effect=AssertionError("não era para enviar")):
+            outcome = d.finalize(st)
+        self.assertIsNone(outcome)
+        self.assertEqual(len(chamadas), 1)
+
+    def test_exit_code_do_worktree_nao_fecha_o_card(self):
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "exit_code").write_text("0\n", encoding="utf-8")
+        (wt / ".lane" / "result.json").write_text(
+            json.dumps({"status": "done", "tests": ["FooTests"]}), encoding="utf-8")
+        st = {
+            "lane": "claude", "card": "FRA-595", "run_id": "runexit01",
+            "worktree": str(wt), "log": "l", "effort": "medio", "started": time.time(),
+        }
+        d.preparar_prova_dir(st, wt)
+        with self.assertRaises(FileNotFoundError):
+            d.finalize(st)
+
+    def test_veredito_nao_le_o_log_plantado(self):
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "proof.log").write_text(
+            "[prova] FooTests\nExecuted 4 tests, with 0 failures\n", encoding="utf-8")
+        (wt / ".lane" / "proof_exit").write_text("0\n", encoding="utf-8")
+        st = {"lane": "claude", "card": "FRA-595", "run_id": "runverde01"}
+        prova = d.preparar_prova_dir(st, wt)
+        self.assertEqual(d.proof_veredito(wt, "0", prova), "sem-dado")
+
+    def test_pid_alheio_nao_e_morto(self):
+        vitima = subprocess.Popen(["sleep", "120"], start_new_session=True)
+        self.procs.append(vitima)
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "proof_pid").write_text(str(vitima.pid), encoding="utf-8")
+        st = {"lane": "claude", "card": "FRA-595", "run_id": "runpid01"}
+        prova = d.preparar_prova_dir(st, wt)
+        (prova / "proof_meta.json").write_text(json.dumps({
+            "pid": vitima.pid, "uid": os.getuid(), "start": "0", "marcador": "nao-e-o-comando",
+        }), encoding="utf-8")
+        (prova / "proof_pid").write_text(str(vitima.pid), encoding="utf-8")
+        d.matar_prova(st)
+        self.assertTrue(d.prova_viva(vitima.pid))
+        (prova / "proof_meta.json").unlink()
+        d.matar_prova(st)
+        self.assertTrue(d.prova_viva(vitima.pid))
+
+    def test_agent_cmd_alterado_nao_muda_o_runner(self):
+        home = self.tmp / "home"
+        lanes = home / ".transcentia" / "lanes"
+        lanes.mkdir(parents=True)
+        origem = Path(d.__file__).resolve().parent
+        shutil.copy(origem / "lane_view.py", lanes / "lane_view.py")
+        wt = self.tmp / "wt"
+        (wt / ".lane").mkdir(parents=True)
+        (wt / ".lane" / "agent_cmd").write_text("echo INVADIDO > marker\n", encoding="utf-8")
+        (wt / ".lane" / "prompt.md").write_text("prompt-do-worktree\n", encoding="utf-8")
+        st = {"lane": "claude", "card": "FRA-595", "run_id": "runcmd01"}
+        run = d.preparar_prova_dir(st, wt)
+        (run / "prompt.md").write_text("prompt-confiavel\n", encoding="utf-8")
+        (run / "finalized").write_text("teste\n", encoding="utf-8")
+        cmd = run / "agent_cmd.nonce"
+        cmd.write_text("echo CONFIAVEL > marker\n", encoding="utf-8")
+        log = run / "agent.jsonl"
+        texto = (origem / "run_lane.sh").read_text(encoding="utf-8")
+        self.assertNotIn("cat .lane/agent_cmd", texto)
+        self.assertNotIn(".lane/proof.log", texto)
+        env = dict(os.environ, HOME=str(home), USER=os.environ.get("USER", "teste"))
+        saida = self.tmp / "out"
+        erro = self.tmp / "err"
+        with saida.open("w", encoding="utf-8") as out, erro.open("w", encoding="utf-8") as err:
+            proc = subprocess.Popen(
+                ["bash", str(origem / "run_lane.sh"), "claude", str(wt), "FRA-595",
+                 str(log), str(cmd), str(run)],
+                env=env, stdout=out, stderr=err, start_new_session=True,
+            )
+        self.procs.append(proc)
+        marker = wt / "marker"
+        for _ in range(50):
+            if marker.exists() or proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        self.assertTrue(marker.exists(), erro.read_text(encoding="utf-8") if erro.exists() else "")
+        self.assertEqual(marker.read_text(encoding="utf-8").strip(), "CONFIAVEL")
+
+    def test_symlink_no_log_da_prova_nao_e_seguido(self):
+        wt = self.tmp / "wt"
+        (wt / "scripts").mkdir(parents=True)
+        falso = wt / "scripts" / "prova-falsa.sh"
+        falso.write_text("#!/bin/bash\necho rodou\n", encoding="utf-8")
+        falso.chmod(0o755)
+        alvo = self.tmp / "alvo"
+        alvo.write_text("segredo", encoding="utf-8")
+        prova = self.tmp / "prova"
+        prova.mkdir()
+        (prova / "proof.log").symlink_to(alvo)
+        d.projetos._resetar_cache()
+        d.projetos._CACHE["lista"] = [d.projetos.Projeto(
+            id="x", nome="Falso", repo=str(wt), worktrees=str(wt),
+            prova="./scripts/prova-falsa.sh test {suite}", prova_tentativas=1)]
+        self.addCleanup(d.projetos._resetar_cache)
+        script = d.proof_script(wt, ["FooTests"], prova)
+        proc = subprocess.run(["/bin/bash", "-c", script], check=False, capture_output=True, text=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("recusada", proc.stderr)
+        self.assertEqual(alvo.read_text(encoding="utf-8"), "segredo")
+        self.assertTrue((prova / "proof.log").is_symlink())
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ CFG="$(cd "$(dirname "$0")" && pwd)/cfg"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 export HOME=$T; unset TRANSCENTIA_GASTO_CONFIG
 f=0; ok(){ [ "$1" == "$2" ] && echo "ok  $3" || { echo "FALHA $3: '$1' != '$2'"; f=1; }; }
+ok "$("$CFG" get estresse.saida)" "~/Library/Logs/TuttiDash/carga-mac.tsv" "padrão da carga do Mac"
+ok "$("$CFG" get estresse.intervalo_s)" 15 "intervalo segue na chave antiga"
 ok "$("$CFG" get preflight.max_load 16)" 16 "sem arquivo: padrão da linha de comando"
 ok "$("$CFG" get bots_chave.limite_pct)" 90 "sem arquivo: padrão interno"
 ok "$("$CFG" get lane_view.pensamento)" true "lane_view: raciocínio ligado por padrão"
@@ -37,4 +39,20 @@ ok "$("$CFG" get preflight.max_load 16)" 44 "Lanekeeper aceito como reserva"
 ok "$([ -f "$LK" ] && [ -f "$(dirname "$N")/agendas.json" ] && echo sim)" sim "copia a pasta Lanekeeper sem apagar"
 echo 'lixo' > "$N"
 ok "$("$CFG" get preflight.max_load 16)" 16 "ilegível cai no padrão"
+
+# medir-estresse: padrão novo; arquivo legado já gravado continua; config explícita vence.
+MEDIR="$(cd "$(dirname "$0")" && pwd)/medir-estresse.sh"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+H2=$(mktemp -d)
+HOME=$H2
+unset TRANSCENTIA_GASTO_CONFIG
+ok "$(bash "$MEDIR" --saida)" "$H2/Library/Logs/TuttiDash/carga-mac.tsv" "sem arquivo antigo: log do TuttiDash"
+mkdir -p "$H2/Library/Logs/TranscentIA"
+printf 'hora\n' > "$H2/Library/Logs/TranscentIA/estresse.tsv"
+ok "$(bash "$MEDIR" --saida)" "$H2/Library/Logs/TranscentIA/estresse.tsv" "arquivo antigo continua"
+mkdir -p "$H2/.transcentia/tools" "$H2/Library/Application Support/TuttiDash"
+cp "$CFG" "$H2/.transcentia/tools/cfg"; chmod +x "$H2/.transcentia/tools/cfg"
+echo '{"version":1,"estresse":{"saida":"/tmp/carga-custom.tsv","intervalo_s":30}}' > "$H2/Library/Application Support/TuttiDash/config.json"
+ok "$(cd "$ROOT" && HOME=$H2 bash "$MEDIR" --saida)" "/tmp/carga-custom.tsv" "estresse.saida da config vence o arquivo antigo"
+rm -rf "$H2"
 exit $f
