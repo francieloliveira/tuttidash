@@ -84,6 +84,25 @@ A proteção da `main` tem de exigir o check `revisao-ia` antes do merge. Este
 workflow não cria esse ruleset: o token não altera a proteção da branch.
 Check vermelho bloqueia o merge.
 
+## Bench mode / Modo bancada (FRA-618)
+
+A lane can reach USB hardware (e.g. an ESP32) only when the card has the label
+`lane:bancada`, the project has `"bancada": {"ativo": true}` in the registry, and
+the lane is `claude`. It then gets one extra command, the signed bundle's
+`lanes/bancada.py`, which Claude Code runs outside the sandbox only when the whole
+command line matches its absolute path. The command checks the port, the firmware
+path (inside the worktree, no symlinks), the flash address and the serial time, and
+logs every use outside the worktree. Network, Docker, Python and a free shell stay
+denied.
+
+A lane só chega ao hardware na USB (ex.: ESP32) com a etiqueta `lane:bancada` no
+card, `"bancada": {"ativo": true}` no projeto do cadastro e a lane `claude`. Ela
+ganha um comando a mais, o `lanes/bancada.py` do bundle assinado, que o Claude Code
+roda fora do sandbox só quando a linha inteira casa com esse caminho absoluto. O
+comando confere a porta, o firmware (dentro do worktree, sem symlink), o endereço e
+o tempo da serial, e registra cada uso fora do worktree. Rede, Docker, Python e
+shell livres continuam negados.
+
 ## Reviewer approval (FRA-593) and the merge proof (FRA-611)
 
 A `[Revisor]` comment approves a head only when GitHub reports that the authenticated `gh` user wrote it (`viewerDidAuthor`, or `author.login` of that user when the flag is absent) and the comment cites that head as a full 40-hex SHA. Equality, not a prefix: seven hex digits do not approve. The watcher merges only when the check `prova-remota` is green on that same full head SHA. A `DONE` comment on the card and the `→ verde` marker in the PR body do not authorize the merge.

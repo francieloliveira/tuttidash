@@ -199,3 +199,37 @@ só-leitura do CLI. OpenCode, Codex e DeepSeek não recebem este teto, e o
 allow do Claude ainda tem `mcp__transcentia-docs`. O `run_lane.sh` exporta
 `DEEPSEEK_API_KEY`. O follow-up desse residual é a FRA-587 (follow-ups das
 lanes). Não é outro card.
+
+## Modo bancada (FRA-618)
+
+Para card de hardware na USB (ex.: ESP32-S3). Liga só com as três condições
+juntas: a etiqueta `lane:bancada` no card, `"bancada": {"ativo": true}` no
+projeto do cadastro (`config.json`, que a lane não escreve) e a lane `claude`.
+Sem as três, a lane recebe os settings estritos de sempre.
+
+Com as três, o claim grava no RUN_DIR uma cópia dos settings com duas linhas a
+mais, e nada além disso: `Bash(<bundle>/lanes/bancada.py *)` no allow e o mesmo
+padrão em `sandbox.excludedCommands`. O Claude Code roda fora do sandbox só a
+linha que casa inteira com esse caminho absoluto; `&&`, `|`, redirecionamento,
+`cd` ou `$(...)` mantêm a linha no sandbox. Rede, Docker, Python e shell livres
+continuam negados.
+
+O próprio `bancada.py` (Python do sistema com `-I`, no bundle e na âncora) confere tudo:
+
+| Subcomando | Regra |
+|---|---|
+| `portas` | só `/dev/cu.usbmodem*` e `/dev/cu.usbserial*`, dispositivo de caractere |
+| `chip [--porta] [--chip]` | `esptool chip_id`, só leitura |
+| `gravar [--porta] [--chip] ENDERECO ARQUIVO…` | `.bin` regular dentro do worktree, sem symlink no caminho, até 16 MB, endereço alinhado a 4 KB, até 4 pares |
+| `serial [--porta] [--baud] SEGUNDOS` | até 120 s e 64 KB, saída no stdout |
+
+O diretório atual tem de estar dentro das worktrees de um projeto com bancada
+ligada. O `esptool` roda com versão fixa (`uv tool run --from esptool==…`), por
+um `uv` de caminho fixo. Cada uso (inclusive recusa) vira uma linha em
+`~/Library/Logs/TranscentIA/bancada.log`.
+
+Residual: com o modo ligado, a lane grava qualquer `.bin` do worktree no
+aparelho da porta escolhida. Por isso a etiqueta é do dono, por card. A primeira
+execução do `esptool` baixa a versão fixa do PyPI (fora do sandbox).
+Confirmação de privacidade e assinatura continuam com o dono.
+
