@@ -6,6 +6,7 @@ import datetime as dt
 import fcntl
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -1751,8 +1752,16 @@ class ProvaPresa(unittest.TestCase):
             "f.flush()\n"
             "time.sleep(60)\n"
         )
-        proc = subprocess.Popen([sys.executable, "-c", codigo, str(lock), str(ready)],
-                                start_new_session=True)
+        script = wt / "segura.py"
+        script.write_text(codigo, encoding="utf-8")
+        # O command tem de ser o bash da prova deste worktree: é o que o dispatcher sinaliza.
+        bash = (
+            f"cd {shlex.quote(str(wt))} && "
+            f"{shlex.quote(sys.executable)} {shlex.quote(str(script))} "
+            f"{shlex.quote(str(lock))} {shlex.quote(str(ready))} "
+            f"> .lane/proof.log 2>&1"
+        )
+        proc = subprocess.Popen(["/bin/bash", "-c", bash], cwd=wt, start_new_session=True)
         self.procs.append(proc)
         for _ in range(50):
             if ready.exists():
@@ -1760,6 +1769,7 @@ class ProvaPresa(unittest.TestCase):
             time.sleep(0.05)
         self.assertTrue(ready.exists(), "a prova de teste não segurou o lock")
         (wt / ".lane" / "proof_pid").write_text(str(proc.pid), encoding="utf-8")
+        self.assertIsNotNone(d.registrar_prova(wt, proc.pid))
         (wt / ".lane" / "proof_started").write_text(str(time.time() - d.PROOF_TIMEOUT_MIN * 60 - 30),
                                                    encoding="utf-8")
         return wt, proc
@@ -1793,11 +1803,21 @@ class ProvaPresa(unittest.TestCase):
 
     def test_prova_morta_refeita_uma_vez(self):
         wt = _lane_dir(self)
+        lane = wt / ".lane"
+        # Sem foto, o pid morto escrito no worktree não decide a prova.
         morto = subprocess.Popen(["sleep", "0"])
         morto.wait(timeout=5)
-        lane = wt / ".lane"
         (lane / "proof_pid").write_text(str(morto.pid), encoding="utf-8")
         (lane / "proof_started").write_text(str(time.time()), encoding="utf-8")
+        self.assertEqual(d.decidir_prova_morta(lane), "viva")
+        self.assertFalse((lane / "proof_morta").exists())
+        bash = f"cd {shlex.quote(str(wt))} && sleep 30 > .lane/proof.log 2>&1"
+        proc = subprocess.Popen(["/bin/bash", "-c", bash], cwd=wt, start_new_session=True)
+        self.procs.append(proc)
+        self.assertIsNotNone(d.registrar_prova(wt, proc.pid))
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=5)
+        (lane / "proof_pid").write_text(str(proc.pid), encoding="utf-8")
         self.assertEqual(d.decidir_prova_morta(lane), "refazer")
         self.assertTrue((lane / "proof_morta").exists())
         self.assertEqual(d.decidir_prova_morta(lane), "esgotou")
