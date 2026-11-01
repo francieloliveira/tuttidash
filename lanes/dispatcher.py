@@ -8,7 +8,8 @@ Roda a cada 60 s via launchd (com.transcentia.lanes.dispatcher).
 
 Divisão de trabalho (E3):
   dispatcher  lê o card, cria o worktree, abre a lane no tmux e, ao final,
-              faz push para a URL do cadastro, abre o PR, comenta DONE <sha> e move para In Review
+              faz push para a URL do cadastro, abre o PR, comenta DONE com o SHA completo
+              e move para In Review
   agente      edita, testa, faz commit LOCAL e grava .lane/result.json.
               Não fala com Linear nem GitHub.
 
@@ -2390,7 +2391,8 @@ def git_summary(wt: Path, base: Optional[str] = None) -> dict:
     else:
         new, lane_files = ahead, files
     dirty = [l for l in sh(["git", "status", "--porcelain"], cwd=wt).splitlines() if l.strip()]
-    sha = sh(["git", "rev-parse", "--short", "HEAD"], cwd=wt)
+    # SHA completo (40). O DONE usa este valor; o vigia compara com ==, não com prefixo.
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     return {"ahead": ahead, "new": new, "files": files, "lane_files": lane_files, "dirty": dirty, "sha": sha}
 
 

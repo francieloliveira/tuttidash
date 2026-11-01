@@ -10,8 +10,9 @@ Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
   0. Instalação no aparelho em andamento/terminada -> registra o resultado no card
      (só com `watch.instalar_comando` configurado: lista de argv; texto antigo
      ainda vale via shlex.split, sem shell, e gera aviso de migração).
-  1. Card em In Review com a prova do dispatcher verde (comentário DONE <sha> = head
-     do PR e "→ verde" no corpo) -> merge (um por vez) só com `mergeStateStatus`
+  1. Card em In Review com a prova do dispatcher verde (comentário DONE com o SHA
+     completo de 40 hex igual ao head, escrito pelo viewer do token Linear, e
+     "→ verde" no corpo) -> merge (um por vez) só com `mergeStateStatus`
      CLEAN e `statusCheckRollup` sem FAILURE/PENDING. UNSTABLE espera. HAS_HOOKS
      segura e chama o dono (não é CI vermelho). Caminho protegido no PR não mergeia.
      Depois: Done e instala a main no aparelho (SKIP_PREFLIGHT=1 primeiro; se falhar,
@@ -24,7 +25,8 @@ Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
      (até 2 tarefas ao mesmo tempo, uma por lane; a lane é escolhida pelo dispatcher
      via lanepct-auto, menor %). Menos de 2 cards prontos no Todo -> pede à triagem
      (comentário no Linear).
-  6. PR aberto sem revisão [Revisor] no head -> revisão (SOLID + erros conhecidos E1..).
+  6. PR aberto sem revisão [Revisor] do usuário do gh, citando o SHA completo do
+     head -> revisão (SOLID + erros conhecidos E1..).
 
 A IA (claude -p) só lê e devolve texto; quem publica, mergeia e instala é este script.
 Nunca toca caminhos protegidos — a lista é a do projeto no cadastro (`projetos.py`),
@@ -494,31 +496,104 @@ def open_prs(repo: dict) -> list[dict]:
     return [p for p in json.loads(raw) if not p.get("isDraft")]
 
 
-def revisor_ja_revisou(repo: dict, pr: dict) -> bool:
+# SHA completo, com fronteira: prefixo de 7 hex dentro do head não casa, nem um
+# hex a mais. A comparação do gate é igualdade, nunca startswith.
+_SHA40_RE = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])")
+_DONE_RE = re.compile(r"^\s*DONE\s+([0-9a-f]{40})(?![0-9a-f])")
+
+
+def cita_sha_completo(texto: str, sha: str) -> bool:
+    """O texto cita `sha` como token de 40 hex. Igualdade, não prefixo."""
+    alvo = (sha or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", alvo):
+        return False
+    return any(tok == alvo for tok in _SHA40_RE.findall((texto or "").lower()))
+
+
+def login_do_gh() -> str:
+    """Login do usuário autenticado no `gh`. Cache só em memória; vazio se a leitura falhar."""
+    cache = getattr(login_do_gh, "cache", None)
+    if cache is not None:
+        return cache
+    try:
+        login = sh(["gh", "api", "user", "--jq", ".login"]).strip()
+    except (RuntimeError, OSError):
+        return ""
+    if login:
+        login_do_gh.cache = login  # type: ignore[attr-defined]
+    return login
+
+
+def comentario_confiavel(c: dict) -> bool:
+    """O comentário é do usuário autenticado no `gh`.
+
+    `gh pr view --json comments` traz `viewerDidAuthor` em cada comentário: True
+    é esse usuário, False é outra pessoa, sem outra chamada. Sem o campo, vale
+    `author.login` igual ao login do `gh`. Sem os dois, a autoria é desconhecida
+    e o comentário não conta.
+
+    No modelo de mesmo usuário, um agente comprometido ainda comenta com o mesmo
+    token. A barreira real é o isolamento (FRA-589, fase 5).
+    """
+    if not isinstance(c, dict):
+        return False
+    viu = c.get("viewerDidAuthor")
+    if viu is False:
+        return False
+    if viu is True:
+        return True
+    autor = c.get("author") if isinstance(c.get("author"), dict) else {}
+    login = str(autor.get("login") or "")
+    if not login:
+        return False
+    esperado = login_do_gh()
+    return bool(esperado) and login.lower() == esperado.lower()
+
+
+def comentarios_do_pr(repo: dict, pr: dict) -> list[dict]:
     raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "comments"], cwd=repo["dir"])
-    sha7 = pr["headRefOid"][:7]
-    return any(tem_tag(c["body"], TAG_REVISOR) and sha7 in c["body"] for c in json.loads(raw)["comments"])
+    dados = json.loads(raw).get("comments") or []
+    return [c for c in dados if isinstance(c, dict)]
+
+
+def _comentarios_revisor_do_head(repo: dict, pr: dict) -> list[dict]:
+    sha = pr.get("headRefOid") or ""
+    return [c for c in comentarios_do_pr(repo, pr)
+            if tem_tag(c.get("body") or "", TAG_REVISOR)
+            and comentario_confiavel(c)
+            and cita_sha_completo(c.get("body") or "", sha)]
+
+
+def revisor_ja_revisou(repo: dict, pr: dict) -> bool:
+    """Há [Revisor] do usuário do gh citando o SHA completo deste head."""
+    return bool(_comentarios_revisor_do_head(repo, pr))
 
 
 def veredito_publicado(repo: dict, pr: dict) -> str | None:
-    """Veredito do último comentário [Revisor] no PR que cita o head atual; None sem nenhum."""
-    raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "comments"], cwd=repo["dir"])
-    sha7 = pr["headRefOid"][:7]
-    achados = [c["body"] for c in json.loads(raw)["comments"]
-               if tem_tag(c["body"], TAG_REVISOR) and sha7 in c["body"]]
-    return veredito_de(achados[-1][achar_tag(achados[-1], TAG_REVISOR):]) if achados else None
+    """Veredito do último [Revisor] confiável que cita o SHA completo do head; None sem nenhum."""
+    achados = _comentarios_revisor_do_head(repo, pr)
+    if not achados:
+        return None
+    body = achados[-1].get("body") or ""
+    return veredito_de(body[achar_tag(body, TAG_REVISOR):])
 
 
 def veredito_do_head(repo: dict, pr: dict, st: dict) -> str | None:
-    """APROVADO, AJUSTES ou None (sem veredito). `ja-tinha` (estado antigo) é resolvido
-    lendo o comentário do revisor no PR."""
-    v = st["reviewed"].get(pr["headRefOid"])
-    if v in ("APROVADO", "AJUSTES"):
-        return v
-    if v == "ja-tinha":
-        v = veredito_publicado(repo, pr)
-        if v:
-            st["reviewed"][pr["headRefOid"]] = v
+    """APROVADO, AJUSTES ou None (sem veredito).
+
+    `APROVADO` e `ja-tinha` gravados não trazem autoria. Sem um comentário do
+    usuário do gh com o SHA completo, não aprovam e a revisão pode repetir.
+    """
+    head = pr["headRefOid"]
+    v = st["reviewed"].get(head)
+    if v in ("APROVADO", "ja-tinha"):
+        publicado = veredito_publicado(repo, pr)
+        if publicado in ("APROVADO", "AJUSTES"):
+            st["reviewed"][head] = publicado
+            return publicado
+        st["reviewed"].pop(head, None)
+        return None
+    if v == "AJUSTES":
         return v
     return None
 
@@ -821,14 +896,52 @@ def check_install(st: dict, diary: list[str]) -> None:
     # Falha não reinstala sozinha em laço: fica no card/diário para a próxima rodada de merge ou para o gestor.
 
 
-def proof_passed(ci: dict, pr: dict) -> bool:
-    """Prova do dispatcher verde no head atual: comentário DONE <sha> e '→ verde' no corpo do PR."""
+def id_viewer_linear() -> str:
+    """Id do viewer do token Linear, lido da API.
+
+    Cache só em memória deste processo. Não lê a config nem o state.json:
+    `linear.actor_id` seria gravável por quem edita o aparelho.
+    """
+    cache = getattr(id_viewer_linear, "cache", None)
+    if cache:
+        return cache
+    try:
+        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
+    except RuntimeError as exc:
+        log(f"prova: não li o viewer do Linear ({exc})")
+        return ""
+    ident = str(viewer.get("id") or "")
+    if ident:
+        id_viewer_linear.cache = ident  # type: ignore[attr-defined]
+    return ident
+
+
+def proof_passed(ci: dict, pr: dict, viewer_id: str | None = None) -> bool:
+    """Prova verde no head: DONE com o SHA completo, escrito pelo viewer do token.
+
+    O primeiro comentário `DONE` + 40 hex decide. SHA diferente do head não passa,
+    nem prefixo, nem autor ausente ou diferente do viewer. Sem `→ verde` no corpo
+    do PR, não passa.
+    """
     if "→ verde" not in (pr.get("body") or ""):
         return False
-    for n in reversed(ci["comments"]["nodes"]):
-        m = re.match(r"\s*DONE\s+([0-9a-f]{7,40})", n["body"])
-        if m:
-            return pr["headRefOid"].startswith(m.group(1))
+    head = (pr.get("headRefOid") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", head):
+        return False
+    viewer = id_viewer_linear() if viewer_id is None else viewer_id
+    if not viewer:
+        return False
+    nodes = ((ci.get("comments") or {}).get("nodes") or [])
+    for n in reversed(nodes):
+        if not isinstance(n, dict):
+            continue
+        m = _DONE_RE.match(n.get("body") or "")
+        if not m:
+            continue
+        if m.group(1).lower() != head:
+            return False
+        user = n.get("user") if isinstance(n.get("user"), dict) else {}
+        return str(user.get("id") or "") == str(viewer)
     return False
 
 
@@ -2365,7 +2478,8 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         mesmo = lane in AGENTES and fornecedor(rev) == fornecedor(lane)
         return prompt("revisor").format(
             number=pr["number"], repo_slug=repo["slug"], title=pr["title"], branch=pr["headRefName"],
-            sha=pr["headRefOid"], sha7=pr["headRefOid"][:7], merge_state=pr.get("mergeStateStatus"),
+            # sha7 continua no format: prompt já instalado pedia {sha7}. Agora recebe os 40 hex.
+            sha=pr["headRefOid"], sha7=pr["headRefOid"], merge_state=pr.get("mergeStateStatus"),
             card=card or "(nenhum no título/branch)", card_desc=(ci or {}).get("description", "")[:6000] or "(sem card)",
             card_comments=fmt_comments(ci), stat=stat, protected=", ".join(protected()), lane=lane,
             known_errors=known_errors(),

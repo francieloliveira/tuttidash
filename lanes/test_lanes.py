@@ -827,6 +827,8 @@ class FreioDeCaminhoProtegido(unittest.TestCase):
         self.assertNotIn("protegido.md", g["lane_files"],
                          "arquivo que veio da main não é da lane")
         self.assertEqual(d.touched_protected(g["lane_files"]), [])
+        self.assertEqual(len(g["sha"]), 40)
+        self.assertTrue(all(c in "0123456789abcdef" for c in g["sha"]))
 
     def test_freio_eh_do_projeto_que_a_lane_trabalha(self):
         """O alcance do freio acompanha o projeto: o worktree e os globs saem juntos.
@@ -2290,6 +2292,16 @@ class CaminhoNonAsciiProtegido(unittest.TestCase):
         self.assertEqual(escapado, [],
                          "o escape octal continua sem casar o glob: por isso o diff não pode devolvê-lo")
         self.assertEqual([nfc(p) for p in tocados], ["docs/arquivo/relatório.docx"])
+
+
+class ShaCompletoDoDone(unittest.TestCase):
+    """FRA-593: o SHA que vai no DONE é o `git rev-parse HEAD`, sem --short."""
+
+    def test_git_summary_nao_encurta_o_sha(self):
+        import inspect
+        src = inspect.getsource(d.git_summary)
+        self.assertNotIn("--short", src)
+        self.assertIn('["git", "rev-parse", "HEAD"]', src)
 
 
 class SuitesEstritas(unittest.TestCase):

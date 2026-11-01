@@ -45,7 +45,7 @@ OPS_DOCUMENTO = frozenset({"ler_documento", "atualizar_documento"})
 ISSUE_FIELDS = """id identifier title description url priority sortOrder startedAt createdAt updatedAt dueDate estimate
       branchName assignee{ id name } parent{ identifier }
       state{ id name type } labels{ nodes{ id name parent{ name } } } project{ id name }
-      comments(first:30, orderBy: createdAt){ nodes{ id body createdAt } }
+      comments(first:30, orderBy: createdAt){ nodes{ id body createdAt user { id } } }
       inverseRelations(first:30){ nodes{ type issue{ identifier state{ type } } } }"""
 
 
