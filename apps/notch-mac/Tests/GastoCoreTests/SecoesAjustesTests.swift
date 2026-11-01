@@ -46,7 +46,7 @@ final class SecoesAjustesTests: XCTestCase {
         XCTAssertTrue(geral.campos.contains { $0.chave == "geral.abrir_no_login" })
         XCTAssertFalse(CatalogoAjustes.abas().flatMap(\.campos).contains { $0.chave == "geral.tela" })
         // Continua no cfg (compatibilidade); o app não a lê para posicionar a pílula.
-        XCTAssertEqual(CatalogoAjustes.buscar("Tela").filter { $0.campo.chave == "geral.tela" }.count, 0)
+        XCTAssertEqual(CatalogoAjustes.buscar("Tela").filter { $0.campo?.chave == "geral.tela" }.count, 0)
     }
 
     /// Os blocos próprios (lanes ligadas, modelos, projetos, contas, Linear, agentes, manifestos...) continuam lá.
@@ -78,6 +78,24 @@ final class SecoesAjustesTests: XCTestCase {
         XCTAssertTrue(avancado.campos.contains { $0.chave == "agendas.env.dispatcher.SKIP_PREFLIGHT" })
     }
 
+    /// A carga do Mac continua nas chaves antigas; o texto visível não fala de estresse humano.
+    func testCargaDoMac() {
+        let avancado = CatalogoAjustes.secoes().first { $0.id == .avancado }!
+        let grupo = avancado.grupos.first { $0.campos.contains { $0.chave == "estresse.saida" } }
+        let intervalo = avancado.campos.first { $0.chave == "estresse.intervalo_s" }
+        let saida = avancado.campos.first { $0.chave == "estresse.saida" }
+        XCTAssertEqual(grupo?.nome, "Carga do Mac")
+        XCTAssertEqual(grupo?.campos.map(\.chave), ["estresse.intervalo_s", "estresse.saida"])
+        XCTAssertEqual(intervalo?.rotulo, "Intervalo da medição de carga do Mac (s)")
+        XCTAssertEqual(saida?.rotulo, "Arquivo da medição de carga do Mac")
+        XCTAssertEqual(saida?.padrao, "~/Library/Logs/TuttiDash/carga-mac.tsv")
+        XCTAssertFalse(avancado.grupos.contains { $0.nome == "Medição de estresse" })
+        for texto in [grupo?.nome, intervalo?.rotulo, saida?.rotulo, saida?.padrao].compactMap({ $0 }) {
+            XCTAssertFalse(texto.localizedCaseInsensitiveContains("estresse"), texto)
+            XCTAssertFalse(texto.localizedCaseInsensitiveContains("TranscentIA"), texto)
+        }
+    }
+
     func testSecaoAntigaApontaParaUmaNova() {
         for antiga in ["lanes", "contas", "revisao", "agentes", "agendas", "maquinas", "integracoes", "painel"] {
             XCTAssertNotNil(CatalogoAjustes.secaoNovaDaAntiga[antiga], antiga)
@@ -86,11 +104,43 @@ final class SecoesAjustesTests: XCTestCase {
     }
 
     func testBuscaIgnoraAcentoEMaiuscula() {
-        XCTAssertTrue(CatalogoAjustes.buscar("TETO").contains { $0.campo.chave == "teto_semanal_usd" })
-        XCTAssertTrue(CatalogoAjustes.buscar("raciocinio").contains { $0.campo.chave == "lane_view.pensamento" })
+        XCTAssertTrue(CatalogoAjustes.buscar("TETO").contains { $0.campo?.chave == "teto_semanal_usd" })
+        XCTAssertTrue(CatalogoAjustes.buscar("raciocinio").contains { $0.campo?.chave == "lane_view.pensamento" })
         XCTAssertTrue(CatalogoAjustes.buscar("skip_preflight").contains { $0.secao == .avancado })
         XCTAssertTrue(CatalogoAjustes.buscar("   ").isEmpty)
         XCTAssertTrue(CatalogoAjustes.buscar("zzzz-nada").isEmpty)
+    }
+
+    /// FRA-608: a busca acha o bloco pelo nome e pelo título do grupo, e leva à seção.
+    func testBuscaLevaAoBlocoSemPrometerReset() {
+        let projetos = CatalogoAjustes.buscar("Projetos").filter { $0.bloco == .projetos }
+        XCTAssertEqual(projetos.map(\.secao), [.lanes])
+        XCTAssertEqual(projetos.map(\.grupo), ["Projetos"])
+        XCTAssertTrue(projetos.allSatisfy { $0.campo == nil })
+        let contas = CatalogoAjustes.buscar("Contas acompanhadas").filter { $0.bloco == .contas }
+        XCTAssertEqual(contas.first?.secao, .contas)
+        XCTAssertEqual(contas.first?.grupo, "Contas das lanes")
+        XCTAssertNil(contas.first?.campo)
+        XCTAssertEqual(BlocoAjustes.projetos.chaves, [])
+        XCTAssertEqual(BlocoAjustes.contas.chaves, [])
+        XCTAssertEqual(BlocoAjustes.quemCuida.chaves, [ModoForcado.chave])
+        XCTAssertEqual(CatalogoAjustes.rotuloRestaurarCampos, "Restaurar padrão dos campos")
+        XCTAssertFalse(CatalogoAjustes.rotuloRestaurarCampos.contains("bloco"))
+    }
+
+    func testConfig0600ECasa0700() throws {
+        let t = try PastaTemp()
+        let m = ModeloAjustes(home: t.url)
+        try m.salvar()
+        let modo = try FileManager.default.attributesOfItem(atPath: m.arquivo.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(modo?.uint16Value, 0o600)
+        PresencaDoApp.marcarAberta(home: t.url, pid: 42)
+        let casa = t.url.appendingPathComponent(".transcentia")
+        let modoCasa = try FileManager.default.attributesOfItem(atPath: casa.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(modoCasa?.uint16Value, 0o700)
+        let pid = PresencaDoApp.arquivo(home: t.url)
+        let modoPid = try FileManager.default.attributesOfItem(atPath: pid.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(modoPid?.uint16Value, 0o600)
     }
 
     func testNuncaExpoeEnabledNemPause() {

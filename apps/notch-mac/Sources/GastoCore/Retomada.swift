@@ -34,7 +34,10 @@ public struct Retomada: Equatable, Sendable {
     /// `--resume` conhecido (fonte única em `Agentes`, FRA-373); lane desconhecida cai em `claude`.
     public var comando: String {
         let cli = Agentes.cliResume(lane: lane)
-        return "cd \(Retomadas.aspas(worktree)) && \(cli) --resume \(sessao)"
+        let pasta = Retomadas.aspas(worktree)
+        // O id vem do log do agente. Fora do formato, não entra cru na linha de shell.
+        guard Retomadas.sessaoAceita(sessao) else { return "cd \(pasta) && \(cli) --resume" }
+        return "cd \(pasta) && \(cli) --resume \(Retomadas.aspas(sessao))"
     }
 }
 
@@ -90,9 +93,14 @@ public enum Retomadas {
             guard let obj = try? JSONSerialization.jsonObject(with: Data(linha)) as? [String: Any] else { continue }
             if sessao == nil { sessao = JV.texto(obj["session_id"]) }
             if cwd == nil { cwd = JV.texto(obj["cwd"]) }
-            if let s = sessao, let c = cwd { return (s, c) }
+            if let s = sessao, let c = cwd { return Self.sessaoAceita(s) ? (s, c) : nil }
         }
         return nil
+    }
+
+    /// Id de sessão que pode ir no comando: o log é do agente, não do app.
+    static func sessaoAceita(_ s: String) -> Bool {
+        s.range(of: #"^[A-Za-z0-9._:-]+$"#, options: .regularExpression) != nil
     }
 
     /// Aspas simples de shell só quando o caminho precisa.

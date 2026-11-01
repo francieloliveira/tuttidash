@@ -1,4 +1,5 @@
 """Funções puras do vigia (bots/watch.py): sem rede, sem Linear, sem gh."""
+import ast
 import importlib.util
 import json
 import tempfile
@@ -31,10 +32,18 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(watch.decision("[Triagem] sem linha"), "manter")
 
     def test_prova_verde_so_no_head_atual(self):
-        pr = {"headRefOid": "abc1234def", "body": "verification: dispatcher: safe_xcodebuild.sh test X → verde"}
-        self.assertTrue(watch.proof_passed(card(["DONE abc1234\n\nok"]), pr))
-        self.assertFalse(watch.proof_passed(card(["DONE 9999999"]), pr))
-        self.assertFalse(watch.proof_passed(card(["DONE abc1234"]), dict(pr, body="sem prova")))
+        head = "abc1234" + "d" * 33
+        pr = {"headRefOid": head, "body": "verification: dispatcher: safe_xcodebuild.sh test X → verde"}
+        prova = {"comments": {"nodes": [{"id": "0", "body": f"DONE {head}\n\nok", "user": {"id": "v"}}]},
+                 "labels": {"nodes": []}, "title": "x"}
+        self.assertTrue(watch.proof_passed(prova, pr, viewer_id="v"))
+        outro = {"comments": {"nodes": [{"id": "0", "body": "DONE " + "9" * 40 + "\n", "user": {"id": "v"}}]},
+                 "labels": {"nodes": []}, "title": "x"}
+        self.assertFalse(watch.proof_passed(outro, pr, viewer_id="v"))
+        self.assertFalse(watch.proof_passed(prova, dict(pr, body="sem prova"), viewer_id="v"))
+        curto = {"comments": {"nodes": [{"id": "0", "body": f"DONE {head[:7]}\n\nok", "user": {"id": "v"}}]},
+                 "labels": {"nodes": []}, "title": "x"}
+        self.assertFalse(watch.proof_passed(curto, pr, viewer_id="v"))
 
     def test_motivo_normalizado_ignora_numeros(self):
         a = watch.stop_reason(card(["✋ lane:parada\n**Motivo:** a prova passou de 40 min"]), "lane:parada")[1]
@@ -353,16 +362,29 @@ class MergeExigeAprovadoTest(unittest.TestCase):
         watch.comment = lambda i, b: self.calls.append(("comment", b))
 
     def test_veredito_do_estado_e_do_pr(self):
-        st = {"reviewed": {"abc1234def": "APROVADO"}}
-        self.assertEqual(watch.veredito_do_head({"dir": "."}, self.PR, st), "APROVADO")
-        for v in (None, "formato-invalido", "erro 10-29 01:56"):
-            st = {"reviewed": {} if v is None else {"abc1234def": v}}
-            self.assertIsNone(watch.veredito_do_head({"dir": "."}, self.PR, st))
-        watch.sh = lambda *a, **k: ('{"comments":[{"body":"[Revisor] REVISOR: AJUSTES em abc1234"},'
-                                    '{"body":"[Revisor] REVISOR: APROVADO head abc1234"}]}')
-        st = {"reviewed": {"abc1234def": "ja-tinha"}}
-        self.assertEqual(watch.veredito_do_head({"dir": "."}, self.PR, st), "APROVADO")
-        self.assertEqual(st["reviewed"]["abc1234def"], "APROVADO")
+        sha = "a" * 40
+        pr = {"number": 7, "headRefOid": sha}
+        chamadas = []
+
+        def sh_nao(_args, **_k):
+            chamadas.append(_args)
+            raise AssertionError("este estado não lê o PR")
+
+        watch.sh = sh_nao
+        for v in (None, "formato-invalido", "erro 10-29 01:56", "AJUSTES"):
+            st = {"reviewed": {} if v is None else {sha: v}}
+            esperado = "AJUSTES" if v == "AJUSTES" else None
+            self.assertEqual(watch.veredito_do_head({"dir": "."}, pr, st), esperado)
+        self.assertEqual(chamadas, [])
+        corpo = f"[Revisor] REVISOR: APROVADO · head `{sha}`"
+        watch.sh = lambda *a, **k: json.dumps({"comments": [
+            {"body": f"[Revisor] REVISOR: AJUSTES · head `{sha}`", "viewerDidAuthor": True,
+             "author": {"login": "bot"}},
+            {"body": corpo, "viewerDidAuthor": True, "author": {"login": "bot"}},
+        ]})
+        st = {"reviewed": {sha: "ja-tinha"}}
+        self.assertEqual(watch.veredito_do_head({"dir": "."}, pr, st), "APROVADO")
+        self.assertEqual(st["reviewed"][sha], "APROVADO")
 
     def test_erro_de_revisao_tenta_de_novo_depois_do_intervalo(self):
         st = {"reviewed": {"h": "erro 10-29 01:56"}, "erros_revisao": {"h": 1000.0}}
@@ -384,22 +406,140 @@ class MergeExigeAprovadoTest(unittest.TestCase):
         self.assertIn("Não mergeio sem revisão", self.calls[1][1])
 
 
+class AprovacaoAutenticadaTest(unittest.TestCase):
+    """FRA-593: [Revisor] e DONE só com autor confiável e SHA completo de 40 hex."""
+
+    SHA = "b" * 40
+
+    def setUp(self):
+        self._sh = watch.sh
+        self._login = getattr(watch.login_do_gh, "cache", None)
+        self.addCleanup(self._restaurar)
+
+    def _restaurar(self):
+        watch.sh = self._sh
+        if self._login is None:
+            if hasattr(watch.login_do_gh, "cache"):
+                del watch.login_do_gh.cache
+        else:
+            watch.login_do_gh.cache = self._login
+
+    def _pr(self):
+        return {"number": 25, "headRefOid": self.SHA}
+
+    def _sh_comentarios(self, comments):
+        watch.sh = lambda *a, **k: json.dumps({"comments": comments})
+
+    def _comentario(self, body, login="bot", did=True, com_viewer=True):
+        c = {"body": body, "author": {"login": login}}
+        if com_viewer:
+            c["viewerDidAuthor"] = did
+        return c
+
+    def test_comentario_de_outro_autor_nao_aprova(self):
+        corpo = f"[Revisor] REVISOR: APROVADO · head `{self.SHA}`"
+        self._sh_comentarios([self._comentario(corpo, login="intruso", did=False)])
+        self.assertIsNone(watch.veredito_publicado({"dir": "."}, self._pr()))
+        self.assertFalse(watch.revisor_ja_revisou({"dir": "."}, self._pr()))
+
+    def test_login_de_outro_autor_sem_viewer_nao_aprova(self):
+        watch.login_do_gh.cache = "bot"
+        corpo = f"[Revisor] REVISOR: APROVADO · head `{self.SHA}`"
+        self._sh_comentarios([self._comentario(corpo, login="intruso", com_viewer=False)])
+        self.assertIsNone(watch.veredito_publicado({"dir": "."}, self._pr()))
+        self.assertFalse(watch.revisor_ja_revisou({"dir": "."}, self._pr()))
+
+    def test_comentario_posterior_de_outro_autor_nao_apaga_o_aprovado(self):
+        bom = self._comentario(f"[Revisor] REVISOR: APROVADO · head `{self.SHA}`", did=True)
+        ruim = self._comentario(f"[Revisor] REVISOR: AJUSTES · head `{self.SHA}`", login="intruso", did=False)
+        self._sh_comentarios([bom, ruim])
+        self.assertEqual(watch.veredito_publicado({"dir": "."}, self._pr()), "APROVADO")
+
+    def test_bot_com_sha_completo_aprova(self):
+        corpo = f"[Revisor] REVISOR: APROVADO · head `{self.SHA}`"
+        self._sh_comentarios([self._comentario(corpo, login="bot", did=True)])
+        self.assertEqual(watch.veredito_publicado({"dir": "."}, self._pr()), "APROVADO")
+        self.assertTrue(watch.revisor_ja_revisou({"dir": "."}, self._pr()))
+
+    def test_login_do_gh_com_sha_completo_aprova(self):
+        watch.login_do_gh.cache = "bot"
+        corpo = f"[Revisor] REVISOR: APROVADO · head `{self.SHA}`"
+        self._sh_comentarios([self._comentario(corpo, login="bot", com_viewer=False)])
+        self.assertEqual(watch.veredito_publicado({"dir": "."}, self._pr()), "APROVADO")
+
+    def test_sha_de_7_nao_aprova(self):
+        corpo = f"[Revisor] REVISOR: APROVADO · head `{self.SHA[:7]}`"
+        self._sh_comentarios([self._comentario(corpo, login="bot", did=True)])
+        self.assertIsNone(watch.veredito_publicado({"dir": "."}, self._pr()))
+        self.assertFalse(watch.revisor_ja_revisou({"dir": "."}, self._pr()))
+
+    def test_sha_com_hex_a_mais_nao_aprova(self):
+        corpo = f"[Revisor] REVISOR: APROVADO · head `{self.SHA}a`"
+        self._sh_comentarios([self._comentario(corpo, login="bot", did=True)])
+        self.assertIsNone(watch.veredito_publicado({"dir": "."}, self._pr()))
+
+    def test_aprovado_gravado_sem_autoria_nao_vale(self):
+        corpo = f"[Revisor] REVISOR: APROVADO · head `{self.SHA}`"
+        self._sh_comentarios([{"body": corpo}])
+        st = {"reviewed": {self.SHA: "APROVADO"}}
+        self.assertIsNone(watch.veredito_do_head({"dir": "."}, self._pr(), st))
+        self.assertNotIn(self.SHA, st["reviewed"])
+        st = {"reviewed": {self.SHA: "ja-tinha"}}
+        self.assertIsNone(watch.veredito_do_head({"dir": "."}, self._pr(), st))
+        self.assertNotIn(self.SHA, st["reviewed"])
+
+    def test_done_de_outro_usuario_nao_passa(self):
+        pr = {"headRefOid": self.SHA, "body": "dispatcher → verde"}
+        ci = {"comments": {"nodes": [{"body": f"DONE {self.SHA}\n", "user": {"id": "intruso"}}]}}
+        self.assertFalse(watch.proof_passed(ci, pr, viewer_id="bot"))
+
+    def test_done_do_viewer_com_sha_completo_passa(self):
+        pr = {"headRefOid": self.SHA, "body": "dispatcher → verde"}
+        ci = {"comments": {"nodes": [{"body": f"DONE {self.SHA}\n", "user": {"id": "bot"}}]}}
+        self.assertTrue(watch.proof_passed(ci, pr, viewer_id="bot"))
+
+    def test_done_com_sha_de_7_nao_passa(self):
+        pr = {"headRefOid": self.SHA, "body": "dispatcher → verde"}
+        ci = {"comments": {"nodes": [{"body": f"DONE {self.SHA[:7]}\n", "user": {"id": "bot"}}]}}
+        self.assertFalse(watch.proof_passed(ci, pr, viewer_id="bot"))
+
+    def test_done_sem_user_nao_passa(self):
+        pr = {"headRefOid": self.SHA, "body": "dispatcher → verde"}
+        ci = {"comments": {"nodes": [{"body": f"DONE {self.SHA}\n"}]}}
+        self.assertFalse(watch.proof_passed(ci, pr, viewer_id="bot"))
+
+    def test_prompt_pede_sha_completo_e_nao_grava_actor_id(self):
+        texto = watch.prompt("revisor")
+        self.assertIn("{sha}", texto)
+        self.assertNotIn("{sha7}", texto)
+        self.assertIn("40", texto)
+        src = Path(watch.__file__).read_text(encoding="utf-8")
+        self.assertNotIn('_cfg("linear.actor_id"', src)
+        self.assertNotIn("_cfg('linear.actor_id'", src)
+        self.assertNotIn("startswith", Path(watch.__file__).read_text(encoding="utf-8").split("def proof_passed")[1].split("def waiting_device_test")[0])
+
+
 class ComentariosMaisRecentesTest(unittest.TestCase):
     """O Linear devolve do mais novo para o mais antigo; o vigia lê em ordem cronológica."""
 
     def test_consulta_pede_os_mais_novos(self):
         self.assertIn("comments(first:30, orderBy: createdAt)", watch.ISSUE_FIELDS)
+        self.assertIn("user { id }", watch.ISSUE_FIELDS)
         self.assertNotIn("last:30", watch.ISSUE_FIELDS)
 
     def test_em_ordem_poe_o_mais_novo_no_fim_e_o_done_novo_vale(self):
+        novo, velho = "e445dea" + "0" * 33, "91aa661" + "f" * 33
         ci = {"comments": {"nodes": [
-            {"id": "3", "body": "[Revisor] REVISOR: APROVADO", "createdAt": "2026-10-29T13:28:00Z"},
-            {"id": "2", "body": "DONE e445dea\n\nx", "createdAt": "2026-10-29T11:07:00Z"},
-            {"id": "1", "body": "DONE 91aa661\n\nx", "createdAt": "2026-10-29T09:55:00Z"}]}}
+            {"id": "3", "body": "[Revisor] REVISOR: APROVADO", "createdAt": "2026-10-29T13:28:00Z",
+             "user": {"id": "viewer-teste"}},
+            {"id": "2", "body": f"DONE {novo}\n\nx", "createdAt": "2026-10-29T11:07:00Z",
+             "user": {"id": "viewer-teste"}},
+            {"id": "1", "body": f"DONE {velho}\n\nx", "createdAt": "2026-10-29T09:55:00Z",
+             "user": {"id": "viewer-teste"}}]}}
         watch.em_ordem(ci)
         self.assertEqual([n["id"] for n in ci["comments"]["nodes"]], ["1", "2", "3"])
-        pr = {"body": "dispatcher: x → verde", "headRefOid": "e445dea0000"}
-        self.assertTrue(watch.proof_passed(ci, pr))
+        pr = {"body": "dispatcher: x → verde", "headRefOid": novo}
+        self.assertTrue(watch.proof_passed(ci, pr, viewer_id="viewer-teste"))
         self.assertIsNone(watch.em_ordem(None))
 
 
@@ -1309,7 +1449,7 @@ class MergeSoClean(unittest.TestCase):
         self.labels = []
         self.arquivos = "Sources/App.swift\n"
         nomes = ("sh", "open_prs", "project_issues", "veredito_do_head", "hold_for_heavier",
-                 "move_done", "comment", "add_label", "REPOS")
+                 "move_done", "comment", "add_label", "REPOS", "id_viewer_linear")
         self._antes = {n: getattr(watch, n) for n in nomes}
         self.addCleanup(self._restaurar)
         watch.REPOS = {"app": {"dir": Path(self.dir), "slug": "dono/repo"}}
@@ -1321,6 +1461,7 @@ class MergeSoClean(unittest.TestCase):
         watch.comment = lambda i, b: self.comentarios.append(b)
         watch.add_label = lambda i, n: self.labels.append(n)
         watch.sh = self._sh
+        watch.id_viewer_linear = lambda: "viewer-teste"
         watch.projetos._resetar_cache()
         watch.projetos._CACHE["lista"] = [watch.projetos.Projeto(
             id="app", nome="App", repo=self.dir,
@@ -1340,7 +1481,7 @@ class MergeSoClean(unittest.TestCase):
         return ""
 
     def _pr(self, **extra):
-        pr = {"number": 7, "headRefOid": "abc1234ffff", "headRefName": "lane/fra-7",
+        pr = {"number": 7, "headRefOid": "abc1234ffff" + "0" * 29, "headRefName": "lane/fra-7",
               "title": "FRA-7 algo", "mergeStateStatus": "CLEAN",
               "body": "dispatcher → verde", "labels": [],
               "statusCheckRollup": [{"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}]}
@@ -1350,7 +1491,8 @@ class MergeSoClean(unittest.TestCase):
     def _ci(self):
         return {"id": "id-7", "identifier": "FRA-7", "sortOrder": 1,
                 "labels": {"nodes": []},
-                "comments": {"nodes": [{"id": "c1", "body": "DONE abc1234\n\nok"}]}}
+                "comments": {"nodes": [{"id": "c1", "body": "DONE " + ("abc1234ffff" + "0" * 29) + "\n\nok",
+                                       "user": {"id": "viewer-teste"}}]}}
 
     def _rodar(self, st=None):
         st = {"merged": {}, "done_moves": {}, "installs": {}} if st is None else st
@@ -1424,3 +1566,12 @@ class MergeSoClean(unittest.TestCase):
         self.arquivos = ".github/workflows/ci.yml\n"
         self.assertEqual(watch.pr_paths({"number": 7}), [".github/workflows/ci.yml"])
         self.assertEqual(watch.pr_files({"number": 7}), {"ci.yml"})
+
+
+class CompilaNoPython39Test(unittest.TestCase):
+    """FRA-590: o `/usr/bin/python3` do Mac é 3.9. Uma f-string com `{expr or {}}`
+    e o `.get` fora da interpolação não compila, e o vigia não sobe."""
+
+    def test_watch_py_compila(self):
+        src = (Path(__file__).resolve().parents[1] / "bots" / "watch.py").read_text(encoding="utf-8")
+        ast.parse(src)

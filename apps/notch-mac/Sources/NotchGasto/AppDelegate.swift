@@ -45,12 +45,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var caminhoFoto: URL?
     /// «Atualizar agora» no cabeçalho: avisa quando a leitura termina.
     private var avisarAoAtualizar = false
+    /// Proxy do Linear. O delegate recebe o protocolo; o padrão é o processo único do app.
+    let proxy: any ControleProxyLinear
+
+    init(proxy: any ControleProxyLinear = ServicoProxyLinear.compartilhado) {
+        self.proxy = proxy
+        super.init()
+    }
 
     // Intervalos (dados 30 s, uso 120 s: endpoints limitados por IP) vivem em `PoliticaAtualizacao`.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // O dispatcher/vigia/chave só trabalham enquanto este PID estiver vivo.
         PresencaDoApp.marcarAberta()
+        // O proxy lê o token no Keychain do app e não o devolve aos scripts (FRA-607).
+        let proxy = self.proxy
+        Task.detached(priority: .utility) { proxy.ligar() }
         EstadoCaixa.compartilhada.iniciar()  // caixa do dono: contador do sino e aviso do macOS
         NSApp.setActivationPolicy(.accessory)
         Configuracao.copiarPastaAntiga()
@@ -162,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// «Sair» encerra o trabalho automático junto com o app. Fechar o painel não.
     func applicationWillTerminate(_ notification: Notification) {
+        proxy.parar()
         PresencaDoApp.pararTudo()
     }
 
@@ -468,9 +479,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alerta.addButton(withTitle: "Desativar")
         NSApp.activate(ignoringOtherApps: true)
         guard alerta.runModal() == .alertSecondButtonReturn else { return }
-        let script = modelo.config.stateDir.appendingPathComponent("lanes_ctl.py").path
-        guard FileManager.default.fileExists(atPath: script) else {
-            modelo.avisoCtl = "Não achei o lanes_ctl.py. Nada foi alterado."
+        guard let script = caminhoLanesCtl() else {
+            modelo.avisoCtl = "Não achei o lanes_ctl.py no bundle. Nada foi alterado."
             return
         }
         modelo.avisoCtl = "Desativando \(lane)…"
@@ -501,9 +511,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Reativa a lane pelo `lanes_ctl.py enable <lane>`. Sem confirmação (ação reversível).
     private func ativar(_ lane: String) {
-        let script = modelo.config.stateDir.appendingPathComponent("lanes_ctl.py").path
-        guard FileManager.default.fileExists(atPath: script) else {
-            modelo.avisoCtl = "Não achei o lanes_ctl.py. Nada foi alterado."
+        guard let script = caminhoLanesCtl() else {
+            modelo.avisoCtl = "Não achei o lanes_ctl.py no bundle. Nada foi alterado."
             return
         }
         modelo.avisoCtl = "Ativando \(lane)…"
@@ -537,6 +546,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func acaoAtualizar() { atualizar(forcar: true, mostrarIndicador: true); atualizarUso(mostrarIndicador: true) }
     @objc private func acaoConfig() { abrirConfig() }
     @objc private func acaoSair() { PresencaApp.sair() }
+
+    /// `lanes_ctl.py` do bundle assinado. Não usa a cópia em ~/.transcentia.
+    private func caminhoLanesCtl() -> String? {
+        let url = ScriptsDoBundle.obrigatorio("lanes/lanes_ctl.py")
+        guard FileManager.default.isReadableFile(atPath: url.path), !url.path.contains(".transcentia") else {
+            return nil
+        }
+        return url.path
+    }
     @objc private func acaoTela(_ item: NSMenuItem) {
         ControladorNotch.usarTelaPrincipal.toggle()
         item.state = ControladorNotch.usarTelaPrincipal ? .on : .off

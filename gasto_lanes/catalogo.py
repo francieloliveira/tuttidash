@@ -4,27 +4,32 @@ Fonte única da lista de CLIs/lanes: adicionar um agente novo = 1 arquivo JSON.
 `gasto_lanes/agentes.py` (e o resto do Python) deriva deste catálogo em vez de
 manter uma lista hardcoded paralela.
 
-Busca, em ordem: cópia instalada (`~/.transcentia/agents.d/`, E13), depois o
-diretório `agents.d/` na raiz do repo (dev), e por fim `EMBUTIDOS` — cópia
-mecânica dos mesmos manifests dentro deste arquivo, para teste isolado e máquina
-sem o catálogo instalado. `tests/test_catalogo.py` cobra a paridade dos três.
+Busca, em ordem: `agents.d/` no bundle assinado (FRA-614), depois o diretório
+`agents.d/` na raiz do repo (dev), e por fim `EMBUTIDOS` — cópia mecânica dos
+mesmos manifests dentro deste arquivo, para teste isolado e máquina sem o
+catálogo. A cópia em `~/.transcentia/agents.d/` não entra: a lane grava nessa
+pasta. `EMBUTIDOS` não é o fixture de teste. `tests/test_catalogo.py` cobra a
+paridade do disco com o embutido.
 
 Somente Python 3 da stdlib.
 """
 from __future__ import annotations
 
 import datetime as dt
+import importlib.util
 import json
 import os
 import re
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 SCHEMA_ATUAL = 1
 
-#: Diretório instalado pelo `tools/install.sh` (fonte da verdade em produção).
+#: Cópia antiga que o `tools/install.sh` ainda espelha. A execução não lê daqui
+#: (FRA-614): a lane consegue reescrever `~/.transcentia`.
 DIR_INSTALADO = Path.home() / ".transcentia" / "agents.d"
 
 
@@ -423,8 +428,89 @@ def ler_diretorio(diretorio) -> dict:
     return dict(sorted(saida.items(), key=lambda kv: (kv[1]["ordem"], kv[0])))
 
 
+def e_recursos_de_bundle(caminho: Path) -> bool:
+    """True se o caminho é `Algo.app/Contents/Resources` (ou fica dentro) e não é cópia gravável."""
+    try:
+        partes = caminho.resolve().parts
+    except OSError:
+        return False
+    if ".transcentia" in partes or ("tests" in partes and "fixtures" in partes):
+        return False
+    for i, parte in enumerate(partes):
+        if (parte.endswith(".app") and i + 2 < len(partes)
+                and partes[i + 1] == "Contents" and partes[i + 2] == "Resources"):
+            return True
+    return False
+
+
+def _raiz_git() -> Path | None:
+    """Checkout do git onde este arquivo vive. None na cópia instalada em ~/.transcentia."""
+    aqui = Path(__file__).resolve()
+    if ".transcentia" in aqui.parts:
+        return None
+    for pai in aqui.parents:
+        if (pai / ".git").exists():
+            return pai
+    return None
+
+
+def _sob_applications_do_usuario(caminho: Path) -> bool:
+    """`~/Applications` é gravável pela lane. Um `.app` plantado lá não é o bundle."""
+    try:
+        resolvido = caminho.resolve()
+        base = (Path.home() / "Applications").resolve()
+    except OSError:
+        return False
+    return resolvido == base or base in resolvido.parents
+
+
+def recursos_do_bundle() -> Path | None:
+    """`Contents/Resources` só quando o binário gravou `TUTTIDASH_RECURSOS`.
+
+    Sem essa env, falha fechado: não vasculha `/Applications` nem `~/Applications`.
+    `~/Applications` fica de fora mesmo com a env, porque a lane cria esse `.app`.
+    Qualquer outro `.app` que o binário não lançou também fica de fora — a env é
+    o único sinal. No checkout, o chamador usa o template do repo.
+    """
+    bruto = os.environ.get("TUTTIDASH_RECURSOS", "").strip()
+    if not bruto:
+        return None
+    candidato = Path(bruto)
+    if not e_recursos_de_bundle(candidato) or not candidato.is_dir():
+        return None
+    if _sob_applications_do_usuario(candidato):
+        return None
+    return candidato
+
+
+def _repo_agents_d() -> Path | None:
+    """`agents.d/` do checkout. None na cópia instalada e se o caminho cair em ~/.transcentia."""
+    if _raiz_git() is None or not DIR_REPO.is_dir():
+        return None
+    try:
+        resolvido = DIR_REPO.resolve()
+    except OSError:
+        return None
+    if ".transcentia" in resolvido.parts:
+        return None
+    return resolvido
+
+
 def _diretorios() -> list:
-    return [DIR_INSTALADO, DIR_REPO]
+    """Manifestos para execução real: bundle assinado, depois o repo. Nunca ~/.transcentia."""
+    saida = []
+    recursos = recursos_do_bundle()
+    if recursos is not None:
+        agents = recursos / "agents.d"
+        try:
+            if agents.is_dir() and ".transcentia" not in agents.resolve().parts:
+                saida.append(agents)
+        except OSError:
+            pass
+    repo = _repo_agents_d()
+    if repo is not None and repo not in saida:
+        saida.append(repo)
+    return saida
 
 
 _CACHE: dict = {}
@@ -1122,15 +1208,57 @@ def _ids_de_json(dados) -> list:
     return saida
 
 
+def _origem_gasto_privado() -> Path | None:
+    """`gasto_privado.py` ao lado deste arquivo, ou na pasta pessoal do checkout.
+
+    O build público não tem o arquivo: a lista extra some e o resto segue.
+    Não procura em `~/.transcentia` nem segue um atalho até lá (FRA-615).
+    """
+    aqui = Path(__file__).resolve().parent
+    candidatos = [aqui / "gasto_privado.py"]
+    for pai in aqui.parents:
+        if (pai / "agents.d").is_dir() or (pai / ".git").exists():
+            candidatos.append(pai / "apps" / "notch-mac" / "Privado" / "python" / "gasto_privado.py")
+            break
+    for cand in candidatos:
+        try:
+            real = cand.resolve()
+        except OSError:
+            continue
+        if ".transcentia" in str(real):
+            continue
+        if real.is_file():
+            return real
+    return None
+
+
+def _gasto_privado():
+    """Módulo pessoal, se o build o trouxe. Ausente não é erro."""
+    origem = _origem_gasto_privado()
+    if origem is None:
+        return None
+    carregado = sys.modules.get("gasto_privado")
+    if carregado is not None and getattr(carregado, "__file__", None) == str(origem):
+        return carregado
+    spec = importlib.util.spec_from_file_location("gasto_privado", origem)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["gasto_privado"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _lista_extra(lane: str):
     """Lista de outra fonte (`gasto_privado`, só no build pessoal, FRA-565), ou None.
 
-    O módulo fica fora do repositório aberto; quando existe, o install.sh o copia ao lado deste."""
-    try:
-        import gasto_privado  # noqa: PLC0415 — opcional
-    except ImportError:
+    O módulo fica fora do repositório aberto. O `build.sh` o copia para
+    `controle/gasto_lanes/` quando a pasta pessoal existe. Sem ele, None.
+    """
+    mod = _gasto_privado()
+    if mod is None:
         return None
-    f = getattr(gasto_privado, f"modelos_{lane}", None)
+    f = getattr(mod, f"modelos_{lane}", None)
     if not callable(f):
         return None
     return f(_get_json, _ids_de_json, Path.home())

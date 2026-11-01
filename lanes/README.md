@@ -1,28 +1,96 @@
 # Scripts das lanes (fonte canônica, FRA-374)
 
-Cópia viva: `~/.transcentia/lanes/` (é de lá que o launchd roda o dispatcher).
-Backup antes de mexer: o install abaixo guarda `.bak` automático.
+O launchd executa a cópia no bundle assinado
+(`TuttiDash.app/Contents/Resources/controle/lanes/`), gravada pelo `build.sh`
+antes do `codesign`. O estado (`enabled`, heartbeat, `lane-*.json`) continua
+em `~/.transcentia/lanes/`. Não copie estes scripts para lá: uma cópia antiga
+é legado inerte.
+
+Os módulos que o dispatcher, o vigia e a ListaModelos importam
+(`catalogo.py`, `projetos.py`, `privacidade.py`, `linear_ids.py`, e
+`gasto_privado.py` quando o build pessoal existe) ficam numa pasta só:
+`TuttiDash.app/Contents/Resources/controle/gasto_lanes/`. `fila.py` e
+`config.py` vão junto porque o import deles é da mesma pasta. Essa cópia
+não é `~/.transcentia`.
 
 ```
-dispatcher.py    dispatcher das lanes (60 s, launchd com.transcentia.lanes.dispatcher)
-run_lane.sh      runner de uma lane dentro da sessão tmux (lê .lane/agent_cmd)
+dispatcher.py    dispatcher das lanes (60 s, launchd app.tuttidash.agente.dispatcher)
+permissao.py     glob de Bash do CLI (o mesmo que o allow/deny usa)
+run_lane.sh      runner de uma lane dentro da sessão tmux (comando por argv, fora do worktree)
 lanes_window.py  janela única tmux 'lanes' (um painel por lane habilitada)
 lanes_ctl.py     controles da janela
 lane_view.py     formata a saída do agente no painel
 test_lanes.py    testes offline (sem Linear, sem rede): python3 lanes/test_lanes.py
 ```
 
-## Instalar a cópia viva
+## O que o launchd roda
+
+`tuttidash-agente` (dentro do `.app`) resolve o script pelo próprio executável.
+Alterar `~/.transcentia/lanes/dispatcher.py` não muda o processo. Para testar
+sem o app:
 
 ```bash
-cd ~/Developer/tuttidash
-for f in dispatcher.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py; do
-  cp ~/.transcentia/lanes/$f /tmp/lanes-$f.bak
-  cp lanes/$f ~/.transcentia/lanes/$f
-done
+python3 lanes/dispatcher.py --dry-run
 ```
 
-Nunca edite `~/.transcentia/lanes/` direto: a fonte é esta pasta.
+## Estado da lane (FRA-600)
+
+Antes de fechar o card, o `lane-<lane>.json` tem de passar no contrato: worktree
+resolvido sob a pasta de worktrees do projeto, sessão `lane-<lane>`, card
+`^[A-Za-z]+-\d+$`, branch no formato do git (a que o claim gravou), `issue_id`
+igual ao que o `claim` gravou, `base` um commit que o worktree alcança e `log`
+sob o diretório de logs. Estado que falha vai para o log. O dispatcher não chama
+`finalize`, não mata sessão que não seja `lane-<lane>` e não move o card.
+`save_state` legítimo continua gravando e a leitura devolve o que foi gravado.
+
+`proof_pid` e `caffeinate.pid` só recebem sinal se o processo ainda é o que o
+dispatcher gerou: mesmo dono, mesmo início e o command esperado (o bash da prova
+naquele worktree, ou `/usr/bin/caffeinate -i -s -t 150`). O pid que decide se a
+prova vive é a foto em `STATE_DIR/proof-proc/`, fora do worktree. Se
+`.lane/proof_pid` divergir, o arquivo é ignorado. `os.kill` e `waitpid` só no
+pid da foto, e só com dono, início e command conferidos. Processo ausente no
+`ps` conta como prova morta; no refazer, o dispatcher mata o grupo enquanto a
+foto antiga ainda autoriza o processo, e só então começa a prova de novo.
+
+Isto é consistência, não barreira. O mesmo usuário do macOS ainda pode forjar o
+JSON, o `claim-<lane>.json`, a foto em `STATE_DIR/proof-proc/` e o
+`caffeinate.pid`: os quatro estão no home dele. A garantia real é a
+fase 5 (estado fora do alcance do agente).
+
+Lane já em andamento sem `claim-<lane>.json` cai em "sem claim gravado". O
+`watch` volta antes do timeout, da parada manual e do `finalize`, e a sessão
+tmux segue. O card não entra na reserva, então outra lane pode assumir o mesmo
+card; a lane em si continua ocupada enquanto o `lane-<lane>.json` existir. Quem
+sobe o dispatcher encerra essa lane ou grava o claim à mão antes.
+
+## Instalar a cópia viva
+
+`tools/install.sh` não cria `~/.transcentia/lanes` numa instalação limpa e não copia
+`run_lane.sh`, `lane_view.py`, `claude-settings.json` nem `lane-mcp.json`. Se a pasta
+já existe, atualiza o dispatcher, os módulos e os prompts, e deixa runner, view e
+settings como estão.
+
+Nunca edite a cópia em `~/.transcentia/lanes/`: a fonte é esta pasta, e a
+cópia executada é a do bundle.
+
+## Prova, exit e agent_cmd fora do worktree (FRA-595)
+
+A prova mora em `~/.transcentia/lanes/provas/<lane>/<card>/<run_id>` (modo `0700`),
+escrita pelo dispatcher e pelo runner: `proof.log`, `proof_exit`, `proof_started`,
+`proof_pid`, `proof_meta.json`. O `finalize` ignora `.lane/proof_*` e
+`.lane/exit_code`. O `exit_code` e o `finalized` também ficam nessa pasta.
+
+`.lane` no worktree só existe para o agente gravar `result.json`. O dispatcher
+não escreve esse arquivo. Abrir `.lane` ou um arquivo dele passa por `lstat` e
+`O_NOFOLLOW|O_EXCL`; symlink é recusado.
+
+`agent_cmd` sai do worktree: o dispatcher grava `agent_cmd.<nonce>` na pasta da
+rodada e o `run_lane.sh` recebe o caminho por argv. Reescrever `.lane/agent_cmd`
+não muda o comando da rodada. O `proof_pid` só leva `killpg` se dono, início e
+comando conferem com o registro; pid de outro processo não é morto.
+
+No mesmo usuário isso é higiene, não isolamento. O fechamento real é a fase 5
+do FRA-589.
 
 ## Lane nova (ex.: opencode, FRA-374)
 
@@ -84,3 +152,50 @@ estiver estourado. Chegar em In Review não zera o acumulado.
 Pedido de ajuste do revisor (`REVISOR: AJUSTES`) conta 1 tentativa, uma vez
 por id de comentário. A prioridade entre as lanes e a folga por esforço não
 mudam. O verificador do aceite do card não entra aqui.
+
+## Permissões mínimas (FRA-598)
+
+Fonte: o bundle assinado (`Contents/Resources/claude-settings.json`) ou, no
+checkout, `apps/notch-mac/Resources/claude-settings.json`. O perfil é o
+estrito da FRA-598. A cópia em `lanes/` e em `~/.transcentia/lanes/` não
+manda na lane. Claude e Grok usam o mesmo allow/deny. O modo é `dontAsk`,
+não `acceptEdits`.
+
+O que a lane pode rodar no terminal é `git status`, `git diff`, `git add` e
+`git commit`. O allow é `Bash(git diff *)` (espaço antes do `*`): no CLI,
+`Bash(git diff:*)` é prefixo sem fronteira e também casa `git difftool`.
+`git difftool` e `git commit-tree` estão no deny. Arquivo entra pelas
+ferramentas (`Read`/`Edit`/`Write`/`Grep` em `./**`). `python3`, `cat`,
+`head`, `tail`, `sort` e `security` estão no deny, inclusive com caminho
+absoluto (`/usr/bin/security`, `/usr/bin/sort`): o basename casa a regra.
+
+`Read`/`Grep`/`Edit`/`Write` de `**/.grok/**` estão no deny. Numa regra de
+permissão o `~` casa o caractere, não a home. `Bash(git commit *-F*)`,
+`Bash(git commit *--file*)` e `Bash(git diff *--no-index*)` estão no deny:
+o `*` no meio casa a flag em qualquer posição. Esses comandos leem um arquivo
+qualquer e o texto entra no commit que o dispatcher publica. O caminho
+depois de `=` também entra no deny de Read. Quem casa o glob é
+`lanes/permissao.py`.
+
+Rede e `security` não ficam só na regex:
+
+- Claude: `sandbox.enabled`, `failIfUnavailable`, `allowUnsandboxedCommands`
+  false, `network.allowedDomains` vazio e `strictAllowlist`. `denyRead` cobre
+  `~/.ssh`, `~/.config/gh`, `~/.transcentia`, `~/.grok` e `/usr/bin/security`.
+  `denyWrite` cobre `.git/config` e `.git/hooks` (o pushurl e o hook).
+- Grok: `--sandbox lane`. O claim grava `[profiles.lane]` em
+  `~/.grok/sandbox.toml` (`extends = strict`, `restrict_network`, deny desses
+  caminhos) sem apagar os outros perfis. Sem o perfil o CLI recusa subir. O
+  deny do TOML não inclui `~/.grok/auth.json`: o processo precisa desse
+  arquivo para autenticar. Quem tampa o token para o agente é o deny das
+  ferramentas e dos comandos acima.
+
+Residual, de propósito: isso não substitui o usuário separado nem o sandbox da
+fase 5. No macOS o próprio Grok documenta que `restrict_network` não corta a
+rede dos processos filhos (no Linux corta). O processo continua o do usuário,
+então um bug do CLI ainda enxerga o que o usuário enxerga. O matcher em
+Python não sobe o processo. `cut`, `uniq`, `tr` e `ps` seguem na lista de
+só-leitura do CLI. OpenCode, Codex e DeepSeek não recebem este teto, e o
+allow do Claude ainda tem `mcp__transcentia-docs`. O `run_lane.sh` exporta
+`DEEPSEEK_API_KEY`. O follow-up desse residual é a FRA-587 (follow-ups das
+lanes). Não é outro card.

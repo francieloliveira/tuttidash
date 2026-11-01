@@ -20,10 +20,43 @@ SESSION = "lanes"
 # fonte do dispatcher e do vigia): a lane entra quando está habilitada no arquivo
 # `enabled` (mesmo que o dispatcher lê); sem o arquivo, as duas primeiras.
 _AQUI = Path(__file__).resolve().parent
-for _cand in (_AQUI, _AQUI.parent / "gasto_lanes"):   # 1º: instalado; 2º: dev no repo
-    if (_cand / "catalogo.py").is_file():
-        sys.path.insert(0, str(_cand))
-        break
+
+
+def _ativar_modulos() -> Path:
+    """`gasto_lanes/` do bundle assinado, ou o do repo. Nunca `~/.transcentia`.
+
+    Igual em `lanes/dispatcher.py` e `bots/watch.py`. Sem `catalogo.py`
+    nessa pasta, o import fecha: a cópia gravável não é consultada.
+    """
+    aqui = Path(__file__).resolve().parent
+    pasta = (aqui.parent / "gasto_lanes").resolve()
+    catalogo = (pasta / "catalogo.py").resolve()
+    if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
+        sys.exit("catalogo não está no bundle; import recusado")
+    for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
+                 "proxy_linear.py", "gasto_privado.py"):
+        arq = pasta / nome
+        if not arq.exists():
+            continue
+        if ".transcentia" in str(arq.resolve()):
+            sys.exit(f"{nome} não está no bundle; import recusado")
+
+    def suspeito(p: str) -> bool:
+        if ".transcentia" in p:
+            return True
+        if p == "":
+            try:
+                return ".transcentia" in str(Path.cwd().resolve())
+            except OSError:
+                return True
+        return False
+
+    resto = [p for p in sys.path if p not in (str(aqui), str(pasta)) and not suspeito(p)]
+    sys.path[:] = [str(aqui), str(pasta), *resto]
+    return pasta
+
+
+_ativar_modulos()
 import catalogo  # noqa: E402
 
 LANES_ORDEM = catalogo.lanes_por_prioridade()
@@ -31,16 +64,31 @@ TMUX = shutil.which("tmux") or "/opt/homebrew/bin/tmux"
 HERE = Path(__file__).resolve()
 
 
+def diretorio_estado() -> Path:
+    """`enabled` e o marcador da janela são estado. Dentro do .app não se escreve
+    (o codesign quebraria). `enabled` ao lado do script só vale fora do bundle
+    (teste ou cópia antiga que ainda mora junto do estado)."""
+    ao_lado = HERE.parent
+    if ".app/Contents/" in str(ao_lado):
+        return Path.home() / ".transcentia" / "lanes"
+    if (ao_lado / "enabled").is_file():
+        return ao_lado
+    return Path.home() / ".transcentia" / "lanes"
+
+
 def _enabled() -> set[str]:
     try:
-        return {l.strip() for l in (HERE.parent / "enabled").read_text().split() if l.strip()}
+        return {l.strip() for l in (diretorio_estado() / "enabled").read_text().split() if l.strip()}
     except OSError:
         return set(LANES_ORDEM[:2])
 
 
 LANES = tuple(l for l in LANES_ORDEM if l in _enabled()) or LANES_ORDEM[:2]
-OPEN_GUARD = HERE.parent / "lanes-window.opened"   # evita abrir duas janelas seguidas
 OPEN_GUARD_SECONDS = 90
+
+
+def _marca_janela() -> Path:
+    return diretorio_estado() / "lanes-window.opened"
 TEMA = Path.home() / ".transcentia" / "tools" / "tema.tmux"
 BOUNDS = "{40, 60, 1040, 760}"     # ~1000x700, nunca tela cheia
 
@@ -157,9 +205,13 @@ def open_window_once(command_path: Path) -> None:
     """Abre UMA janela do Terminal com lanes.command se nenhuma estiver anexada."""
     if window_open():
         return
-    if OPEN_GUARD.exists() and time.time() - OPEN_GUARD.stat().st_mtime < OPEN_GUARD_SECONDS:
+    marca = _marca_janela()
+    try:
+        if marca.exists() and time.time() - marca.stat().st_mtime < OPEN_GUARD_SECONDS:
+            return
+        marca.write_text(str(time.time()))
+    except OSError:
         return
-    OPEN_GUARD.write_text(str(time.time()))
     script = f'''
 tell application "Terminal"
     set t to do script "bash {command_path}"

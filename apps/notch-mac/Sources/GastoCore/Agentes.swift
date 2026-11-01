@@ -64,9 +64,10 @@ public enum Agentes {
 
     // MARK: - Catálogo
 
-    /// Todos os agentes lidos de `agents.d/` (cai nos embutidos se o diretório faltar).
-    /// Uma conta `optIn` que o binário já conhece entra mesmo se a cópia instalada
-    /// (`~/.transcentia/agents.d`) ainda for antiga: senão Ajustes não deixa adicionar.
+    /// Todos os agentes lidos do catálogo (bundle assinado; no dev, `agents.d/` do repo).
+    /// Cai nos embutidos se o diretório faltar. Uma conta `optIn` que o binário já conhece
+    /// entra mesmo se o catálogo lido ainda for antigo: senão Ajustes não deixa adicionar.
+    /// `~/.transcentia/agents.d` não é fonte (FRA-614).
     public static var todos: [Def] {
         let lidos = CatalogoAgentes.carregar().map(Def.init).ifVazio(embutidos)
         let nomes = Set(lidos.map(\.nome))

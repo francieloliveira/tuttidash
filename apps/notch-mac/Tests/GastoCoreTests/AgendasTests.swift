@@ -55,6 +55,7 @@ final class AgendasTests: XCTestCase {
             XCTAssertEqual(p["StandardOutPath"] as? String, log)
             XCTAssertEqual(p["StandardErrorPath"] as? String, log)
             XCTAssertEqual(p["StartInterval"] as? Int, t.intervaloPadrao)
+            XCTAssertEqual(p["Umask"] as? Int, 63, "umask 077")
             XCTAssertNil(p["EnvironmentVariables"])
             XCTAssertFalse(t.label.contains("painel"))
         }
@@ -139,6 +140,27 @@ final class AgendasTests: XCTestCase {
         s.respostaPrint = (0, "state = not running\n\tlast exit code = 0\n"); XCTAssertEqual(g.estado(dispatcher), .ativo)
         s.respostaPrint = (0, "state = not running\n\tlast exit code = 1\n")
         if case .erro = g.estado(dispatcher) {} else { XCTFail() }
+    }
+
+    func testJobDoBundleEntraNoPlist() throws {
+        let script = "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/dispatcher.py"
+        let g = GerenciadorAgendas(home: casa, sistema: SistemaFalso(), config: ["agendas": ["jobs": [
+            ["label": "com.exemplo.dispatcher", "nome": "Exemplo Dispatcher", "chave": "dispatcher",
+             "intervalo_padrao": 60, "run_at_load": true, "script": script, "argumentos": ["--real"],
+             "log": "~/Library/Logs/Ex/d.log"],
+        ]]])
+        let t = try XCTUnwrap(g.trabalhos.first)
+        let dados = try g.plist(t)
+        let p = try PropertyListSerialization.propertyList(from: dados, format: nil) as! [String: Any]
+        XCTAssertEqual(p["ProgramArguments"] as? [String], ["/usr/bin/python3", script, "--real"])
+    }
+
+    func testRecusaScriptEmTranscentia() {
+        let g = GerenciadorAgendas(home: casa, sistema: SistemaFalso(), config: ["agendas": ["jobs": [
+            ["label": "com.exemplo.dispatcher", "nome": "Exemplo Dispatcher", "chave": "dispatcher",
+             "script": "~/.transcentia/lanes/dispatcher.py", "log": "~/Library/Logs/Ex/d.log"],
+        ]]])
+        XCTAssertTrue(g.trabalhos.isEmpty)
     }
 }
 

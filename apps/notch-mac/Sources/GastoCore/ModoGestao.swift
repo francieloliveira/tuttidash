@@ -66,7 +66,8 @@ public final class GestaoLanes {
 
     public var home: URL { modelo.home }
     public var modoJSON: URL { home.appendingPathComponent(".transcentia/bots/modo.json") }
-    public var script: URL { home.appendingPathComponent(".transcentia/tools/bots-chave") }
+    /// `bots-chave` do bundle assinado. Não lê `~/.transcentia/tools/bots-chave`.
+    public var script: URL { ScriptsDoBundle.obrigatorio("tools/bots-chave") }
 
     public var modo: ModoForcado { ModoForcado(texto: modelo.valorTexto(ModoForcado.chave)) }
 
