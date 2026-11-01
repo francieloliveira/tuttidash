@@ -19,6 +19,8 @@ Não há recompensa nem prazo de resposta garantido.
 - A chave da API do Linear no Keychain do app (proteção de dados, conta `linear-dispatcher`, serviço `app.tuttidash.mac`). O dispatcher e o vigia não a recebem: pedem um proxy local que só executa operações da allowlist. O item antigo `linear-transcentia-lanes` do login é importado uma vez e apagado. A chave não vai para arquivo, argv nem log. Para trocar: Linear › Settings › API, cole a nova em Ajustes › Contas e revogue a antiga.
 - An optional GitHub token for Copilot usage in the app's Keychain item (`app.tuttidash.mac`), or the path to a file you choose.
 - Config, state and logs under `~/Library/Application Support/TuttiDash`, `~/.transcentia` and `~/Library/Logs/TranscentIA`.
+- The control-plane integrity anchor is not in the app bundle and not under `~/.transcentia`. It is the root-owned file `/private/var/db/tuttidash/controle.sha256` (`/var` is a symlink on macOS). `tuttidash-agente` checks that file and the Apple Development designated requirement for team `3QA76CY27W` before exec. A mismatch aborts the launch. The check is not a CDHash pin.
+  A âncora de integridade do plano de controle não fica no bundle nem em `~/.transcentia`. É o arquivo `/private/var/db/tuttidash/controle.sha256`, dono root. O `tuttidash-agente` confere esse arquivo e o designated requirement Apple Development da equipe `3QA76CY27W` antes de executar. Divergência aborta. A checagem não é um CDHash.
 
 It does not read, renew or rewrite the credentials of the agent CLIs.
 Ele não lê, não renova e não regrava as credenciais dos CLIs dos agentes.

@@ -69,10 +69,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Agentes passam a viver dentro do app (SMAppService); reverte sozinho se falhar.
         // Se uma tentativa já foi revertida, não tenta de novo a cada abertura (evita bootout repetido).
         if !UserDefaults.standard.bool(forKey: "agentesSMAppServiceRevertido") { Task.detached(priority: .utility) {
+            let veredito = IntegridadeControle.atual()
+            if !veredito.confere {
+                let detalhe = veredito.aviso ?? "integridade: divergencia"
+                await MainActor.run {
+                    CentralAvisos.compartilhada.erro(String(localized: "Integridade do plano de controle"), detalhe)
+                }
+            }
             let a = AgentesDoApp(registro: RegistroSMAppService())
             let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/TranscentIA/tuttidash-agentes.log")
             for l in AgentesDoApp.todos {
                 let r = a.migrar(l)
+                // Divergência de integridade não gruda a flag: o aviso continua e a migração
+                // volta a ser tentada quando a âncora e a assinatura conferirem.
                 if case .revertido = r { UserDefaults.standard.set(true, forKey: "agentesSMAppServiceRevertido") }
                 let linha = "\(Date()) \(l.novo): \(r) status=\(a.registro.status(l.plist))\n"
                 if let h = try? FileHandle(forWritingTo: log) { h.seekToEndOfFile(); h.write(Data(linha.utf8)); try? h.close() }

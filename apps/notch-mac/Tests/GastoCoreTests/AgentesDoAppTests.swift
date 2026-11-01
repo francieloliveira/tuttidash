@@ -1,6 +1,12 @@
 import XCTest
 @testable import GastoCore
 
+final class IntegridadeFixa: FonteIntegridade {
+    let valor: VereditoIntegridade
+    init(_ valor: VereditoIntegridade) { self.valor = valor }
+    func veredito() -> VereditoIntegridade { valor }
+}
+
 final class RegistroFalso: RegistroAgentes {
     var estado: [String: StatusRegistro] = [:]
     var aoRegistrar: StatusRegistro = .ativo
@@ -49,7 +55,7 @@ final class AgentesDoAppTests: XCTestCase {
         let s = LaunchdFalso(); s.registro = r
         let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 3, esperar: { _ in
             if exigirUmSo { XCTAssertFalse(s.doisDispatchers) }
-        }, confirmar: { _, _ in heartbeat })
+        }, confirmar: { _, _ in heartbeat }, integridade: IntegridadeFixa(.ok))
         s.arquivos[a.legadoURL(d.antigo).path] = Data("velho".utf8); s.carregados.insert(d.antigo)
         return (a, s)
     }
@@ -139,6 +145,25 @@ final class AgentesDoAppTests: XCTestCase {
         XCTAssertTrue(AgentesDoApp.heartbeatReal(home: casa, desde: desde, dados: hb(depois, false)))
         XCTAssertFalse(AgentesDoApp.heartbeatReal(home: casa, desde: desde, dados: hb(depois, true)))
         XCTAssertFalse(AgentesDoApp.heartbeatReal(home: casa, desde: desde, dados: hb(antes, false)))
+    }
+
+    func testIntegridadeDivergenteNaoRegistra() {
+        let r = RegistroFalso()
+        let s = LaunchdFalso(); s.registro = r
+        let aviso = "integridade: divergencia: hash lanes/dispatcher.py"
+        let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 1, esperar: { _ in },
+                             integridade: IntegridadeFixa(VereditoIntegridade(confere: false, aviso: aviso)))
+        s.arquivos[a.legadoURL(d.antigo).path] = Data("velho".utf8)
+        s.carregados.insert(d.antigo)
+        XCTAssertEqual(a.migrar(d), .integridade(aviso))
+        XCTAssertEqual(r.status(d.plist), .naoRegistrado)
+        XCTAssertTrue(s.carregados.contains(d.antigo))
+        XCTAssertFalse(s.chamadas.contains { $0.first == "bootout" })
+        XCTAssertThrowsError(try a.ligar(d)) { erro in
+            XCTAssertEqual(erro.localizedDescription, aviso)
+        }
+        XCTAssertEqual(r.status(d.plist), .naoRegistrado)
+        XCTAssertNoThrow(try a.desligar(d))
     }
 
     func testMapaDeLabels() {

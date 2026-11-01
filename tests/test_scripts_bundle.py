@@ -48,7 +48,9 @@ class BundleDoAgente(unittest.TestCase):
         if not cc:
             self.skipTest("sem compilador C")
         r = subprocess.run(
-            [cc, "-O2", "-Wall", "-Wextra", "-Werror", "-o", str(self.binario), str(AGENTE_C)],
+            [cc, "-O2", "-Wall", "-Wextra", "-Werror",
+             "-DTUTTIDASH_INTEGRIDADE_TESTE", "-DTUTTIDASH_PULAR_ASSINATURA",
+             "-o", str(self.binario), str(AGENTE_C)],
             capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.binario.chmod(0o755)
@@ -69,10 +71,26 @@ class BundleDoAgente(unittest.TestCase):
         _escrever(destino, corpo)
         return destino
 
-    def _rodar(self, papel: str):
+    def _ancorar(self) -> None:
+        controle = self.app / "Contents" / "Resources" / "controle"
+        destino = self.tmp / "ancora" / "controle.sha256"
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.parent.chmod(0o755)
+        subprocess.run(
+            [PYTHON, str(ROOT / "tools" / "integridade-controle.py"), "gerar", str(controle), str(destino)],
+            check=True, capture_output=True, text=True)
+        destino.chmod(0o644)
+        self.ancora = destino
+
+    def _rodar(self, papel: str, ancora: bool = True):
+        if ancora and (self.app / "Contents" / "Resources" / "controle").is_dir():
+            self._ancorar()
+        env = {**os.environ, "HOME": str(self.home)}
+        if getattr(self, "ancora", None):
+            env["TUTTIDASH_INTEGRIDADE_ARQUIVO"] = str(self.ancora)
         return subprocess.run(
             [str(self.binario), papel],
-            cwd=self.tmp, env={**os.environ, "HOME": str(self.home)},
+            cwd=self.tmp, env=env,
             capture_output=True, text=True, timeout=20)
 
     def _log(self, papel: str) -> str:
@@ -207,7 +225,7 @@ class InstallNaoCopiaScripts(unittest.TestCase):
                 bots / "privacidade.py", bots / "projetos.py", bots / "linear_ids.py",
             ):
                 caminho.write_text(sentinela)
-            env = {**os.environ, "HOME": str(home)}
+            env = {**os.environ, "HOME": str(home), "TUTTIDASH_SEM_ANCORA": "1"}
             r = subprocess.run(
                 ["bash", str(ROOT / "tools" / "install.sh"), "--sem-launchd"],
                 cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
@@ -258,6 +276,18 @@ class ContratoDoBuild(unittest.TestCase):
             self.assertIn(nome, texto)
         self.assertIn('if [[ -f "$PRIVADO_PY" ]]', texto)
         self.assertIn("gasto_privado.py", texto)
+        ancora = texto.index("âncora de integridade fora do bundle")
+        self.assertLess(modulos, ancora)
+        self.assertLess(ancora, verifica)
+        self.assertIn("/private/var/db/tuttidash/controle.sha256", texto)
+        self.assertIn('integridade-controle.py" gerar', texto)
+        self.assertIn('integridade-controle.py" instalar', texto)
+        self.assertNotIn("TUTTIDASH_INTEGRIDADE_TESTE", texto)
+        self.assertNotIn("TUTTIDASH_PULAR_ASSINATURA", texto)
+        self.assertIn("3QA76CY27W", texto)
+        self.assertIn("anchor apple generic", texto)
+        self.assertIn('certificate leaf[subject.OU]', texto)
+        self.assertNotIn("cdhash", texto.lower())
 
     def test_padroes_do_cfg_apontam_para_o_bundle(self):
         import runpy

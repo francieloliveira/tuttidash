@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Gera build/TuttiDash.app (release). Assina com SIGN_IDENTITY (variável de ambiente, ou a linha
-# SIGN_IDENTITY=... em Privado/assinatura.env, fora do repositório); sem identidade, ad-hoc.
+# SIGN_IDENTITY=... em Privado/assinatura.env, fora do repositório). A identidade que o lançador
+# aceita é Apple Development da equipe 3QA76CY27W (designated requirement, não o hash do CodeDirectory).
+# Sem identidade, o build fica ad-hoc e o tuttidash-agente aborta na hora de executar.
 # Uso: ./build.sh            compila e empacota
 #      ./build.sh --testes   roda os testes antes de empacotar
 set -euo pipefail
@@ -95,6 +97,12 @@ if [[ -f "$PRIVADO_PY" ]]; then
   install -m 644 "$PRIVADO_PY" "$CTRL/gasto_lanes/gasto_privado.py"
 fi
 
+echo "==> âncora de integridade fora do bundle (FRA-616)"
+# O manifesto não entra no .app. No Mac o arquivo é /private/var/db/tuttidash/controle.sha256
+# (/var é symlink). Dono root. O bundle sozinho não é a fonte.
+python3 "$REPO/tools/integridade-controle.py" gerar "$CTRL" "$OUT/controle.sha256"
+python3 "$REPO/tools/integridade-controle.py" instalar "$OUT/controle.sha256"
+
 echo "==> textos (Localizable.xcstrings -> en/pt-BR)"
 xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$APP/Contents/Resources"
 # FRA-524: o app é só em pt-BR. Com o en.lproj no bundle, um Mac em inglês misturava os dois idiomas.
@@ -115,6 +123,12 @@ codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
 codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
   --entitlements Resources/TuttiDash.entitlements "$APP"
 codesign --verify --verbose=1 "$APP"
+REQ='anchor apple generic and certificate leaf[subject.OU] = "3QA76CY27W" and certificate leaf[field.1.2.840.113635.100.6.1.12]'
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+  echo "AVISO: ad-hoc não atende o designated requirement da equipe 3QA76CY27W; o lançador aborta até assinar com Apple Development"
+else
+  codesign --verify --strict -R "$REQ" "$APP"
+fi
 
 echo "Pronto: $(pwd)/$APP"
 echo "Abrir:  open \"$(pwd)/$APP\""
