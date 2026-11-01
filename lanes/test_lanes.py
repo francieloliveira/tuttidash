@@ -2332,8 +2332,10 @@ class SuitesEstritas(unittest.TestCase):
 
     def test_caminho_fora_do_worktree_e_rejeitado(self):
         self._projeto([])
-        self.assertEqual(d.proof_suites({"tests": ["../../tmp/x"]}), d.PROOF_DEFAULT_SUITES)
+        self.assertEqual(d.proof_suites({"tests": ["../../tmp/x"]}), [])
         self.assertEqual(d.proof_suites({"tests": ["../../tmp/x", "FooTests"]}), ["FooTests"])
+        self.assertEqual(d.proof_suites({}), [])
+        self.assertNotIn("TranscentIATests", d.proof_suites({"tests": []}))
         for ruim in ["../../tmp/x", "../x", "..", "a/b", "foo-bar", "foo bar", "FooTests;rm", "-n"]:
             with self.subTest(ruim=ruim):
                 self.assertNotIn(ruim, d.proof_suites({"tests": [ruim]}))
