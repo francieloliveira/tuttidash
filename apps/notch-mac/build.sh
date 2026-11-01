@@ -127,7 +127,8 @@ REQ='anchor apple generic and certificate leaf[subject.OU] = "3QA76CY27W" and ce
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
   echo "AVISO: ad-hoc não atende o designated requirement da equipe 3QA76CY27W; o lançador aborta até assinar com Apple Development"
 else
-  codesign --verify --strict -R "$REQ" "$APP"
+  # `-R=texto`: sem o `=` o codesign lê o argumento como caminho de arquivo.
+  codesign --verify --strict -R "=$REQ" "$APP"
 fi
 
 echo "Pronto: $(pwd)/$APP"

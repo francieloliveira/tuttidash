@@ -205,6 +205,28 @@ class Binario(unittest.TestCase):
 
 
 class Formato(unittest.TestCase):
+    def test_codesign_recebe_o_requisito_como_texto(self):
+        # `codesign -R <texto>` lê o argumento como caminho de arquivo e falha sempre
+        # ("invalid requirement specification"). O texto vai com `=` na frente.
+        self.assertIn('-R "=$REQ"', BUILD.read_text())
+        self.assertIn('"=%s", REQUISITO', AGENTE_C.read_text())
+        self.assertIn('"-R", "=" + requisito', SWIFT.read_text())
+
+    @unittest.skipUnless(Path("/usr/bin/codesign").exists(), "codesign só no macOS")
+    def test_codesign_le_o_requisito_inline(self):
+        tmp = Path(self.id().replace(".", "_"))
+        alvo = Path(os.environ.get("TMPDIR", "/tmp")) / f"{tmp.name}-true"
+        shutil.copy("/usr/bin/true", alvo)
+        self.addCleanup(alvo.unlink)
+        subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(alvo)],
+                       capture_output=True, check=True)
+        r = subprocess.run(["/usr/bin/codesign", "--verify", "--strict", "-R",
+                            "=" + ancora_mod.REQUISITO, str(alvo)], capture_output=True, text=True)
+        # Ad-hoc não atende o requisito da equipe, mas o requisito foi lido.
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("invalid requirement", r.stderr)
+        self.assertIn("failed to satisfy", r.stderr)
+
     def test_requisito_e_o_mesmo_nos_tres_lugares_e_nao_e_cdhash(self):
         trechos = {
             "c": AGENTE_C.read_text(),

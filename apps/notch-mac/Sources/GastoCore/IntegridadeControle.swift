@@ -116,7 +116,8 @@ public enum IntegridadeControle {
             return false
         }
         if texto.contains("cdhash"), !texto.contains("certificate leaf") { return false }
-        guard let verify = executarCodesign(["--verify", "--strict", "-R", requisito, alvo.path]) else { return false }
+        // `-R` sem `=` lê o argumento como caminho de arquivo; com `=` é o requisito em texto.
+        guard let verify = executarCodesign(["--verify", "--strict", "-R", "=" + requisito, alvo.path]) else { return false }
         return verify.codigo == 0
     }
 
