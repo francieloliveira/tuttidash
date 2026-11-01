@@ -8,6 +8,8 @@
 #                               vigia dos bots (watch.py, prompts, instalar.sh) e os launchd
 #                               com.transcentia.bots.watch / .chave pelos lançadores com nome.
 #   tools/install.sh --sem-launchd   só copia arquivos
+# FRA-591: instalação limpa não cria ~/.transcentia/lanes e não copia
+# run_lane.sh, lane_view.py nem claude-settings.json/lane-mcp.json.
 # Espelho: não mexe no PAUSE (quem decide é a chave bots-chave); nunca inicia o vigia em paralelo.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -52,15 +54,15 @@ done
 # Build pessoal (FRA-565): módulo opcional fora do repositório aberto, ao lado do catálogo.
 PRIVADO_PY="$ROOT/apps/notch-mac/Privado/python/gasto_privado.py"
 [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$B/gasto_privado.py"
+# FRA-591: não cria a pasta. Se ela já existe, atualiza dispatcher, módulos e
+# prompts. Não copia run_lane.sh, lane_view.py nem os JSON de settings.
 LANES_DIR="$HOME/.transcentia/lanes"
 if [ -d "$LANES_DIR" ]; then
-  # Só o que já está em paridade com o repo. lane_view.py tem
-  # mudança local ainda não versionada — não tocar nele aqui.
   for mod in catalogo fila projetos privacidade linear_ids config; do
     install -m 644 "$ROOT/gasto_lanes/$mod.py" "$LANES_DIR/$mod.py"
   done
   [ -f "$PRIVADO_PY" ] && install -m 644 "$PRIVADO_PY" "$LANES_DIR/gasto_privado.py"
-  for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh; do
+  for f in dispatcher.py lanes_window.py lanes_ctl.py; do
     install -m 755 "$ROOT/lanes/$f" "$LANES_DIR/$f"
   done
   install -m 644 "$ROOT/lanes/permissao.py" "$LANES_DIR/permissao.py"

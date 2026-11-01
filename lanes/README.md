@@ -45,6 +45,11 @@ sobe o dispatcher encerra essa lane ou grava o claim à mão antes.
 
 ## Instalar a cópia viva
 
+`tools/install.sh` não cria `~/.transcentia/lanes` numa instalação limpa e não copia
+`run_lane.sh`, `lane_view.py`, `claude-settings.json` nem `lane-mcp.json`. Se a pasta
+já existe, atualiza o dispatcher, os módulos e os prompts, e deixa runner, view e
+settings como estão.
+
 ```bash
 cd ~/Developer/tuttidash
 for f in dispatcher.py permissao.py run_lane.sh lanes_window.py lanes_ctl.py lane_view.py claude-settings.json; do

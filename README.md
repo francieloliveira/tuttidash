@@ -46,7 +46,9 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
 git clone https://github.com/francieloliveira/tuttidash.git
 cd tuttidash
 
-# 1. Tools into ~/.transcentia, without background jobs yet
+# 1. Tools into ~/.transcentia, without background jobs yet.
+#    A clean install does not create ~/.transcentia/lanes and does not copy
+#    the runner, the view, or the lane settings.
 tools/install.sh --sem-launchd
 
 # 2. Linear API key in the Keychain (you will be prompted for it)
@@ -55,6 +57,12 @@ security add-generic-password -s linear-transcentia-lanes -a "$USER" -w
 # 3. The app
 cd apps/notch-mac && ./build.sh && open build/TuttiDash.app
 ```
+
+A clean install does not create `~/.transcentia/lanes` and does not copy `run_lane.sh`,
+`lane_view.py`, `claude-settings.json`, or `lane-mcp.json`. If that directory already
+exists, the script refreshes the dispatcher, the shared modules, and the prompts, and
+leaves the runner, the view, and the settings untouched. The lane switches stay hidden
+until those files are already in the folder.
 
 Then configure, in the app (*Ajustes*) or in `~/Library/Application Support/TuttiDash/config.json`
 (start from [`config.example.json`](config.example.json)):
