@@ -28,6 +28,8 @@ class InstalacaoLanesTests(unittest.TestCase):
         env["HOME"] = str(home or self.home)
         env.pop("TRANSCENTIA_GASTO_CONFIG", None)
         env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        # FRA-616: a âncora exige root; o teste não instala.
+        env["TUTTIDASH_SEM_ANCORA"] = "1"
         return subprocess.run(
             ["bash", str(RAIZ / "tools" / "install.sh"), "--sem-launchd", *args],
             cwd=str(RAIZ),
@@ -58,8 +60,11 @@ class InstalacaoLanesTests(unittest.TestCase):
         (lanes / "claude-settings.json").write_text('{"local": true}\n', encoding="utf-8")
         (lanes / "lane-mcp.json").write_text('{"mcpServers": {"local": {}}}\n', encoding="utf-8")
         self.assertOk(self.instalar())
-        self.assertEqual((lanes / "run_lane.sh").read_text(encoding="utf-8"), "RUNNER-LOCAL\n")
-        self.assertEqual((lanes / "lane_view.py").read_text(encoding="utf-8"), "VIEW-LOCAL\n")
+        # FRA-617: runner e view antigos são aposentados, sem trocar pelo do repo.
+        aposentados = self.home / ".transcentia" / "aposentados"
+        for nome, texto in (("run_lane.sh", "RUNNER-LOCAL\n"), ("lane_view.py", "VIEW-LOCAL\n")):
+            self.assertFalse((lanes / nome).exists(), nome)
+            self.assertTrue([p for p in aposentados.rglob(nome) if p.read_text(encoding="utf-8") == texto], nome)
         self.assertEqual((lanes / "claude-settings.json").read_text(encoding="utf-8"), '{"local": true}\n')
         self.assertEqual((lanes / "lane-mcp.json").read_text(encoding="utf-8"), '{"mcpServers": {"local": {}}}\n')
         self.assertFalse((lanes / "run_lane.sh.bak").exists())

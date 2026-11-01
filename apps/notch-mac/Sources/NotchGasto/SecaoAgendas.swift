@@ -11,6 +11,7 @@ final class EstadoAgendas: ObservableObject {
     @Published var instalados: Set<String> = []
     @Published var erro: String?
     @Published var avisoIntegridade: String?
+    @Published var doutorTexto: String?
 
     init(modelo: ModeloAjustes) { self.modelo = modelo; atualizar() }
 
@@ -25,13 +26,20 @@ final class EstadoAgendas: ObservableObject {
             var st: [String: StatusAgente] = [:]
             let app = AgentesDoApp(registro: RegistroSMAppService())
             for t in g.trabalhos { est[t.label] = g.estado(t); if let a = AgentesDoApp.agente(antigo: t.label) { st[t.label] = app.status(a) } }
-            let aviso = IntegridadeControle.atual().aviso
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let veredito = IntegridadeControle.atual()
+            let agente = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/tuttidash-agente").path
+            let extra = FileManager.default.isExecutableFile(atPath: agente) ? agente : nil
+            let doutor = DoutorControle.avaliar(pistas: DoutorControle.pistas(home: home, bundleAgente: extra), veredito: veredito)
+            let aviso = veredito.aviso
+            let textoDoutor = doutor.texto
             let final = est, finalSt = st
             await MainActor.run { [weak self] in
                 self?.instalados = inst
                 self?.estados = final
                 self?.status = finalSt
                 self?.avisoIntegridade = aviso
+                self?.doutorTexto = textoDoutor
             }
         }
     }
@@ -136,6 +144,14 @@ struct SecaoAgendas: View {
                 .foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("integridade-controle")
+        }
+        if let doutor = estado.doutorTexto {
+            Text(doutor)
+                .font(.caption)
+                .foregroundStyle(doutor.contains("não confere") || doutor.contains("legado") ? Color.red : Color.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .accessibilityIdentifier("doutor-controle")
         }
         ForEach(estado.gerenciador.trabalhos) { t in
             HStack(alignment: .center, spacing: DS.e3) {
