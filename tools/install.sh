@@ -22,7 +22,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 T="$HOME/.transcentia/tools"; B="$HOME/.transcentia/bots"
 mkdir -p "$T" "$B/prompts" "$HOME/Library/Application Support/AgentesLocais" \
-  "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/TranscentIA"
+  "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/TranscentIA" "$HOME/Library/Logs/TuttiDash"
 
 # O cfg acha o arquivo por gasto_lanes/config.py. A cópia fica ao lado do cfg
 # instalado (no checkout ele usa ../gasto_lanes/config.py).
@@ -45,6 +45,8 @@ if command -v swift >/dev/null; then
     || echo "AVISO: build do lanepct falhou; binário anterior mantido"
 fi
 
+install -m 644 "$ROOT/bots/caixa_leitura.py" "$B/caixa_leitura.py"
+install -m 755 "$ROOT/bots/git-leitura" "$B/git-leitura"
 install -m 755 "$ROOT/bots/instalar.sh" "$B/instalar.sh"
 install -m 644 "$ROOT/bots/prompts/"*.md "$B/prompts/"
 
@@ -59,6 +61,8 @@ if [ -d "$LANES_DIR" ]; then
     install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
   done
 fi
+# Espelho antigo. A execução (app, dispatcher, vigia) não lê esta pasta (FRA-614):
+# o manifesto que vale é o do bundle assinado. O rsync não é a fonte.
 mkdir -p "$HOME/.transcentia/agents.d"
 rsync -a --delete "$ROOT/agents.d/" "$HOME/.transcentia/agents.d/"
 

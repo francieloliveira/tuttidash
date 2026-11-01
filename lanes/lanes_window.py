@@ -33,7 +33,8 @@ def _ativar_modulos() -> Path:
     catalogo = (pasta / "catalogo.py").resolve()
     if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
         sys.exit("catalogo não está no bundle; import recusado")
-    for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py", "gasto_privado.py"):
+    for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
+                 "proxy_linear.py", "gasto_privado.py"):
         arq = pasta / nome
         if not arq.exists():
             continue

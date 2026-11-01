@@ -33,11 +33,14 @@ LIMITE = 8 * 1024 * 1024
 # Mesma árvore que apps/notch-mac/build.sh copia para Contents/Resources/controle.
 COPIAS = (
     ("lanes/dispatcher.py", "lanes/dispatcher.py", 0o755),
+    ("lanes/permissao.py", "lanes/permissao.py", 0o644),
     ("lanes/lane_view.py", "lanes/lane_view.py", 0o755),
     ("lanes/lanes_window.py", "lanes/lanes_window.py", 0o755),
     ("lanes/lanes_ctl.py", "lanes/lanes_ctl.py", 0o755),
     ("lanes/run_lane.sh", "lanes/run_lane.sh", 0o755),
     ("bots/watch.py", "bots/watch.py", 0o755),
+    ("bots/caixa_leitura.py", "bots/caixa_leitura.py", 0o644),
+    ("bots/git-leitura", "bots/git-leitura", 0o755),
     ("tools/bots-chave", "tools/bots-chave", 0o755),
     ("tools/lanes.command", "tools/lanes.command", 0o755),
     ("tools/script-controle.sh", "tools/script-controle.sh", 0o644),
@@ -47,6 +50,7 @@ COPIAS = (
     ("gasto_lanes/linear_ids.py", "gasto_lanes/linear_ids.py", 0o644),
     ("gasto_lanes/fila.py", "gasto_lanes/fila.py", 0o644),
     ("gasto_lanes/config.py", "gasto_lanes/config.py", 0o644),
+    ("gasto_lanes/proxy_linear.py", "gasto_lanes/proxy_linear.py", 0o644),
 )
 PRIVADO = (
     "apps/notch-mac/Privado/python/gasto_privado.py",

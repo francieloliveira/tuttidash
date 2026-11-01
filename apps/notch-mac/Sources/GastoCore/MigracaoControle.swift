@@ -52,6 +52,8 @@ public enum DoutorControle {
         ".transcentia/lanes/linear_ids.py",
         ".transcentia/lanes/config.py",
         ".transcentia/lanes/gasto_privado.py",
+        ".transcentia/lanes/proxy_linear.py",
+        ".transcentia/lanes/permissao.py",
         ".transcentia/bots/watch.py",
         ".transcentia/bots/catalogo.py",
         ".transcentia/bots/fila.py",
@@ -60,6 +62,7 @@ public enum DoutorControle {
         ".transcentia/bots/linear_ids.py",
         ".transcentia/bots/config.py",
         ".transcentia/bots/gasto_privado.py",
+        ".transcentia/bots/proxy_linear.py",
         ".transcentia/tools/bots-chave",
     ]
 

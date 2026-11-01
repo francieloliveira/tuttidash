@@ -25,12 +25,13 @@ trabalhar de um desenvolvedor, e isso aparece. [Read in English](README.md).
 - **Ele roda agentes sozinho, com as suas contas.** Eles editam código, rodam comandos e gastam dinheiro ou cota.
   Teste primeiro num projeto descartável, deixe todas as lanes desligadas até o teste sem efeito
   (`--dry-run`) sair certo, e defina orçamentos (`lanes.budget_usd`) e caminhos protegidos (`protegidos`).
+  O check `prova-remota` é a prova remota do merge na `main`; a proteção da branch precisa exigi-lo. Ele não impede a lane de ler `~/.ssh` ou `~/.config/gh`.
 - **Limite de conta só de fonte oficial ou local**: a API de cobrança do GitHub Copilot e o banco local da
   sessão do OpenCode. As assinaturas do Claude Code, do Codex, do Grok e do Gemini não têm API pública
   oficial de cota, então o TuttiDash não mostra esses limites. O motor de leitura aceita outras fontes
   (`FonteUso`, veja `apps/notch-mac/README.md`).
 - **Ele nunca renova nem regrava a credencial de outra ferramenta.** Lê logs, o próprio estado e a própria
-  config. A chave da API do Linear fica no Keychain do macOS.
+  config. A chave da API do Linear fica no Keychain do app (proteção de dados). Os scripts não a leem.
 
 ## Requisitos
 
@@ -45,15 +46,25 @@ trabalhar de um desenvolvedor, e isso aparece. [Read in English](README.md).
 git clone https://github.com/francieloliveira/tuttidash.git
 cd tuttidash
 
-# 1. Ferramentas em ~/.transcentia, ainda sem nada rodando em segundo plano
+# 1. Ferramentas em ~/.transcentia, ainda sem nada rodando em segundo plano.
+#    Instalação limpa não cria ~/.transcentia/lanes e não copia runner, view nem settings.
 tools/install.sh --sem-launchd
 
-# 2. Chave da API do Linear no Keychain (o comando pede a chave)
-security add-generic-password -s linear-transcentia-lanes -a "$USER" -w
-
-# 3. O app
+# 2. O app
 cd apps/notch-mac && ./build.sh && open build/TuttiDash.app
 ```
+
+Uma instalação limpa não cria `~/.transcentia/lanes` e não copia `run_lane.sh`,
+`lane_view.py`, `claude-settings.json` nem `lane-mcp.json`. Se a pasta já existe, o
+script atualiza o dispatcher, os módulos compartilhados e os prompts, e deixa o runner,
+o view e os settings como estão. Os interruptores das lanes ficam escondidos até esses
+arquivos já estarem na pasta.
+
+No app, *Ajustes › Contas*, cole uma chave da API do Linear usada só pelo TuttiDash.
+Ela fica no Keychain do app (proteção de dados), nunca no arquivo e nunca no item
+`linear-transcentia-lanes` do login. O dispatcher e o vigia pedem um proxy local e
+não recebem a chave. Para trocar: crie outra em Linear › Settings › API, cole no
+app e revogue a antiga.
 
 Depois configure, no app (*Ajustes*) ou em `~/Library/Application Support/TuttiDash/config.json`
 (partindo do [`config.example.json`](config.example.json)):
@@ -89,6 +100,16 @@ python3 -m unittest discover -s tests -t .
 python3 -m unittest lanes.test_lanes
 cd apps/notch-mac && swift test
 ```
+
+## Prova remota
+
+Um PR para a `main` roda o check `prova-remota` no GitHub Actions. O workflow é
+`pull_request`, com permissão só de leitura e sem secrets. O script é o blob
+`scripts/prova-remota.sh` do commit da base do PR. O head entra ao lado e os scripts
+dele não rodam. O check fica no SHA completo do head.
+
+Esse check é a prova do merge quando a proteção da `main` o exige. A lane continua
+rodando como o dono da máquina.
 
 ## Estrutura
 

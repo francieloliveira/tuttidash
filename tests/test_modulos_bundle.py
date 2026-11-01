@@ -16,7 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = "/usr/bin/python3"
-MODULOS = ("catalogo.py", "projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py")
+MODULOS = ("catalogo.py", "projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
+           "proxy_linear.py")
 
 GANCHO = (
     "\nimport os as _fra_os, sys as _fra_sys\n"
@@ -58,7 +59,8 @@ class ModulosDoBundle(unittest.TestCase):
         (self.modulos / "catalogo.py").write_text(
             (self.modulos / "catalogo.py").read_text(encoding="utf-8") + GANCHO,
             encoding="utf-8")
-        for rel in ("lanes/dispatcher.py", "lanes/lanes_window.py", "bots/watch.py"):
+        for rel in ("lanes/dispatcher.py", "lanes/permissao.py", "lanes/lanes_window.py",
+                    "bots/watch.py", "bots/caixa_leitura.py"):
             destino = self.controle / rel
             destino.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ROOT / rel, destino)
@@ -67,7 +69,7 @@ class ModulosDoBundle(unittest.TestCase):
         for pasta in ("lanes", "bots", "tools", "gasto_lanes"):
             base = self.home / ".transcentia" / pasta
             for nome in ("catalogo.py", "privacidade.py", "projetos.py", "linear_ids.py",
-                         "fila.py", "config.py", "gasto_privado.py"):
+                         "fila.py", "config.py", "proxy_linear.py", "gasto_privado.py"):
                 _escrever(base / nome, VENENO)
 
     def _tmp(self) -> str:

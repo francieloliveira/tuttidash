@@ -26,12 +26,13 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
 - **It runs agents unattended with your accounts.** They edit code, run commands and spend money or quota.
   Try it on a throwaway project first, keep every lane disabled until a dry run looks right, and set
   budgets (`lanes.budget_usd`) and protected paths (`protegidos`).
+  The check `prova-remota` is the remote proof for merging into `main`; branch protection has to require it. It does not stop a lane from reading `~/.ssh` or `~/.config/gh`.
 - **Account limits come only from official or local sources**: the GitHub Copilot billing API and the local
   OpenCode session database. Claude Code, Codex, Grok and Gemini subscriptions have no official public
   quota API, so TuttiDash does not show their limits. The reading engine is pluggable (`FonteUso`, see
   `apps/notch-mac/README.md`).
 - **It never renews or rewrites another tool's credentials.** It reads logs, its own state and its own config.
-  The Linear API key lives in the macOS Keychain.
+  The Linear API key lives in the app Keychain (data protection). Scripts do not read it.
 
 ## Requirements
 
@@ -46,15 +47,26 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
 git clone https://github.com/francieloliveira/tuttidash.git
 cd tuttidash
 
-# 1. Tools into ~/.transcentia, without background jobs yet
+# 1. Tools into ~/.transcentia, without background jobs yet.
+#    A clean install does not create ~/.transcentia/lanes and does not copy
+#    the runner, the view, or the lane settings.
 tools/install.sh --sem-launchd
 
-# 2. Linear API key in the Keychain (you will be prompted for it)
-security add-generic-password -s linear-transcentia-lanes -a "$USER" -w
-
-# 3. The app
+# 2. The app
 cd apps/notch-mac && ./build.sh && open build/TuttiDash.app
 ```
+
+A clean install does not create `~/.transcentia/lanes` and does not copy `run_lane.sh`,
+`lane_view.py`, `claude-settings.json`, or `lane-mcp.json`. If that directory already
+exists, the script refreshes the dispatcher, the shared modules, and the prompts, and
+leaves the runner, the view, and the settings untouched. The lane switches stay hidden
+until those files are already in the folder.
+
+In the app, *Ajustes › Contas*, paste a Linear API key used only by TuttiDash.
+It stays in the app Keychain (data protection), never in a file and never in the
+login-keychain item `linear-transcentia-lanes`. The dispatcher and the watcher
+call a local proxy and do not receive the key. To rotate: create a new key in
+Linear › Settings › API, paste it in the app, then revoke the old key.
 
 Then configure, in the app (*Ajustes*) or in `~/Library/Application Support/TuttiDash/config.json`
 (start from [`config.example.json`](config.example.json)):
@@ -89,6 +101,17 @@ python3 -m unittest discover -s tests -t .
 python3 -m unittest lanes.test_lanes
 cd apps/notch-mac && swift test
 ```
+
+## Remote proof
+
+A pull request into `main` runs the check `prova-remota` on GitHub Actions. The workflow
+is `pull_request`, with read-only contents permission and no secrets. The script that runs
+is the blob `scripts/prova-remota.sh` from the pull request's base commit. The head is
+checked out beside it and its scripts are not executed. The check is recorded on the full
+head SHA.
+
+That check is the proof of the merge once branch protection on `main` requires it.
+A lane still runs as the owner of the machine.
 
 ## Project layout
 
