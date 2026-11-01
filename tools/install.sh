@@ -63,10 +63,14 @@ if [ -d "$LANES_DIR" ]; then
   for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh; do
     install -m 755 "$ROOT/lanes/$f" "$LANES_DIR/$f"
   done
+  install -m 644 "$ROOT/lanes/permissao.py" "$LANES_DIR/permissao.py"
   for f in "$ROOT"/lanes/lane-prompt.md "$ROOT"/lanes/lane-prompt-*.md; do
     [ -f "$f" ] || continue
     install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
   done
+  if [ -f "$ROOT/lanes/claude-settings.json" ]; then
+    install -m 644 "$ROOT/lanes/claude-settings.json" "$LANES_DIR/claude-settings.json"
+  fi
 fi
 mkdir -p "$HOME/.transcentia/agents.d"
 rsync -a --delete "$ROOT/agents.d/" "$HOME/.transcentia/agents.d/"
