@@ -8,7 +8,8 @@ Roda a cada 60 s via launchd (com.transcentia.lanes.dispatcher).
 
 Divisão de trabalho (E3):
   dispatcher  lê o card, cria o worktree, abre a lane no tmux e, ao final,
-              faz push, abre o PR, comenta DONE <sha> e move para In Review
+              faz push para a URL do cadastro, abre o PR, comenta DONE com o SHA completo
+              e move para In Review
   agente      edita, testa, faz commit LOCAL e grava .lane/result.json.
               Não fala com Linear nem GitHub. A prova, o exit_code e o
               agent_cmd ficam fora do worktree (FRA-595).
@@ -42,6 +43,7 @@ from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import permissao  # noqa: E402  glob de Bash do CLI (um só lugar)
 import lanes_window  # noqa: E402  janela única das lanes
 
 # Catálogo de agentes: `catalogo.py` lê os manifests em `agents.d/` (mesmos que o
@@ -58,6 +60,7 @@ try:
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
+    import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
 except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
     sys.exit(f"{_falta.name} não encontrado ao lado do dispatcher.py — "
              "rode tools/install.sh para instalar o catálogo de agentes e projetos")
@@ -70,8 +73,6 @@ except ModuleNotFoundError:  # pragma: no cover - sem instalar: lanes do OpenCod
 # Nenhum id no código (FRA-565): vêm da config (`linear.*`), do cache
 # `~/.transcentia/lanes/linear-ids.json` ou da API, pelo nome (`garantir_ids()`, no
 # começo de cada ciclo real). Sem id, a etiqueta ou o estado é pulado, com aviso no log.
-LINEAR_API = "https://api.linear.app/graphql"
-KEYCHAIN_SERVICE = "linear-transcentia-lanes"
 STATE_IN_PROGRESS_ID = STATE_IN_REVIEW_ID = STATE_TODO_ID = ""
 LABEL_DONO_ID = LABEL_LANE_FALHOU_ID = LABEL_LANE_PARADA_ID = ""
 # Catálogo de agentes (fonte única: `agents.d/*.json`, via `catalogo.py`).
@@ -114,13 +115,25 @@ RISCO_ALTO_LANES = {"claude", "grok"}
 # Teto de cards por lane ativa: 1 RUN + (MAX_PER_LANE - 1) WAIT.
 # Deve bater com tools/cfg DEFAULTS["watch"]["max_tarefas_por_lane"].
 MAX_PER_LANE = 2
-# Ferramentas embutidas do Grok que a lane pode usar (--tools). Fora da lista ficam
-# agendador, subagentes e web. use_tool/search_tool/workflow/ask_user_question não
+# Ferramentas embutidas do Grok que a lane pode usar (--tools). FRA-598: arquivo
+# e o terminal (git add/commit/status/diff). Fora da lista ficam agendador,
+# subagentes, monitor e web. use_tool/search_tool/workflow/ask_user_question não
 # saem com --tools, mas qualquer chamada a eles cancela a sessão sem executar
 # (testado em 2026-10-03, grok 1.0.41).
 GROK_TOOLS = ["run_terminal_command", "read_file", "search_replace", "write", "list_dir",
-              "grep", "todo_write", "get_command_or_subagent_output",
-              "kill_command_or_subagent", "monitor"]
+              "grep", "todo_write"]
+# dontAsk: o que não está no allow não roda. acceptEdits aprovava edição em
+# qualquer caminho (FRA-598).
+MODO_PERMISSAO = "dontAsk"
+# Perfil do Grok (`--sandbox lane`). `strict` lê o worktree, o sistema e
+# ~/.grok. O deny tapa ssh, gh, transcentia e o binário de senhas. Não nega
+# ~/.grok/auth.json: o processo precisa dele para autenticar. O token fica
+# fora do agente pelo deny Read/Grep/Edit/Write de **/.grok/** (o `~` numa
+# regra de permissão casa o caractere, não a home), pelo glob que pega
+# -F, --file e --no-index em qualquer posição, e por sort.
+# O texto do perfil fica em permissao.py: este arquivo não cita o binário.
+PERFIL_SANDBOX = "lane"
+PERFIL_SANDBOX_TOML = permissao.PERFIL_SANDBOX_TOML
 LANE_TIMEOUT_MIN = 90
 # FRA-443 — freios acumulados por card. Decisão do dono em 28/10/2026.
 # D1 tentativas, em qualquer lane. D2 gasto acumulado em US$. D3 tempo acumulado em min.
@@ -308,58 +321,13 @@ LOG_FILE = LOG_DIR / "lanes-dispatcher.log"
 LANE_LOG_DIR = LOG_DIR / "lanes"
 TOOL_PATH = f"{HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-QUERY_CANDIDATES = """
-query Candidatos($project: ID!, $state: ID!) {
-  issues(
-    first: 50
-    filter: { project: { id: { eq: $project } }, state: { id: { eq: $state } } }
-  ) {
-    nodes {
-      id
-      identifier
-      title
-      priority
-      startedAt
-      createdAt
-      branchName
-      url
-      labels { nodes { name parent { name } } }
-      inverseRelations {
-        nodes { type issue { identifier state { type name } } }
-      }
-      history(last: 15) {
-        nodes { createdAt actor { name } botActor { name } toState { id } }
-      }
-      comments(last: 30) { nodes { id body } }
-    }
-  }
-}
-"""
-QUERY_ISSUE = """
-query Card($id: String!) {
-  issue(id: $id) { id identifier title description url branchName state { id name } }
-}
-"""
-MUT_COMMENT = """
-mutation($id: String!, $body: String!) {
-  commentCreate(input: { issueId: $id, body: $body }) { success }
-}
-"""
-MUT_STATE = """
-mutation($id: String!, $state: String!) {
-  issueUpdate(id: $id, input: { stateId: $state }) { success }
-}
-"""
-MUT_LABEL = """
-mutation($id: String!, $label: String!) {
-  issueAddLabel(id: $id, labelId: $label) { success }
-}
-"""
-MUT_REMOVE_LABEL = """
-mutation($id: String!, $label: String!) {
-  issueRemoveLabel(id: $id, labelId: $label) { success }
-}
-"""
+# Textos fixos da allowlist do proxy (FRA-607). O script não escolhe a consulta.
+QUERY_CANDIDATES = proxy_linear.consulta("candidatos")
+QUERY_ISSUE = proxy_linear.consulta("card")
+MUT_COMMENT = proxy_linear.consulta("comentar")
+MUT_STATE = proxy_linear.consulta("mudar_estado")
+MUT_LABEL = proxy_linear.consulta("adicionar_etiqueta")
+MUT_REMOVE_LABEL = proxy_linear.consulta("remover_etiqueta")
 
 
 # --- Utilitários -----------------------------------------------------------
@@ -376,44 +344,48 @@ def log(msg: str) -> None:
         print(line)
 
 
+def ambiente_git() -> dict[str, str]:
+    """Ambiente dos comandos git, sem diretório nem config injetados.
+
+    `GIT_DIR` e `GIT_WORK_TREE` trocariam o repositório. `GIT_CONFIG_*` (arquivo,
+    global, system, contagem ou o par chave/valor) aplica config que o guard não
+    leu do disco da pasta.
+    """
+    env = dict(os.environ)
+    env["PATH"] = TOOL_PATH
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    for chave in list(env):
+        if chave in ("GIT_DIR", "GIT_WORK_TREE") or chave.startswith("GIT_CONFIG"):
+            del env[chave]
+    return env
+
+
+def argv_git(args: list[str]) -> list[str]:
+    """Desliga o hook da pasta em todo git do dispatcher.
+
+    O fetch e o push precisam disso: `core.hooksPath` no config da pasta rodaria
+    no meio do envio. O merge da main também dispara hook, então o mesmo `-c`
+    vale para qualquer subcomando.
+    """
+    if not args or args[0] != "git":
+        return list(args)
+    return ["git", "-c", "core.hooksPath=/dev/null", *args[1:]]
+
+
 def sh(args: list[str], cwd: Optional[Path] = None, check: bool = True, timeout: int = 120) -> str:
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
-    out = subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env, timeout=timeout)
+    argv = argv_git(args)
+    out = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=ambiente_git(), timeout=timeout)
     if check and out.returncode != 0:
-        raise RuntimeError(f"{' '.join(args[:3])}… falhou ({out.returncode}): {out.stderr.strip()[:300]}")
-    return out.stdout.strip()
-
-
-def linear_key() -> str:
-    # Lida a cada uso; nunca gravada em arquivo nem em log.
-    out = subprocess.run(
-        ["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-        capture_output=True, text=True, check=False,
-    )
-    if out.returncode != 0 or not out.stdout.strip():
-        raise RuntimeError(f"chave '{KEYCHAIN_SERVICE}' não encontrada no Keychain")
+        raise RuntimeError(f"{' '.join(argv[:6])}… falhou ({out.returncode}): {out.stderr.strip()[:300]}")
     return out.stdout.strip()
 
 
 def linear(query: str, variables: dict) -> dict:
-    body = json.dumps({"query": query, "variables": variables}).encode()
-    req = urllib.request.Request(
-        LINEAR_API, data=body, method="POST",
-        headers={"Content-Type": "application/json", "Authorization": linear_key()},
-    )
+    """Pede a consulta ao proxy local. O token não passa por este processo."""
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        # O Linear devolve 400 com o motivo no corpo (ex.: campo inexistente).
-        try:
-            detail = json.loads(exc.read())["errors"][0]["message"]
-        except Exception:  # noqa: BLE001
-            detail = str(exc)
-        raise RuntimeError(f"Linear HTTP {exc.code}: {detail}") from None
-    if data.get("errors"):
-        raise RuntimeError(f"Linear: {data['errors'][0].get('message', data['errors'])}")
-    return data["data"]
+        return proxy_linear.executar_consulta(query, variables)
+    except proxy_linear.ErroProxy as exc:
+        raise RuntimeError(str(exc)) from None
 
 
 def viewer_linear() -> str:
@@ -425,7 +397,7 @@ def viewer_linear() -> str:
     except OSError:
         pass
     try:
-        viewer = (linear("query{ viewer{ id } }", {}).get("viewer") or {})
+        viewer = (linear(proxy_linear.consulta("viewer"), {}).get("viewer") or {})
         ident = str(viewer.get("id") or "")
     except RuntimeError as exc:
         log(f"fila: não li o viewer do Linear ({exc})")
@@ -441,8 +413,7 @@ def viewer_linear() -> str:
 def estado_do_card(identifier: str) -> str:
     """Estado atual do card, para revalidar antes de mover (CAS leve)."""
     try:
-        issue = (linear("query($id:String!){ issue(id:$id){ state{ name } } }",
-                        {"id": identifier}).get("issue") or {})
+        issue = (linear(proxy_linear.consulta("estado_card"), {"id": identifier}).get("issue") or {})
         return str((issue.get("state") or {}).get("name") or "")
     except RuntimeError as exc:
         log(f"fila: não reli o estado de {identifier} ({exc})")
@@ -520,9 +491,365 @@ def effective_lanes(enabled: set) -> tuple:
             sorted(l for l in enabled if not lane_runnable(l)))
 
 
+def _template_producao(nome: str) -> Optional[Path]:
+    """Template versionado no repo. Não é o fixture de teste nem a cópia em ~/.transcentia."""
+    aqui = Path(__file__).resolve()
+    if ".transcentia" in aqui.parts:
+        return None
+    raiz = None
+    for pai in aqui.parents:
+        if (pai / ".git").exists():
+            raiz = pai
+            break
+    if raiz is None:
+        return None
+    caminho = raiz / "apps" / "notch-mac" / "Resources" / nome
+    try:
+        resolvido = caminho.resolve()
+    except OSError:
+        return None
+    if "fixtures" in resolvido.parts or ".transcentia" in resolvido.parts or not resolvido.is_file():
+        return None
+    return resolvido
+
+
+def _recusar_mcp_fora_do_bundle(arq: Path) -> None:
+    """Comando absoluto do MCP tem de ficar dentro do `Contents/Resources` deste arquivo.
+
+    Caminho de outra máquina, ou script fora do bundle, não sobe na próxima lane.
+    Comando relativo (nome no PATH, ou relativo a este diretório) continua.
+    """
+    try:
+        dados = json.loads(arq.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(dados, dict):
+        return
+    servidores = dados.get("mcpServers") or {}
+    if not isinstance(servidores, dict):
+        return
+    raiz = arq.parent.resolve()
+    for spec in servidores.values():
+        if not isinstance(spec, dict):
+            continue
+        candidatos = [spec.get("command")]
+        args = spec.get("args")
+        if isinstance(args, list):
+            candidatos.extend(args)
+        for bruto in candidatos:
+            if not isinstance(bruto, str) or not bruto.startswith("/"):
+                continue
+            try:
+                alvo = Path(bruto).resolve()
+            except OSError:
+                raise FileNotFoundError(f"comando MCP fora do bundle: {bruto}") from None
+            if alvo != raiz and raiz not in alvo.parents:
+                raise FileNotFoundError(f"comando MCP fora do bundle: {bruto}")
+
+
+def caminho_controle(nome: str) -> Path:
+    """`claude-settings.json` ou `lane-mcp.json` do bundle assinado; senão, o template do repo.
+
+    A cópia em `~/.transcentia/lanes` e o fixture de teste não servem: a lane escreve
+    na primeira, e o fixture é um stub (`allow: ["Read"]`).
+    """
+    if nome not in ("claude-settings.json", "lane-mcp.json"):
+        raise ValueError(nome)
+    recursos = catalogo.recursos_do_bundle()
+    if recursos is not None:
+        arq = (recursos / nome).resolve()
+        if arq.is_file() and "fixtures" not in arq.parts and ".transcentia" not in arq.parts:
+            if nome == "lane-mcp.json":
+                _recusar_mcp_fora_do_bundle(arq)
+            return arq
+    repo = _template_producao(nome)
+    if repo is not None:
+        if nome == "lane-mcp.json":
+            _recusar_mcp_fora_do_bundle(repo)
+        return repo
+    raise FileNotFoundError(
+        f"{nome} não está no bundle assinado nem no template de produção; "
+        "não uso ~/.transcentia nem o fixture de teste")
+
+
+
+def caminho_settings() -> Path:
+    """Settings que a lane usa: o bundle assinado, ou o template de produção.
+
+    Não lê `lanes/claude-settings.json` nem `~/.transcentia`: a lane consegue
+    reescrever as duas. O template carrega o perfil estrito da main (dontAsk,
+    sandbox, sem allow global).
+    """
+    return caminho_controle("claude-settings.json")
+
+
+def lane_settings() -> dict:
+    """Objeto inteiro de `claude-settings.json` (permissões e sandbox do Claude)."""
+    return json.loads(caminho_settings().read_text(encoding="utf-8"))
+
+
 def lane_permissions() -> dict:
-    """Mesmas regras para as duas lanes (claude-settings.json)."""
-    return json.loads((STATE_DIR / "claude-settings.json").read_text())["permissions"]
+    """Mesmas regras para claude e grok (allow/deny/defaultMode)."""
+    return lane_settings()["permissions"]
+
+
+def escrever_perfil_sandbox(destino: Optional[Path] = None) -> Path:
+    """Grava `[profiles.lane]` em `~/.grok/sandbox.toml` sem apagar os outros perfis.
+
+    O claim chama isto antes de subir o Grok. O perfil é do dispatcher: a lane
+    não consegue reescrevê-lo depois, porque o `strict` deixa `sandbox.toml`
+    só para leitura. Sem o perfil, o Grok recusa subir (falha fechada)."""
+    destino = destino or (Path.home() / ".grok" / "sandbox.toml")
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    atual = destino.read_text(encoding="utf-8") if destino.is_file() else ""
+    novo = _trocar_bloco_toml(atual, f"[profiles.{PERFIL_SANDBOX}]", PERFIL_SANDBOX_TOML)
+    if novo != atual:
+        destino.write_text(novo, encoding="utf-8")
+    return destino
+
+
+def _trocar_bloco_toml(texto: str, cabecalho: str, bloco: str) -> str:
+    """Troca a seção `cabecalho` pelo `bloco`. O resto do arquivo fica."""
+    linhas = texto.splitlines()
+    ini = next((i for i, linha in enumerate(linhas) if linha.strip() == cabecalho), None)
+    bloco_linhas = bloco.strip("\n").splitlines()
+    if ini is None:
+        base = texto
+        if base and not base.endswith("\n"):
+            base += "\n"
+        if base and not base.endswith("\n\n"):
+            base += "\n"
+        return base + "\n".join(bloco_linhas) + "\n"
+    fim = next((j for j in range(ini + 1, len(linhas)) if linhas[j].startswith("[")), len(linhas))
+    meio = bloco_linhas + ([""] if fim < len(linhas) else [])
+    novo = "\n".join(linhas[:ini] + meio + linhas[fim:])
+    return novo if novo.endswith("\n") else novo + "\n"
+
+
+def _re_glob_caminho(padrao: str) -> str:
+    """Glob de caminho: `*` não cruza `/`, `**` cruza. `**/` no início casa zero pastas."""
+    i, n = 0, len(padrao)
+    out = ["^"]
+    while i < n:
+        if padrao.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+            continue
+        if padrao.startswith("**", i):
+            out.append(".*")
+            i += 2
+            continue
+        ch = padrao[i]
+        if ch == "*":
+            out.append("[^/]*")
+        elif ch == "?":
+            out.append("[^/]")
+        else:
+            out.append(re.escape(ch))
+        i += 1
+    out.append("$")
+    return "".join(out)
+
+
+def _expandir_til(caminho: str) -> str:
+    if caminho == "~" or caminho.startswith("~/"):
+        return str(Path.home()) + caminho[1:]
+    return caminho
+
+
+def _casa_glob_caminho(padrao: str, caminho: str) -> bool:
+    """`**/.ssh/**` também casa a própria pasta (`~/.ssh`), não só o que está dentro."""
+    for alvo in (caminho, _expandir_til(caminho)):
+        if re.fullmatch(_re_glob_caminho(padrao), alvo):
+            return True
+        if padrao.endswith("/**") and re.fullmatch(_re_glob_caminho(padrao[:-3]), alvo):
+            return True
+    return False
+
+
+def _miolo(regra: str, ferramenta: str) -> Optional[str]:
+    prefixo = ferramenta + "("
+    if regra.startswith(prefixo) and regra.endswith(")"):
+        return regra[len(prefixo):-1]
+    return None
+
+
+def _caminho_no_worktree(caminho: str) -> bool:
+    """Relativo ao cwd da lane, sem `..` e sem absoluto. É o que `Read(./**)` cobre."""
+    if not caminho or caminho.startswith("~") or caminho.startswith("/"):
+        return False
+    return ".." not in Path(caminho).parts
+
+
+def _caminho_negado(caminho: str, regras: list, ferramenta: str) -> bool:
+    for regra in regras:
+        miolo = _miolo(regra, ferramenta)
+        if miolo and _casa_glob_caminho(miolo, caminho):
+            return True
+    return False
+
+
+def leitura_negada(caminho: str, permissoes: Optional[dict] = None) -> bool:
+    """A ferramenta de leitura não alcança este caminho.
+
+    Deny ganha do allow. Sem `Read` global, caminho fora do worktree também cai
+    (dontAsk). `~/.config/gh/hosts.yml` não passa."""
+    perms = permissoes if permissoes is not None else lane_permissions()
+    deny = list(perms.get("deny") or [])
+    if _caminho_negado(caminho, deny, "Read") or _caminho_negado(caminho, deny, "Grep"):
+        return True
+    if any(r in ("Read", "Grep") for r in (perms.get("allow") or [])):
+        return False
+    return not _caminho_no_worktree(caminho)
+
+
+def escrita_negada(caminho: str, permissoes: Optional[dict] = None) -> bool:
+    """Edit/Write negados (`.git/config`, `.git/hooks`) ou fora do worktree."""
+    perms = permissoes if permissoes is not None else lane_permissions()
+    deny = list(perms.get("deny") or [])
+    if _caminho_negado(caminho, deny, "Edit") or _caminho_negado(caminho, deny, "Write"):
+        return True
+    if any(r in ("Edit", "Write") for r in (perms.get("allow") or [])):
+        return False
+    return not _caminho_no_worktree(caminho)
+
+
+_WRAPPERS_BASH = {"env", "timeout", "nice", "ionice", "chrt", "stdbuf"}
+# Comandos que o Grok trata como só-leitura e rodaria até no dontAsk, se nenhum
+# deny pegar (doc 22, "Read-Only Shell Commands"). cat/head/tail/grep/sort estão
+# no deny da lane justamente por isso. O deny ganha desta lista.
+_SO_LEITURA = {
+    "ls", "cat", "pwd", "date", "whoami", "hostname", "uptime", "ps",
+    "head", "tail", "wc", "sort", "uniq", "tr", "cut",
+    "mkdir", "touch", "grep", "rg",
+}
+_GIT_SO_LEITURA = {
+    "status", "branch", "log", "diff", "ls-files", "show", "rev-parse",
+    "blame", "describe", "merge-base", "shortlog", "check-ignore", "check-attr",
+    "cat-file", "ls-tree", "show-ref", "for-each-ref", "rev-list", "name-rev",
+    "count-objects",
+}
+
+
+def _segmentos_bash(comando: str) -> list:
+    """Parte em `&&`, `||`, `;` e `|`. Não parte dentro de aspas."""
+    partes: list = []
+    buf: list = []
+    aspas = ""
+    i = 0
+    while i < len(comando):
+        c = comando[i]
+        if aspas:
+            buf.append(c)
+            if c == aspas:
+                aspas = ""
+            i += 1
+            continue
+        if c in "\"'":
+            aspas = c
+            buf.append(c)
+            i += 1
+            continue
+        if comando.startswith("&&", i) or comando.startswith("||", i):
+            partes.append("".join(buf))
+            buf = []
+            i += 2
+            continue
+        if c in ";|":
+            partes.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(c)
+        i += 1
+    partes.append("".join(buf))
+    return [p.strip() for p in partes if p.strip()]
+
+
+def _sem_involucro(segmento: str) -> str:
+    """Tira `VAR=...` e invólucros (`env`, `timeout`) para a regra ver o comando de dentro."""
+    try:
+        tokens = shlex.split(segmento)
+    except ValueError:
+        tokens = segmento.split()
+    i = 0
+    while i < len(tokens) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[i] or ""):
+        i += 1
+    while i < len(tokens) and tokens[i] in _WRAPPERS_BASH:
+        i += 1
+        while i < len(tokens) and tokens[i].startswith("-"):
+            i += 1
+    return " ".join(tokens[i:])
+
+
+def _regra_bash_casa(regras: list, comando: str) -> bool:
+    for regra in regras:
+        miolo = _miolo(regra, "Bash")
+        if miolo and permissao.bash_casa(miolo, comando):
+            return True
+    return False
+
+
+def _so_leitura(comando: str) -> bool:
+    tokens = comando.split()
+    if not tokens:
+        return False
+    base = tokens[0].rsplit("/", 1)[-1]
+    if base in _SO_LEITURA:
+        return True
+    if base == "git" and len(tokens) > 1 and tokens[1] in _GIT_SO_LEITURA:
+        return True
+    return False
+
+
+def _toca_caminho_negado(comando: str, deny: list) -> bool:
+    """O deny de Read/Edit vale para o caminho que o shell toca.
+
+    Token que começa com `-` não é caminho. `--file=~/.grok/auth.json` carrega
+    o caminho depois do `=`. `-F~/.grok/auth.json` não tem `=`: o glob
+    `Bash(git commit *-F*)` é quem nega essa forma."""
+    try:
+        tokens = shlex.split(comando)
+    except ValueError:
+        tokens = comando.split()
+    for token in tokens[1:]:
+        candidatos = []
+        if "=" in token:
+            valor = token.split("=", 1)[1]
+            if valor:
+                candidatos.append(valor)
+        elif not token.startswith("-"):
+            candidatos.append(token)
+        for cand in candidatos:
+            if _caminho_negado(cand, deny, "Read") or _caminho_negado(cand, deny, "Edit"):
+                return True
+    return False
+
+
+def comando_negado_pela_lane(comando: str, permissoes: Optional[dict] = None) -> bool:
+    """True se a lane não deixa este comando rodar.
+
+    Deny ganha. No `dontAsk`, o que não é allow e não é só-leitura também cai.
+    `cat ~/.config/gh/hosts.yml` e a busca de senha do `security` caem aqui:
+    o primeiro pelo deny de `cat` e do caminho, o segundo porque `security`
+    não está no allow (e o basename do binário casa o deny)."""
+    perms = permissoes if permissoes is not None else lane_permissions()
+    deny = list(perms.get("deny") or [])
+    allow = list(perms.get("allow") or [])
+    dont = (perms.get("defaultMode") or MODO_PERMISSAO) == "dontAsk"
+    for bruto in _segmentos_bash(comando):
+        segmento = _sem_involucro(bruto)
+        if not segmento:
+            return True
+        if _regra_bash_casa(deny, segmento) or _toca_caminho_negado(segmento, deny):
+            return True
+        if _so_leitura(segmento):
+            continue
+        if _regra_bash_casa(allow, segmento):
+            continue
+        if dont:
+            return True
+    return False
 
 
 def sort_key(issue: dict) -> tuple:
@@ -775,20 +1102,21 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
         return [
             "claude", "-p",  # prompt chega pelo stdin, do RUN_DIR (FRA-595)
             "--output-format", "stream-json", "--verbose",
-            "--permission-mode", "acceptEdits",
-            "--settings", str(STATE_DIR / "claude-settings.json"),
-            "--strict-mcp-config", "--mcp-config", str(STATE_DIR / "lane-mcp.json"),
+            "--permission-mode", MODO_PERMISSAO,
+            "--settings", str(caminho_settings()),
+            "--strict-mcp-config", "--mcp-config", str(caminho_controle("lane-mcp.json")),
             "--max-budget-usd", str(BUDGET_USD[effort]),
             *flags_da_lane("claude", effort),
         ]
     if lane == "grok":
-        if prompt is None:
+        if prompt is None or ".lane" in Path(prompt).parts:
             raise RuntimeError("o prompt da lane fica fora do worktree")
         perms = lane_permissions()
         cmd = [
             "grok", "--prompt-file", str(prompt),
             "--output-format", "streaming-messages-json",
-            "--permission-mode", "acceptEdits",   # vence o always-approve global (testado)
+            "--permission-mode", MODO_PERMISSAO,
+            "--sandbox", PERFIL_SANDBOX,
             "--tools", ",".join(GROK_TOOLS), "--disable-web-search",
             "--max-turns", str(GROK_MAX_TURNS[effort]),
             *flags_da_lane("grok", effort),
@@ -862,8 +1190,22 @@ def state_file(lane: str) -> Path:
 
 
 def load_state(lane: str) -> Optional[dict]:
+    """Lê `lane-<lane>.json`. None se não há arquivo.
+
+    JSON ilegível ou que não é objeto volta marcado como recusado: a lane fica
+    ocupada, e o `watch` não fecha, não mata e não move o card. `save_state`
+    legítimo continua gravando o dict e a leitura devolve o que foi gravado.
+    """
     f = state_file(lane)
-    return json.loads(f.read_text()) if f.exists() else None
+    if not f.exists():
+        return None
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return {"lane": lane, "_recusado": "json inválido"}
+    if not isinstance(data, dict):
+        return {"lane": lane, "_recusado": "json não é objeto"}
+    return data
 
 
 def save_state(lane: str, st: dict) -> None:
@@ -873,6 +1215,336 @@ def save_state(lane: str, st: dict) -> None:
     tmp = f.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(st, ensure_ascii=False, indent=2))
     tmp.replace(f)
+
+
+# FRA-600. O `lane-<lane>.json` mora no home, gravável pelo mesmo usuário do agente.
+# Isto é consistência: worktree, sessão, card, branch, issue do claim, base e log.
+# Não é barreira. Quem já é o usuário forja o JSON e o claim. A garantia real é a
+# fase 5 (estado fora do alcance do agente).
+_CARD_RE = re.compile(r"^[A-Za-z]+-\d+$")
+_BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
+_CAMPOS_CLAIM = ("card", "issue_id", "branch", "worktree", "base", "log", "session")
+
+
+def claim_file(lane: str) -> Path:
+    return STATE_DIR / f"claim-{lane}.json"
+
+
+def gravar_claim(lane: str, st: dict) -> None:
+    """Par que o `claim` gravou. O JSON da lane não pode trocar estes campos."""
+    dados = {k: st.get(k) for k in _CAMPOS_CLAIM}
+    f = claim_file(lane)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(f)
+
+
+def ler_claim(lane: str) -> Optional[dict]:
+    try:
+        data = json.loads(claim_file(lane).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def apagar_claim(lane: str) -> None:
+    try:
+        claim_file(lane).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def soltar_lane(lane: str) -> None:
+    state_file(lane).unlink(missing_ok=True)
+    apagar_claim(lane)
+
+
+def sessao_de_lane(session: str) -> bool:
+    """`lane-<lane>` de uma lane conhecida. Outro nome não é sessão nossa."""
+    if not isinstance(session, str) or not session.startswith("lane-"):
+        return False
+    return session[len("lane-"):] in LANES
+
+
+def branch_valida(nome) -> bool:
+    if not isinstance(nome, str) or not _BRANCH_RE.fullmatch(nome):
+        return False
+    if nome.startswith("-") or nome.endswith("/") or nome.endswith(".") or nome.endswith(".lock"):
+        return False
+    if ".." in nome.split("/") or "//" in nome or "@{" in nome or ":" in nome:
+        return False
+    return True
+
+
+def _resolvido_sob(caminho: str, raiz: Path) -> Optional[Path]:
+    """Caminho resolvido estritamente dentro de `raiz`, ou None (symlink incluso)."""
+    if not isinstance(caminho, str) or not caminho.strip():
+        return None
+    try:
+        base = Path(raiz).expanduser().resolve()
+        alvo = Path(caminho).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not base.is_dir() or alvo == base or base not in alvo.parents:
+        return None
+    return alvo
+
+
+def _commit_alcancavel(wt: Path, base: str) -> bool:
+    try:
+        out = subprocess.run(
+            ["git", "cat-file", "-e", f"{base}^{{commit}}"],
+            cwd=wt, capture_output=True, text=True, timeout=30,
+            env=dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0"),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return out.returncode == 0
+
+
+def _mesmo_caminho(a, b) -> bool:
+    try:
+        return Path(str(a)).expanduser().resolve() == Path(str(b)).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def motivo_recusa_estado(lane: str, st: dict) -> Optional[str]:
+    """None se o estado pode seguir para o `watch`. Senão o motivo, para o log.
+
+    O mesmo usuário ainda pode forjar este JSON e o `claim-<lane>.json`. A
+    garantia real é a fase 5.
+    """
+    if not isinstance(st, dict):
+        return "estado não é objeto"
+    if st.get("_recusado"):
+        return str(st["_recusado"])
+    if lane not in LANES or st.get("lane") != lane:
+        return "lane diferente do arquivo"
+    if st.get("session") != f"lane-{lane}":
+        return "sessão não é lane-<lane>"
+    card = st.get("card")
+    if not isinstance(card, str) or not _CARD_RE.fullmatch(card):
+        return "card inválido"
+    branch = st.get("branch")
+    if not branch_valida(branch):
+        return "branch inválida"
+    issue = st.get("issue_id")
+    if not isinstance(issue, str) or not issue or any(c.isspace() for c in issue) or '"' in issue:
+        return "issue_id inválido"
+    try:
+        raiz = projeto_worktrees()
+    except Exception as exc:  # noqa: BLE001 — sem pasta não há worktree confiável
+        return f"pasta de worktrees indisponível ({type(exc).__name__})"
+    wt = _resolvido_sob(st.get("worktree"), raiz)
+    if wt is None or not wt.is_dir():
+        return "worktree fora da pasta de worktrees"
+    base = st.get("base")
+    if not isinstance(base, str) or not _SHA_RE.fullmatch(base.strip()):
+        return "base não é commit"
+    base_norm = base.strip().lower()
+    if not _commit_alcancavel(wt, base_norm):
+        return "base não é commit alcançável"
+    log_path = _resolvido_sob(st.get("log"), LOG_DIR)
+    if log_path is None:
+        return "log fora de LOG_DIR"
+    claim = ler_claim(lane)
+    if not claim:
+        return "sem claim gravado"
+    if str(claim.get("issue_id") or "") != issue:
+        return "issue_id diferente do claim gravado"
+    if claim.get("card") != card:
+        return "card diferente do claim gravado"
+    if claim.get("branch") != branch:
+        return "branch diferente do claim gravado"
+    if claim.get("session") != st.get("session"):
+        return "sessão diferente do claim gravado"
+    if str(claim.get("base") or "").strip().lower() != base_norm:
+        return "base diferente do claim gravado"
+    if not _mesmo_caminho(claim.get("worktree"), st.get("worktree")):
+        return "worktree diferente do claim gravado"
+    if not _mesmo_caminho(claim.get("log"), st.get("log")):
+        return "log diferente do claim gravado"
+    return None
+
+
+def card_confiavel(lane: str, st: Optional[dict]) -> Optional[str]:
+    """Card do estado, só quando o esquema confere. Forjado não entra na fila."""
+    if not st or motivo_recusa_estado(lane, st):
+        return None
+    card = st.get("card")
+    return card if isinstance(card, str) else None
+
+
+def _ps_processo(pid: int) -> Optional[dict]:
+    """uid, início (`lstart`) e command do processo vivo. None se não dá para ler."""
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
+        return None
+    try:
+        # `lstart` é `%c`: o número de campos muda com o locale e a foto zera.
+        # C (e pt_BR) fecha em 5. O `ps` roda em C para a leitura não depender do idioma.
+        out = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "uid=", "-o", "lstart=", "-o", "command="],
+            capture_output=True, text=True, timeout=5,
+            env=dict(os.environ, LC_ALL="C", LANG="C", LC_TIME="C"),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    linha = out.stdout.strip()
+    if out.returncode != 0 or not linha:
+        return None
+    partes = linha.split()
+    # uid, lstart em C (5 tokens: dia mês número mês hora ano) e o command.
+    if len(partes) < 7:
+        return None
+    try:
+        uid = int(partes[0])
+    except ValueError:
+        return None
+    return {"pid": pid, "uid": uid, "lstart": " ".join(partes[1:6]), "command": " ".join(partes[6:])}
+
+
+def foto_processo(pid: int) -> Optional[dict]:
+    """A mesma leitura do `_ps_processo`, com folga para o processo acabar de nascer."""
+    for i in range(8):
+        foto = _ps_processo(pid)
+        if foto:
+            return foto
+        if i < 7:
+            time.sleep(0.05)
+    return None
+
+
+def pid_autorizado(pid: int, foto: dict, comando_ok) -> bool:
+    """Dono, início e command batem com o que foi gravado, e o command é o esperado.
+
+    O critério do command é do dispatcher, não o texto que veio do arquivo sozinho.
+    """
+    if not isinstance(foto, dict) or foto.get("pid") != pid:
+        return False
+    if not isinstance(foto.get("uid"), int) or foto["uid"] != os.getuid():
+        return False
+    if not isinstance(foto.get("lstart"), str) or not foto["lstart"]:
+        return False
+    if not isinstance(foto.get("command"), str) or not foto["command"]:
+        return False
+    viva = _ps_processo(pid)
+    if not viva:
+        return False
+    if viva["uid"] != foto["uid"] or viva["lstart"] != foto["lstart"] or viva["command"] != foto["command"]:
+        return False
+    try:
+        return bool(comando_ok(viva["command"]))
+    except Exception:  # noqa: BLE001 — critério quebrado não autoriza sinal
+        return False
+
+
+def arquivo_prova_proc(wt: Path) -> Path:
+    chave = hashlib.sha256(str(Path(wt).resolve()).encode()).hexdigest()[:20]
+    return STATE_DIR / "proof-proc" / f"{chave}.json"
+
+
+_FRONTEIRA_PATH = set("/'\" \t\n;|&<>()`")
+
+
+def _no_comando_com_fronteira(command: str, caminho: str) -> bool:
+    """`caminho` aparece no command e não é prefixo de outro componente (`fra-1` em `fra-10`)."""
+    if not caminho:
+        return False
+    inicio = 0
+    while True:
+        i = command.find(caminho, inicio)
+        if i < 0:
+            return False
+        fim = i + len(caminho)
+        antes = i == 0 or command[i - 1] in _FRONTEIRA_PATH
+        depois = fim == len(command) or command[fim] in _FRONTEIRA_PATH
+        if antes and depois:
+            return True
+        inicio = i + 1
+
+
+def comando_e_prova(wt: Path, command: str) -> bool:
+    """O process group da prova é o `/bin/bash` que o dispatcher lançou neste worktree."""
+    if not command or command.split()[0] != "/bin/bash":
+        return False
+    try:
+        texto = str(Path(wt).resolve())
+    except (OSError, RuntimeError):
+        texto = str(wt)
+    if not _no_comando_com_fronteira(command, str(wt)) and not _no_comando_com_fronteira(command, texto):
+        return False
+    # `.lane/proof.log` (FRA-600) ou o log na pasta da rodada (FRA-595).
+    return "proof.log" in command
+
+
+def registrar_foto(wt: Path, pid: int) -> Optional[dict]:
+    """Grava dono, início e command da prova fora do worktree. Sem isto não há sinal."""
+    foto = foto_processo(pid)
+    if not foto or not comando_e_prova(wt, foto["command"]):
+        return None
+    path = arquivo_prova_proc(wt)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(foto), encoding="utf-8")
+    tmp.replace(path)
+    return foto
+
+
+def _ler_foto(path: Path) -> Optional[dict]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return None
+    if not isinstance(data, dict) or isinstance(data.get("pid"), bool) or not isinstance(data.get("pid"), int):
+        return None
+    return data
+
+
+def comando_e_caffeinate(command: str) -> bool:
+    partes = (command or "").split()
+    return partes == [CAFFEINATE_BIN, "-i", "-s", "-t", str(CAFFEINATE_SECONDS)]
+
+
+def arquivo_caffeinate() -> Path:
+    return STATE_DIR / "caffeinate.pid"
+
+
+def gravar_caffeinate(pid: int) -> Optional[dict]:
+    foto = foto_processo(pid)
+    if not foto or not comando_e_caffeinate(foto["command"]):
+        return None
+    path = arquivo_caffeinate()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".pid.tmp")
+    tmp.write_text(json.dumps(foto), encoding="utf-8")
+    tmp.replace(path)
+    return foto
+
+
+def ler_caffeinate() -> Optional[dict]:
+    """None no formato antigo (só o número): sem início e command, não há sinal."""
+    return _ler_foto(arquivo_caffeinate())
+
+
+def encerrar_caffeinate(foto: Optional[dict]) -> bool:
+    """SIGTERM só se o pid ainda é o caffeinate que este ciclo gravou."""
+    if not foto or not isinstance(foto.get("pid"), int):
+        return False
+    pid = foto["pid"]
+    if not pid_autorizado(pid, foto, comando_e_caffeinate):
+        log(f"caffeinate.pid {pid} recusado (dono, início ou comando); não sinalizo")
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        log(f"caffeinate.pid {pid} sem permissão; não sinalizo")
+        return False
+    return True
 
 
 TITULOS_MAX = 500  # o painel só mostra cards recentes; o arquivo não cresce sem fim
@@ -930,7 +1602,13 @@ def descendants(pid: int) -> list[int]:
 
 
 def kill_lane_tree(session: str) -> None:
-    """Mata a árvore inteira da lane (o xcodebuild junto: senão segura o lock)."""
+    """Mata a árvore inteira da lane (o xcodebuild junto: senão segura o lock).
+
+    Sessão que não é `lane-<lane>` não chega no tmux: o JSON não escolhe o alvo.
+    """
+    if not sessao_de_lane(session):
+        log(f"recuso matar sessão {session!r}: não é lane-<lane>")
+        return
     try:
         panes = sh(["tmux", "list-panes", "-t", session, "-F", "#{pane_pid}"], check=False)
     except Exception:  # noqa: BLE001
@@ -1121,26 +1799,279 @@ def copiar_para_worktree(repo: Path, wt: Path, caminhos) -> list[str]:
     return copiados
 
 
-def motivo_para_nao_enviar(wt: Path) -> str:
-    """Vazio se a branch pode ir para o `origin`; senão o motivo (nada é enviado).
+_HOSTS_GITHUB = {"github.com", "ssh.github.com", "www.github.com"}
+# Prefixo de URL do GitHub. `insteadOf` casa por prefixo de string: um valor curto
+# (`https://github.co`, `http`) também reescreve `https://github.com/dono/repo`.
+_PREFIXOS_GITHUB = (
+    "https://github.com/",
+    "http://github.com/",
+    "https://www.github.com/",
+    "http://www.github.com/",
+    "https://ssh.github.com/",
+    "http://ssh.github.com/",
+    "ssh://git@github.com/",
+    "ssh://git@ssh.github.com/",
+    "git@github.com:",
+    "git@ssh.github.com:",
+    "git://github.com/",
+)
 
-    0. O `origin` da pasta é o repositório do GitHub do cadastro (FRA-567).
-    1. A branch tem de ter a `origin/main` atual na história. Uma branch criada antes
-       de o repositório recomeçar (histórico antigo, sem ancestral comum) levaria todo
-       o histórico antigo junto no push.
-    2. O `antes_do_push` do projeto (ex.: conferência de publicação) tem de sair 0."""
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+
+def _valor_config(bruto: str) -> str:
+    """Valor como o git lê a linha.
+
+    Fora de aspas, `#` e `;` comentam até o fim: `https://github.com#x` é
+    `https://github.com`. Dentro de aspas o caractere fica no valor.
+    """
+    i = 0
+    n = len(bruto)
+    while i < n and bruto[i] in " \t":
+        i += 1
+    partes: list[str] = []
+    aspas = False
+    while i < n:
+        c = bruto[i]
+        if aspas:
+            if c == "\\" and i + 1 < n:
+                nxt = bruto[i + 1]
+                if nxt == "n":
+                    partes.append("\n")
+                elif nxt == "t":
+                    partes.append("\t")
+                elif nxt == "b":
+                    partes.append("\b")
+                else:
+                    partes.append(nxt)
+                i += 2
+                continue
+            if c == '"':
+                aspas = False
+                i += 1
+                continue
+            partes.append(c)
+            i += 1
+            continue
+        if c in "#;":
+            break
+        if c == '"':
+            aspas = True
+            i += 1
+            continue
+        partes.append(c)
+        i += 1
+    return "".join(partes).rstrip(" \t")
+
+
+def _parse_gitconfig(texto: str) -> list[tuple[str, str, str, str]]:
+    """(seção, subseção, chave, valor). Seção e chave em minúsculas.
+
+    Não segue `include`: quem chama recusa a chave antes de o git abrir outro arquivo.
+    """
+    secao, sub = "", ""
+    saida: list[tuple[str, str, str, str]] = []
+    pendente = ""
+    cab_re = re.compile(r'^\s*\[([A-Za-z0-9]+)(?:\s+"((?:\\.|[^"])*)")?\]\s*(?:[;#].*)?$')
+    chave_re = re.compile(r"^\s*([A-Za-z0-9-]+)\s*=\s*(.*)$")
+    plana_re = re.compile(r"^\s*([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\s*=\s*(.*)$")
+    for bruta in texto.splitlines():
+        linha = pendente + bruta if pendente else bruta
+        pendente = ""
+        if linha.endswith("\\") and not linha.endswith("\\\\"):
+            pendente = linha[:-1]
+            continue
+        if not linha.strip() or linha.lstrip().startswith(("#", ";")):
+            continue
+        cab = cab_re.match(linha)
+        if cab:
+            secao = cab.group(1).lower()
+            sub = (cab.group(2) or "").replace('\\"', '"').replace("\\\\", "\\")
+            continue
+        plana = plana_re.match(linha)
+        if plana:
+            partes = plana.group(1).split(".")
+            valor = _valor_config(plana.group(2))
+            if len(partes) == 2:
+                saida.append((partes[0].lower(), "", partes[1].lower(), valor))
+            else:
+                saida.append((partes[0].lower(), ".".join(partes[1:-1]), partes[-1].lower(), valor))
+            continue
+        chave = chave_re.match(linha)
+        if not chave:
+            continue
+        saida.append((secao, sub, chave.group(1).lower(), _valor_config(chave.group(2))))
+    return saida
+
+
+def _host_de(url: str) -> str:
+    u = url.strip()
+    if not u:
+        return ""
+    baixo = u.lower()
+    if baixo.startswith("git@"):
+        return u[4:].split(":", 1)[0].lower()
+    if "://" not in u:
+        return ""
+    sem = u.split("://", 1)[1].split("/", 1)[0]
+    if "@" in sem:
+        sem = sem.rsplit("@", 1)[1]
+    return sem.split(":", 1)[0].lower().strip("[]")
+
+
+def _reescreve_github(valor: str) -> bool:
+    """O `insteadOf` troca uma URL do GitHub (outro host ou outro `dono/repo`)."""
+    v = valor.strip().lower()
+    if not v:
+        return False
+    if _host_de(valor) in _HOSTS_GITHUB:
+        return True
+    return any(base.startswith(v) or v.startswith(base) for base in _PREFIXOS_GITHUB)
+
+
+def _motivo_chave(onde: str, secao: str, sub: str, chave: str, valor: str) -> str:
+    """Motivo para recusar esta chave do config local/worktree, ou vazio."""
+    if chave == "pushurl" and valor.strip():
+        quem = f"remote.{sub}.pushurl" if secao == "remote" and sub else "pushurl"
+        return f"o config {onde} tem `{quem}`; o push não usa pushurl"
+    if secao == "core" and chave == "sshcommand" and valor.strip():
+        return f"o config {onde} tem `core.sshCommand`"
+    if secao == "core" and chave == "fsmonitor" and valor.strip():
+        return f"o config {onde} tem `core.fsmonitor`"
+    if secao == "credential" and chave == "helper":
+        return f"o config {onde} tem `credential.helper`"
+    if secao in ("include", "includeif") and valor.strip():
+        return f"o config {onde} tem `include`"
+    if secao == "filter" and valor.strip():
+        return f"o config {onde} tem `filter.{sub or chave}`"
+    if secao == "url" and chave in ("insteadof", "pushinsteadof"):
+        if not valor.strip() or _reescreve_github(valor):
+            nome = "pushInsteadOf" if chave == "pushinsteadof" else "insteadOf"
+            return f"o config {onde} reescreve o GitHub com `url.*.{nome}`"
+    return ""
+
+
+def _diretorios_git(wt: Path) -> list[Path]:
+    """Diretório comum e, se for worktree ligado, o gitdir dele. Vazio se não é repo."""
+    ponteiro = wt / ".git"
+    if ponteiro.is_dir():
+        return [ponteiro]
+    if not ponteiro.is_file():
+        return []
+    try:
+        linhas = ponteiro.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    linha = linhas[0].strip() if linhas else ""
+    if not linha.lower().startswith("gitdir:"):
+        return []
+    bruto = linha.split(":", 1)[1].strip()
+    if not bruto:
+        return []
+    gitdir = Path(bruto)
+    gitdir = gitdir.resolve() if gitdir.is_absolute() else (wt / gitdir).resolve()
+    comum = gitdir
+    arquivo = gitdir / "commondir"
+    if arquivo.is_file():
+        try:
+            rel = arquivo.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            rel = ""
+        if rel:
+            comum = (gitdir / rel).resolve()
+    if comum == gitdir:
+        return [gitdir]
+    return [comum, gitdir]
+
+
+def _arquivos_config(wt: Path) -> list[tuple[str, Path]]:
+    dirs = _diretorios_git(wt)
+    if not dirs:
+        return []
+    comum, gitdir = dirs[0], dirs[-1]
+    return [("local", comum / "config"), ("worktree", gitdir / "config.worktree")]
+
+
+def diagnostico_config(wt: Path) -> tuple[str, str]:
+    """(motivo, url do `origin`). Motivo vazio = config local e de worktree aceitável.
+
+    Lê o arquivo em vez de `git config`: `include`, `fsmonitor` e `credential.helper`
+    não podem rodar durante o guard. A url do worktree, se houver, prevalece.
+    """
+    origem = ""
+    for onde, caminho in _arquivos_config(wt):
+        if not caminho.is_file():
+            continue
+        try:
+            texto = caminho.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return f"não consegui ler o config {onde} do git", ""
+        for secao, sub, chave, valor in _parse_gitconfig(texto):
+            motivo = _motivo_chave(onde, secao, sub, chave, valor)
+            if motivo:
+                return motivo, ""
+            if secao == "remote" and sub.lower() == "origin" and chave == "url" and valor.strip():
+                origem = valor.strip()
+    return "", origem
+
+
+def url_explicita(github: str, origem: str) -> str:
+    """URL de push a partir do `dono/repo` do cadastro, no esquema do `origin`.
+
+    HTTPS, ou SSH (`git@` ou `ssh://`) quando o `origin` já é SSH. `http` sobe
+    para `https`. O host que não é o GitHub não entra: o slug é o do cadastro.
+    Não lê `pushurl`.
+    """
+    slug = projetos.normalizar_github(github)
+    if not slug:
+        return ""
+    bruto = (origem or "").strip()
+    baixo = bruto.lower()
+    if baixo.startswith("git@") and ":" in bruto[4:]:
+        host = bruto[4:].split(":", 1)[0].lower()
+        if host not in ("github.com", "ssh.github.com"):
+            host = "github.com"
+        return f"git@{host}:{slug}.git"
+    if baixo.startswith("ssh://"):
+        sem = bruto[6:]
+        if "@" in sem.split("/", 1)[0]:
+            sem = sem.split("@", 1)[1]
+        hostport = sem.split("/", 1)[0]
+        host, sep, porta = hostport.partition(":")
+        host = host.lower()
+        if host not in ("github.com", "ssh.github.com"):
+            host, sep, porta = "github.com", "", ""
+        porta_s = f":{porta}" if sep and porta else ""
+        return f"ssh://git@{host}{porta_s}/{slug}.git"
+    return f"https://github.com/{slug}.git"
+
+
+def motivo_para_nao_enviar(wt: Path) -> str:
+    """Vazio se a branch pode ir para o repositório do cadastro; senão o motivo.
+
+    Primeira barreira, antes de qualquer git que possa executar o config da pasta:
+    0. O config local/worktree não tem `pushurl`, `insteadOf`/`pushInsteadOf` que
+       reescreva o GitHub, `core.sshCommand`, `credential.helper`, `include`,
+       `core.fsmonitor` nem `filter`.
+    1. O `origin` da pasta é o repositório do GitHub do cadastro (FRA-567).
+    2. A branch tem a `origin/main` atual na história. Uma branch criada antes
+       de o repositório recomeçar (histórico antigo, sem ancestral comum) levaria
+       todo o histórico antigo junto no push.
+    3. O `antes_do_push` do projeto (ex.: conferência de publicação) sai 0.
+
+    A segunda barreira é `enviar_branch`: o push usa a URL explícita do cadastro.
+    """
+    motivo, origem = diagnostico_config(wt)
+    if motivo:
+        return motivo
     esperado = projeto().github
-    origem = subprocess.run(["git", "config", "--get", "remote.origin.url"], cwd=wt,
-                            capture_output=True, text=True, env=env)
-    atual = projetos.normalizar_github(origem.stdout.strip()) if origem.returncode == 0 else ""
+    atual = projetos.normalizar_github(origem)
     if not esperado:
         return "o projeto não tem o repositório do GitHub no cadastro (Ajustes › Projetos)"
     if atual != esperado:
         return (f"o `origin` da pasta é `{atual or 'nenhum'}`, mas o projeto é do repositório "
                 f"`{esperado}`; confira a pasta no cadastro")
+    env = ambiente_git()
     sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
-    base = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=wt,
+    base = subprocess.run(argv_git(["git", "merge-base", "HEAD", "origin/main"]), cwd=wt,
                           capture_output=True, text=True, env=env)
     if base.returncode != 0 or not base.stdout.strip():
         return ("a branch não tem a `origin/main` atual na história (criada sobre um histórico "
@@ -1151,6 +2082,34 @@ def motivo_para_nao_enviar(wt: Path) -> str:
         if r.returncode != 0:
             fim = (r.stdout + r.stderr).strip().splitlines()[-12:]
             return f"a conferência antes do push (`{cmd}`) saiu {r.returncode}:\n" + "\n".join(fim)
+    return ""
+
+
+def enviar_branch(wt: Path, branch: str) -> str:
+    """Envia `HEAD` para a URL do cadastro. Vazio se enviou; senão o motivo.
+
+    Segunda barreira: não é `git push origin` (isso honraria `pushurl`) e não leva
+    `-u`. `-u` com a URL solta gravaria o upstream nessa URL. O rastreio fica no
+    remote `origin`.
+    """
+    branch = str(branch or "").strip()
+    if (not branch or branch.startswith(("-", "/")) or branch.endswith(("/", ".lock"))
+            or any(c in branch for c in "\n\r\t ~^:?*[\\")
+            or any(p in ("", ".", "..") for p in branch.split("/"))):
+        return "nome de branch inválido para o push"
+    motivo, origem = diagnostico_config(wt)
+    if motivo:
+        return motivo
+    esperado = projeto().github
+    if not esperado:
+        return "o projeto não tem o repositório do GitHub no cadastro (Ajustes › Projetos)"
+    url = url_explicita(esperado, origem)
+    if projetos.normalizar_github(url) != esperado:
+        return f"a URL de push `{url or 'nenhuma'}` não é a do repositório `{esperado}`"
+    sh(["git", "push", "-q", url, f"HEAD:{branch}"], cwd=wt, timeout=180)
+    # O fetch não criou `origin/<branch>`: o push foi para a URL, não para o remote.
+    sh(["git", "update-ref", f"refs/remotes/origin/{branch}", "HEAD"], cwd=wt, check=False)
+    sh(["git", "branch", "--set-upstream-to", f"origin/{branch}", branch], cwd=wt, check=False)
     return ""
 
 
@@ -1198,13 +2157,13 @@ def juntar_main(wt: Path) -> tuple[str, str]:
 
 def historico_antigo(wt: Path) -> bool:
     """A branch do worktree não tem ancestral comum com a `origin/main` (veio de outro histórico)."""
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    env = ambiente_git()
     try:
-        tem = subprocess.run(["git", "rev-parse", "-q", "--verify", "origin/main"], cwd=wt,
+        tem = subprocess.run(argv_git(["git", "rev-parse", "-q", "--verify", "origin/main"]), cwd=wt,
                              capture_output=True, text=True, env=env, timeout=60)
         if tem.returncode != 0:
             return False  # sem origin/main local (fetch falhou): não dá para afirmar
-        base = subprocess.run(["git", "merge-base", "HEAD", "origin/main"], cwd=wt,
+        base = subprocess.run(argv_git(["git", "merge-base", "HEAD", "origin/main"]), cwd=wt,
                               capture_output=True, text=True, env=env, timeout=60)
         return base.returncode != 0 or not base.stdout.strip()
     except Exception:  # noqa: BLE001
@@ -1221,10 +2180,10 @@ def _nota_conflito(main: str, lista: str) -> str:
 
 
 def _juntar_main(wt: Path) -> tuple[str, str]:
-    env = dict(os.environ, PATH=TOOL_PATH, GIT_TERMINAL_PROMPT="0")
+    env = ambiente_git()
 
     def git(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", *args], cwd=wt, capture_output=True, text=True, env=env, timeout=180)
+        return subprocess.run(argv_git(["git", *args]), cwd=wt, capture_output=True, text=True, env=env, timeout=180)
 
     # Merge pela metade (rodada anterior ou `rebase_dirty` do vigia): não começa outro;
     # a lane conclui o que já está marcado.
@@ -1307,6 +2266,11 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
         patch_file = prova / "deepseek.yml"
         escrever_exclusivo(patch_file, deepseek_patch(effort))
 
+    # FRA-598: o perfil do Grok tem de existir antes do processo. Sem ele o CLI
+    # recusa subir, em vez de rodar sem o deny de `security` e dos segredos.
+    if lane == "grok":
+        escrever_perfil_sandbox()
+
     # FRA-374: o `--` fecha o parsing de flags do CLI. Sem ele, um token do
     # prompt como `--check` (git diff --check) é lido como flag e o CLI aborta.
     # FRA-595: o comando fica no RUN_DIR, com nonce no nome. O runner recebe o
@@ -1330,6 +2294,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
           "log": str(lane_log), "session": f"lane-{lane}",
           "run_id": run_id, "agent_cmd": str(cmd_path)}
     save_state(lane, st)
+    gravar_claim(lane, st)
 
     flags = (deepseek_resumo(effort) if lane == "deepseek"
              else " ".join(flags_da_lane(lane, effort)) or "padrão do CLI")
@@ -1695,7 +2660,13 @@ def nomes_do_diff(wt: Path, spec: str) -> list[str]:
 
 def git_summary(wt: Path, base: Optional[str] = None) -> dict:
     """`files`: tudo o que a branch muda em relação à main (vai no PR).
-    `new` e `lane_files`: só o que a lane fez desde `base` (sem base, estado antigo, vale a main)."""
+    `new` e `lane_files`: só o que a lane fez desde `base` (sem base, estado antigo, vale a main).
+
+    Não chama git se o config local ou de worktree for recusado: o fetch e o
+    `status` rodariam `credential.helper` e `core.fsmonitor`."""
+    motivo, _origem = diagnostico_config(wt)
+    if motivo:
+        return {"ahead": 0, "new": 0, "files": [], "lane_files": [], "dirty": [], "sha": ""}
     sh(["git", "fetch", "-q", "origin", "main"], cwd=wt, check=False)
     ahead = int(sh(["git", "rev-list", "--count", "origin/main..HEAD"], cwd=wt) or 0)
     files = nomes_do_diff(wt, "origin/main...HEAD")
@@ -1712,7 +2683,8 @@ def git_summary(wt: Path, base: Optional[str] = None) -> dict:
     else:
         new, lane_files = ahead, files
     dirty = [l for l in sh(["git", "status", "--porcelain"], cwd=wt).splitlines() if l.strip()]
-    sha = sh(["git", "rev-parse", "--short", "HEAD"], cwd=wt)
+    # SHA completo (40). O DONE usa este valor; o vigia compara com ==, não com prefixo.
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     return {"ahead": ahead, "new": new, "files": files, "lane_files": lane_files, "dirty": dirty, "sha": sha}
 
 
@@ -1975,8 +2947,14 @@ def resume_line(st: dict) -> str:
 
 def pending_lines(st: dict) -> str:
     """FRA-269: trabalho pronto não fica invisível. Lista o que está sem commit e os
-    commits da lane ainda não enviados."""
+    commits da lane ainda não enviados.
+
+    O `fail` da recusa passa por aqui. Sem o config aceito, `git status` rodaria
+    o `core.fsmonitor` que o guard acabou de recusar."""
     wt = Path(st["worktree"])
+    motivo, _origem = diagnostico_config(wt)
+    if motivo:
+        return ""
     try:
         dirty = [l for l in sh(["git", "status", "--porcelain"], cwd=wt, check=False).splitlines() if l.strip()]
         base = st.get("base")
@@ -2589,6 +3567,8 @@ def start_proof(wt: Path, suites: list[str], st: dict) -> None:
     proc.returncode = 0
     try:
         registrar_prova(prova, pid, str(st["run_id"]))
+        if registrar_foto(wt, pid) is None:
+            log(f"prova: pid {pid} sem foto confiável (dono, início ou comando); não sinalizo este pid")
     except Exception:
         try:
             os.killpg(pid, signal.SIGKILL)
@@ -2634,20 +3614,34 @@ def prova_viva(pid: int) -> bool:
     return waited != pid
 
 
-def matar_prova(st: dict) -> None:
-    """Mata o grupo da prova só se dono, início e comando conferem.
-
-    Pid lido do worktree, ou pid cujo comando não é o da prova, não é morto.
-    """
+def _pid_escrito_na_worktree(wt: Path) -> Optional[int]:
+    """Pid que o agente deixou em `.lane`. Não é o que o dispatcher sinaliza."""
+    path = wt / ".lane" / "proof_pid"
+    if not path.is_file() or path.is_symlink():
+        return None
     try:
-        prova = prova_dir(st)
-    except (KeyError, RuntimeError):
+        pid = int(ler_sem_seguir(path).strip())
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _avisar_pid_da_worktree(wt: Path) -> None:
+    """O arquivo em `.lane` não escolhe o processo. Se divergir da foto, fica no log."""
+    lane_pid = _pid_escrito_na_worktree(wt)
+    if lane_pid is None:
         return
-    pid = pid_validado(prova)
-    if pid is None:
-        return
+    foto = _ler_foto(arquivo_prova_proc(wt))
+    real = foto.get("pid") if foto else None
+    if isinstance(real, int) and lane_pid != real:
+        log(f"prova: proof_pid {lane_pid} não é o da foto ({real}); ignoro o arquivo")
+
+
+def _sinalizar_grupo(pid: int, prova: Optional[Path]) -> None:
     for sig in (signal.SIGTERM, signal.SIGKILL):
-        if pid_validado(prova) != pid:
+        if prova is not None and pid_validado(prova) not in (None, pid):
+            break
+        if not prova_viva(pid):
             break
         try:
             os.killpg(pid, sig)
@@ -2662,6 +3656,45 @@ def matar_prova(st: dict) -> None:
             if not prova_viva(pid):
                 break
             time.sleep(0.05)
+    if prova is not None:
+        alvo = prova / "proof_pid"
+        if not alvo.is_symlink():
+            alvo.unlink(missing_ok=True)
+
+
+def matar_prova(st: dict) -> None:
+    """Mata o grupo da prova só se a foto fora do worktree autoriza.
+
+    O pid em `.lane/proof_pid` nunca é o alvo. Sem foto, vale o registro da
+    pasta da rodada (`pid_validado`). Foto de um processo que não é a prova
+    deste worktree não recebe sinal.
+    """
+    try:
+        prova = prova_dir(st)
+    except (KeyError, RuntimeError):
+        prova = None
+    wt = Path(st["worktree"]) if st.get("worktree") else None
+    if wt is not None:
+        _avisar_pid_da_worktree(wt)
+        foto = _ler_foto(arquivo_prova_proc(wt))
+        if foto:
+            pid = foto.get("pid")
+            if not isinstance(pid, int) or not pid_autorizado(
+                    pid, foto, lambda comando: comando_e_prova(wt, comando)):
+                log(f"prova: pid {pid} recusado (dono, início ou comando); não sinalizo")
+                return
+            _sinalizar_grupo(pid, prova)
+            if prova is not None:
+                alvo = prova / "proof_pid"
+                if not alvo.is_symlink():
+                    alvo.unlink(missing_ok=True)
+            return
+    if prova is None:
+        return
+    pid = pid_validado(prova)
+    if pid is None:
+        return
+    _sinalizar_grupo(pid, prova)
     alvo = prova / "proof_pid"
     if not alvo.is_symlink():
         alvo.unlink(missing_ok=True)
@@ -2702,6 +3735,7 @@ def acompanhar_prova(st: dict, wt: Path, suites: list[str]) -> str:
     'pronta': tem proof_exit para o veredito.
     """
     prova = preparar_prova_dir(st, wt)
+    _avisar_pid_da_worktree(wt)
     stop_file = STATE_DIR / f"stop-{st['lane']}"
     if stop_file.exists():
         stop_file.unlink(missing_ok=True)
@@ -2709,6 +3743,8 @@ def acompanhar_prova(st: dict, wt: Path, suites: list[str]) -> str:
         return "stop"
     decisao = decidir_prova_morta(prova)
     if decisao == "refazer":
+        # Mata com a foto ainda no disco. Sem isto o grupo autorizado fica sem sinal.
+        matar_prova(st)
         for nome in ("proof_exit", "proof.log", "proof_pid", "proof_started", "proof_meta.json"):
             _apagar_regular(prova / nome)
         log(f"lane:{st['lane']} {st['card']}: prova morreu sem terminar; refaz uma vez")
@@ -2884,6 +3920,11 @@ def finalize(st: dict) -> Optional[str]:
     `STATE_DIR/provas/<lane>/<card>/<run_id>`.
     """
     wt = Path(st["worktree"])
+    # FRA-594: config que executa código (helper, fsmonitor, pushurl) recusa
+    # antes da prova. Origem e histórico seguem no fim, depois do veredito.
+    motivo_cfg, _origem = diagnostico_config(wt)
+    if motivo_cfg:
+        return fail(st, f"nada foi enviado: {motivo_cfg}", causa="push-barrado")
     prova = preparar_prova_dir(st, wt)
     code = ler_exit_code(st)
     res = read_result(wt)
@@ -2920,7 +3961,9 @@ def finalize(st: dict) -> Optional[str]:
             barrado = motivo_para_nao_enviar(wt)
             if barrado:
                 return fail(st, f"nada foi enviado: {barrado}")
-            sh(["git", "push", "-q", "-u", "origin", f"HEAD:{st['branch']}"], cwd=wt, timeout=180)
+            recusa = enviar_branch(wt, st["branch"])
+            if recusa:
+                return fail(st, f"nada foi enviado: {recusa}")
         resume = resume_line(st)
         aplicar_label(st["issue_id"], LABEL_DONO_ID, OWNER_LABEL)
         linear(MUT_COMMENT, {"id": st["issue_id"], "body":
@@ -2994,7 +4037,9 @@ def finalize(st: dict) -> Optional[str]:
     barrado = motivo_para_nao_enviar(wt)
     if barrado:
         return fail(st, f"nada foi enviado: {barrado}", causa="push-barrado")
-    sh(["git", "push", "-q", "-u", "origin", f"HEAD:{st['branch']}"], cwd=wt, timeout=180)
+    recusa = enviar_branch(wt, st["branch"])
+    if recusa:
+        return fail(st, f"nada foi enviado: {recusa}", causa="push-barrado")
 
     meta = {k: res.get(k) for k in ("changed_files", "verification", "residual_risk", "decisions")}
     meta["changed_files"] = g["files"]
@@ -3043,6 +4088,10 @@ def razao_sem_exit(st: dict, agora: Optional[float] = None) -> Optional[str]:
 
 
 def watch(lane: str, st: dict) -> None:
+    motivo = motivo_recusa_estado(lane, st)
+    if motivo:
+        log(f"lane:{lane} estado recusado: {motivo}; não fecho, não mato sessão, não movo o card")
+        return
     if st.get("stuck"):
         return  # precisa de ação humana: ver log; apagar lane-<x>.json libera a lane
     wt = Path(st["worktree"])
@@ -3120,7 +4169,7 @@ def watch(lane: str, st: dict) -> None:
         archive_old_proofs(prova, st["card"])
     except Exception as exc:  # noqa: BLE001 — o fechamento não pode falhar por causa do histórico
         log(f"lane:{lane} {st['card']}: não arquivei a prova ({exc})")
-    state_file(lane).unlink(missing_ok=True)
+    soltar_lane(lane)
     log(f"lane:{lane} FECHOU {st['card']} → {outcome}")
 
 
@@ -3370,31 +4419,25 @@ def subir_do_todo_com_lock(auto: list, per_lane: dict, lanes_on, running, limite
 # Sem trabalho, não renova e ele expira sozinho. Sem pmset nem sudo.
 CAFFEINATE_BIN = "/usr/bin/caffeinate"
 CAFFEINATE_SECONDS = 150
-CAFFEINATE_PID_FILE = STATE_DIR / "caffeinate.pid"
 
 
 def keep_awake(has_work: bool) -> None:
-    old_pid = None
-    if CAFFEINATE_PID_FILE.exists():
-        try:
-            old_pid = int(CAFFEINATE_PID_FILE.read_text().strip())
-        except ValueError:
-            old_pid = None
+    antigo = ler_caffeinate()
+    pid_file = arquivo_caffeinate()
     if not has_work:
-        if old_pid is not None:
-            CAFFEINATE_PID_FILE.unlink(missing_ok=True)
+        if pid_file.exists():
+            pid_file.unlink(missing_ok=True)
             log("liberado: sem trabalho, caffeinate expira sozinho")
         return
     proc = subprocess.Popen([CAFFEINATE_BIN, "-i", "-s", "-t", str(CAFFEINATE_SECONDS)],
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, start_new_session=True)
-    CAFFEINATE_PID_FILE.write_text(str(proc.pid))
-    if old_pid is not None:
-        try:
-            os.kill(old_pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
-    else:
+    foto = gravar_caffeinate(proc.pid)
+    if foto is None:
+        log(f"caffeinate {proc.pid} sem foto; o próximo ciclo não sinaliza este pid")
+    if antigo is not None:
+        encerrar_caffeinate(antigo)
+    elif foto is not None:
         log(f"mantendo acordado: caffeinate {proc.pid} por {CAFFEINATE_SECONDS} s, renovado a cada ciclo")
 
 
@@ -3425,7 +4468,8 @@ def run(real: bool, verbose: bool) -> int:
         prev_at = None
     gap = wake_gap_line(prev_at, dt.datetime.now())
     if gap and real:
-        busy = [f"lane:{l} com {st['card']}" for l in LANES if (st := load_state(l))]
+        busy = [f"lane:{l} com {card_confiavel(l, st) or 'estado inválido'}"
+                for l in LANES if (st := load_state(l))]
         log(gap + (f"; em andamento: {', '.join(busy)} (se a sessão caiu, o card volta como lane:parada "
                    "e a triagem devolve à fila)" if busy else ""))
     if real:
@@ -3467,7 +4511,7 @@ def run(real: bool, verbose: bool) -> int:
         # fica visível no log em vez de sumir sem explicação.
         for it in issues:
             it["_projeto"] = proj.nome
-        busy = {s["card"] for s in (load_state(l) for l in LANES) if s}
+        busy = {c for l in LANES if (c := card_confiavel(l, load_state(l)))}
         per_lane: dict[str, list[dict]] = {l: [] for l in LANES}
         excluded: list[str] = []
         auto: list[dict] = []
@@ -3515,13 +4559,14 @@ def run(real: bool, verbose: bool) -> int:
             queue = sorted(per_lane[lane], key=sort_key)
             running = load_state(lane)
             if running:
-                    espera = [i["identifier"] for i in queue]
-                    if espera:
-                        lines.append(f"lane:{lane} ocupada com {running['card']} "
-                                   f"(espera: {', '.join(espera)})")
-                    else:
-                        lines.append(f"lane:{lane} ocupada com {running['card']}")
-                    continue
+                nome = card_confiavel(lane, running) or "estado inválido"
+                espera = [i["identifier"] for i in queue]
+                if espera:
+                    lines.append(f"lane:{lane} ocupada com {nome} "
+                                 f"(espera: {', '.join(espera)})")
+                else:
+                    lines.append(f"lane:{lane} ocupada com {nome}")
+                continue
             if lane in limited:
                 waiting_ids = ", ".join(i["identifier"] for i in queue) or "nenhum card"
                 lines.append(f"lane:{lane} em limite da conta até {hhmm(limited[lane])} "
@@ -3569,7 +4614,7 @@ def run(real: bool, verbose: bool) -> int:
             log(f"lane:{lane} ERRO no claim de {issue['identifier']}: {exc}")
             st = load_state(lane)
             if st and st.get("card") == issue["identifier"]:
-                state_file(lane).unlink(missing_ok=True)
+                soltar_lane(lane)
             try:
                 aplicar_label(issue["id"], LABEL_LANE_FALHOU_ID, linear_ids.FALHOU)
                 linear(MUT_COMMENT, {"id": issue["id"], "body":
