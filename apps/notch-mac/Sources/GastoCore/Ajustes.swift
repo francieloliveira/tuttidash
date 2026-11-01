@@ -149,7 +149,7 @@ public enum CatalogoAjustes {
                 CampoAjuste("painel.gestor_log_glob", String(localized: "Logs dos testes manuais (padrão)"), .texto, "/tmp/fra*-*.log"),
                 CampoAjuste("painel.filtro", String(localized: "Filtro das linhas (regex)"), .texto, "Test Case|error:|Executed|BLOCK|TEST (SUCCEEDED|FAILED)|abortado"),
                 CampoAjuste("painel.intervalo_s", String(localized: "Intervalo de troca (s)"), n(1, 3600), "10"),
-                CampoAjuste("estresse.intervalo_s", String(localized: "Intervalo da medição de estresse (s)"), n(1, 3600), "15"),
+                CampoAjuste("estresse.intervalo_s", String(localized: "Intervalo da medição de carga do Mac (s)"), n(1, 3600), "15"),
                 CampoAjuste("lane_view.pensamento", String(localized: "Mostrar o raciocínio do agente"), .booleano, "true"),
                 CampoAjuste("lane_view.pensamento_linhas", String(localized: "Linhas de raciocínio por bloco"), n(0, 200), "14"),
                 CampoAjuste("lane_view.diff", String(localized: "Mostrar o diff de cada edição"), .booleano, "true"),

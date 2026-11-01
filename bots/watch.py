@@ -2182,8 +2182,9 @@ def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
         os.unlink(settings)
         os.unlink(saida)
     (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(out)
-    manifesto = manifesto_revisao(agente) or {}
-    log(f"agente {tag} [{agente}/{manifesto.get('modelo_padrao', 'padrao')}/{esforco or '-'}]: "
+    # FRA-590: o log usa `m` (padrão do manifesto). `{... or {} }.get(...)` na
+    # f-string não compila no Python 3.9 do Mac.
+    log(f"agente {tag} [{agente}/{m.get('modelo_padrao', 'padrao')}/{esforco or '-'}]: "
         f"{int(time.time() - started)} s, {len(out)} chars")
     return limpar_saida(out)
 

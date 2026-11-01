@@ -1,10 +1,18 @@
 #!/bin/bash
-# Anota a cada 15 s como o Mac aguenta durante o teste de estresse (sem preflight).
+# Anota a cada 15 s a carga do Mac (load, memória, térmico) enquanto o trabalho roda.
 C=~/.transcentia/tools/cfg; cfg(){ [ -x "$C" ] && "$C" get "$1" "$2" 2>/dev/null || echo "$2"; }
 # Provas em andamento: o mesmo lugar do painel.proof_log_glob, com proof_started no lugar do log.
 G=$(cfg painel.proof_log_glob "~/Developer/*-worktrees/*/.lane/proof.log"); G=${G/#\~/$HOME}
 PROVAS=("${G%/*}/proof_started")
-OUT=$(cfg estresse.saida ~/Library/Logs/TranscentIA/estresse.tsv); OUT=${OUT/#\~/$HOME}; I=$(cfg estresse.intervalo_s 15)
+# Padrão novo. Se o log antigo já existe e a config ainda aponta para o padrão,
+# a série continua nele. estresse.saida explícito (outro caminho) vale como está.
+NOVO="$HOME/Library/Logs/TuttiDash/carga-mac.tsv"
+VELHO="$HOME/Library/Logs/TranscentIA/estresse.tsv"
+OUT=$(cfg estresse.saida "~/Library/Logs/TuttiDash/carga-mac.tsv"); OUT=${OUT/#\~/$HOME}
+if [ -f "$VELHO" ] && [ "$OUT" = "$NOVO" ]; then OUT=$VELHO; fi
+I=$(cfg estresse.intervalo_s 15)
+if [ "${1:-}" = "--saida" ]; then printf '%s\n' "$OUT"; exit 0; fi
+mkdir -p "$(dirname "$OUT")"
 [ -f "$OUT" ] || printf "hora\tload1\tload5\tlivre_mb\tswap_usado_mb\tpressao_pct_livre\ttermico\txcodebuild\tsimuladores\tlanes_ativas\n" > "$OUT"
 while true; do
   read l1 l5 <<<"$(sysctl -n vm.loadavg | awk '{print $2, $3}')"

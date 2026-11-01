@@ -45,12 +45,19 @@ trabalhar de um desenvolvedor, e isso aparece. [Read in English](README.md).
 git clone https://github.com/francieloliveira/tuttidash.git
 cd tuttidash
 
-# 1. Ferramentas em ~/.transcentia, ainda sem nada rodando em segundo plano
+# 1. Ferramentas em ~/.transcentia, ainda sem nada rodando em segundo plano.
+#    Instalação limpa não cria ~/.transcentia/lanes e não copia runner, view nem settings.
 tools/install.sh --sem-launchd
 
 # 2. O app
 cd apps/notch-mac && ./build.sh && open build/TuttiDash.app
 ```
+
+Uma instalação limpa não cria `~/.transcentia/lanes` e não copia `run_lane.sh`,
+`lane_view.py`, `claude-settings.json` nem `lane-mcp.json`. Se a pasta já existe, o
+script atualiza o dispatcher, os módulos compartilhados e os prompts, e deixa o runner,
+o view e os settings como estão. Os interruptores das lanes ficam escondidos até esses
+arquivos já estarem na pasta.
 
 No app, *Ajustes › Contas*, cole uma chave da API do Linear usada só pelo TuttiDash.
 Ela fica no Keychain do app (proteção de dados), nunca no arquivo e nunca no item

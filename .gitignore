@@ -15,3 +15,5 @@ apps/notch-mac/Privado/
 
 # estado efêmero da lane (result.json e prova); não é código
 .lane/
+# MCP local (FRA-614): o template versionado é neutro; este guarda o caminho da máquina
+apps/notch-mac/Resources/lane-mcp.local.json
