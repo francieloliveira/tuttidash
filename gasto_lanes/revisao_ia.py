@@ -110,11 +110,11 @@ def _sha_do_item(item: dict) -> str:
     return ""
 
 
-def _conta(item: dict, esperado: str) -> bool:
+def _conta(item: dict, esperado: str, nome: str = NOME_DO_CHECK) -> bool:
     if not isinstance(item, dict):
         return False
-    nome = str(item.get("name") or item.get("context") or "").strip()
-    if nome != NOME_DO_CHECK:
+    visto_nome = str(item.get("name") or item.get("context") or "").strip()
+    if visto_nome != nome:
         return False
     visto = _sha_do_item(item)
     if visto:
@@ -135,17 +135,18 @@ def _veredito_item(item: dict) -> str:
     return "pendente"
 
 
-def veredito_check(sha: str, head_sha: str, checks) -> str:
-    """`verde`, `vermelho` ou `pendente` para o check no SHA completo.
+def veredito_check(sha: str, head_sha: str, checks, nome: str = NOME_DO_CHECK) -> str:
+    """`verde`, `vermelho` ou `pendente` para o check `nome` no SHA completo.
 
     SHA incompleto ou diferente do head não autoriza merge. Check de outro
-    SHA não conta. Sem item deste SHA, o check ainda não chegou.
+    SHA não conta. Sem item deste SHA, o check ainda não chegou. O vigia usa
+    a mesma regra para `revisao-ia` e para `prova-remota`.
     """
     esperado = (sha or "").strip().lower()
     head = (head_sha or "").strip().lower()
     if not sha_completo(esperado) or esperado != head:
         return "vermelho"
-    itens = [i for i in normalizar_rollup(checks) if _conta(i, esperado)]
+    itens = [i for i in normalizar_rollup(checks) if _conta(i, esperado, nome)]
     if not itens:
         return "pendente"
     vereditos = [_veredito_item(i) for i in itens]
