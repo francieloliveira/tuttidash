@@ -20,14 +20,23 @@ struct PainelTela: View {
             VStack(spacing: 0) {
                 CabecalhoPainel(pagina: pagina, modelo: modelo)
                 GeometryReader { g in
-                    ScrollView(.vertical) {
-                        conteudo(largura: max(g.size.width - 44, 900))
-                            .padding(.horizontal, 22)
-                            .padding(.bottom, pagina == .dashboard ? 0 : 22)
-                            .id(pagina == .ajustes ? "ajustes-\(nav.secao.rawValue)" : pagina.rawValue)
-                            .transition(DS.reduzir ? .identity : .opacity.combined(with: .offset(y: 8)))
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical) {
+                            conteudo(largura: max(g.size.width - 44, 900))
+                                .padding(.horizontal, 22)
+                                .padding(.bottom, pagina == .dashboard ? 0 : 22)
+                                .id(pagina == .ajustes ? "ajustes-\(nav.secao.rawValue)" : pagina.rawValue)
+                                .transition(DS.reduzir ? .identity : .opacity.combined(with: .offset(y: 8)))
+                        }
+                        .scrollIndicators(.automatic)
+                        .onChange(of: nav.grupoFoco) { _, grupo in
+                            guard let grupo else { return }
+                            Task { @MainActor in
+                                proxy.scrollTo(grupo, anchor: .top)
+                                nav.grupoFoco = nil
+                            }
+                        }
                     }
-                    .scrollIndicators(.automatic)
                 }
             }
         }

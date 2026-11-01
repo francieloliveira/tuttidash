@@ -7,6 +7,7 @@ final class EstadoLinear: ObservableObject {
     let modelo: ModeloAjustes
     let servico: ServicoLinear
     let tokens: TokenLinear
+    let proxy: any ControleProxyLinear
     @Published var token = ""
     @Published var temToken = false
     /// false até a primeira leitura do Keychain (feita fora da criação da tela, FRA-579).
@@ -20,12 +21,14 @@ final class EstadoLinear: ObservableObject {
     @Published var opcoes = OpcoesTime()
     @Published var versao = 0
 
-    init(modelo: ModeloAjustes, servico: ServicoLinear = ServicoLinear(), tokens: TokenLinear = TokenLinear()) {
-        self.modelo = modelo; self.servico = servico; self.tokens = tokens
+    init(modelo: ModeloAjustes, servico: ServicoLinear = ServicoLinear(), tokens: TokenLinear = TokenLinear(),
+         proxy: any ControleProxyLinear = ServicoProxyLinear.compartilhado) {
+        self.modelo = modelo; self.servico = servico; self.tokens = tokens; self.proxy = proxy
         workspace = modelo.valorTexto("linear.workspace_url")
     }
 
-    /// Lê o Keychain fora da thread da interface: o `security` não roda no meio de um redesenho.
+    /// Lê o Keychain fora da thread da interface. A importação única do item antigo
+    /// e a subida do proxy também ficam fora do redesenho.
     func conferirToken() async {
         let tokens = self.tokens
         temToken = await Task.detached { tokens.ler() != nil }.value
@@ -36,11 +39,35 @@ final class EstadoLinear: ObservableObject {
     var conectado: Bool { !times.isEmpty }
 
     func salvarToken() async {
-        do { try tokens.salvar(token); token = ""; temToken = true; erro = nil; await conectar() }
-        catch { erro = String(localized: "Não foi possível salvar no Keychain: \(error.localizedDescription)") }
+        let texto = token
+        let tokens = self.tokens
+        do {
+            let proxy = self.proxy
+            try await Task.detached {
+                try tokens.salvar(texto)
+                proxy.ligar(tokens: tokens)
+            }.value
+            token = ""
+            temToken = true
+            erro = nil
+            await conectar()
+        } catch {
+            erro = String(localized: "Não foi possível salvar no Keychain: \(error.localizedDescription)")
+        }
     }
 
-    func esquecerToken() { tokens.apagar(); temToken = false; times = []; projetos = []; opcoes = OpcoesTime() }
+    func esquecerToken() {
+        temToken = false
+        times = []
+        projetos = []
+        opcoes = OpcoesTime()
+        let tokens = self.tokens
+        let proxy = self.proxy
+        Task.detached {
+            proxy.parar()
+            tokens.apagar()
+        }
+    }
 
     /// Time das colunas: o do projeto padrão do cadastro (FRA-567). nil = nenhum projeto cadastrado.
     var timeDasColunas: String? {
@@ -127,7 +154,7 @@ struct AbaLinear: View {
     private var fluxoToken: some View {
         VStack(alignment: .leading, spacing: 8) {
             SecureField(String(localized: "Token da API do Linear"), text: $estado.token)
-            Text(String(localized: "Crie em Linear › Settings › API. Ele fica só no Keychain, nunca no arquivo, e vale também para o dispatcher e o vigia."))
+            Text(String(localized: "Crie uma chave só para o TuttiDash em Linear › Settings › API. Ela fica no Keychain do app, com proteção de dados, nunca no arquivo. O dispatcher e o vigia pedem o proxy e não recebem a chave. Para trocar, cole a nova e revogue a antiga no Linear."))
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button(String(localized: "Salvar e conectar")) { Task { await estado.salvarToken() } }

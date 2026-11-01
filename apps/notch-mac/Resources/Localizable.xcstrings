@@ -704,8 +704,21 @@
     "Apagar token" : {
 
     },
-    "Arquivo da medição de estresse" : {
-
+    "Arquivo da medição de carga do Mac" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac load measurement file"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arquivo da medição de carga do Mac"
+          }
+        }
+      }
     },
     "Arquivo de teste direto" : {
 
@@ -998,6 +1011,22 @@
     },
     "Cards que o dispatcher passou para você (%@)" : {
 
+    },
+    "Carga do Mac" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac load"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carga do Mac"
+          }
+        }
+      }
     },
     "Carga máxima" : {
       "localizations" : {
@@ -2010,18 +2039,18 @@
         }
       }
     },
-    "Intervalo da medição de estresse (s)" : {
+    "Intervalo da medição de carga do Mac (s)" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stress sampling interval (s)"
+            "value" : "Mac load sampling interval (s)"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Intervalo da medição de estresse (s)"
+            "value" : "Intervalo da medição de carga do Mac (s)"
           }
         }
       }
@@ -2314,9 +2343,6 @@
 
     },
     "Mede o % do menu SuperGrok pela sessão do Cursor. Não pega card. Cota separada do Grok CLI." : {
-
-    },
-    "Medição de estresse" : {
 
     },
     "Modelo" : {
