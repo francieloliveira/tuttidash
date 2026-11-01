@@ -42,6 +42,12 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     /// (`proof_suites` no dispatcher). Vazio: a lane pede o nome, no formato certo.
     /// O app não edita, mas guarda: antes, salvar o cadastro apagava a lista (revisão do PR #19).
     public var suites: [String]
+    /// Modo bancada (FRA-618): a lane `claude` ganha o comando `bancada` (USB) nos cards com a
+    /// etiqueta `lane:bancada`. Grava `"bancada": {"ativo": true}`.
+    public var bancada: Bool
+    /// Pastas que só o Mac prova (FRA-620). A `prova-remota` no Linux fica vermelha nelas.
+    /// O app não edita, mas guarda: sem isto, salvar o cadastro apagava a lista.
+    public var pastasDoApp: [String]
 
     /// Freio padrão quando o projeto não declara o seu: a config dos agentes do projeto
     /// (igual ao `PROTEGIDOS_PADRAO` do `projetos.py`).
@@ -50,7 +56,8 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     public init(projetoID: String, nome: String = "", ativo: Bool = true, padrao: Bool = false,
                 repo: String = "", worktrees: String = "", prova: String = "python3 {suite}",
                 provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = [],
-                antesDoPush: String = "", github: String = "", suites: [String] = []) {
+                antesDoPush: String = "", github: String = "", suites: [String] = [],
+                bancada: Bool = false, pastasDoApp: [String] = []) {
         self.projetoID = projetoID
         self.nome = nome.isEmpty ? projetoID : nome
         self.ativo = ativo
@@ -64,6 +71,8 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         self.antesDoPush = antesDoPush.trimmingCharacters(in: .whitespaces)
         self.github = RepositorioGitHub.normalizar(github) ?? github.trimmingCharacters(in: .whitespaces)
         self.suites = suites
+        self.bancada = bancada
+        self.pastasDoApp = pastasDoApp
     }
 
     /// Pasta de worktrees efetiva: a declarada ou `<repo>-worktrees`.
@@ -133,7 +142,10 @@ public enum ProjetosConfig {
                                    copiarParaWorktree: copiar,
                                    antesDoPush: "\(item["antes_do_push"] ?? "")",
                                    github: "\(item["github"] ?? "")",
-                                   suites: ((item["suites"] as? [String]) ?? []).filter { !$0.isEmpty })
+                                   suites: ((item["suites"] as? [String]) ?? []).filter { !$0.isEmpty },
+                                   bancada: (item["bancada"] as? [String: Any]).flatMap { $0["ativo"] as? NSNumber }
+                                       .map { JV.ehBool($0) && $0.boolValue } ?? false,
+                                   pastasDoApp: ((item["prova_remota"] as? [String: Any])?["pastas_do_app"] as? [String]) ?? [])
         }.filter { $0.problema() == nil }
         return saida
     }
@@ -151,6 +163,8 @@ public enum ProjetosConfig {
             if !p.antesDoPush.isEmpty { item["antes_do_push"] = p.antesDoPush }
             if !p.github.isEmpty { item["github"] = p.github }
             if !p.suites.isEmpty { item["suites"] = p.suites }
+            if p.bancada { item["bancada"] = ["ativo": true] }
+            if !p.pastasDoApp.isEmpty { item["prova_remota"] = ["pastas_do_app": p.pastasDoApp] }
             return item
         }
     }
