@@ -5,6 +5,8 @@ Trocar um script ou módulo do bundle é detectado. A cópia antiga em
 o ambiente e exige a âncora de root mais o designated requirement
 Apple Development 3QA76CY27W — não um CDHash.
 """
+from __future__ import annotations
+
 import hashlib
 import os
 import shutil

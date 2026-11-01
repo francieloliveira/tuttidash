@@ -45,12 +45,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var caminhoFoto: URL?
     /// «Atualizar agora» no cabeçalho: avisa quando a leitura termina.
     private var avisarAoAtualizar = false
+    /// Proxy do Linear. O delegate recebe o protocolo; o padrão é o processo único do app.
+    let proxy: any ControleProxyLinear
+
+    init(proxy: any ControleProxyLinear = ServicoProxyLinear.compartilhado) {
+        self.proxy = proxy
+        super.init()
+    }
 
     // Intervalos (dados 30 s, uso 120 s: endpoints limitados por IP) vivem em `PoliticaAtualizacao`.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // O dispatcher/vigia/chave só trabalham enquanto este PID estiver vivo.
         PresencaDoApp.marcarAberta()
+        // O proxy lê o token no Keychain do app e não o devolve aos scripts (FRA-607).
+        let proxy = self.proxy
+        Task.detached(priority: .utility) { proxy.ligar() }
         EstadoCaixa.compartilhada.iniciar()  // caixa do dono: contador do sino e aviso do macOS
         NSApp.setActivationPolicy(.accessory)
         Configuracao.copiarPastaAntiga()
@@ -171,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// «Sair» encerra o trabalho automático junto com o app. Fechar o painel não.
     func applicationWillTerminate(_ notification: Notification) {
+        proxy.parar()
         PresencaDoApp.pararTudo()
     }
 

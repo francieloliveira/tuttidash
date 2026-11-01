@@ -55,6 +55,7 @@ final class AgendasTests: XCTestCase {
             XCTAssertEqual(p["StandardOutPath"] as? String, log)
             XCTAssertEqual(p["StandardErrorPath"] as? String, log)
             XCTAssertEqual(p["StartInterval"] as? Int, t.intervaloPadrao)
+            XCTAssertEqual(p["Umask"] as? Int, 63, "umask 077")
             XCTAssertNil(p["EnvironmentVariables"])
             XCTAssertFalse(t.label.contains("painel"))
         }

@@ -14,6 +14,8 @@
 #                               e config também não. O bundle traz controle/gasto_lanes.
 #                               gasto_privado.py continua opcional (build pessoal).
 #   tools/install.sh --sem-launchd   só copia arquivos
+# FRA-591: instalação limpa não cria ~/.transcentia/lanes e não copia
+# run_lane.sh, lane_view.py nem claude-settings.json/lane-mcp.json.
 # Espelho: não mexe no PAUSE (quem decide é a chave bots-chave); nunca inicia o vigia em paralelo.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -21,7 +23,8 @@ ROOT="$(cd "$HERE/.." && pwd)"
 T="$HOME/.transcentia/tools"; B="$HOME/.transcentia/bots"
 LAUNCHERS="$HOME/Library/Application Support/AgentesLocais"
 DOMAIN="gui/$(id -u)"
-mkdir -p "$T" "$B/prompts" "$LAUNCHERS" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/TranscentIA"
+mkdir -p "$T" "$B/prompts" "$LAUNCHERS" "$HOME/Library/LaunchAgents" \
+  "$HOME/Library/Logs/TranscentIA" "$HOME/Library/Logs/TuttiDash"
 
 aviso_legado() {
   if [ -e "$1" ]; then
@@ -79,6 +82,8 @@ if command -v swift >/dev/null; then
 fi
 
 aviso_legado "$B/watch.py"
+install -m 644 "$ROOT/bots/caixa_leitura.py" "$B/caixa_leitura.py"
+install -m 755 "$ROOT/bots/git-leitura" "$B/git-leitura"
 install -m 755 "$ROOT/bots/instalar.sh" "$B/instalar.sh"
 install -m 644 "$ROOT/bots/prompts/"*.md "$B/prompts/"
 
@@ -86,22 +91,25 @@ install -m 644 "$ROOT/bots/prompts/"*.md "$B/prompts/"
 # TuttiDash.app/Contents/Resources/controle/gasto_lanes (FRA-615). A pasta
 # gravável não recebe esses módulos. config.py ao lado do cfg continua: o
 # binário `cfg` não é o import do plano de controle.
-for mod in catalogo fila projetos privacidade linear_ids config gasto_privado; do
+for mod in catalogo fila projetos privacidade linear_ids config proxy_linear gasto_privado; do
   aviso_legado "$B/$mod.py"
 done
 LANES_DIR="$HOME/.transcentia/lanes"
 if [ -d "$LANES_DIR" ]; then
-  for mod in catalogo fila projetos privacidade linear_ids config gasto_privado; do
+  for mod in catalogo fila projetos privacidade linear_ids config proxy_linear gasto_privado; do
     aviso_legado "$LANES_DIR/$mod.py"
   done
   for f in dispatcher.py lanes_window.py lanes_ctl.py run_lane.sh lane_view.py; do
     aviso_legado "$LANES_DIR/$f"
   done
+  install -m 644 "$ROOT/lanes/permissao.py" "$LANES_DIR/permissao.py"
   for f in "$ROOT"/lanes/lane-prompt.md "$ROOT"/lanes/lane-prompt-*.md; do
     [ -f "$f" ] || continue
     install -m 644 "$f" "$LANES_DIR/$(basename "$f")"
   done
 fi
+# Espelho antigo. A execução (app, dispatcher, vigia) não lê esta pasta (FRA-614):
+# o manifesto que vale é o do bundle assinado. O rsync não é a fonte.
 mkdir -p "$HOME/.transcentia/agents.d"
 rsync -a --delete "$ROOT/agents.d/" "$HOME/.transcentia/agents.d/"
 

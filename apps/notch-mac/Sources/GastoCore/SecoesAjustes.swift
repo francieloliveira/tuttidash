@@ -15,10 +15,31 @@ public enum BlocoAjustes: Sendable, Equatable {
          jobsAgendados, linear, linearLeitura, manifestos, ferramentas, revisaoAtual
 
     /// Chaves do config que o bloco edita com controle próprio (contam como alcançáveis).
+    /// Só `quemCuida` tem chave. O botão de restaurar não apaga bloco: continua nos campos.
     public var chaves: [String] {
         switch self {
         case .quemCuida: return [ModoForcado.chave]
-        default: return []
+        case .lanesHabilitadas, .modeloLanes, .projetos, .contas, .agentesSegundoPlano,
+             .jobsAgendados, .linear, .linearLeitura, .manifestos, .ferramentas, .revisaoAtual:
+            return []
+        }
+    }
+
+    /// Nome visível do bloco. A busca usa este texto além do título do grupo.
+    public var nome: String {
+        switch self {
+        case .lanesHabilitadas: return String(localized: "Lanes ligadas")
+        case .modeloLanes: return String(localized: "Modelo de cada lane")
+        case .projetos: return String(localized: "Projetos")
+        case .contas: return String(localized: "Contas acompanhadas")
+        case .quemCuida: return String(localized: "Quem cuida das lanes")
+        case .agentesSegundoPlano: return String(localized: "Agentes em segundo plano")
+        case .jobsAgendados: return String(localized: "Agendamentos")
+        case .linear: return String(localized: "Linear")
+        case .linearLeitura: return String(localized: "Detalhes do Linear")
+        case .manifestos: return String(localized: "Ferramentas (agents.d)")
+        case .ferramentas: return String(localized: "Ferramentas e logins")
+        case .revisaoAtual: return String(localized: "Modelo e esforço da lane revisora")
         }
     }
 }
@@ -49,12 +70,23 @@ public struct SecaoAjustes: Identifiable, Sendable {
     public var mostraChaves: Bool { id == .avancado }
 }
 
-/// Um resultado da busca nos Ajustes.
+/// Um resultado da busca nos Ajustes. Campo ou bloco: bloco não tem chave para restaurar.
 public struct ResultadoBuscaAjuste: Identifiable, Sendable {
-    public var id: String { campo.chave }
+    public var id: String {
+        if let campo { return campo.chave }
+        return "bloco:\(secao.rawValue):\(grupo):\(bloco.map { String(describing: $0) } ?? "")"
+    }
     public let secao: IdSecaoAjustes
     public let grupo: String
-    public let campo: CampoAjuste
+    public let campo: CampoAjuste?
+    public let bloco: BlocoAjustes?
+
+    public init(secao: IdSecaoAjustes, grupo: String, campo: CampoAjuste? = nil, bloco: BlocoAjustes? = nil) {
+        self.secao = secao
+        self.grupo = grupo
+        self.campo = campo
+        self.bloco = bloco
+    }
 }
 
 extension CatalogoAjustes {
@@ -91,8 +123,8 @@ extension CatalogoAjustes {
             CampoAjuste("painel.linhas_lane", String(localized: "Linhas por lane"), n(5, 500), "40"),
             CampoAjuste("painel.linhas_log", String(localized: "Linhas do log"), n(5, 500), "30"),
             CampoAjuste("painel.linhas_gestor", String(localized: "Linhas dos testes manuais"), n(5, 500), "20"),
-            CampoAjuste("estresse.saida", String(localized: "Arquivo da medição de estresse"), .caminho(deveExistir: false, opcional: true),
-                        "~/Library/Logs/TranscentIA/estresse.tsv"),
+            CampoAjuste("estresse.saida", String(localized: "Arquivo da medição de carga do Mac"), .caminho(deveExistir: false, opcional: true),
+                        "~/Library/Logs/TuttiDash/carga-mac.tsv"),
         ]
     }
 
@@ -146,7 +178,7 @@ extension CatalogoAjustes {
                 ]),
                 GrupoAjustes(String(localized: "Contas das lanes"), ajuda: String(localized: "Quanto de cada conta já foi usado. SuperGrok (via Cursor) e Grok CLI são cotas separadas."),
                              blocos: [.contas], campos: [campo("uso_contas", ajuda: String(localized: "Lê a % de uso de cada conta para equilibrar as lanes."))]),
-                GrupoAjustes(String(localized: "Linear"), ajuda: String(localized: "O token fica só no Chaveiro, nunca no arquivo."), blocos: [.linear]),
+                GrupoAjustes(String(localized: "Linear"), ajuda: String(localized: "A chave fica no Keychain do app (proteção de dados), nunca no arquivo. O dispatcher e o vigia usam o proxy local."), blocos: [.linear]),
             ]),
             SecaoAjustes(id: .revisao, nome: String(localized: "Revisão"), simbolo: "checkmark.seal",
                          subtitulo: String(localized: "Quem revisa os PRs antes do merge"), grupos: [
@@ -209,7 +241,7 @@ extension CatalogoAjustes {
                     c("painel.proof_log_glob"), c("painel.gestor_log_glob"), c("painel.filtro"),
                     c("painel.linhas_lane"), c("painel.linhas_log"), c("painel.linhas_gestor"), c("painel.intervalo_s"),
                 ], recolhido: true),
-                GrupoAjustes(String(localized: "Medição de estresse"), campos: [c("estresse.intervalo_s"), c("estresse.saida")], recolhido: true),
+                GrupoAjustes(String(localized: "Carga do Mac"), campos: [c("estresse.intervalo_s"), c("estresse.saida")], recolhido: true),
             ]),
         ]
     }
@@ -230,7 +262,11 @@ extension CatalogoAjustes {
         "agendas": .avancado, "maquinas": .avancado, "integracoes": .contas, "painel": .geral,
     ]
 
-    /// Busca por nome, explicação, grupo ou chave, sem diferenciar acento e maiúscula.
+    /// Rótulo do botão que devolve só os campos do grupo ao padrão. Não restaura bloco.
+    public static let rotuloRestaurarCampos = String(localized: "Restaurar padrão dos campos")
+
+    /// Busca por nome, explicação, grupo, bloco ou chave, sem diferenciar acento e maiúscula.
+    /// Grupo só com bloco (Projetos, Contas acompanhadas) também volta, para a navegação abrir o bloco.
     public static func buscar(_ termo: String, em secoes: [SecaoAjustes] = secoes()) -> [ResultadoBuscaAjuste] {
         let normal = { (s: String) in s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "pt_BR")) }
         let t = normal(termo.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -238,8 +274,12 @@ extension CatalogoAjustes {
         var r: [ResultadoBuscaAjuste] = []
         for s in secoes {
             for g in s.grupos {
+                let grupoBate = normal(g.nome).contains(t)
                 for c in g.campos where [c.rotulo, c.ajuda, g.nome, c.chave].contains(where: { normal($0).contains(t) }) {
                     r.append(ResultadoBuscaAjuste(secao: s.id, grupo: g.nome, campo: c))
+                }
+                for b in g.blocos where grupoBate || normal(b.nome).contains(t) {
+                    r.append(ResultadoBuscaAjuste(secao: s.id, grupo: g.nome, bloco: b))
                 }
             }
         }
@@ -250,6 +290,6 @@ extension CatalogoAjustes {
     public static let chavesLinearLeitura = [
         "linear.workspace_url", "linear.state_in_progress_name",
         "linear.state_in_review_name", "linear.owner_label", "linear.alert_labels", "linear.blocking_labels",
-        "linear.diary_doc_id", "linear.keychain_service",
+        "linear.diary_doc_id",
     ]
 }

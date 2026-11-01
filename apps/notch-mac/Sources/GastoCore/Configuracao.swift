@@ -178,6 +178,7 @@ public struct Configuracao: Equatable, Sendable {
         try fm.createDirectory(at: novo.deletingLastPathComponent(), withIntermediateDirectories: true)
         let saida = try JSONSerialization.data(withJSONObject: d, options: [.prettyPrinted, .sortedKeys])
         try saida.write(to: novo, options: .atomic)
+        Permissoes.arquivo(novo)
         return true
     }
 

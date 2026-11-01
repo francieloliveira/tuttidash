@@ -84,4 +84,29 @@ final class RetomadaTests: XCTestCase {
         XCTAssertEqual(Retomadas.aspas("/Users/f/wt/fra-248"), "/Users/f/wt/fra-248")
         XCTAssertEqual(Retomadas.aspas("/a b/it's"), #"'/a b/it'"'"'s'"#)
     }
+
+    func testSessaoDoAgenteECitadaEValidada() {
+        XCTAssertTrue(Retomadas.sessaoAceita("01a11399-e338"))
+        XCTAssertTrue(Retomadas.sessaoAceita("a.b:c_d"))
+        XCTAssertFalse(Retomadas.sessaoAceita("a;rm -rf /"))
+        XCTAssertFalse(Retomadas.sessaoAceita("a b"))
+        XCTAssertFalse(Retomadas.sessaoAceita(""))
+        let ruim = Retomada(card: "FRA-1", lane: "claude", worktree: "/w", sessao: "a;touch /tmp/pwn",
+                            desfecho: "lane:falhou", inicio: agora)
+        XCTAssertFalse(ruim.comando.contains("touch"))
+        XCTAssertFalse(ruim.comando.contains(";"))
+        XCTAssertEqual(ruim.comando, "cd /w && claude --resume")
+        let boa = Retomada(card: "FRA-1", lane: "claude", worktree: "/tmp/a b", sessao: "s1",
+                           desfecho: "lane:falhou", inicio: agora)
+        XCTAssertEqual(boa.comando, "cd '/tmp/a b' && claude --resume \(Retomadas.aspas("s1"))")
+    }
+
+    func testLogComSessaoMaliciosaNaoViraRetomada() throws {
+        let p = try PastaTemp()
+        _ = try lane(p, log: "FRA-9-claude-20261006-200000.jsonl", card: "FRA-9", sessao: "a;rm",
+                     finalizado: "lane:falhou")
+        let r = Retomadas.ler(logsDir: p.url.appendingPathComponent("logs"), cardsRodando: [], agora: agora,
+                              calendario: calendarioFixo())
+        XCTAssertTrue(r.isEmpty)
+    }
 }

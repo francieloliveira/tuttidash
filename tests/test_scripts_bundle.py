@@ -185,16 +185,20 @@ class RunLaneDoBundle(unittest.TestCase):
             legado = home / ".transcentia" / "lanes" / "lane_view.py"
             _escrever(legado, f"open({str(marca_legado)!r}, 'w').write('legado')\n")
             wt = base / "wt"
-            (wt / ".lane").mkdir(parents=True)
-            (wt / ".lane" / "prompt.md").write_text("oi\n")
-            (wt / ".lane" / "agent_cmd").write_text("echo oi\n")
-            (wt / ".lane" / "finalized").write_text("ok\n")
-            (wt / ".lane" / "exit_code").write_text("0\n")
+            wt.mkdir()
+            # FRA-595: comando e prompt vêm do RUN_DIR por argv, fora do worktree.
+            run_dir = base / "run"
+            run_dir.mkdir()
+            (run_dir / "prompt.md").write_text("oi\n")
+            (run_dir / "agent_cmd").write_text("echo oi\n")
+            (run_dir / "finalized").write_text("ok\n")
+            (run_dir / "exit_code").write_text("0\n")
             log = base / "lane.jsonl"
             try:
                 subprocess.run(
                     ["bash", str(bundle / "run_lane.sh"),
-                     "claude", str(wt), "FRA-613", str(log)],
+                     "claude", str(wt), "FRA-613", str(log),
+                     str(run_dir / "agent_cmd"), str(run_dir)],
                     cwd=wt, env={**os.environ, "HOME": str(home)},
                     capture_output=True, text=True, timeout=5)
             except subprocess.TimeoutExpired:

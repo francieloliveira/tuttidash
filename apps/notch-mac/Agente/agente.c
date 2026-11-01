@@ -634,7 +634,7 @@ static void registrar_falha(const char *home, const char *log, const char *linha
     snprintf(dir, sizeof dir, "%s/Library/Logs/TranscentIA", home);
     garantir_pasta(dir);
     snprintf(arq, sizeof arq, "%s/%s", dir, log);
-    fd = open(arq, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    fd = open(arq, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, 0600);
     if (fd < 0) return;
     len = strlen(linha);
     if (write(fd, linha, len) < 0) {
@@ -659,6 +659,25 @@ static int falha_integridade(const char *home, const char *log, const char *codi
     fprintf(stderr, "%s\n", linha);
     registrar_falha(home, log, linha);
     return 77;
+}
+
+/* Resources do próprio .app. O dispatcher e o catálogo leem settings, MCP e
+   agents.d daqui (FRA-614), não de ~/.transcentia. Não mexe em enabled nem PAUSE. */
+static void definir_recursos(void) {
+    char exe[4096];
+    uint32_t n = (uint32_t)sizeof exe;
+    if (_NSGetExecutablePath(exe, &n) != 0) return;
+    char real[4096];
+    if (!realpath(exe, real)) return;
+    char *marca = strstr(real, ".app/Contents/MacOS/");
+    if (!marca) return;
+    size_t prefixo = (size_t)(marca - real) + strlen(".app/Contents");
+    if (prefixo + strlen("/Resources") >= sizeof real) return;
+    char recursos[4096];
+    memcpy(recursos, real, prefixo);
+    memcpy(recursos + prefixo, "/Resources", strlen("/Resources") + 1);
+    if (strstr(recursos, "/.transcentia/")) return;
+    setenv("TUTTIDASH_RECURSOS", recursos, 1);
 }
 
 int main(int argc, char **argv) {
@@ -704,12 +723,15 @@ int main(int argc, char **argv) {
     snprintf(dir, sizeof dir, "%s/Library/Logs/TranscentIA", home);
     garantir_pasta(dir);
     snprintf(arq, sizeof arq, "%s/%s", dir, log);
-    fd = open(arq, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    /* O_NOFOLLOW: um symlink no lugar do log não desvia a saída. 0600: só o dono lê. */
+    fd = open(arq, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, 0600);
     if (fd >= 0) {
+        fchmod(fd, 0600);
         dup2(fd, 1);
         dup2(fd, 2);
         close(fd);
     }
+    definir_recursos();
     char *args[] = {"/usr/bin/python3", alvo, (char *)extra, NULL};
     execv("/usr/bin/python3", args);
     perror("execv");
