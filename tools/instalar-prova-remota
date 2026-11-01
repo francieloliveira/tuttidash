@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Instala a prova-remota no Linux (FRA-620) num projeto do cadastro do TuttiDash.
+
+Para projetos cujo app não compila no CI (ex.: app da Apple em repositório
+privado). Gera, a partir de tools/prova-remota-linux, os arquivos que vão para
+o repositório do projeto:
+
+  .github/workflows/prova-remota.yml
+  .github/prova-remota/prova-remota.sh
+  .github/prova-remota/prova_remota.py
+  .github/prova-remota/config.json      (pastas do app, vindas do cadastro)
+
+Uso:
+  tools/instalar-prova-remota PROJETO --saida PASTA   grava os arquivos numa pasta
+  tools/instalar-prova-remota PROJETO --pr            worktree, commit, push e PR no repo do projeto
+
+PROJETO é o id ou o nome do cadastro. As pastas do app vêm de
+`prova_remota.pastas_do_app`. Ponha `.github/*` nos `protegidos` do projeto:
+a lane não pode alterar a própria prova.
+"""
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+RAIZ = Path(__file__).resolve().parent.parent
+MODELO = RAIZ / "tools" / "prova-remota-linux"
+sys.path.insert(0, str(RAIZ / "gasto_lanes"))
+import projetos  # noqa: E402
+
+BRANCH = "tuttidash/prova-remota"
+TITULO = "[TuttiDash] prova-remota no Linux (FRA-620)"
+ARQUIVOS = {
+    ".github/workflows/prova-remota.yml": ("prova-remota.yml", 0o644),
+    ".github/prova-remota/prova-remota.sh": ("prova-remota.sh", 0o755),
+    ".github/prova-remota/prova_remota.py": ("prova_remota.py", 0o644),
+}
+
+
+def achar_projeto(chave: str):
+    for p in projetos.projetos():
+        if chave in (p.id, p.nome):
+            return p
+    raise SystemExit(f"projeto não está no cadastro: {chave}")
+
+
+def config_do_projeto(p) -> dict:
+    return {
+        "gerado_por": "tuttidash tools/instalar-prova-remota (FRA-620); não edite",
+        "projeto": p.nome,
+        "pastas_do_app": sorted(set(p.pastas_do_app)),
+    }
+
+
+def gravar(p, destino: Path) -> list[str]:
+    """Grava os arquivos em `destino` (raiz do repo). Devolve os caminhos relativos."""
+    escritos = []
+    for rel, (origem, modo) in ARQUIVOS.items():
+        alvo = destino / rel
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(MODELO / origem, alvo)
+        alvo.chmod(modo)
+        escritos.append(rel)
+    cfg = destino / ".github/prova-remota/config.json"
+    cfg.write_text(json.dumps(config_do_projeto(p), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    escritos.append(".github/prova-remota/config.json")
+    return escritos
+
+
+def git(args: list[str], cwd: Path, check: bool = True) -> str:
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if check and r.returncode:
+        raise SystemExit(f"git {' '.join(args)} falhou: {r.stderr.strip()[:300]}")
+    return r.stdout.strip()
+
+
+def corpo_do_pr(p, arquivos: list[str]) -> str:
+    pastas = ", ".join(f"`{x}/`" for x in sorted(set(p.pastas_do_app))) or "nenhuma (só a lista de tipos)"
+    return (
+        "Instalado pelo TuttiDash (`tools/instalar-prova-remota`, FRA-620). Fonte: "
+        "`tuttidash/tools/prova-remota-linux`; não edite esta cópia, reinstale pelo TuttiDash.\n\n"
+        "## Como decide\n\n"
+        "- **Verde** só quando todos os arquivos do PR são Python, shell, docs ou dados fora das pastas "
+        "do app: compila os `.py`, `bash -n` nos `.sh`, roda os `test_*.py` das pastas tocadas, num "
+        "container de imagem fixa, `--network none`, `--read-only`, código montado só leitura.\n"
+        f"- **Vermelho** (\"precisa da prova no Mac\") em qualquer arquivo das pastas do app ({pastas}), "
+        "em tipo fora da lista, ou em `.github/` (a própria prova).\n\n"
+        "O script executado é o blob da base; `pull_request`, `contents: read`, sem segredos, "
+        "`actions/checkout` fixado por SHA.\n\n"
+        "## Este PR fica vermelho\n\n"
+        "A base ainda não tem `.github/prova-remota/prova-remota.sh`, e o workflow não roda script do "
+        "head. O merge deste PR é do dono.\n\n"
+        "## Arquivos\n\n" + "\n".join(f"- `{a}`" for a in arquivos) + "\n\n"
+        "🤖 Generated with [Claude Code](https://claude.com/claude-code)\n"
+    )
+
+
+def abrir_pr(p) -> str:
+    repo = Path(p.repo)
+    if not (repo / ".git").exists() or not p.github:
+        raise SystemExit("o projeto precisa de `repo` local e `github` no cadastro")
+    wt = Path(p.worktrees) / "tuttidash-prova-remota"
+    git(["fetch", "-q", "origin", "main"], repo)
+    if wt.exists():
+        if git(["status", "--porcelain"], wt):
+            raise SystemExit(f"{wt} tem mudanças pendentes; resolva antes")
+        git(["checkout", "-q", "-B", BRANCH, "origin/main"], wt)
+    else:
+        git(["worktree", "add", "-q", "-B", BRANCH, str(wt), "origin/main"], repo)
+    arquivos = gravar(p, wt)
+    git(["add", "--", *arquivos], wt)
+    if not git(["status", "--porcelain"], wt):
+        return "nada mudou: a prova instalada já é a versão atual"
+    git(["commit", "-q", "-m", f"{TITULO}\n\nGerado por tuttidash/tools/instalar-prova-remota."], wt)
+    git(["push", "-q", "-f", "-u", "origin", f"HEAD:{BRANCH}"], wt)
+    existente = subprocess.run(
+        ["gh", "pr", "list", "--repo", p.github, "--head", BRANCH, "--state", "open", "--json", "url",
+         "--jq", ".[0].url"], capture_output=True, text=True).stdout.strip()
+    if existente:
+        return f"PR atualizado: {existente}"
+    r = subprocess.run(["gh", "pr", "create", "--repo", p.github, "--base", "main", "--head", BRANCH,
+                        "--title", TITULO, "--body", corpo_do_pr(p, arquivos)],
+                       capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit(f"gh pr create falhou: {r.stderr.strip()[:300]}")
+    return r.stdout.strip()
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "--saida":
+        p = achar_projeto(argv[0])
+        for rel in gravar(p, Path(argv[2])):
+            print(rel)
+        return 0
+    if len(argv) == 2 and argv[1] == "--pr":
+        print(abrir_pr(achar_projeto(argv[0])))
+        return 0
+    print(__doc__, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
