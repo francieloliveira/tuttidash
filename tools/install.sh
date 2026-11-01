@@ -41,6 +41,8 @@ if command -v swift >/dev/null; then
 fi
 
 install -m 700 "$ROOT/bots/watch.py" "$B/watch.py"
+install -m 644 "$ROOT/bots/caixa_leitura.py" "$B/caixa_leitura.py"
+install -m 755 "$ROOT/bots/git-leitura" "$B/git-leitura"
 install -m 755 "$ROOT/bots/instalar.sh" "$B/instalar.sh"
 install -m 644 "$ROOT/bots/prompts/"*.md "$B/prompts/"
 

@@ -184,6 +184,9 @@ try:
     import privacidade  # noqa: E402  privacidade por modelo do OpenCode (21/10/2026)
 except ModuleNotFoundError:  # pragma: no cover
     privacidade = None
+if str(_AQUI) not in sys.path:
+    sys.path.insert(0, str(_AQUI))
+import caixa_leitura as caixa  # noqa: E402  caixa do revisor (FRA-599)
 
 # --- Projeto em que o vigia trabalha ----------------------------------------
 # Vem do cadastro `projetos` da config do TuttiDash, o mesmo que o dispatcher
@@ -632,16 +635,41 @@ def card_of(title: str, branch: str) -> str | None:
 
 
 # ---------- agente ----------
+# FRA-599: a triagem (`run_agent`) e o revisor compartilham esta lista. Sem cat/head/tail/grep/ls
+# e sem `git show/diff/log` cru (`--output` escreve arquivo). O git passa por `git-leitura`.
+# O revisor ainda entra na caixa (disco só do repo, rede negada); a triagem usa a lista e a redação.
 READ_ONLY_SETTINGS = {
     "permissions": {
-        "allow": ["Read", "Glob", "Grep", "Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)",
-                  "Bash(git ls-tree:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
-                  "Bash(wc:*)", "Bash(ls:*)"],
-        "deny": ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Bash(git push:*)",
-                 "Bash(git commit:*)", "Bash(git merge:*)", "Bash(git rebase:*)", "Bash(git checkout:*)",
-                 "Bash(git reset:*)", "Bash(gh:*)", "Bash(rm:*)", "Bash(curl:*)", "Bash(osascript:*)",
-                 "Bash(xcodebuild:*)", "Bash(sudo:*)", "Bash(git worktree:*)", "Bash(git clone:*)"],
-    }
+        "defaultMode": "dontAsk",
+        "allow": ["Read(./**)", "Glob(./**)", "Grep(./**)", "Bash(git-leitura:*)"],
+        "deny": ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch",
+                 "Bash(cat:*)", "Bash(/bin/cat:*)", "Bash(head:*)", "Bash(tail:*)",
+                 "Bash(grep:*)", "Bash(ls:*)", "Bash(wc:*)",
+                 "Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git ls-tree:*)",
+                 "Bash(git push:*)", "Bash(git commit:*)", "Bash(git merge:*)", "Bash(git rebase:*)",
+                 "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(gh:*)", "Bash(rm:*)",
+                 "Bash(curl:*)", "Bash(wget:*)", "Bash(osascript:*)", "Bash(xcodebuild:*)",
+                 "Bash(sudo:*)", "Bash(git worktree:*)", "Bash(git clone:*)",
+                 "Read(**/.ssh/**)", "Read(**/.config/gh/**)", "Read(**/.aws/**)", "Read(**/.gnupg/**)",
+                 "Grep(**/.ssh/**)", "Grep(**/.config/gh/**)", "Grep(**/.aws/**)", "Grep(**/.gnupg/**)"],
+    },
+    "sandbox": {
+        "enabled": True,
+        "failIfUnavailable": True,
+        "autoAllowBashIfSandboxed": False,
+        "allowUnsandboxedCommands": False,
+        "excludedCommands": [],
+        "network": {
+            "allowedDomains": [],
+            "deniedDomains": ["*"],
+            "strictAllowlist": True,
+            "allowLocalBinding": False,
+        },
+        "filesystem": {
+            "denyRead": ["~/.ssh", "~/.config/gh", "~/.aws", "~/.gnupg"],
+            "denyWrite": [".git"],
+        },
+    },
 }
 
 
@@ -713,13 +741,36 @@ def run_agent(text: str, cwd: Path, tag: str, agente: str | None = None, modelo:
     try:
         out = sh(args, cwd=cwd, timeout=CLAUDE_TIMEOUT_S, inp=text)
     except Exception as exc:  # noqa: BLE001
+        if caixa.tem_segredo(str(exc)):
+            _log_saida_agente(tag, str(exc))
         note_agent_failure(exc)
         raise
     finally:
         os.unlink(settings)
-    (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(out)
+    _log_saida_agente(tag, out)
     log(f"agente {tag} [{modelo}/{args[-1]}]: {int(time.time() - started)} s, {len(out)} chars")
     return out.strip()
+
+
+def _log_saida_agente(tag: str, texto: str) -> None:
+    """Grava o log já redigido. Se havia credencial, não devolve o texto para publicar."""
+    RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(caixa.redigir(texto))
+    if caixa.tem_segredo(texto):
+        raise caixa.SegredoDetectado()
+
+
+def chamar_dono_segredo(ci: dict | None, diary: list[str] | None, onde: str) -> None:
+    """Não publica a saída. Avisa o dono sem repetir o texto que vazaria."""
+    msg = (f"[Gestor] {onde}: a saída do agente trazia credencial ou chave. "
+           f"Não publiquei. Confira e tire `{OWNER_LABEL}`.")
+    panel(msg)
+    if diary is not None:
+        diary.append(msg)
+    if not ci:
+        return
+    add_label(ci["id"], OWNER_LABEL)
+    comment(ci["id"], msg)
 
 
 def lane_of(ci: dict | None) -> str:
@@ -1260,7 +1311,12 @@ def handle_stops(ci: dict, label: str, st: dict, diary: list[str]) -> bool:
     # Conta Claude no limite não segura mais a análise: só pula a etapa do Claude.
     try:
         text, quem = analisar_parada(ci, label, st, cid, count, reason)
+        caixa.exigir_sem_segredo(text)
         problem = None
+    except caixa.SegredoDetectado:
+        chamar_dono_segredo(ci, diary, f"{ci['identifier']} {label}")
+        seen()
+        return True
     except Exception as exc:  # noqa: BLE001
         problem = str(exc)[:160]
     if problem:
@@ -1430,6 +1486,8 @@ def encadear(tarefa: str, card: str, etapas: list[tuple]) -> tuple[str, str, lis
         except Pular as exc:
             tentativas.append({"etapa": nome, "pulou": str(exc)[:160]})
             continue
+        except caixa.SegredoDetectado:
+            raise
         except Exception as exc:  # noqa: BLE001
             tentativas.append({"etapa": nome, "erro": str(exc)[:160], "s": round(time.time() - t0, 1)})
             log(f"{tarefa} {card}: {nome} falhou ({str(exc)[:120]}); tento a próxima")
@@ -1586,6 +1644,10 @@ def recheck_needs(ci: dict, st: dict, diary: list[str]) -> bool:
     p = needs_prompt(ci, log_name, tail)
     try:
         text, quem = analisar_needs(ci, p)
+        caixa.exigir_sem_segredo(text)
+    except caixa.SegredoDetectado:
+        chamar_dono_segredo(ci, diary, f"{ci['identifier']} reconferência")
+        return True
     except Exception as exc:  # noqa: BLE001
         panel(f"{ci['identifier']} {OWNER_LABEL}: reconferência sem resposta ({str(exc)[:140]}); tento quando o card mudar")
         return True
@@ -2315,32 +2377,42 @@ def limpar_saida(out: str) -> str:
 
 def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
                 esforco: str | None = None) -> str:
-    """Revisão só leitura em qualquer agente com `revisao` no manifesto."""
+    """Revisão na caixa: Grok (`read_file,grep,list_dir`), Codex e os outros só enxergam o repo."""
     RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
     m = manifesto_revisao(agente) or {}
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
-        json.dump(READ_ONLY_SETTINGS, fh)
-        settings = fh.name
-    fd, saida = tempfile.mkstemp(suffix=".md")
-    os.close(fd)
-    mcp = STATE_DIR / "empty-mcp.json"
-    if not mcp.exists():
-        mcp.write_text('{"mcpServers":{}}')
-    argv, entrada = comando_revisao(agente, conf, {"prompt": texto, "saida": saida, "settings": settings,
-                                                    "mcp": str(mcp)}, esforco=esforco)
+    scratch = Path(tempfile.mkdtemp(prefix="revisor-"))
+    settings = scratch / "settings.json"
+    saida = scratch / "saida.md"
+    mcp = scratch / "mcp.json"
+    settings.write_text(json.dumps(READ_ONLY_SETTINGS), encoding="utf-8")
+    saida.write_text("", encoding="utf-8")
+    mcp.write_text('{"mcpServers":{}}', encoding="utf-8")
+    argv, entrada = comando_revisao(agente, conf, {"prompt": texto, "saida": str(saida),
+                                                    "settings": str(settings), "mcp": str(mcp)},
+                                     esforco=esforco)
     started = time.time()
+    out = ""
     try:
-        out = sh(argv, cwd=cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada)
+        proc = caixa.executar(argv, cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada, escritas=[scratch])
+        out = proc.stdout or ""
+        err = proc.stderr or ""
         if m.get("saida") == "arquivo":
-            out = Path(saida).read_text(encoding="utf-8", errors="replace")
+            out = saida.read_text(encoding="utf-8", errors="replace")
+        if caixa.tem_segredo(out) or caixa.tem_segredo(err):
+            _log_saida_agente(tag, out + "\n" + err)
+        if proc.returncode != 0:
+            raise RuntimeError(f"{' '.join(argv[:3])}… ({proc.returncode}): {caixa.redigir(err)[:300]}")
+    except caixa.SegredoDetectado:
+        raise
     except Exception as exc:  # noqa: BLE001
+        if caixa.tem_segredo(str(exc)):
+            _log_saida_agente(tag, str(exc))
         if agente == "claude":
             note_agent_failure(exc)
         raise
     finally:
-        os.unlink(settings)
-        os.unlink(saida)
-    (RUN_LOG_DIR / f"{tag}-{datetime.now():%Y%m%d-%H%M%S}.md").write_text(out)
+        shutil.rmtree(scratch, ignore_errors=True)
+    _log_saida_agente(tag, out)
     # FRA-590: o log usa `m` (padrão do manifesto). `{... or {} }.get(...)` na
     # f-string não compila no Python 3.9 do Mac.
     log(f"agente {tag} [{agente}/{m.get('modelo_padrao', 'padrao')}/{esforco or '-'}]: "
@@ -2382,6 +2454,8 @@ def revisar(texto: str, cwd: Path, tag: str, revisor: str, conf: dict, so_sozinh
             continue
         try:
             out = run_revisor(a, texto, cwd, tag, conf, esforco=esforco)
+        except caixa.SegredoDetectado:
+            raise
         except Exception as exc:  # noqa: BLE001
             log(f"{tag}: revisor {a} falhou ({str(exc)[:160]}); tento o próximo")
             erros.append(f"{a}: {str(exc)[:80]}")
@@ -2497,7 +2571,16 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         # Head já aprovado na segunda opinião: vai direto para a confirmação, sem revisar de novo.
         text, revisor = TAG_REVISOR + " REVISOR: APROVADO", guardadas[head]["revisor"]
     else:
-        text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf, esforco=esforco)
+        try:
+            text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf, esforco=esforco)
+        except caixa.SegredoDetectado:
+            chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
+            st["reviewed"][head] = "segredo"
+            return
+        if caixa.tem_segredo(text):
+            chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
+            st["reviewed"][head] = "segredo"
+            return
         if text.startswith(TAG_REVISOR) and papel(revisor, conf) == "segunda_opiniao" and veredito_de(text) == "APROVADO":
             guardadas[head] = {"revisor": revisor, "quando": time.time(), "pr": pr["number"]}
             save_state(st)  # uma falha da confirmação não apaga a segunda opinião
@@ -2509,9 +2592,18 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         # Segunda opinião só bloqueia; aprovar exige um revisor que aprova sozinho.
         primeiro = revisor
         conf_rev, obs2 = escolher_revisor(lane, conf, so_sozinho=True)
-        text, revisor = revisar(montar(conf_rev), rdir, tag + "-confirma", conf_rev, conf, so_sozinho=True,
-                                esforco=esforco)
+        try:
+            text, revisor = revisar(montar(conf_rev), rdir, tag + "-confirma", conf_rev, conf, so_sozinho=True,
+                                    esforco=esforco)
+        except caixa.SegredoDetectado:
+            chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
+            st["reviewed"][head] = "segredo"
+            return
         extra = f"confirmou a aprovação de {primeiro}" + (f"; {obs2}" if obs2 else "")
+    if caixa.tem_segredo(text):
+        chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
+        st["reviewed"][head] = "segredo"
+        return
     if not text.startswith(TAG_REVISOR):
         sha = pr["headRefOid"]
         if not format_failure(st, sha):
