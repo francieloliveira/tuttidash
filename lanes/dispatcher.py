@@ -45,30 +45,59 @@ from pathlib import Path
 from typing import Optional
 
 # A pasta deste arquivo entra primeiro: lanes_window.py sai daqui (repo ou
-# bundle), nunca de ~/.transcentia. Os módulos (catalogo, fila, …) ainda podem
-# estar na cópia instalada até o FRA-615; essa pasta entra depois, não antes.
+# bundle). Os módulos ficam em ../gasto_lanes (bundle assinado ou o repo).
+# ~/.transcentia não entra no sys.path — nem antes, nem como reserva (FRA-615).
 _AQUI = Path(__file__).resolve().parent
-sys.path.insert(0, str(_AQUI))
+
+
+def _ativar_modulos() -> Path:
+    """`gasto_lanes/` do bundle assinado, ou o do repo. Nunca `~/.transcentia`.
+
+    Igual em `bots/watch.py` e `lanes/lanes_window.py`. Sem `catalogo.py`
+    nessa pasta, o import fecha: a cópia gravável não é consultada.
+    """
+    aqui = Path(__file__).resolve().parent
+    pasta = (aqui.parent / "gasto_lanes").resolve()
+    catalogo = (pasta / "catalogo.py").resolve()
+    if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
+        sys.exit("catalogo não está no bundle; import recusado")
+    for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
+                 "proxy_linear.py", "gasto_privado.py"):
+        arq = pasta / nome
+        if not arq.exists():
+            continue
+        if ".transcentia" in str(arq.resolve()):
+            sys.exit(f"{nome} não está no bundle; import recusado")
+
+    def suspeito(p: str) -> bool:
+        if ".transcentia" in p:
+            return True
+        if p == "":
+            try:
+                return ".transcentia" in str(Path.cwd().resolve())
+            except OSError:
+                return True
+        return False
+
+    resto = [p for p in sys.path if p not in (str(aqui), str(pasta)) and not suspeito(p)]
+    sys.path[:] = [str(aqui), str(pasta), *resto]
+    return pasta
+
+
+_ativar_modulos()
 import permissao  # noqa: E402  glob de Bash do CLI (um só lugar)
 import lanes_window  # noqa: E402  janela única das lanes
-
-for _cand in (_AQUI, _AQUI.parent / "gasto_lanes", Path.home() / ".transcentia" / "lanes"):
-    if (_cand / "catalogo.py").is_file():
-        if _cand != _AQUI and str(_cand) not in sys.path:
-            sys.path.append(str(_cand))
-        break
 try:
     import catalogo  # noqa: E402
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
     import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
-except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
-    sys.exit(f"{_falta.name} não encontrado ao lado do dispatcher.py — "
-             "rode tools/install.sh para instalar o catálogo de agentes e projetos")
+except ModuleNotFoundError as _falta:  # pragma: no cover - bundle incompleto
+    sys.exit(f"{_falta.name} não está no bundle; import recusado")
 try:
     import privacidade  # noqa: E402  privacidade por modelo do OpenCode (21/10/2026)
-except ModuleNotFoundError:  # pragma: no cover - sem instalar: lanes do OpenCode ficam seguras
+except ModuleNotFoundError:  # pragma: no cover - sem o módulo: lanes do OpenCode ficam fechadas
     privacidade = None
 
 # --- Workspace Linear ---------------------------------------------------------

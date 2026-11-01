@@ -203,6 +203,8 @@ class InstallNaoCopiaScripts(unittest.TestCase):
             for caminho in (
                 lanes / "dispatcher.py", lanes / "lanes_window.py", lanes / "lanes_ctl.py",
                 lanes / "run_lane.sh", lanes / "lane_view.py", bots / "watch.py", tools / "bots-chave",
+                lanes / "catalogo.py", lanes / "gasto_privado.py", bots / "catalogo.py",
+                bots / "privacidade.py", bots / "projetos.py", bots / "linear_ids.py",
             ):
                 caminho.write_text(sentinela)
             env = {**os.environ, "HOME": str(home)}
@@ -216,7 +218,13 @@ class InstallNaoCopiaScripts(unittest.TestCase):
                 bots / "watch.py", tools / "bots-chave",
             ):
                 self.assertEqual(caminho.read_text(), sentinela, caminho)
-            self.assertTrue((lanes / "catalogo.py").is_file())
+            for caminho in (
+                lanes / "catalogo.py", lanes / "gasto_privado.py", bots / "catalogo.py",
+                bots / "privacidade.py", bots / "projetos.py", bots / "linear_ids.py",
+            ):
+                self.assertEqual(caminho.read_text(), sentinela, caminho)
+            self.assertFalse((lanes / "fila.py").exists())
+            self.assertFalse((bots / "fila.py").exists())
             lancador = home / "Library" / "Application Support" / "AgentesLocais" / "TuttiDash Vigia"
             texto = lancador.read_text()
             self.assertIn("tuttidash-agente", texto)
@@ -241,6 +249,15 @@ class ContratoDoBuild(unittest.TestCase):
             self.assertIn(f'install -m 755 "$REPO/', texto)
             self.assertIn(nome, texto)
         self.assertIn('install -m 644 "$REPO/tools/script-controle.sh"', texto)
+        modulos = texto.index("módulos Python")
+        self.assertLess(modulos, verifica)
+        self.assertIn('install -m 644 "$REPO/gasto_lanes/', texto)
+        for nome in (
+            "catalogo.py", "projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
+        ):
+            self.assertIn(nome, texto)
+        self.assertIn('if [[ -f "$PRIVADO_PY" ]]', texto)
+        self.assertIn("gasto_privado.py", texto)
 
     def test_padroes_do_cfg_apontam_para_o_bundle(self):
         import runpy

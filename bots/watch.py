@@ -163,27 +163,57 @@ STOPS_TO_CALL = _cfg("watch.paradas_para_chamar", 3)   # chama o dono na 3ª par
 TRIAGEM_PEDIDOS_CARD = _cfg("watch.card_pedidos_triagem", "")
 TRIAGEM_PEDIDOS_S = _cfg("watch.pedido_triagem_intervalo_s", 4 * 3600)
 # Catálogo de agentes: `catalogo.py` lê os manifests em `agents.d/`. A pasta
-# deste arquivo entra primeiro (repo ou bundle). O módulo ainda pode estar em
-# ~/.transcentia/bots até o FRA-615; essa pasta entra depois, não antes.
+# deste arquivo entra primeiro (repo ou bundle). Os módulos ficam em
+# ../gasto_lanes. ~/.transcentia não entra no sys.path (FRA-615).
 _AQUI = Path(__file__).resolve().parent
-sys.path.insert(0, str(_AQUI))
-for _cand in (_AQUI, _AQUI.parent / "gasto_lanes", Path.home() / ".transcentia" / "bots"):
-    if (_cand / "catalogo.py").is_file():
-        if _cand != _AQUI and str(_cand) not in sys.path:
-            sys.path.append(str(_cand))
-        break
+
+
+def _ativar_modulos() -> Path:
+    """`gasto_lanes/` do bundle assinado, ou o do repo. Nunca `~/.transcentia`.
+
+    Igual em `lanes/dispatcher.py` e `lanes/lanes_window.py`. Sem `catalogo.py`
+    nessa pasta, o import fecha: a cópia gravável não é consultada.
+    """
+    aqui = Path(__file__).resolve().parent
+    pasta = (aqui.parent / "gasto_lanes").resolve()
+    catalogo = (pasta / "catalogo.py").resolve()
+    if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
+        sys.exit("catalogo não está no bundle; import recusado")
+    for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
+                 "proxy_linear.py", "gasto_privado.py"):
+        arq = pasta / nome
+        if not arq.exists():
+            continue
+        if ".transcentia" in str(arq.resolve()):
+            sys.exit(f"{nome} não está no bundle; import recusado")
+
+    def suspeito(p: str) -> bool:
+        if ".transcentia" in p:
+            return True
+        if p == "":
+            try:
+                return ".transcentia" in str(Path.cwd().resolve())
+            except OSError:
+                return True
+        return False
+
+    resto = [p for p in sys.path if p not in (str(aqui), str(pasta)) and not suspeito(p)]
+    sys.path[:] = [str(aqui), str(pasta), *resto]
+    return pasta
+
+
+_ativar_modulos()
 try:
     import catalogo  # noqa: E402
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
     import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
-except ModuleNotFoundError as _falta:  # pragma: no cover - só sem instalar
-    sys.exit(f"{_falta.name} não encontrado ao lado do watch.py — "
-             "rode tools/install.sh para instalar o catálogo de agentes e projetos")
+except ModuleNotFoundError as _falta:  # pragma: no cover - bundle incompleto
+    sys.exit(f"{_falta.name} não está no bundle; import recusado")
 try:
     import privacidade  # noqa: E402  privacidade por modelo do OpenCode (21/10/2026)
-except ModuleNotFoundError:  # pragma: no cover
+except ModuleNotFoundError:  # pragma: no cover - sem o módulo: o OpenCode fica fechado
     privacidade = None
 if str(_AQUI) not in sys.path:
     sys.path.insert(0, str(_AQUI))

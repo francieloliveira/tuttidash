@@ -68,7 +68,8 @@ class InstalacaoLanesTests(unittest.TestCase):
         self.assertFalse((lanes / "lane-mcp.json.bak").exists())
         # FRA-613: o dispatcher roda do bundle assinado; o install não o copia.
         self.assertFalse((lanes / "dispatcher.py").exists())
-        self.assertEqual((lanes / "config.py").read_bytes(), (RAIZ / "gasto_lanes" / "config.py").read_bytes())
+        # FRA-615: os módulos ficam no bundle; a pasta gravável não os recebe.
+        self.assertFalse((lanes / "config.py").exists())
 
     def test_pasta_existente_vazia_nao_ganha_runner_view_nem_settings(self):
         lanes = self.home / ".transcentia" / "lanes"
@@ -77,4 +78,4 @@ class InstalacaoLanesTests(unittest.TestCase):
         for nome in NAO_COPIAR:
             self.assertFalse((lanes / nome).exists(), nome)
         self.assertFalse((lanes / "dispatcher.py").exists())
-        self.assertTrue((lanes / "config.py").is_file())
+        self.assertFalse((lanes / "config.py").exists())

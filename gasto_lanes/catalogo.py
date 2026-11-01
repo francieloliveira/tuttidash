@@ -16,10 +16,12 @@ Somente Python 3 da stdlib.
 from __future__ import annotations
 
 import datetime as dt
+import importlib.util
 import json
 import os
 import re
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -1206,15 +1208,57 @@ def _ids_de_json(dados) -> list:
     return saida
 
 
+def _origem_gasto_privado() -> Path | None:
+    """`gasto_privado.py` ao lado deste arquivo, ou na pasta pessoal do checkout.
+
+    O build público não tem o arquivo: a lista extra some e o resto segue.
+    Não procura em `~/.transcentia` nem segue um atalho até lá (FRA-615).
+    """
+    aqui = Path(__file__).resolve().parent
+    candidatos = [aqui / "gasto_privado.py"]
+    for pai in aqui.parents:
+        if (pai / "agents.d").is_dir() or (pai / ".git").exists():
+            candidatos.append(pai / "apps" / "notch-mac" / "Privado" / "python" / "gasto_privado.py")
+            break
+    for cand in candidatos:
+        try:
+            real = cand.resolve()
+        except OSError:
+            continue
+        if ".transcentia" in str(real):
+            continue
+        if real.is_file():
+            return real
+    return None
+
+
+def _gasto_privado():
+    """Módulo pessoal, se o build o trouxe. Ausente não é erro."""
+    origem = _origem_gasto_privado()
+    if origem is None:
+        return None
+    carregado = sys.modules.get("gasto_privado")
+    if carregado is not None and getattr(carregado, "__file__", None) == str(origem):
+        return carregado
+    spec = importlib.util.spec_from_file_location("gasto_privado", origem)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["gasto_privado"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _lista_extra(lane: str):
     """Lista de outra fonte (`gasto_privado`, só no build pessoal, FRA-565), ou None.
 
-    O módulo fica fora do repositório aberto; quando existe, o install.sh o copia ao lado deste."""
-    try:
-        import gasto_privado  # noqa: PLC0415 — opcional
-    except ImportError:
+    O módulo fica fora do repositório aberto. O `build.sh` o copia para
+    `controle/gasto_lanes/` quando a pasta pessoal existe. Sem ele, None.
+    """
+    mod = _gasto_privado()
+    if mod is None:
         return None
-    f = getattr(gasto_privado, f"modelos_{lane}", None)
+    f = getattr(mod, f"modelos_{lane}", None)
     if not callable(f):
         return None
     return f(_get_json, _ids_de_json, Path.home())
