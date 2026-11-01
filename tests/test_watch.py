@@ -2,6 +2,7 @@
 import ast
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -1516,6 +1517,22 @@ class MergeSoClean(unittest.TestCase):
         self._rodar()
         self.assertTrue(self._mergeou())
 
+    def test_sem_workflow_de_revisao_na_main_mergeia_sem_o_check(self):
+        # FRA-620: projeto sem revisao-ia (ex.: TranscentIA) segue com [Revisor] e prova-remota.
+        self.pr = self._pr(statusCheckRollup=[
+            {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"},
+            {"name": watch.NOME_PROVA_REMOTA, "status": "COMPLETED", "conclusion": "SUCCESS", "sha": self.SHA},
+        ])
+        antes = watch.exige_revisao_ia
+        self.addCleanup(setattr, watch, "exige_revisao_ia", antes)
+        watch.exige_revisao_ia = lambda repo: False
+        self._rodar()
+        self.assertTrue(self._mergeou())
+        watch.exige_revisao_ia = lambda repo: True
+        self.chamadas.clear()
+        self._rodar()
+        self.assertFalse(self._mergeou())
+
     def test_sem_prova_remota_nao_mergeia(self):
         self.pr = self._pr(statusCheckRollup=[
             {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"},
@@ -1633,3 +1650,36 @@ class CompilaNoPython39Test(unittest.TestCase):
     def test_watch_py_compila(self):
         src = (Path(__file__).resolve().parents[1] / "bots" / "watch.py").read_text(encoding="utf-8")
         ast.parse(src)
+
+
+class ExigeRevisaoIa(unittest.TestCase):
+    """FRA-620: o check só é exigido quando a origin/main do projeto tem o workflow."""
+
+    def _repo(self, com_workflow):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, True))
+        origem, clone = tmp / "origem", tmp / "clone"
+        origem.mkdir()
+
+        def g(*a):
+            subprocess.run(["git", *a], cwd=origem, check=True, capture_output=True)
+        g("init", "-q", "-b", "main")
+        (origem / "README.md").write_text("x\n")
+        if com_workflow:
+            (origem / ".github" / "workflows").mkdir(parents=True)
+            (origem / ".github" / "workflows" / "revisao-ia.yml").write_text("name: revisao-ia\n")
+        g("add", "-A")
+        g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base")
+        subprocess.run(["git", "clone", "-q", str(origem), str(clone)], check=True)
+        return {"dir": clone}
+
+    def test_com_workflow_exige(self):
+        self.assertTrue(watch.exige_revisao_ia(self._repo(True)))
+
+    def test_sem_workflow_dispensa(self):
+        self.assertFalse(watch.exige_revisao_ia(self._repo(False)))
+
+    def test_na_duvida_exige(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertTrue(watch.exige_revisao_ia({"dir": Path(d)}))      # não é repositório
+        self.assertTrue(watch.exige_revisao_ia({}))

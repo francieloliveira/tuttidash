@@ -1163,6 +1163,29 @@ def publicar_revisoes_remotas(repo: dict, st: dict, diary: list[str]) -> None:
             log(f"revisão remota PR #{pr.get('number')}: {exc}")
 
 
+# FRA-620: o check revisao-ia só é exigido quando a main do projeto tem o workflow. Projeto
+# sem ele (ex.: TranscentIA) segue com a revisão de verdade ([Revisor]) e a prova-remota.
+WORKFLOW_REVISAO = ".github/workflows/revisao-ia.yml"
+
+
+def exige_revisao_ia(repo: dict) -> bool:
+    """True se a `origin/main` do repo tem o workflow da revisao-ia. Na dúvida, exige."""
+    pasta = repo.get("dir")
+    if not pasta:
+        return True
+    try:
+        sh(["git", "rev-parse", "--verify", "-q", "origin/main^{commit}"], cwd=pasta, timeout=30)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired):
+        return True                                  # repo ou main ilegível: falha fechada
+    try:
+        sh(["git", "cat-file", "-e", f"origin/main:{WORKFLOW_REVISAO}"], cwd=pasta, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    except RuntimeError:
+        return False                                 # main legível e sem o workflow
+    return True
+
+
 def merge_ready(st: dict, diary: list[str]) -> None:
     repo = REPOS["app"]
     prs = {card_of(p["title"], p["headRefName"]): p for p in open_prs(repo)}
@@ -1189,7 +1212,11 @@ def merge_ready(st: dict, diary: list[str]) -> None:
             segurar_sem_aprovacao(ci, pr, st, diary)
             continue
         sha_head = str(pr.get("headRefOid") or "")
-        revisao = revisao_ia.veredito_check(sha_head, sha_head, rollup)
+        exigir_revisao = exige_revisao_ia(repo)
+        revisao = revisao_ia.veredito_check(sha_head, sha_head, rollup) if exigir_revisao else "verde"
+        if not exigir_revisao:
+            log(f"{ci['identifier']} PR #{pr['number']}: {revisao_ia.NOME_DO_CHECK} dispensado "
+                f"(a main do projeto não tem {WORKFLOW_REVISAO})")
         if revisao == "vermelho":
             # Check falho bloqueia o merge e chama o dono. O corpo da revisão não entra aqui.
             chamar_dono_revisao(st, ci, pr)
