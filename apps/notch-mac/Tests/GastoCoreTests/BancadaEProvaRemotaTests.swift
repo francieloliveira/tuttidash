@@ -4,7 +4,7 @@ import XCTest
 /// FRA-618/620: o cadastro guarda a bancada e as pastas do app, e o app confere a prova remota.
 final class BancadaEProvaRemotaTests: XCTestCase {
     private func dados(_ extra: [String: Any]) -> [String: Any] {
-        var item: [String: Any] = ["id": "5f8bff08-72d9-4293-b1ab-17cef0af2c29", "nome": "App", "repo": "/tmp/app"]
+        var item: [String: Any] = ["id": "aaaaaaaa-0000-4000-8000-000000000001", "nome": "App", "repo": "/tmp/app"]
         item.merge(extra) { _, novo in novo }
         return ["projetos": [item]]
     }
