@@ -208,7 +208,7 @@ class RunLaneDoBundle(unittest.TestCase):
 
 
 class InstallNaoCopiaScripts(unittest.TestCase):
-    def test_install_deixa_o_legado_inerte_e_aponta_o_lancador(self):
+    def test_install_aposenta_o_legado_e_aponta_o_lancador(self):
         with tempfile.TemporaryDirectory(prefix="fra613-inst-") as bruto:
             home = Path(bruto)
             lanes = home / ".transcentia" / "lanes"
@@ -230,17 +230,19 @@ class InstallNaoCopiaScripts(unittest.TestCase):
                 ["bash", str(ROOT / "tools" / "install.sh"), "--sem-launchd"],
                 cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(r.returncode, 0, r.stderr[-800:] if r.stderr else r.stdout[-800:])
-            self.assertIn("legado inerte", r.stdout)
+            self.assertIn("aposentada", r.stdout)
+            self.assertNotIn("legado inerte", r.stdout)
             for caminho in (
                 lanes / "dispatcher.py", lanes / "run_lane.sh", lanes / "lane_view.py",
                 bots / "watch.py", tools / "bots-chave",
-            ):
-                self.assertEqual(caminho.read_text(), sentinela, caminho)
-            for caminho in (
                 lanes / "catalogo.py", lanes / "gasto_privado.py", bots / "catalogo.py",
                 bots / "privacidade.py", bots / "projetos.py", bots / "linear_ids.py",
             ):
-                self.assertEqual(caminho.read_text(), sentinela, caminho)
+                self.assertFalse(caminho.exists(), caminho)
+                achados = [p for p in (home / ".transcentia" / "aposentados").rglob(caminho.name)
+                           if p.read_text() == sentinela]
+                self.assertTrue(achados, caminho)
+                self.assertEqual(stat.S_IMODE(achados[0].stat().st_mode) & 0o111, 0)
             self.assertFalse((lanes / "fila.py").exists())
             self.assertFalse((bots / "fila.py").exists())
             lancador = home / "Library" / "Application Support" / "AgentesLocais" / "TuttiDash Vigia"

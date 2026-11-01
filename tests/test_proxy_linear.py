@@ -229,8 +229,8 @@ class ProxyLinearTests(unittest.TestCase):
     def test_instalacao_leva_proxy_e_config(self):
         install = (RAIZ / "tools/install.sh").read_text(encoding="utf-8")
         self.assertNotIn("<<<<<<<", install)
-        for mod in ("proxy_linear", "config"):
-            self.assertIn(mod, install)
+        # FRA-615: proxy_linear vai no bundle (build.sh), não na pasta gravável.
+        self.assertIn("config", install)
         build = (RAIZ / "apps/notch-mac/build.sh").read_text(encoding="utf-8")
         for nome in ("proxy_linear.py", "linear_ids.py", "config.py"):
             self.assertIn(f"gasto_lanes/{nome}", build)
