@@ -62,6 +62,17 @@ final class MensagemLogTests: XCTestCase {
         }
     }
 
+    func testAguardandoProvaRemotaTrazOLink() {
+        let pr = "https://github.com/francieloliveira/tuttidash/pull/9"
+        let check = "https://github.com/francieloliveira/tuttidash/actions/runs/99"
+        let msg = "lane:claude FRA-611: aguardando prova remota \(pr) check \(check)"
+        let m = MensagemLog.resumir("2026-10-31 12:00:00 " + msg)
+        XCTAssertEqual(m?.tipo, .trabalho)
+        XCTAssertTrue(m?.texto.contains("aguardando prova remota") ?? false)
+        XCTAssertTrue(m?.texto.contains(pr) ?? false)
+        XCTAssertTrue(m?.texto.contains(check) ?? false)
+    }
+
     func testRuidoPulaParaOUltimoEvento() {
         let log = """
         2026-10-29 19:00:00 lane:claude FECHOU FRA-581 → In Review (https://github.com/x/y/pull/9)

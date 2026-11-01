@@ -553,6 +553,22 @@ final class PainelMontagemTests: XCTestCase {
         """
     }
 
+    func testAguardandoProvaRemotaMostraFraseELink() {
+        let pr = "https://github.com/francieloliveira/tuttidash/pull/9"
+        let check = "https://github.com/francieloliveira/tuttidash/actions/runs/99"
+        var entrada = EntradaPainel.vazia
+        entrada.heartbeat = .init(at: "2026-10-31 12:00:00", dryRun: false, habilitadas: LanesPainel.ordem)
+        entrada.habilitadas = Set(LanesPainel.ordem)
+        entrada.rodando = [EstadoLanes.LaneRodando(
+            lane: "claude", card: "FRA-611", titulo: "rascunho", startedAt: "2026-10-31 11:00:00",
+            log: "/tmp/x.jsonl", travada: false, provaRemotaURL: pr, provaRemotaCheck: check)]
+        let linha = montar(entrada).lanes.first { $0.lane == "claude" }
+        XCTAssertEqual(linha?.detalhe, "aguardando prova remota")
+        XCTAssertTrue(linha?.descricao.contains("aguardando prova remota") ?? false)
+        XCTAssertEqual(linha?.urlProvaRemota, pr)
+        XCTAssertEqual(linha?.urlCheckRemoto, check)
+    }
+
     private func montar(_ entrada: EntradaPainel, execucoes: [Execucao] = []) -> SnapshotPainel {
         MontadorPainel.montar(entrada: entrada, execucoes: execucoes, agora: agora, calendario: calendario)
     }

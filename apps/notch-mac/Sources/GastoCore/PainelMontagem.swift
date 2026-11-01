@@ -128,9 +128,17 @@ public enum MontadorPainel {
             }
             if let ocupada {
                 let titulo = ocupada.titulo ?? entrada.titulos[ocupada.card]
-                let descricao = titulo.map { "\(ocupada.card), \($0)" } ?? ocupada.card
+                let base = titulo.map { "\(ocupada.card), \($0)" } ?? ocupada.card
+                if let url = ocupada.provaRemotaURL {
+                    return LinhaLane(lane: lane, estado: .rodando, card: ocupada.card,
+                                     descricao: "\(ocupada.card), aguardando prova remota",
+                                     detalhe: "aguardando prova remota",
+                                     pct: medida?.pct, janela: medida?.janela, plano: plano,
+                                     segundosNoCard: noCard, urlProvaRemota: url,
+                                     urlCheckRemoto: ocupada.provaRemotaCheck)
+                }
                 let detalhe = noCard.map { "rodando, há \(Formato.relogio($0)) no card" } ?? "rodando"
-                return LinhaLane(lane: lane, estado: .rodando, card: ocupada.card, descricao: descricao,
+                return LinhaLane(lane: lane, estado: .rodando, card: ocupada.card, descricao: base,
                                  detalhe: detalhe, pct: medida?.pct, janela: medida?.janela, plano: plano,
                                  segundosNoCard: noCard)
             }

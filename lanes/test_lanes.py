@@ -996,10 +996,9 @@ class ProvaDoDispatcher(unittest.TestCase):
         self.assertIn("with 1 failure", resumo)
 
     def test_exit_code_zero_com_erro_no_log_eh_falha(self):
-        """FRA-472 (b): proof_exit == "0" mas o log tem teste vermelho → falha.
+        """FRA-472 (b): proof_exit == "0" mas o log tem teste vermelho → veredito vermelho.
 
-        O agente pode mascarar o erro de teste no exit code (retornar 0 mesmo
-        com falha). O finalize deve confiar no proof.log, não só no exit code.
+        O veredito da prova local olha o log, não só o código de saída.
         """
         wt = self.log_com(
             "[prova] FooTests: 1ª tentativa SKIP_PREFLIGHT=1",
@@ -1007,7 +1006,6 @@ class ProvaDoDispatcher(unittest.TestCase):
             "Executed 12 tests, with 1 failure",
         )
         (wt / ".lane" / "proof_exit").write_text("0", encoding="utf-8")
-        # O finalize trata como falha se rc != 0 OU veredito == "vermelho":
         proof_rc = (wt / ".lane" / "proof_exit").read_text().strip()
         veredito = d.proof_veredito(wt)
         self.assertEqual(veredito, "vermelho", "erro no log deve ser vermelho")
@@ -2354,6 +2352,247 @@ class SuitesEstritas(unittest.TestCase):
         self.assertNotIn("../../tmp/x", d.proof_suites({"tests": ["../../tmp/x", "FooTests"]}))
 
 
+class DecisaoProvaRemota(unittest.TestCase):
+    """FRA-611: só o check prova-remota no SHA completo autoriza a passagem."""
+
+    def test_matriz(self):
+        sha = "a" * 40
+        outro = "b" * 40
+        agora = 1_000_000.0
+        desde = agora - 10
+        verde = {"name": "prova-remota", "status": "COMPLETED", "conclusion": "SUCCESS",
+                 "sha": sha}
+
+        def decidir(head, checks, **extra):
+            return d.decisao_prova_remota(
+                sha, head, checks, agora=agora, desde=desde,
+                limite_s=d.ESPERA_PROVA_REMOTA_S, **extra)
+
+        self.assertEqual(decidir(sha, [verde]), "mover")
+        self.assertEqual(decidir(sha, [{**verde, "status": "IN_PROGRESS", "conclusion": ""}]), "esperar")
+        self.assertEqual(decidir(sha, [{**verde, "conclusion": "FAILURE"}]), "dono")
+        self.assertEqual(decidir(outro, [dict(verde, sha=outro)]), "esperar")
+        self.assertEqual(decidir(outro, [{k: v for k, v in verde.items() if k != "sha"}]), "esperar")
+        self.assertEqual(decidir(sha, [dict(verde, sha=sha[:7])]), "esperar")
+        self.assertEqual(decidir(sha, [{"name": "ci", "status": "COMPLETED",
+                                        "conclusion": "SUCCESS", "sha": sha}]), "esperar")
+        self.assertEqual(d.decisao_prova_remota(
+            "abc1234", sha, [verde], agora=agora, desde=desde, limite_s=100), "dono")
+        self.assertEqual(d.decisao_prova_remota(
+            sha, sha, [verde], agora=agora, desde=agora - d.ESPERA_PROVA_REMOTA_S - 1,
+            limite_s=d.ESPERA_PROVA_REMOTA_S), "mover")
+        self.assertEqual(d.decisao_prova_remota(
+            sha, sha, [{"name": "prova-remota", "status": "PENDING", "sha": sha}],
+            agora=agora, desde=agora - d.ESPERA_PROVA_REMOTA_S - 1,
+            limite_s=d.ESPERA_PROVA_REMOTA_S), "dono")
+        self.assertEqual(decidir(sha, [verde], erro="HTTP 502"), "dono")
+
+
+class ProvaRemotaNoDispatcher(unittest.TestCase):
+    """FRA-611: finalize abre rascunho e não trata prova local nem DONE como autoridade."""
+
+    SHA = "a" * 40
+    OUTRO = "b" * 40
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, True))
+        self.wt = self.tmp / "wt"
+        (self.wt / ".lane").mkdir(parents=True)
+        # FRA-595: o exit_code vale na pasta da rodada, fora do worktree.
+        antes = d.STATE_DIR
+        d.STATE_DIR = self.tmp / "state"
+        d.STATE_DIR.mkdir()
+        self.addCleanup(setattr, d, "STATE_DIR", antes)
+        (self.wt / ".lane" / "result.json").write_text(json.dumps({
+            "status": "done", "summary": "fez a mudança", "changed_files": ["a.py"],
+        }), encoding="utf-8")
+        # Prova local verde de propósito: não pode mover o card sozinha.
+        (self.wt / ".lane" / "proof_exit").write_text("0", encoding="utf-8")
+        (self.wt / ".lane" / "proof_started").write_text("1", encoding="utf-8")
+        (self.wt / ".lane" / "proof.log").write_text(
+            "[prova] FooTests\nExecuted 3 tests, with 0 failures\n", encoding="utf-8")
+        self.st = {
+            "worktree": str(self.wt), "card": "FRA-611", "title": "rascunho",
+            "lane": "claude", "effort": "medio", "branch": "cursor/fra-611",
+            "issue_id": "issue-611", "base": "abc", "log": str(self.tmp / "lane.log"),
+            "started": time.time(), "run_id": "run611",
+        }
+        d.escrever_exclusivo(d.preparar_prova_dir(self.st, self.wt) / "exit_code", "0\n")
+        self.comentarios = []
+        self.estados = []
+        self.labels = []
+        self.chamadas = []
+        self.erro_view = None
+        self.existe_pr = True
+        self.sha_head = self.SHA
+        self.gh = {
+            "state": "OPEN", "isDraft": True, "number": 9,
+            "url": "https://github.com/francieloliveira/tuttidash/pull/9",
+            "headRefOid": self.SHA, "statusCheckRollup": [],
+        }
+        patches = [
+            mock.patch.object(d, "git_summary", return_value={
+                "ahead": 1, "new": 1, "files": ["a.py"], "lane_files": ["a.py"],
+                "dirty": [], "sha": "abc1234",
+            }),
+            mock.patch.object(d, "motivo_para_nao_enviar", return_value=""),
+            mock.patch.object(d, "diagnostico_config", return_value=("", "")),
+            mock.patch.object(d, "enviar_branch", side_effect=self._enviar),
+            mock.patch.object(d, "touched_protected", return_value=[]),
+            mock.patch.object(d, "sh", side_effect=self._sh),
+            mock.patch.object(d, "linear", side_effect=self._linear),
+            mock.patch.object(d, "mudar_estado", side_effect=self._estado),
+            mock.patch.object(d, "aplicar_label", side_effect=self._label),
+            mock.patch.object(d, "start_proof", side_effect=AssertionError("prova local")),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _enviar(self, wt, branch):
+        # FRA-594: o push vai para a URL do cadastro, por enviar_branch.
+        self.chamadas.append(["git", "push", branch])
+        return ""
+
+    def _sh(self, args, cwd=None, check=True, timeout=120):
+        # GIT e GH são caminhos absolutos (FRA-608); o teste compara pelo nome.
+        args = [Path(args[0]).name, *args[1:]]
+        self.chamadas.append(list(args))
+        if args[:3] == ["git", "rev-parse", "HEAD"]:
+            return self.sha_head
+        if args[:3] == ["git", "push", "-q"]:
+            return ""
+        if args[:3] == ["gh", "pr", "view"]:
+            if self.erro_view:
+                raise RuntimeError(self.erro_view)
+            if not self.existe_pr:
+                raise RuntimeError("gh pr view… falhou (1): no pull requests found for branch")
+            return json.dumps(self.gh)
+        if args[:3] == ["gh", "pr", "create"]:
+            self.existe_pr = True
+            return self.gh["url"]
+        if args[:3] == ["gh", "pr", "ready"]:
+            self.gh["isDraft"] = False
+            return ""
+        if args[:3] == ["gh", "pr", "merge"]:
+            raise AssertionError("não mergeia")
+        raise AssertionError(args)
+
+    def _linear(self, query, variables):
+        self.comentarios.append(variables.get("body", ""))
+        return {}
+
+    def _estado(self, issue, state):
+        self.estados.append(state)
+        return True
+
+    def _label(self, issue, label, nome):
+        self.labels.append(nome)
+        return True
+
+    def _check(self, conclusion, status="COMPLETED", sha=None, name="prova-remota"):
+        item = {"name": name, "status": status, "conclusion": conclusion,
+                "detailsUrl": "https://github.com/francieloliveira/tuttidash/actions/runs/99"}
+        if sha is not None:
+            item["sha"] = sha
+        return item
+
+    def _criar(self):
+        return [c for c in self.chamadas if c[:3] == ["gh", "pr", "create"]]
+
+    def _sem_autoridade_local(self):
+        texto = "\n".join(self.comentarios)
+        self.assertNotIn("DONE", texto)
+        self.assertNotIn("→ verde", texto)
+        self.assertNotIn(d.STATE_IN_REVIEW_ID, self.estados)
+
+    def test_check_pendente_nao_move(self):
+        self.gh["statusCheckRollup"] = [self._check("", status="IN_PROGRESS", sha=self.SHA)]
+        self.assertIsNone(d.finalize(self.st))
+        self._sem_autoridade_local()
+        self.assertEqual(self.labels, [])
+        self.assertEqual(self._criar(), [])
+        self.assertNotIn(["gh", "pr", "ready", "9"], self.chamadas)
+        self.assertEqual(self.st["prova_remota_url"], self.gh["url"])
+        self.assertIn("actions/runs/99", self.st["prova_remota_check"])
+
+    def test_check_verde_no_sha_completo_move(self):
+        self.gh["statusCheckRollup"] = [self._check("SUCCESS", sha=self.SHA)]
+        saida = d.finalize(self.st)
+        self.assertEqual(saida, f"In Review ({self.gh['url']})")
+        self.assertEqual(self.estados, [d.STATE_IN_REVIEW_ID])
+        self.assertIn(["gh", "pr", "ready", "9"], self.chamadas)
+        self.assertNotIn("DONE", "\n".join(self.comentarios))
+        self.assertNotIn("→ verde", "\n".join(self.comentarios))
+        self.assertIn(self.SHA, self.comentarios[0])
+        self.assertIn(self.gh["url"], self.comentarios[0])
+        self.assertEqual(self.labels, [])
+        self.assertFalse(any(c[:3] == ["gh", "pr", "merge"] for c in self.chamadas))
+
+    def test_check_verde_noutro_sha_nao_move(self):
+        self.gh["headRefOid"] = self.OUTRO
+        self.gh["statusCheckRollup"] = [self._check("SUCCESS", sha=self.OUTRO)]
+        self.assertIsNone(d.finalize(self.st))
+        self._sem_autoridade_local()
+        self.assertEqual(self.labels, [])
+
+    def test_check_verde_em_sha_curto_nao_move(self):
+        self.gh["statusCheckRollup"] = [self._check("SUCCESS", sha=self.SHA[:7])]
+        self.assertIsNone(d.finalize(self.st))
+        self._sem_autoridade_local()
+
+    def test_check_vermelho_nao_move_e_chama_o_dono(self):
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        saida = d.finalize(self.st)
+        self.assertEqual(saida, d.OWNER_LABEL)
+        self._sem_autoridade_local()
+        self.assertEqual(self.labels, [d.OWNER_LABEL])
+        self.assertIn("vermelho", self.comentarios[0])
+        self.assertIn(self.gh["url"], self.comentarios[0])
+
+    def test_timeout_chama_o_dono(self):
+        self.st["prova_remota_desde"] = time.time() - d.ESPERA_PROVA_REMOTA_S - 5
+        self.gh["statusCheckRollup"] = [self._check("", status="PENDING", sha=self.SHA)]
+        saida = d.finalize(self.st)
+        self.assertEqual(saida, d.OWNER_LABEL)
+        self._sem_autoridade_local()
+        self.assertEqual(self.labels, [d.OWNER_LABEL])
+        self.assertIn("passou de", self.comentarios[0])
+
+    def test_erro_na_consulta_chama_o_dono(self):
+        self.erro_view = "gh pr view… falhou (1): HTTP 502"
+        saida = d.finalize(self.st)
+        self.assertEqual(saida, d.OWNER_LABEL)
+        self._sem_autoridade_local()
+        self.assertEqual(self.labels, [d.OWNER_LABEL])
+        self.assertIn("erro ao consultar", self.comentarios[0])
+        self.assertEqual(self._criar(), [])
+
+    def test_sha_curto_chama_o_dono_sem_abrir_pr(self):
+        self.sha_head = "abc1234"
+        saida = d.finalize(self.st)
+        self.assertEqual(saida, d.OWNER_LABEL)
+        self._sem_autoridade_local()
+        self.assertEqual(self._criar(), [])
+        self.assertFalse(any(c[:2] == ["git", "push"] for c in self.chamadas))
+
+    def test_sem_prova_local_abre_rascunho_e_nao_escreve_done(self):
+        for nome in ("proof_exit", "proof_started", "proof.log"):
+            (self.wt / ".lane" / nome).unlink()
+        self.existe_pr = False
+        self.assertIsNone(d.finalize(self.st))
+        criacao = self._criar()
+        self.assertEqual(len(criacao), 1)
+        self.assertIn("--draft", criacao[0])
+        corpo = criacao[0][criacao[0].index("--body") + 1]
+        self.assertNotIn("DONE", corpo)
+        self.assertNotIn("→ verde", corpo)
+        self._sem_autoridade_local()
+        self.assertEqual(self.st["prova_remota_url"], self.gh["url"])
+        self.assertEqual(self.st["prova_remota_sha"], self.SHA)
+
+
 class ProvaForaDoAgente(unittest.TestCase):
     """FRA-595: prova, exit e agent_cmd não estão sob o controle do agente."""
 
@@ -2428,17 +2667,35 @@ class ProvaForaDoAgente(unittest.TestCase):
         }
         (self.tmp / "log").write_text("", encoding="utf-8")
         d.escrever_exclusivo(d.preparar_prova_dir(st, wt) / "exit_code", "0\n")
-        chamadas = []
+        comentarios = []
+        estados = []
+
+        def falso_sh(args, cwd=None, check=True, timeout=120):
+            nome = [Path(args[0]).name, *args[1:3]]
+            if nome == ["git", "rev-parse", "HEAD"]:
+                return "a" * 40
+            if nome == ["gh", "pr", "view"]:
+                raise RuntimeError("no pull requests found for branch")
+            if nome == ["gh", "pr", "create"]:
+                return "https://github.com/x/y/pull/1"
+            raise AssertionError(args)
+
+        # FRA-611: a prova plantada não vira DONE nem move o card. O PR abre em rascunho.
         with mock.patch.object(d, "git_summary", return_value={
             "ahead": 1, "new": 1, "files": ["a.py"], "lane_files": ["a.py"],
             "dirty": [], "sha": "abc1234",
         }), mock.patch.object(d, "touched_protected", return_value=[]), \
-                mock.patch.object(d, "start_proof", side_effect=lambda *a, **k: chamadas.append(a)), \
-                mock.patch.object(d, "linear", return_value={}), \
-                mock.patch.object(d, "sh", side_effect=AssertionError("não era para enviar")):
+                mock.patch.object(d, "diagnostico_config", return_value=("", "")), \
+                mock.patch.object(d, "motivo_para_nao_enviar", return_value=""), \
+                mock.patch.object(d, "enviar_branch", return_value=""), \
+                mock.patch.object(d, "start_proof", side_effect=AssertionError("prova local")), \
+                mock.patch.object(d, "linear", side_effect=lambda q, v: comentarios.append(v.get("body", "")) or {}), \
+                mock.patch.object(d, "mudar_estado", side_effect=lambda *a: estados.append(a)), \
+                mock.patch.object(d, "sh", side_effect=falso_sh):
             outcome = d.finalize(st)
         self.assertIsNone(outcome)
-        self.assertEqual(len(chamadas), 1)
+        self.assertFalse(any("DONE" in c for c in comentarios))
+        self.assertEqual(estados, [])
 
     def test_exit_code_do_worktree_nao_fecha_o_card(self):
         wt = self.tmp / "wt"

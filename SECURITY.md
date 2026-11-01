@@ -36,6 +36,10 @@ that full head SHA.
 
 This is the proof of the merge. Branch protection on `main` has to require the
 check `prova-remota` before merge; the workflow token cannot change that setting.
+The dispatcher opens the pull request as a draft and does not treat a local proof
+or a DONE comment as authority. The card moves to In Review only after
+`prova-remota` is green on the full head SHA. Timeout or an error calls the owner.
+A draft pull request is not merged.
 It does not limit the lane. A lane still runs as the owner of the machine and
 can read `~/.ssh` and `~/.config/gh`.
 
@@ -46,9 +50,12 @@ noutro checkout, no SHA completo, e os scripts dele não rodam. O check fica nes
 SHA completo.
 
 Isso é a prova do merge. A proteção da `main` tem de exigir o check `prova-remota`
-antes do merge; o token do workflow não altera essa configuração. Não limita a
-lane. A lane continua rodando como o dono da máquina e pode ler `~/.ssh` e
-`~/.config/gh`.
+antes do merge; o token do workflow não altera essa configuração. O dispatcher
+abre o PR em rascunho e não trata prova local nem comentário DONE como autoridade.
+O card só vai para In Review quando `prova-remota` está verde no SHA completo.
+Timeout ou erro chama o dono. PR em rascunho não é mergeado.
+Não limita a lane. A lane continua rodando como o dono da máquina e pode ler
+`~/.ssh` e `~/.config/gh`.
 
 ## Reviewer approval and DONE (FRA-593)
 

@@ -8,8 +8,9 @@ Roda a cada 60 s via launchd (com.transcentia.lanes.dispatcher).
 
 Divisão de trabalho (E3):
   dispatcher  lê o card, cria o worktree, abre a lane no tmux e, ao final,
-              faz push para a URL do cadastro, abre o PR, comenta DONE com o SHA completo
-              e move para In Review
+              faz push para a URL do cadastro e abre o PR em rascunho. O card só
+              vai para In Review quando o check remoto `prova-remota` está verde
+              no SHA completo. Prova local e comentário DONE não autorizam essa passagem.
   agente      edita, testa, faz commit LOCAL e grava .lane/result.json.
               Não fala com Linear nem GitHub. A prova, o exit_code e o
               agent_cmd ficam fora do worktree (FRA-595).
@@ -206,6 +207,12 @@ SLEEP_GAP_S = 5 * 60
 # dispatcher, em segundo plano. Teto próprio: um build não incremental passa de 30 min.
 PROOF_TIMEOUT_MIN = 150
 PROOF_DEFAULT_SUITES = ["TranscentIATests"]
+# FRA-611. O mesmo nome do check que o workflow publica (FRA-610).
+# A prova local em `.lane/proof_*` não autoriza In Review.
+NOME_CHECK_REMOTO = "prova-remota"
+# O workflow corta em 30 min. Aqui cabe a fila do runner e a execução.
+ESPERA_PROVA_REMOTA_S = 45 * 60
+_SHA_COMPLETO = re.compile(r"[0-9a-f]{40}")
 # Log do agente sem saída nova por este tempo: a lane parou em silêncio (FRA-515).
 LOG_PARADO_S = 10 * 60
 # Teto antigo, só da opencode (2). O freio que vale agora é TENTATIVAS_MAX (FRA-443).
@@ -4019,6 +4026,250 @@ def proof_failures(wt: Path, prova: Optional[Path] = None) -> str:
     return "\n".join(f"  - `{h[:200]}`" for h in hits[-10:])
 
 
+def normalizar_sha(sha: str) -> str:
+    return (sha or "").strip().lower()
+
+
+def sha_completo(sha: str) -> bool:
+    """40 hex minúsculos. Prefixo curto não é o SHA do check."""
+    return _SHA_COMPLETO.fullmatch(normalizar_sha(sha)) is not None
+
+
+def normalizar_rollup(bruto) -> list:
+    """`statusCheckRollup` do gh: lista, ou objeto com `nodes`/`contexts`."""
+    if isinstance(bruto, dict):
+        bruto = bruto.get("nodes") or bruto.get("contexts") or []
+    return list(bruto) if isinstance(bruto, list) else []
+
+
+def _sha_do_item(item: dict) -> str:
+    for chave in ("sha", "headSha", "head_sha", "headRefOid"):
+        valor = item.get(chave)
+        if isinstance(valor, str) and valor.strip():
+            return valor.strip()
+    return ""
+
+
+def checks_que_contam(sha: str, head_sha: str, checks) -> list:
+    """Checks `prova-remota` cujo SHA é o head completo esperado.
+
+    Item com SHA próprio diferente não conta, mesmo que o head do PR coincida.
+    Item sem SHA só conta quando o `headRefOid` do PR é o SHA completo.
+    """
+    esperado = normalizar_sha(sha)
+    head = normalizar_sha(head_sha)
+    if not sha_completo(esperado):
+        return []
+    saida = []
+    for item in normalizar_rollup(checks):
+        if not isinstance(item, dict):
+            continue
+        nome = str(item.get("name") or item.get("context") or "").strip()
+        if nome != NOME_CHECK_REMOTO:
+            continue
+        visto = normalizar_sha(_sha_do_item(item))
+        if visto:
+            if visto != esperado or not sha_completo(visto):
+                continue
+        elif head != esperado:
+            continue
+        saida.append(item)
+    return saida
+
+
+_FALHA_CHECK = {"FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ERROR",
+                "ACTION_REQUIRED", "STALE"}
+_ESPERA_CHECK = {"PENDING", "IN_PROGRESS", "QUEUED", "WAITING", "REQUESTED", "EXPECTED"}
+
+
+def veredito_item(item: dict) -> str:
+    """`verde`, `vermelho` ou `pendente` para um check que já conta no SHA."""
+    conclusao = str(item.get("conclusion") or item.get("state") or "").strip().upper()
+    status = str(item.get("status") or "").strip().upper()
+    if conclusao in _FALHA_CHECK or status in _FALHA_CHECK:
+        return "vermelho"
+    if status in _ESPERA_CHECK or conclusao in _ESPERA_CHECK:
+        return "pendente"
+    if conclusao == "SUCCESS":
+        return "verde"
+    return "pendente"
+
+
+def decisao_prova_remota(sha: str, head_sha: str, checks, *, agora: float, desde: float,
+                         limite_s: float, erro: str = "") -> str:
+    """`mover`, `esperar` ou `dono`.
+
+    Verde no SHA completo move. Pendente espera. Verde noutro SHA não conta.
+    Vermelho, timeout, SHA incompleto e erro de consulta chamam o dono e não movem.
+    """
+    if erro or not sha_completo(sha):
+        return "dono"
+    vereditos = [veredito_item(i) for i in checks_que_contam(sha, head_sha, checks)]
+    if "vermelho" in vereditos:
+        return "dono"
+    if vereditos and "pendente" not in vereditos and "verde" in vereditos:
+        return "mover"
+    if agora - float(desde) >= float(limite_s):
+        return "dono"
+    return "esperar"
+
+
+def url_do_check(sha: str, head_sha: str, checks) -> str:
+    for item in checks_que_contam(sha, head_sha, checks):
+        url = str(item.get("detailsUrl") or item.get("targetUrl") or item.get("url") or "").strip()
+        if url.startswith("https://"):
+            return url
+    return ""
+
+
+def aviso_prova_remota(st: dict) -> str:
+    """Frase que o app mostra, com o link do PR e, quando existe, o do check."""
+    aviso = "aguardando prova remota"
+    url = str(st.get("prova_remota_url") or "").strip()
+    check = str(st.get("prova_remota_check") or "").strip()
+    if url:
+        aviso += " " + url
+    if check:
+        aviso += " check " + check
+    return aviso
+
+
+def anotar_espera(st: dict, sha: str, url: str, check: str) -> None:
+    st["prova_remota_url"] = url
+    st["prova_remota_check"] = check
+    st["prova_remota_sha"] = sha
+    if not isinstance(st.get("prova_remota_desde"), (int, float)):
+        st["prova_remota_desde"] = time.time()
+
+
+def motivo_prova_remota(sha: str, head_sha: str, checks, desde: float, agora: float) -> str:
+    contam = checks_que_contam(sha, head_sha, checks)
+    if any(veredito_item(i) == "vermelho" for i in contam):
+        return f"o check `{NOME_CHECK_REMOTO}` ficou vermelho no SHA {sha}"
+    minutos = ESPERA_PROVA_REMOTA_S // 60
+    if agora - float(desde) >= ESPERA_PROVA_REMOTA_S:
+        return f"a prova remota passou de {minutos} min sem ficar verde no SHA {sha}"
+    return f"a prova remota não autorizou o SHA {sha}"
+
+
+def chamar_dono_prova_remota(st: dict, motivo: str) -> str:
+    """Timeout ou erro: etiqueta do dono. O card não vai para In Review."""
+    aplicar_label(st["issue_id"], LABEL_DONO_ID, OWNER_LABEL)
+    url = str(st.get("prova_remota_url") or "").strip()
+    check = str(st.get("prova_remota_check") or "").strip()
+    linhas = [f"✋ **lane:{st['lane']}** precisa do dono: {motivo}.", ""]
+    if url:
+        linhas.append(f"PR: {url}")
+    if check:
+        linhas.append(f"Check: {check}")
+    linhas.append("")
+    linhas.append(f"Para retomar: responder no card e remover a label `{OWNER_LABEL}`.")
+    linear(MUT_COMMENT, {"id": st["issue_id"], "body": "\n".join(linhas)})
+    return OWNER_LABEL
+
+
+def ler_pr_aberto(wt: Path, branch: str) -> Optional[dict]:
+    """PR aberto da branch, ou None se ainda não existe. Outro erro sobe."""
+    try:
+        raw = sh([GH, "pr", "view", branch, "--json",
+                  "url,state,isDraft,number,headRefOid,statusCheckRollup"],
+                 cwd=wt, timeout=120)
+    except RuntimeError as exc:
+        if "no pull request" in str(exc).lower():
+            return None
+        raise
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"gh pr view não devolveu JSON ({exc})") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("gh pr view não devolveu um objeto")
+    if str(data.get("state") or "").upper() != "OPEN":
+        return None
+    return data
+
+
+def corpo_do_rascunho(st: dict, res: dict, arquivos: list) -> str:
+    lista = "\n".join(f"- {a}" for a in (arquivos or [])[:30])
+    return (
+        f"{st['card']}: {st['title']}\n\n"
+        f"{res.get('summary', '')}\n\n"
+        f"Executado pela lane:{st['lane']} (esforço {st['effort']}).\n\n"
+        f"Arquivos:\n{lista}\n\n"
+        "Rascunho. O card só vai para In Review quando o check "
+        f"`{NOME_CHECK_REMOTO}` estiver verde no SHA completo do head.\n"
+    )
+
+
+def abrir_rascunho(st: dict, wt: Path, res: dict, arquivos: list) -> str:
+    return sh([GH, "pr", "create", "--draft", "--base", "main", "--head", st["branch"],
+               "--title", f"[{st['card']}] {st['title']}",
+               "--body", corpo_do_rascunho(st, res, arquivos)],
+              cwd=wt, timeout=120)
+
+
+def fechar_com_prova_remota(st: dict, wt: Path, res: dict, g: dict) -> Optional[str]:
+    """Push, PR em rascunho, e In Review só com o check verde no SHA completo.
+
+    None = ainda esperando. A prova em `.lane/proof_*` não entra nesta decisão.
+    """
+    barrado = motivo_para_nao_enviar(wt)
+    if barrado:
+        return fail(st, f"nada foi enviado: {barrado}", causa="push-barrado")
+    sha = normalizar_sha(sh([GIT, "rev-parse", "HEAD"], cwd=wt))
+    if not sha_completo(sha):
+        return chamar_dono_prova_remota(st, "o SHA do head não está completo")
+    # FRA-594: push só para a URL do cadastro, nunca `git push origin`.
+    recusa = enviar_branch(wt, st["branch"])
+    if recusa:
+        return fail(st, f"nada foi enviado: {recusa}", causa="push-barrado")
+    try:
+        pr = ler_pr_aberto(wt, st["branch"])
+    except RuntimeError as exc:
+        return chamar_dono_prova_remota(st, f"erro ao consultar a prova remota ({exc})")
+    if pr is None:
+        try:
+            url = abrir_rascunho(st, wt, res, g.get("files") or []).strip()
+        except RuntimeError as exc:
+            return chamar_dono_prova_remota(st, f"erro ao abrir o PR em rascunho ({exc})")
+        anotar_espera(st, sha, url, "")
+        return None
+    url = str(pr.get("url") or "").strip()
+    head = normalizar_sha(str(pr.get("headRefOid") or ""))
+    checks = pr.get("statusCheckRollup")
+    check = url_do_check(sha, head, checks)
+    anotar_espera(st, sha, url, check)
+    agora = time.time()
+    desde = float(st["prova_remota_desde"])
+    decisao = decisao_prova_remota(sha, head, checks, agora=agora, desde=desde,
+                                   limite_s=ESPERA_PROVA_REMOTA_S)
+    if decisao == "esperar":
+        return None
+    if decisao == "dono":
+        return chamar_dono_prova_remota(st, motivo_prova_remota(sha, head, checks, desde, agora))
+    if decisao != "mover":
+        raise RuntimeError(f"decisão de prova remota desconhecida: {decisao}")
+    try:
+        if pr.get("isDraft"):
+            alvo = str(pr.get("number") or url)
+            sh([GH, "pr", "ready", alvo], cwd=wt, timeout=120)
+        linhas = [
+            f"**lane:{st['lane']}** prova remota `{NOME_CHECK_REMOTO}` verde no SHA `{sha}`.",
+            "",
+            f"PR: {url}",
+        ]
+        if check:
+            linhas.append(f"Check: {check}")
+        linhas += ["", "O card foi para In Review."]
+        linear(MUT_COMMENT, {"id": st["issue_id"], "body": "\n".join(linhas)})
+        mudar_estado(st["issue_id"], STATE_IN_REVIEW_ID)
+    except Exception as exc:  # noqa: BLE001 — erro ao concluir chama o dono, não vira lane:falhou
+        return chamar_dono_prova_remota(st, f"erro ao concluir a prova remota ({exc})")
+    return f"In Review ({url})"
+
+
 def ler_exit_code(st: dict) -> str:
     """Código de saída da rodada. Ignora `.lane/exit_code`."""
     path = prova_dir(st) / "exit_code"
@@ -4028,7 +4279,7 @@ def ler_exit_code(st: dict) -> str:
 
 
 def finalize(st: dict) -> Optional[str]:
-    """Fecha o card. None = ainda não (a prova do dispatcher está rodando).
+    """Fecha o card. None = ainda esperando o check remoto no SHA completo.
 
     `.lane/proof_*` e `.lane/exit_code` não entram: a rodada mora em
     `STATE_DIR/provas/<lane>/<card>/<run_id>`.
@@ -4093,86 +4344,8 @@ def finalize(st: dict) -> Optional[str]:
     if g["dirty"]:
         return fail(st, "result=done mas há mudanças sem commit")
 
-    # FRA-269 / FRA-595: a prova é do dispatcher, na pasta da rodada.
-    # `.lane/proof_*` plantado pelo agente não pula o start_proof nem vira verde.
-    suites = proof_suites(res)
-    discard_stale_proof(prova, st["card"], st.get("started", 0))
-    inicio = prova / "proof_started"
-    if inicio.is_symlink():
-        return fail(st, "proof_started é symlink", causa="prova-symlink")
-    if not inicio.is_file():
-        start_proof(wt, suites, st)
-        return None  # volta no próximo ciclo
-    fase = acompanhar_prova(st, wt, suites)
-    log_prova = prova / "proof.log"
-    if fase in ("rodando", "refeita"):
-        return None
-    if fase == "timeout":
-        return stop(st, f"a prova ({', '.join(suites)}) passou de {PROOF_TIMEOUT_MIN} min",
-                    f"- log da prova: `{log_prova}`\n", causa="prova-timeout")
-    if fase == "stop":
-        return stop(st, "parada manual (menu)", causa="parada-manual")
-    if fase == "morta":
-        return stop(st, "a prova morreu sem terminar e a repetição também não terminou",
-                    f"- log da prova: `{log_prova}`\n", causa="prova-morta")
-    if fase != "pronta":
-        raise RuntimeError(f"fase de prova desconhecida: {fase}")
-    proof_rc = ler_proof_exit(prova)
-    veredito = proof_veredito(wt, proof_rc, prova)
-    if proof_rc != "0" and veredito == "preflight":
-        # Mac ocupado (load/RAM): a barra nenhuma foi teste vermelho. Tenta de novo, até 3 vezes.
-        tries_f = prova / "proof_retries"
-        if tries_f.is_symlink():
-            return fail(st, "proof_retries é symlink", causa="prova-symlink")
-        try:
-            tries = int(ler_sem_seguir(tries_f) or 0) if tries_f.is_file() else 0
-        except (OSError, RuntimeError, ValueError):
-            tries = 0
-        if tries < 3:
-            _apagar_regular(tries_f)
-            escrever_exclusivo(tries_f, f"{tries + 1}\n")
-            for nome in ("proof_started", "proof_exit", "proof.log", "proof_pid", "proof_meta.json"):
-                _apagar_regular(prova / nome)
-            return None
-        return stop(st, "a prova foi barrada 4 vezes pelo preflight (Mac ocupado)",
-                    f"- log da prova: `{log_prova}`\n")
-    if proof_rc != "0" or veredito == "vermelho":
-        # Falha: código de saída não-zero OU evidência forte na última tentativa (mesmo com código 0).
-        return fail(st, f"a prova do dispatcher falhou ({', '.join(suites)}, código {proof_rc})",
-                    f"- resumo:\n{proof_failures(wt, prova)}\n"
-                    f"- log completo: `{log_prova}`\n", causa="prova-vermelha")
-    if veredito != "verde":
-        # Exit 0 com log vazio, 0 testes, ou suíte sem a linha do E22 não é DONE.
-        return fail(st, "a prova não contou Executed N tests, with 0 failures (N>0) em cada suíte",
-                    f"- log completo: `{log_prova}`\n", causa="prova-sem-contagem")
-    res = dict(res, verification=f"dispatcher: {projeto().prova.replace('{suite}', '')}"
-                                 f"{' '.join(suites)} → verde"
-                                 + (f"; agente: {res['verification']}" if res.get("verification") else ""))
-    barrado = motivo_para_nao_enviar(wt)
-    if barrado:
-        return fail(st, f"nada foi enviado: {barrado}", causa="push-barrado")
-    recusa = enviar_branch(wt, st["branch"])
-    if recusa:
-        return fail(st, f"nada foi enviado: {recusa}", causa="push-barrado")
-
-    meta = {k: res.get(k) for k in ("changed_files", "verification", "residual_risk", "decisions")}
-    meta["changed_files"] = g["files"]
-    body = (f"{st['card']}: {st['title']}\n\n{res.get('summary', '')}\n\n"
-            f"Executado pela lane:{st['lane']} (esforço {st['effort']}).\n\n"
-            f"```json\n{json.dumps(meta, ensure_ascii=False, indent=2)}\n```\n")
-    # Idempotente: se o fechamento anterior caiu depois de abrir o PR, reaproveita.
-    # Só PR aberto: `gh pr view <branch>` também acha PR fechado ou mergeado, e o card ia para
-    # In Review apontando para ele, sem PR aberto para o vigia mergear.
-    pr = sh([GH, "pr", "view", st["branch"], "--json", "url,state", "-q",
-             'select(.state == "OPEN") | .url'], cwd=wt, check=False)
-    if not pr:
-        pr = sh([GH, "pr", "create", "--base", "main", "--head", st["branch"],
-                 "--title", f"[{st['card']}] {st['title']}", "--body", body], cwd=wt, timeout=120)
-    linear(MUT_COMMENT, {"id": st["issue_id"], "body":
-        f"DONE {g['sha']}\n\n{res.get('summary', '')}\n\nPR: {pr}\n\n"
-        f"```json\n{json.dumps(meta, ensure_ascii=False, indent=2)}\n```"})
-    mudar_estado(st["issue_id"], STATE_IN_REVIEW_ID)
-    return f"In Review ({pr})"
+    # FRA-611: `.lane/proof_*` e um DONE não decidem. O PR abre em rascunho.
+    return fechar_com_prova_remota(st, wt, res, g)
 
 
 def log_sem_saida(log_path: str, agora: Optional[float] = None, limite: float = LOG_PARADO_S) -> bool:
@@ -4240,10 +4413,11 @@ def watch(lane: str, st: dict) -> None:
     try:
         outcome = finalize(st)
         if outcome is None:
-            if not st.get("proving"):
-                st["proving"] = now()
-                save_state(lane, st)
-                log(f"lane:{lane} {st['card']}: agente terminou; prova do dispatcher em andamento")
+            aviso = aviso_prova_remota(st)
+            if st.get("prova_remota_anuncio") != aviso:
+                st["prova_remota_anuncio"] = aviso
+                log(f"lane:{lane} {st['card']}: {aviso}")
+            save_state(lane, st)
             return
     except Exception as exc:  # noqa: BLE001
         # Mantém o estado: tenta fechar de novo no próximo ciclo (sem novo claim).

@@ -1092,6 +1092,9 @@ def merge_ready(st: dict, diary: list[str]) -> None:
         pr = prs.get(ci["identifier"])
         if not pr or labels_of(ci) & BLOCKING:
             continue
+        if pr.get("isDraft"):
+            # FRA-611: rascunho espera a prova remota. Não mergeia.
+            continue
         if waiting_device_test(ci, pr):
             key = f"{pr['number']}@{pr['headRefOid'][:7]}"
             if st["installs"].get("branch_feita") != key and start_install(

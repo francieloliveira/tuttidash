@@ -61,6 +61,12 @@ public enum MensagemLog {
         if let g = casar(#"^lane:(\S+) (?:FECHOU )?(FRA-\d+) → In Review"#, msg) {
             return (.entrega, "\(nome(g[0])) entregou \(g[1]) para revisão")
         }
+        if let g = casar(#"^lane:(\S+) (FRA-\d+): aguardando prova remota(?:\s+(https://\S+))?(?:\s+check\s+(https://\S+))?"#, msg) {
+            var texto = "\(nome(g[0])) em \(g[1]): aguardando prova remota"
+            if g.count > 2, g[2].hasPrefix("https://") { texto += " \(g[2])" }
+            if g.count > 3, g[3].hasPrefix("https://") { texto += " \(g[3])" }
+            return (.trabalho, texto)
+        }
         if let g = casar(#"^lane:(\S+) (?:FECHOU )?(FRA-\d+) → devolvido à fila até (\d{1,2}:\d{2})"#, msg) {
             return (.alerta, "\(g[1]) volta para a fila às \(g[2]): \(nome(g[0])) bateu o limite de uso")
         }

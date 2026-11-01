@@ -629,6 +629,7 @@ struct LinhaLaneDashboard: View {
     }
 
     private func secundaria(_ linha: LinhaLane) -> String {
+        if linha.urlProvaRemota != nil { return "aguardando prova remota" }
         if let texto = linha.textoModelo { return texto }
         return linha.branch ?? "—"
     }
@@ -651,6 +652,17 @@ struct DetalheLane: View {
             Text(linha.estado == .desligada ? "desligada" : linha.descricao).font(PV.fonte(12)).lineLimit(2)
             if !linha.detalhe.isEmpty {
                 Text(linha.detalhe).font(PV.fonte(11.5)).foregroundStyle(PV.mudo).lineLimit(1)
+            }
+            if let endereco = linha.urlProvaRemota, let url = URL(string: endereco) {
+                Link(destination: url) {
+                    Text(endereco).font(PV.fonte(11.5)).lineLimit(1).truncationMode(.middle)
+                }
+            }
+            if let endereco = linha.urlCheckRemoto, endereco != linha.urlProvaRemota,
+               let url = URL(string: endereco) {
+                Link(destination: url) {
+                    Text(endereco).font(PV.fonte(11.5)).lineLimit(1).truncationMode(.middle)
+                }
             }
             HStack(spacing: 10) {
                 BarraUso(pct: linha.pct, altura: 6).frame(width: 130)

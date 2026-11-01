@@ -54,6 +54,17 @@ final class EstadoTests: XCTestCase {
                        "b.jsonl")
     }
 
+    func testProvaRemotaNoEstadoDaLane() {
+        let pr = "https://github.com/francieloliveira/tuttidash/pull/9"
+        let check = "https://github.com/francieloliveira/tuttidash/actions/runs/99"
+        let lane = EstadoLanes.laneRodando(nomeArquivo: "lane-claude.json", dados: [
+            "lane": "claude", "card": "FRA-611", "log": "/x/a.jsonl",
+            "prova_remota_url": pr, "prova_remota_check": check,
+        ])
+        XCTAssertEqual(lane?.provaRemotaURL, pr)
+        XCTAssertEqual(lane?.provaRemotaCheck, check)
+    }
+
     func testPastaAusente() {
         let e = EstadoLanes.ler(pasta: URL(fileURLWithPath: "/nao/existe"))
         XCTAssertNil(e.heartbeat); XCTAssertTrue(e.lanes.isEmpty)
