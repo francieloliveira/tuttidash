@@ -29,7 +29,7 @@ public struct LaneACP: Equatable, Sendable, Identifiable {
 
 public enum LanesACP {
     public static let chave = "acp"
-    public static let chaveLimite = "acp_limite_conta"
+    public static let chaveLimite = "limite_conta"   // PRD lanes-v2 (a chave do piloto, `acp_limite_conta`, não vale mais)
     public static let chavePreco = "acp_preco_conta"
     /// Modelo "auto": segue o peso do card, como as lanes do catálogo.
     public static let modeloAuto = "auto"

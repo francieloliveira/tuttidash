@@ -43,7 +43,8 @@ final class BarraMenusTests: XCTestCase {
     /// ligadas, inclusive o Grok CLI, o resumo não compacta e o menu cita o nome claro.
     /// `cursor` (SuperGrok) não entra: não é lane de desenvolvimento.
     func testLanesLigadasMostramGrokNaBarraENoMenu() {
-        XCTAssertEqual(LanesPainel.ordem,
+        // As do catálogo vêm primeiro; lanes extras da config do Mac (instâncias) depois.
+        XCTAssertEqual(Array(LanesPainel.ordem.prefix(6)),
                        ["claude", "codex", "opencode", "opencode-go", "grok", "deepseek"])
         let nomes = ["claude", "codex", "opencode", "opencode-go", "grok"]
         let snap = snapLanes(Set(nomes + ["cursor"]))

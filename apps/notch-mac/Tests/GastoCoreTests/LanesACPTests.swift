@@ -61,7 +61,7 @@ final class LanesACPTests: XCTestCase {
         XCTAssertEqual(LanesACP.limite(conta: "opencode", d), 1)
         LanesACP.gravarLimite(nil, conta: "opencode", em: &d)
         XCTAssertNil(LanesACP.limite(conta: "opencode", d))
-        XCTAssertNil(LanesACP.limite(conta: "x", ["lanes": ["acp_limite_conta": ["x": true]]]))
+        XCTAssertNil(LanesACP.limite(conta: "x", ["lanes": ["limite_conta": ["x": true]]]))
         XCTAssertNil(LanesACP.preco(conta: "opencode", d))
         LanesACP.gravarPreco(20, conta: "opencode", em: &d)
         XCTAssertEqual(LanesACP.preco(conta: "opencode", d), 20)

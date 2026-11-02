@@ -726,12 +726,16 @@ class CatalogoDeAgentes(unittest.TestCase):
                 self.assertEqual(uuid.findall(arq.read_text(encoding="utf-8")), [])
 
     def test_toda_lane_do_manifesto_tem_comando_no_dispatcher(self):
-        """Manifesto pode declarar lane nova; o comando de execução é código por CLI."""
+        """Manifesto pode declarar lane nova; o comando de execução é código por CLI
+        (PRD lanes-v2: `cli == "<cli>"`, não o nome da lane)."""
         texto = Path(d.__file__).read_text()
         for nome in d.LANES:
+            if self.cat.transporte_da_lane(nome) == "acp":
+                continue    # o piloto ACP roda o acp_runner.py, sem ramo por CLI
             with self.subTest(lane=nome):
-                self.assertIn(f'lane == "{nome}"', texto,
-                              f"{nome}: falta o comando em agent_command()")
+                cli = self.cat.cli_da_lane(nome)
+                self.assertIn(f'cli == "{cli}"', texto,
+                              f"{nome}: falta o comando do CLI {cli!r} em agent_command()")
 
     def test_nota_do_manifesto_explica_a_lane(self):
         """Cada lane implementada carrega a justificativa no manifesto."""

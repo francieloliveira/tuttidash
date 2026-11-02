@@ -110,7 +110,8 @@ final class AgentesTests: XCTestCase {
     }
 
     func testLanesDoPainelSaoAsMarcadasNoManifesto() {
-        XCTAssertEqual(LanesPainel.ordem, Agentes.todos.filter(\.painel).map(\.nome))
+        // Lanes extras da config do Mac (instâncias) entram depois das do catálogo.
+        XCTAssertEqual(LanesPainel.ordem, Agentes.todos.filter(\.painel).map(\.nome) + Agentes.instancias.map(\.nome))
         XCTAssertFalse(LanesPainel.ordem.isEmpty)
         // cursor e conta de uso, nao lane do painel.
         XCTAssertFalse(LanesPainel.ordem.contains("cursor"))

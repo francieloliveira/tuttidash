@@ -96,12 +96,21 @@ class FormatoOutro:
     def classificar_custo(self, lane: str) -> tuple:
         if self.custo > 0:
             return self.custo, CUSTO_INFORMADO
-        if self.formato == "opencode" and lane == "opencode":
+        if self.formato == "opencode" and _perfil(lane) == "opencode":
             return 0.0, CUSTO_GRATIS
         return 0.0, CUSTO_PLANO
 
 # Catálogo de agentes: fonte única em `agentes.py` (FRA-372).
 from .agentes import AGENTES_CONHECIDOS, custo_para
+
+
+def _perfil(lane: str) -> str:
+    """Manifesto da lane (instância `opencode-free2` → `opencode`). Sem catálogo, o nome."""
+    try:
+        from . import catalogo
+        return catalogo.perfil_da_lane(lane)
+    except Exception:  # noqa: BLE001 — o parser não cai por causa do catálogo
+        return lane
 
 # Aliases de compatibilidade (a fonte é `agentes.AGENTES`).
 CUSTO_TIPO_POR_AGENTE = {nome: custo_para(nome) for nome in AGENTES_CONHECIDOS}

@@ -2,6 +2,7 @@
 "schema": 1,
 "nome": "opencode-go",
 "rotulo": "OpenCode Go",
+"conta": "opencode",
 "sigla": "OG",
 "cli": "opencode",
 "ordem": 4,
