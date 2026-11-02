@@ -644,9 +644,13 @@ def existe_ambiente() -> bool:
 # `lanes.acp` na config do TuttiDash: [{"nome", "agente", "conta", "modelo", "ligada"}].
 # A entrada só escolhe nome, conta e modelo. Comando, config "perguntar" e privacidade
 # vêm do manifesto assinado do agente (bloco `acp`); agente sem esse bloco não vira lane.
-# `lanes.acp_limite_conta` ({conta: n}, padrão 1): lanes rodando ao mesmo tempo por conta.
+# `modelo`: "auto" (padrão) segue o peso do card como as lanes do catálogo (manifesto +
+# `lanes.modelo.<agente>`); um id fixo vale para todos os pesos.
+# `lanes.acp_limite_conta` ({conta: n}): limite opcional de lanes rodando ao mesmo tempo
+# na conta. Sem a chave, não há limite: quem segura é a medida de cota da conta.
 NOME_INSTANCIA = re.compile(r"[a-z][a-z0-9-]{1,39}\Z")
-LIMITE_CONTA_PADRAO = 1
+MODELO_AUTO = "auto"
+LIMITE_CONTA_PADRAO = None
 
 
 def _config_dados(arquivos=None) -> dict:
@@ -687,7 +691,7 @@ def validar_instancias(bruto, cat: dict | None = None) -> tuple:
             continue
         nome = str(item.get("nome") or "").strip()
         agente = str(item.get("agente") or "").strip()
-        modelo = str(item.get("modelo") or "").strip()
+        modelo = str(item.get("modelo") or "").strip() or MODELO_AUTO
         if not NOME_INSTANCIA.match(nome):
             avisos.append(f"lane ACP {nome!r}: nome inválido (a-z, 0-9 e hífen, 2 a 40)")
             continue
@@ -698,7 +702,7 @@ def validar_instancias(bruto, cat: dict | None = None) -> tuple:
         if not dados or not dados.get("acp"):
             avisos.append(f"lane ACP {nome!r}: agente {agente!r} sem bloco acp no manifesto")
             continue
-        if modelo and not _ID_MODELO.match(modelo):
+        if modelo != MODELO_AUTO and not _ID_MODELO.match(modelo):
             avisos.append(f"lane ACP {nome!r}: modelo inválido")
             continue
         conta = str(item.get("conta") or agente).strip() or agente
@@ -725,7 +729,8 @@ def dados_lane(nome: str, arquivos=None) -> dict:
     return cat.get(inst["agente"], {}) if inst else {}
 
 
-def limite_por_conta(conta: str, arquivos=None) -> int:
+def limite_por_conta(conta: str, arquivos=None):
+    """Lanes rodando ao mesmo tempo na conta, ou None (sem limite, o padrão)."""
     v = _bruto_lanes(_config_dados(arquivos), "acp_limite_conta")
     n = v.get(conta) if isinstance(v, dict) else None
     if isinstance(n, bool) or not isinstance(n, int) or n < 1:

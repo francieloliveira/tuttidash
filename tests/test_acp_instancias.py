@@ -94,11 +94,16 @@ class CatalogoComConfigTest(ComConfig):
         self.assertEqual(C.dados_lane("nada"), {})
 
     def test_limite_por_conta(self):
-        self.assertEqual(C.limite_por_conta("opencode"), 1)
+        self.assertIsNone(C.limite_por_conta("opencode"), "sem limite é o padrão")
         self.escrever({"lanes": {"acp": INST, "acp_limite_conta": {"opencode": 2, "x": 0, "y": True}}})
         self.assertEqual(C.limite_por_conta("opencode"), 2)
-        self.assertEqual(C.limite_por_conta("x"), 1)
-        self.assertEqual(C.limite_por_conta("y"), 1)
+        self.assertIsNone(C.limite_por_conta("x"))
+        self.assertIsNone(C.limite_por_conta("y"))
+
+    def test_modelo_vazio_e_automatico(self):
+        self.escrever({"lanes": {"acp": [{"nome": "opencode-auto", "agente": "opencode"}]}})
+        self.assertEqual(C.instancia("opencode-auto")["modelo"], C.MODELO_AUTO)
+        self.assertEqual(C.nome_sugerido("opencode", C.MODELO_AUTO), "opencode-auto")
 
     def test_chave_plana(self):
         self.escrever({"lanes.acp": INST[:1]})
@@ -156,10 +161,19 @@ class DispatcherTest(ComConfig):
             self.assertEqual(d.privacy_block("opencode-beam", "medio"), "treina")
         priv.pode_receber_codigo.assert_called_once_with("opencode/beam-free")
 
-    def test_privacidade_sem_modelo_fecha(self):
-        self.escrever({"lanes": {"acp": [{"nome": "opencode-livre", "agente": "opencode"}]}})
-        with mock.patch.object(d, "privacidade", mock.Mock()):
-            self.assertIn("sem modelo fixo", d.privacy_block("opencode-livre", "medio"))
+    def test_automatico_segue_o_peso_como_o_agente(self):
+        self.escrever({"lanes": {"acp": [{"nome": "opencode-auto", "agente": "opencode", "modelo": "auto"}]}})
+        for peso in ("baixo", "medio", "alto"):
+            self.assertEqual(d.modelo_da_lane("opencode-auto", peso), d.modelo_da_lane("opencode", peso), peso)
+        self.assertNotEqual(d.modelo_da_lane("opencode-auto", "baixo"), d.modelo_da_lane("opencode-auto", "alto"))
+        cmd = d.agent_command("opencode-auto", "alto", settings=Path("/s.json"))
+        self.assertEqual(cmd[cmd.index("--modelo") + 1], d.modelo_da_lane("opencode", "alto"))
+        self.assertEqual(d.aviso_modelo("opencode-auto", "medio"), "")
+        priv = mock.Mock()
+        priv.pode_receber_codigo.return_value = (True, "ok")
+        with mock.patch.object(d, "privacidade", priv):
+            self.assertIsNone(d.privacy_block("opencode-auto", "medio"))
+        priv.pode_receber_codigo.assert_called_once_with(d.modelo_da_lane("opencode", "medio"))
 
     def test_lanes_ligadas(self):
         with mock.patch.object(d, "ENABLED_FILE", self.tmp / "enabled"):
@@ -178,7 +192,12 @@ class DispatcherTest(ComConfig):
             self.assertEqual(d.lane_limited_conta("opencode-beam"), 99.0)
             self.assertIsNone(d.lane_limited_conta("claude"))
 
+    def test_sem_limite_por_padrao(self):
+        with mock.patch.object(d, "load_state", return_value={"card": "X-1"}):
+            self.assertIsNone(d.bloqueio_por_conta("opencode-beam"), "todas rodam; a cota segura")
+
     def test_bloqueio_por_conta(self):
+        self.escrever({"lanes": {"acp": INST, "acp_limite_conta": {"opencode": 1}}})
         rodando = set()
         with mock.patch.object(d, "load_state", side_effect=lambda l: {"card": "X-1"} if l in rodando else None):
             self.assertIsNone(d.bloqueio_por_conta("opencode-beam"))
