@@ -1086,9 +1086,12 @@ def modelo_da_lane(lane: str, effort: str) -> str:
     Fixo (e a string antiga) vale para todos os pesos. Automático usa `porPeso` e, no
     que faltar, o manifesto. Sem o prefixo do provedor, ganha o do manifesto.
     Teste que troca `ler_modelo_lane` continua no caminho antigo (None = manifesto).
-    Lane ACP: o modelo fixo da instância (`lanes.acp`)."""
+    Lane ACP: o modelo fixo da instância, ou, em "auto", o mesmo que o agente dela usaria
+    neste peso (manifesto + `lanes.modelo.<agente>`)."""
     inst = catalogo.instancia(lane)
     if inst:
+        if inst["modelo"] == catalogo.MODELO_AUTO:
+            return modelo_da_lane(inst["agente"], effort)
         return inst["modelo"]
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         flags = EFFORT_FLAGS.get(lane, {}).get(effort) or []
@@ -1105,7 +1108,8 @@ def flags_da_lane(lane: str, effort: str) -> list[str]:
     Lane ACP: só para exibir (o runner recebe `--modelo`)."""
     inst = catalogo.instancia(lane)
     if inst:
-        return ["-m", inst["modelo"]] if inst["modelo"] else []
+        m = modelo_da_lane(lane, effort)
+        return ["-m", m] if m else []
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         m = ler_modelo_lane(lane)
         if not m:
@@ -1118,7 +1122,7 @@ def aviso_modelo(lane: str, effort: str) -> str:
     """«modelo fixo» ou o texto de modelo que saiu da lista. Vazio no automático quieto."""
     inst = catalogo.instancia(lane)
     if inst:
-        return "modelo fixo" if inst["modelo"] else ""
+        return "" if inst["modelo"] == catalogo.MODELO_AUTO else "modelo fixo"
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         return "modelo fixo" if ler_modelo_lane(lane) else ""
     return _resolucao_modelo(lane, effort)["aviso"]
@@ -1201,10 +1205,10 @@ def privacy_block(lane: str, effort: str) -> Optional[str]:
         return None
     if privacidade is None:
         return "módulo de privacidade ausente (rode tools/install.sh)"
-    inst = catalogo.instancia(lane)
-    if inst and not inst["modelo"]:
-        return "lane ACP sem modelo fixo: a privacidade só é conferida com o modelo escolhido"
-    ok, motivo = privacidade.pode_receber_codigo(modelo_da_lane(lane, effort))
+    modelo = modelo_da_lane(lane, effort)
+    if catalogo.instancia(lane) and not modelo:
+        return f"lane ACP sem modelo para o peso `{effort}`: a privacidade só é conferida com um modelo"
+    ok, motivo = privacidade.pode_receber_codigo(modelo)
     return None if ok else motivo
 
 
@@ -1354,13 +1358,14 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
         return ["dsh", "--profile", "headless", "--patch", str(patch)]
     inst = catalogo.instancia(lane)
     if inst:
-        return comando_acp(lane, inst, settings)
+        return comando_acp(lane, inst, settings, effort)
     # cursor não tem CLI headless público para execução de lanes; fica como
     # placeholder até existir comando equivalente.
     raise NotImplementedError(f"lane {lane} não tem comando de agente")
 
 
-def comando_acp(lane: str, inst: dict, settings: Optional[Path] = None) -> list[str]:
+def comando_acp(lane: str, inst: dict, settings: Optional[Path] = None,
+                effort: str = EFFORT_DEFAULT) -> list[str]:
     """Lane ACP (PRD lanes-acp): o `acp_runner.py` do bundle fala ACP com o agente.
 
     Comando e config do agente saem do manifesto assinado; daqui só vão nome, agente
@@ -1372,8 +1377,9 @@ def comando_acp(lane: str, inst: dict, settings: Optional[Path] = None) -> list[
     cmd = ["/usr/bin/python3", str(runner), "--lane", lane, "--agente", inst["agente"],
            "--worktree", ".", "--settings", str(settings or caminho_settings()),
            "--espera", str(LANE_TIMEOUT_MIN * 60)]
-    if inst["modelo"]:
-        cmd += ["--modelo", inst["modelo"]]
+    modelo = modelo_da_lane(lane, effort)   # "auto" resolve pelo peso do card
+    if modelo:
+        cmd += ["--modelo", modelo]
     return cmd
 
 
@@ -3190,9 +3196,9 @@ def bloqueio_por_conta(lane: str, a_assumir=()) -> Optional[str]:
     instância na conta, nada muda para as lanes do catálogo."""
     conta = catalogo.conta_da_lane(lane)
     na_conta = [l for l in LANES if catalogo.conta_da_lane(l) == conta]
-    if len(na_conta) <= 1:
-        return None
     limite = catalogo.limite_por_conta(conta)
+    if len(na_conta) <= 1 or limite is None:   # sem limite é o padrão: a cota segura
+        return None
     pegando = {item[0] for item in a_assumir}
     ocupadas = [l for l in na_conta if l in pegando or load_state(l)]
     if len(ocupadas) >= limite:

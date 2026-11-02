@@ -11,7 +11,10 @@ final class EstadoLanesACP: ObservableObject {
     var aoSalvar: () -> Void = {}
     @Published var lanes: [LaneACP] = []
     @Published var erro: String?
-    @Published var limite = LanesACP.limitePadrao
+    /// nil = sem limite (padrão): quem segura é a cota da conta.
+    @Published var limite: Int?
+    /// Modelo do agente por peso (o que o modo automático usa).
+    @Published var porPeso: [String: String] = [:]
     @Published var precoTexto = ""
     @Published var testes: [String: ResultadoSonda] = [:]
     @Published var gasto: GastoConta?
@@ -44,6 +47,12 @@ final class EstadoLanesACP: ObservableObject {
         precoTexto = LanesACP.preco(conta: conta, modelo.dados).map { String(format: "%.2f", $0) } ?? ""
         let cache = ListaModelos.ler(ListaModelos.arquivoCache())
         modelosDisponiveis = cache.listas[agente.nome] ?? []
+        porPeso = LanesACP.modelosPorPeso(agente: agente.nome)
+    }
+
+    /// Modelo que a sonda usa para uma lane automática: o do peso médio (o padrão).
+    func modeloDaSonda(_ l: LaneACP) -> String {
+        l.modelo == LanesACP.modeloAuto ? (porPeso["medio"] ?? "") : l.modelo
     }
 
     func sugerir(modelo m: String) -> String {
@@ -65,15 +74,12 @@ final class EstadoLanesACP: ObservableObject {
 
     @discardableResult
     func adicionar(nome: String, modeloEscolhido: String) -> Bool {
+        let m = modeloEscolhido.trimmingCharacters(in: .whitespaces)
         let nova = LaneACP(nome: nome.trimmingCharacters(in: .whitespaces), agente: agente.nome, conta: conta,
-                           modelo: modeloEscolhido.trimmingCharacters(in: .whitespaces), ligada: false)
+                           modelo: m.isEmpty ? LanesACP.modeloAuto : m, ligada: false)
         let outras = todas
         if let p = LanesACP.problema(nova, outras: outras) {
             erro = p
-            return false
-        }
-        if nova.modelo.isEmpty {
-            erro = String(localized: "Escolha o modelo: a privacidade só é conferida com um modelo fixo.")
             return false
         }
         return gravar(outras + [nova])
@@ -94,10 +100,10 @@ final class EstadoLanesACP: ObservableObject {
         _ = gravar(todas.filter { $0.nome != l.nome })
     }
 
-    func definirLimite(_ n: Int) {
+    func definirLimite(_ n: Int?) {
         do {
-            try modelo.definirValor("lanes.\(LanesACP.chaveLimite).\(conta)", max(1, n))
-            limite = max(1, n)
+            try modelo.definirValor("lanes.\(LanesACP.chaveLimite).\(conta)", n.map { max(1, $0) as Any } ?? NSNull())
+            limite = n.map { max(1, $0) }
             erro = nil
             aoSalvar()
         } catch {
@@ -139,7 +145,7 @@ final class EstadoLanesACP: ObservableObject {
         let script = ScriptsDoBundle.obrigatorio("lanes/sonda_acp.py").path
         var amb = ProcessInfo.processInfo.environment
         amb["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (amb["PATH"] ?? "/usr/bin:/bin")
-        let args = [script, "--agente", l.agente, "--modelo", l.modelo]
+        let args = [script, "--agente", l.agente, "--modelo", modeloDaSonda(l)]
         let nome = l.nome
         Task.detached(priority: .userInitiated) {
             let r = Subprocesso.rodar("/usr/bin/python3", args, ambiente: amb)
@@ -181,7 +187,7 @@ final class EstadoLanesACP: ObservableObject {
 
 struct SecaoLanesDaConta: View {
     @StateObject private var estado: EstadoLanesACP
-    @State private var modeloNovo = ""
+    @State private var modeloNovo = LanesACP.modeloAuto
     @State private var nomeNovo = ""
     @State private var nomeEditado = false
 
@@ -205,13 +211,14 @@ struct SecaoLanesDaConta: View {
                 Text(String(localized: "Nenhuma lane ACP nesta conta.")).font(.caption).foregroundStyle(.secondary)
             }
             adicionar
-            Stepper(value: Binding(get: { estado.limite }, set: { estado.definirLimite($0) }), in: 1...10) {
-                Text(String(localized: "Lanes rodando ao mesmo tempo nesta conta: \(estado.limite)"))
-                    .font(.caption)
-            }
+            limiteDaConta
             custos
         }
-        .onAppear { estado.recarregar(); estado.medirGasto() }
+        .onAppear {
+            estado.recarregar()
+            estado.medirGasto()
+            if nomeNovo.isEmpty { sugerir(modeloNovo) }
+        }
     }
 
     private func linha(_ l: LaneACP) -> some View {
@@ -220,7 +227,9 @@ struct SecaoLanesDaConta: View {
                 Toggle(isOn: Binding(get: { l.ligada }, set: { estado.alternar(l, $0) })) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(l.nome).font(.system(size: 12, design: .monospaced))
-                        Text(l.modelo).font(.caption).foregroundStyle(.secondary)
+                        Text(l.modelo == LanesACP.modeloAuto
+                             ? String(localized: "Automático (segue o peso da task)") : l.modelo)
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
@@ -242,38 +251,71 @@ struct SecaoLanesDaConta: View {
     }
 
     private var adicionar: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(String(localized: "Adicionar lane")).font(.caption).foregroundStyle(.secondary)
-            if estado.modelosDisponiveis.isEmpty {
-                TextField(String(localized: "Modelo (ex.: opencode/beam-free)"), text: $modeloNovo)
-                    .font(.system(size: 11, design: .monospaced))
-                    .onChange(of: modeloNovo) { _, m in sugerir(m) }
-            } else {
-                Picker(String(localized: "Modelo"), selection: $modeloNovo) {
-                    Text(String(localized: "Escolha o modelo")).tag("")
-                    ForEach(estado.modelosDisponiveis, id: \.self) { Text($0).tag($0) }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(String(localized: "Nova lane")).font(.subheadline.weight(.semibold))
+            Picker(String(localized: "Modelo"), selection: $modeloNovo) {
+                Text(String(localized: "Automático (segue o peso da task)")).tag(LanesACP.modeloAuto)
+                ForEach(estado.modelosDisponiveis.filter { $0 != LanesACP.modeloAuto }, id: \.self) {
+                    Text($0).tag($0)
                 }
-                .onChange(of: modeloNovo) { _, m in sugerir(m) }
             }
+            .onChange(of: modeloNovo) { _, m in sugerir(m) }
+            if modeloNovo == LanesACP.modeloAuto {
+                Text(textoAutomatico).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if estado.modelosDisponiveis.isEmpty {
+                TextField(String(localized: "Modelo fixo (ex.: opencode/beam-free)"), text: $modeloNovo)
+                    .font(.system(size: 11, design: .monospaced))
+            }
+            TextField(String(localized: "Nome da lane"), text: Binding(
+                get: { nomeNovo }, set: { nomeNovo = $0; nomeEditado = true }))
+                .font(.system(size: 11, design: .monospaced))
             HStack {
-                TextField(String(localized: "Nome da lane"), text: Binding(
-                    get: { nomeNovo }, set: { nomeNovo = $0; nomeEditado = true }))
-                    .font(.system(size: 11, design: .monospaced))
-                Button(String(localized: "Adicionar")) {
+                Button {
                     if estado.adicionar(nome: nomeNovo, modeloEscolhido: modeloNovo) {
-                        modeloNovo = ""; nomeNovo = ""; nomeEditado = false
+                        modeloNovo = LanesACP.modeloAuto
+                        nomeEditado = false
+                        sugerir(modeloNovo)
                     }
+                } label: {
+                    Label(String(localized: "Salvar lane"), systemImage: "plus.circle.fill")
                 }
-                .disabled(modeloNovo.isEmpty || nomeNovo.isEmpty)
+                .buttonStyle(.borderedProminent)
+                .disabled(nomeNovo.trimmingCharacters(in: .whitespaces).isEmpty)
+                Text(String(localized: "Nasce desligada: rode «Testar lane» e depois ligue."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            Text(String(localized: "A lane nasce desligada. Rode «Testar lane» e depois ligue."))
-                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
+    }
+
+    private var textoAutomatico: String {
+        let p = estado.porPeso
+        let medio = p["medio"] ?? "—"
+        return String(localized: "Padrão (médio): \(medio). Baixo: \(p["baixo"] ?? "—"). Alto: \(p["alto"] ?? "—"). Igual às lanes de hoje: o modelo segue o peso do card e os seus ajustes de modelo do agente.")
+    }
+
+    private var limiteDaConta: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(String(localized: "Limitar lanes rodando ao mesmo tempo nesta conta"), isOn: Binding(
+                get: { estado.limite != nil },
+                set: { estado.definirLimite($0 ? (estado.limite ?? 2) : nil) }))
+                .font(.caption)
+            if let n = estado.limite {
+                Stepper(value: Binding(get: { n }, set: { estado.definirLimite($0) }), in: 1...20) {
+                    Text(String(localized: "No máximo \(n) ao mesmo tempo")).font(.caption)
+                }
+            } else {
+                Text(String(localized: "Sem limite: todas as lanes desta conta podem rodar; a medida de cota da conta segura quando ela aperta."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
     private func sugerir(_ m: String) {
         if !nomeEditado || nomeNovo.isEmpty {
-            nomeNovo = m.isEmpty ? "" : estado.sugerir(modelo: m)
+            nomeNovo = estado.sugerir(modelo: m.isEmpty ? LanesACP.modeloAuto : m)
             nomeEditado = false
         }
     }

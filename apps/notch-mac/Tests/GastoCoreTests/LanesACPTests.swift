@@ -54,12 +54,14 @@ final class LanesACPTests: XCTestCase {
 
     func testLimiteEPreco() {
         var d: [String: Any] = [:]
-        XCTAssertEqual(LanesACP.limite(conta: "opencode", d), 1)
+        XCTAssertNil(LanesACP.limite(conta: "opencode", d), "sem limite é o padrão")
         LanesACP.gravarLimite(3, conta: "opencode", em: &d)
         XCTAssertEqual(LanesACP.limite(conta: "opencode", d), 3)
         LanesACP.gravarLimite(0, conta: "opencode", em: &d)
         XCTAssertEqual(LanesACP.limite(conta: "opencode", d), 1)
-        XCTAssertEqual(LanesACP.limite(conta: "x", ["lanes": ["acp_limite_conta": ["x": true]]]), 1)
+        LanesACP.gravarLimite(nil, conta: "opencode", em: &d)
+        XCTAssertNil(LanesACP.limite(conta: "opencode", d))
+        XCTAssertNil(LanesACP.limite(conta: "x", ["lanes": ["acp_limite_conta": ["x": true]]]))
         XCTAssertNil(LanesACP.preco(conta: "opencode", d))
         LanesACP.gravarPreco(20, conta: "opencode", em: &d)
         XCTAssertEqual(LanesACP.preco(conta: "opencode", d), 20)
@@ -82,6 +84,17 @@ final class LanesACPTests: XCTestCase {
         for nome in [longo, LanesACP.nomeSugerido(agente: "9", modelo: "/!!", catalogo: catalogo)] {
             XCTAssertNil(LanesACP.problema(LaneACP(nome: nome, agente: "opencode", modelo: ""), catalogo: catalogo), nome)
         }
+    }
+
+    func testModeloVazioEAutomatico() {
+        let l = LanesACP.ler(dados([["nome": "opencode-auto", "agente": "opencode"]]), catalogo: catalogo)
+        XCTAssertEqual(l.first?.modelo, LanesACP.modeloAuto)
+        XCTAssertEqual(LanesACP.nomeSugerido(agente: "opencode", modelo: LanesACP.modeloAuto, catalogo: catalogo),
+                       "opencode-auto")
+        let porPeso = LanesACP.modelosPorPeso(agente: "opencode")
+        XCTAssertFalse((porPeso["medio"] ?? "").isEmpty, "o automático tem um padrão (médio)")
+        let d = LanesACP.defs(dados([["nome": "opencode-auto", "agente": "opencode", "modelo": "auto"]]), catalogo: catalogo)
+        XCTAssertTrue(d.first?.rotulo.hasSuffix("· automático") == true)
     }
 
     func testDefsDaInstancia() {

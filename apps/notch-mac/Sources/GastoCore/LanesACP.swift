@@ -17,7 +17,9 @@ public struct LaneACP: Equatable, Sendable, Identifiable {
     public init(nome: String, agente: String, conta: String = "", modelo: String, ligada: Bool = false) {
         self.nome = nome; self.agente = agente
         self.conta = conta.isEmpty ? agente : conta
-        self.modelo = modelo; self.ligada = ligada
+        let m = modelo.trimmingCharacters(in: .whitespaces)
+        self.modelo = m.isEmpty ? LanesACP.modeloAuto : m   // vazio = automático, como no Python
+        self.ligada = ligada
     }
 
     public func dict() -> [String: Any] {
@@ -29,7 +31,8 @@ public enum LanesACP {
     public static let chave = "acp"
     public static let chaveLimite = "acp_limite_conta"
     public static let chavePreco = "acp_preco_conta"
-    public static let limitePadrao = 1
+    /// Modelo "auto": segue o peso do card, como as lanes do catálogo.
+    public static let modeloAuto = "auto"
     public static let tamanhoMaximo = 40
     private static let reNome = try! NSRegularExpression(pattern: "^[a-z][a-z0-9-]{1,39}$")
     private static let reModelo = try! NSRegularExpression(pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$")
@@ -60,7 +63,7 @@ public enum LanesACP {
         guard agentesACP(catalogo).contains(l.agente) else {
             return String(localized: "O agente \(l.agente) não fala ACP neste app.")
         }
-        if !l.modelo.isEmpty && !casa(reModelo, l.modelo) {
+        if l.modelo != modeloAuto && !casa(reModelo, l.modelo) {
             return String(localized: "Modelo inválido.")
         }
         return nil
@@ -75,7 +78,8 @@ public enum LanesACP {
             let l = LaneACP(nome: (d["nome"] as? String ?? "").trimmingCharacters(in: .whitespaces),
                             agente: (d["agente"] as? String ?? "").trimmingCharacters(in: .whitespaces),
                             conta: (d["conta"] as? String ?? "").trimmingCharacters(in: .whitespaces),
-                            modelo: (d["modelo"] as? String ?? "").trimmingCharacters(in: .whitespaces),
+                            modelo: { let m = (d["modelo"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+                                      return m.isEmpty ? modeloAuto : m }(),
                             ligada: JV.ehBool(d["ligada"]) && (d["ligada"] as? Bool) == true)
             if problema(l, outras: saida, catalogo: catalogo) == nil { saida.append(l) }
         }
@@ -95,16 +99,17 @@ public enum LanesACP {
         return ((dados["lanes"] as? [String: Any])?[sub] as? [String: Any]) ?? [:]
     }
 
-    /// Lanes rodando ao mesmo tempo na conta (`lanes.acp_limite_conta`). Padrão 1.
-    public static func limite(conta: String, _ dados: [String: Any]) -> Int {
+    /// Limite opcional de lanes rodando ao mesmo tempo na conta. nil = sem limite (padrão):
+    /// quem segura é a medida de cota da conta.
+    public static func limite(conta: String, _ dados: [String: Any]) -> Int? {
         let v = porConta(dados, chaveLimite)[conta]
-        guard let n = v as? NSNumber, !JV.ehBool(v), n.intValue >= 1 else { return limitePadrao }
+        guard let n = v as? NSNumber, !JV.ehBool(v), n.intValue >= 1 else { return nil }
         return n.intValue
     }
 
-    public static func gravarLimite(_ n: Int, conta: String, em dados: inout [String: Any]) {
+    public static func gravarLimite(_ n: Int?, conta: String, em dados: inout [String: Any]) {
         var mapa = porConta(dados, chaveLimite)
-        mapa[conta] = max(1, n)
+        if let n { mapa[conta] = max(1, n) } else { mapa.removeValue(forKey: conta) }
         var bloco = (dados["lanes"] as? [String: Any]) ?? [:]
         bloco[chaveLimite] = mapa
         dados["lanes"] = bloco
@@ -157,12 +162,19 @@ public enum LanesACP {
         return final
     }
 
+    /// Modelo do agente em cada peso (`modelos.<peso>.id` do manifesto): o que "auto" usa.
+    public static func modelosPorPeso(agente: String) -> [String: String] {
+        guard let m = CatalogoAgentes.carregar().first(where: { $0.nome == agente }) else { return [:] }
+        return m.modelos.compactMapValues { $0.id.isEmpty ? nil : $0.id }
+    }
+
     /// Lanes ACP como `Agentes.Def`: rótulo, sigla e cores do agente; nome, conta e modelo da lane.
     public static func defs(_ dados: [String: Any], catalogo: [Agentes.Def] = Agentes.todos) -> [Agentes.Def] {
         let porNome = Dictionary(catalogo.map { ($0.nome, $0) }, uniquingKeysWith: { a, _ in a })
         return ler(dados, catalogo: catalogo).compactMap { l in
             guard var d = porNome[l.agente] else { return nil }
-            let curto = l.modelo.split(separator: "/", maxSplits: 1).last.map(String.init) ?? l.modelo
+            let curto = l.modelo == modeloAuto ? String(localized: "automático")
+                : (l.modelo.split(separator: "/", maxSplits: 1).last.map(String.init) ?? l.modelo)
             d.nome = l.nome
             d.rotulo = curto.isEmpty ? "\(d.rotulo) · \(l.nome)" : "\(d.rotulo) · \(curto)"
             d.painel = true
