@@ -47,6 +47,14 @@ class PoliticaTest(unittest.TestCase):
         for caminho in ("/etc/hosts", "../fora.txt", ".lane/proof_exit", ".git/config", "x/../../fora"):
             self.assertEqual(self.d({"kind": "edit", "locations": [{"path": caminho}]}), P.NEGAR, caminho)
 
+    def test_result_json_e_a_unica_excecao_em_lane(self):
+        self.assertEqual(self.d({"kind": "edit", "locations": [{"path": ".lane/result.json"}]}), P.PERMITIR)
+        self.assertEqual(self.d({"kind": "edit", "locations": [{"path": ".lane/proof_exit"}]}), P.NEGAR)
+        self.assertEqual(self.d({"kind": "edit", "locations": [{"path": ".lane/x/../result.json"}]}), P.PERMITIR)
+        os.symlink("/etc/hosts", os.path.join(self.wt, ".lane", "result.json"))
+        self.assertEqual(self.d({"kind": "edit", "locations": [{"path": ".lane/result.json"}]}), P.NEGAR,
+                         "symlink no lugar do result.json aponta para fora")
+
     def test_edicao_sem_caminho_negada(self):
         self.assertEqual(self.d({"kind": "edit"}), P.NEGAR)
         self.assertEqual(self.d({"kind": "delete", "locations": []}), P.NEGAR)

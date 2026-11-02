@@ -1085,7 +1085,11 @@ def modelo_da_lane(lane: str, effort: str) -> str:
 
     Fixo (e a string antiga) vale para todos os pesos. Automático usa `porPeso` e, no
     que faltar, o manifesto. Sem o prefixo do provedor, ganha o do manifesto.
-    Teste que troca `ler_modelo_lane` continua no caminho antigo (None = manifesto)."""
+    Teste que troca `ler_modelo_lane` continua no caminho antigo (None = manifesto).
+    Lane ACP: o modelo fixo da instância (`lanes.acp`)."""
+    inst = catalogo.instancia(lane)
+    if inst:
+        return inst["modelo"]
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         flags = EFFORT_FLAGS.get(lane, {}).get(effort) or []
         m = ler_modelo_lane(lane) or (flags[-1] if flags else "")
@@ -1097,7 +1101,11 @@ def modelo_da_lane(lane: str, effort: str) -> str:
 
 
 def flags_da_lane(lane: str, effort: str) -> list[str]:
-    """Flags do CLI neste peso, já com o modelo e o esforço da config."""
+    """Flags do CLI neste peso, já com o modelo e o esforço da config.
+    Lane ACP: só para exibir (o runner recebe `--modelo`)."""
+    inst = catalogo.instancia(lane)
+    if inst:
+        return ["-m", inst["modelo"]] if inst["modelo"] else []
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         m = ler_modelo_lane(lane)
         if not m:
@@ -1108,6 +1116,9 @@ def flags_da_lane(lane: str, effort: str) -> list[str]:
 
 def aviso_modelo(lane: str, effort: str) -> str:
     """«modelo fixo» ou o texto de modelo que saiu da lista. Vazio no automático quieto."""
+    inst = catalogo.instancia(lane)
+    if inst:
+        return "modelo fixo" if inst["modelo"] else ""
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         return "modelo fixo" if ler_modelo_lane(lane) else ""
     return _resolucao_modelo(lane, effort)["aviso"]
@@ -1186,10 +1197,13 @@ def atualizar_listas_modelos() -> None:
 def privacy_block(lane: str, effort: str) -> Optional[str]:
     """Motivo para não mandar código a esta lane (modelo sem garantia de privacidade), ou None.
     Só vale para agentes com `privacidade` no manifesto (hoje, os do OpenCode)."""
-    if not (catalogo.catalogo().get(lane) or {}).get("privacidade"):
+    if not catalogo.dados_lane(lane).get("privacidade"):
         return None
     if privacidade is None:
         return "módulo de privacidade ausente (rode tools/install.sh)"
+    inst = catalogo.instancia(lane)
+    if inst and not inst["modelo"]:
+        return "lane ACP sem modelo fixo: a privacidade só é conferida com o modelo escolhido"
     ok, motivo = privacidade.pode_receber_codigo(modelo_da_lane(lane, effort))
     return None if ok else motivo
 
@@ -1338,9 +1352,29 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
         if patch is None:
             raise RuntimeError("o patch do dsh fica fora do worktree")
         return ["dsh", "--profile", "headless", "--patch", str(patch)]
+    inst = catalogo.instancia(lane)
+    if inst:
+        return comando_acp(lane, inst, settings)
     # cursor não tem CLI headless público para execução de lanes; fica como
     # placeholder até existir comando equivalente.
     raise NotImplementedError(f"lane {lane} não tem comando de agente")
+
+
+def comando_acp(lane: str, inst: dict, settings: Optional[Path] = None) -> list[str]:
+    """Lane ACP (PRD lanes-acp): o `acp_runner.py` do bundle fala ACP com o agente.
+
+    Comando e config do agente saem do manifesto assinado; daqui só vão nome, agente
+    e modelo. O `run_lane.sh` entra no worktree antes (`cd "$WT"`) e entrega o prompt
+    no stdin."""
+    runner = (_AQUI / "acp_runner.py").resolve()
+    if ".transcentia" in runner.parts or not runner.is_file():
+        raise RuntimeError("acp_runner.py não está no bundle; lane ACP fechada")
+    cmd = ["/usr/bin/python3", str(runner), "--lane", lane, "--agente", inst["agente"],
+           "--worktree", ".", "--settings", str(settings or caminho_settings()),
+           "--espera", str(LANE_TIMEOUT_MIN * 60)]
+    if inst["modelo"]:
+        cmd += ["--modelo", inst["modelo"]]
+    return cmd
 
 
 def texto_do_agente(lane: str, effort: str, prompt: Path,
@@ -1758,9 +1792,11 @@ def atualizar_cache_titulos(cards) -> None:
 
 
 def enabled_lanes() -> set[str]:
+    """Lanes do arquivo `enabled`, mais as lanes ACP com `ligada: true` na config."""
+    ligadas = {n for n in catalogo.instancias_ligadas() if n in LANES}
     if not ENABLED_FILE.exists():
-        return set()
-    return {l.strip() for l in ENABLED_FILE.read_text().split() if l.strip() in LANES}
+        return ligadas
+    return {l.strip() for l in ENABLED_FILE.read_text().split() if l.strip() in LANES} | ligadas
 
 
 def tmux_alive(session: str) -> bool:
@@ -2398,6 +2434,8 @@ def limit_text(lane: str, effort: str) -> str:
         return f"limite {GROK_MAX_TURNS[effort]} turnos"
     if lane == "deepseek":
         return "sem teto de gasto no CLI"
+    if catalogo.instancia(lane):
+        return "sem teto de gasto no CLI (ACP: o custo vem do agente, no ledger)"
     return f"teto US$ {BUDGET_USD[effort]}"
 
 
@@ -2421,7 +2459,8 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
 
     base_prompt = caminho_prompt("lane-prompt.md")
     template = base_prompt.read_text(encoding="utf-8") if base_prompt.is_file() else ""
-    extra = caminho_prompt(f"lane-prompt-{lane}.md")   # regras específicas do agente
+    # regras específicas do agente; lane ACP usa as regras do transporte
+    extra = caminho_prompt("lane-prompt-acp.md" if catalogo.instancia(lane) else f"lane-prompt-{lane}.md")
     if extra.is_file():
         template += "\n" + extra.read_text(encoding="utf-8")
     prompt = (template.replace("{{CARD}}", ident).replace("{{LANE}}", lane)
@@ -3071,7 +3110,7 @@ def measures_cached(real: bool) -> dict:
     try:
         c = json.loads(cache.read_text())
         if time.time() - c["at"] < MEASURE_CACHE_S:
-            return {k: tuple(v) for k, v in c["m"].items()}
+            return medidas_com_contas({k: tuple(v) for k, v in c["m"].items()})
     except (OSError, ValueError, KeyError, TypeError):
         pass
     m, _ = measure_lanes(renew=real)
@@ -3081,7 +3120,39 @@ def measures_cached(real: bool) -> dict:
         cache.write_text(json.dumps({"at": time.time(), "m": m}))
     except OSError:
         pass
-    return m
+    return medidas_com_contas(m)
+
+
+def medidas_com_contas(m: dict) -> dict:
+    """Lane ACP mede pela conta (`catalogo.medidas_com_contas`, o mesmo do vigia)."""
+    return catalogo.medidas_com_contas(m)
+
+
+def lane_limited_conta(lane: str) -> Optional[float]:
+    """Limite da lane ou, numa lane ACP, o da lane da conta dela."""
+    u = lane_limited(lane)
+    conta = catalogo.conta_da_lane(lane)
+    if u is None and conta != lane and conta in LANES:
+        u = lane_limited(conta)
+    return u
+
+
+def bloqueio_por_conta(lane: str, a_assumir=()) -> Optional[str]:
+    """Motivo para segurar a lane: a conta já tem o máximo de lanes rodando.
+
+    Só vale quando a conta é partilhada por mais de uma lane (instâncias ACP). Sem
+    instância na conta, nada muda para as lanes do catálogo."""
+    conta = catalogo.conta_da_lane(lane)
+    na_conta = [l for l in LANES if catalogo.conta_da_lane(l) == conta]
+    if len(na_conta) <= 1:
+        return None
+    limite = catalogo.limite_por_conta(conta)
+    pegando = {item[0] for item in a_assumir}
+    ocupadas = [l for l in na_conta if l in pegando or load_state(l)]
+    if len(ocupadas) >= limite:
+        return (f"conta `{conta}` com {len(ocupadas)} lane(s) rodando "
+                f"({', '.join(sorted(ocupadas))}); limite {limite}")
+    return None
 
 
 def resume_note(wt: Path) -> str:
@@ -4908,7 +4979,7 @@ def _ciclo(real: bool, verbose: bool) -> int:
 
         # FRA-269: card delegado sem lane recebe a lane mais leve, medida agora.
         running_lanes = {l for l in LANES if load_state(l)}
-        limited = {l: u for l in LANES if (u := lane_limited(l))}
+        limited = {l: u for l in LANES if (u := lane_limited_conta(l))}
         # FRA-515: lane ociosa puxa o Todo sem esperar a vigia. A escolha da lane
         # continua sendo a de menor % (assign_auto_lanes / pick_lane). A mesma
         # medida agora barra card cujo esforço não tem folga.
@@ -4946,6 +5017,10 @@ def _ciclo(real: bool, verbose: bool) -> int:
                 continue
             top = queue[0]
             if lane in lanes_on:
+                cblock = bloqueio_por_conta(lane, to_claim)
+                if cblock:
+                    lines.append(f"lane:{lane} segura {top['identifier']}: {cblock}")
+                    continue
                 if measures is None:
                     measures = measures_cached(real)
                 block = headroom_block(lane, top["_effort"], measures)

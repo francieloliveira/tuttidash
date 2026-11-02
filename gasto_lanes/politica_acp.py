@@ -71,14 +71,22 @@ def comando(tool_call: dict) -> str:
     return ""
 
 
+#: Único arquivo de `.lane` que o agente grava: o resultado que o dispatcher lê.
+RESULTADO = os.path.join(".lane", "result.json")
+
+
 def dentro(caminho: str, worktree: str) -> bool:
-    """O caminho (resolvido, com symlink) fica dentro do worktree e fora de `.git`/`.lane`."""
+    """O caminho (resolvido, com symlink) fica dentro do worktree e fora de `.git`/`.lane`.
+
+    Exceção: `.lane/result.json`, que o prompt da lane manda gravar."""
     raiz = os.path.realpath(worktree)
     alvo = caminho if os.path.isabs(caminho) else os.path.join(raiz, caminho)
     alvo = os.path.realpath(alvo)
     if alvo != raiz and not alvo.startswith(raiz + os.sep):
         return False
     rel = os.path.relpath(alvo, raiz)
+    if rel == RESULTADO:
+        return True
     return not any(parte in PROTEGIDOS for parte in rel.split(os.sep))
 
 

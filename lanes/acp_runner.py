@@ -171,7 +171,8 @@ def executar(args, catalogo_mod, privacidade_mod, politica, acp_mod, entrada=Non
                 emissor.fim(sessao, "refusal", None, inicio, f"privacidade: {motivo}")
                 return SAIDA_FECHADA
         emissor.escrever({"type": "system", "subtype": "init", "session_id": sessao,
-                          "model": efetivo, "tools": [], "transporte": "acp", "lane": args.lane})
+                          "model": efetivo, "tools": [], "transporte": "acp", "lane": args.lane,
+                          "agente": args.agente})
         try:
             r = cli.prompt(sessao, texto, espera=args.espera)
         except acp_mod.ErroACP as exc:
