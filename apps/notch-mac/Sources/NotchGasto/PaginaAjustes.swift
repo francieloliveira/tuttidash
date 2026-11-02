@@ -119,7 +119,9 @@ struct PaginaAjustes: View {
     @ViewBuilder
     private func bloco(_ b: BlocoAjustes) -> some View {
         switch b {
-        case .lanesHabilitadas: SecaoLanesHabilitadas(embutido: true)
+        case .lanesHabilitadas:
+            SecaoLanesHabilitadas(embutido: true)
+            SecaoAdicionarLanes(modelo: estado.modelo, aoSalvar: aoSalvar)
         case .modeloLanes: SecaoModeloLanes(modelo: estado.modelo, aoSalvar: aoSalvar, embutido: true)
         case .projetos: SecaoProjetos(estado: EstadoProjetos(modelo: estado.modelo), embutido: true)
         case .contas: SecaoContas(modelo: estado.modelo, aoSalvar: aoSalvar, embutido: true)
