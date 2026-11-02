@@ -49,7 +49,7 @@ public enum LanesHabilitadas {
         guard let texto = try? String(contentsOf: arquivo(stateDir: stateDir), encoding: .utf8) else {
             return []
         }
-        let conhecidos = Set(Agentes.ordem)
+        let conhecidos = Set(Agentes.ordemLanes)
         return Set(texto.split(whereSeparator: \.isWhitespace).map(String.init).filter { conhecidos.contains($0) })
     }
 
@@ -58,8 +58,10 @@ public enum LanesHabilitadas {
         guard dispatcherExiste(stateDir: stateDir) else {
             throw DispatcherNaoEncontrado()
         }
-        let conhecidos = Set(Agentes.ordem)
-        let lista = Agentes.ordem.filter { lanes.contains($0) && conhecidos.contains($0) }
+        // Lanes ACP (PRD lanes-acp) também ficam: sem isso, salvar aqui apagava as instâncias.
+        let ordem = Agentes.ordemLanes
+        let conhecidos = Set(ordem)
+        let lista = ordem.filter { lanes.contains($0) && conhecidos.contains($0) }
         try FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
         let destino = arquivo(stateDir: stateDir)
         try (lista.joined(separator: " ") + "\n").write(to: destino, atomically: true, encoding: .utf8)

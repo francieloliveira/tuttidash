@@ -302,7 +302,10 @@ public struct Configuracao: Equatable, Sendable {
             let tiposLane = l.filter(ContasConfig.entradaAtiva)
                 .compactMap { $0["tipo"] as? String }
                 .filter(nomesLane.contains)
+            // Lanes ACP (PRD lanes-acp): ligadas na config e com a conta ativa.
+            let contasAtivas = Set(cfg.contas.map(\.tipo)).union(cfg.contas.map(\.id))
             cfg.lanesHabilitadas = Set(cfg.contas.map(\.tipo)).union(tiposLane)
+                .union(LanesACP.habilitadas(arquivo, contasAtivas: contasAtivas))
         }
         cfg.rotuloDono = valor("linear.owner_label", em: arquivo).map { "\($0)" }
         cfg.workspaceLinear = valor("linear.workspace_url", em: arquivo).map { "\($0)" }

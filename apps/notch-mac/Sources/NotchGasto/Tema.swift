@@ -7,9 +7,9 @@ enum Tema {
     /// Lane sem cor no manifesto cai na matiz determinística do nome — nunca cinza
     /// genérico igual para todas.
     static let cores: [String: (Color, Color, Color)] = Dictionary(
-        uniqueKeysWithValues: Agentes.todos.map { d in
+        (Agentes.todos + Agentes.instancias).map { d in
             (d.nome, (Color(hex: d.corBase), Color(hex: d.corGradiente), Color(hex: d.corClaro)))
-        })
+        }, uniquingKeysWith: { a, _ in a })
 
     static let ok = Color(hex: 0x32D74B)
     static let warn = Color(hex: 0xFFD23F)
@@ -90,9 +90,9 @@ enum TemaPainel {
     /// Cor da lane no painel v1: o campo `corPainel` do manifesto em `agents.d/`.
     /// Lane sem cor no manifesto cai na cor da lane (`Tema.cor`).
     static let cores: [String: Color] = Dictionary(
-        uniqueKeysWithValues: Agentes.todos.compactMap { d in
+        (Agentes.todos + Agentes.instancias).compactMap { d in
             d.corPainel.isEmpty ? nil : (d.nome, Color(hex: d.corPainel))
-        })
+        }, uniquingKeysWith: { a, _ in a })
 
     static func cor(_ lane: String) -> Color {
         cores[lane] ?? Tema.cor(lane: lane)
