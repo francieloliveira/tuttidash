@@ -35,6 +35,7 @@ COPIAS = (
     ("lanes/dispatcher.py", "lanes/dispatcher.py", 0o755),
     ("lanes/permissao.py", "lanes/permissao.py", 0o644),
     ("lanes/acp_runner.py", "lanes/acp_runner.py", 0o755),
+    ("lanes/sonda_acp.py", "lanes/sonda_acp.py", 0o755),
     ("lanes/bancada.py", "lanes/bancada.py", 0o755),
     ("lanes/lane_view.py", "lanes/lane_view.py", 0o755),
     ("lanes/lanes_window.py", "lanes/lanes_window.py", 0o755),

@@ -126,7 +126,9 @@ def ambiente(acp: dict, modelo: str, base: Optional[dict] = None) -> dict:
     return env
 
 
-def executar(args, catalogo_mod, privacidade_mod, politica, acp_mod, entrada=None, saida=None) -> int:
+def executar(args, catalogo_mod, privacidade_mod, politica, acp_mod, entrada=None, saida=None,
+             sonda=None) -> int:
+    """`sonda(agente, versao) -> motivo|None`: sem sonda aprovada na versão do agente, fecha."""
     inicio = time.monotonic()
     emissor = Emissor(saida)
     dados = catalogo_mod.catalogo().get(args.agente) or {}
@@ -150,7 +152,12 @@ def executar(args, catalogo_mod, privacidade_mod, politica, acp_mod, entrada=Non
     sessao = None
     try:
         cli.abrir()
-        cli.iniciar()
+        ini = cli.iniciar()
+        if sonda is not None:
+            motivo = sonda(args.agente, (ini.get("agentInfo") or {}).get("version"))
+            if motivo:
+                emissor.fim(None, "refusal", None, inicio, f"sonda: {motivo}")
+                return SAIDA_FECHADA
         nova = cli.nova_sessao(worktree)
         sessao = nova["sessionId"]
         opcao = acp.get("opcao_modelo") or "model"
@@ -212,7 +219,8 @@ def main(argv=None) -> int:
         import privacidade  # noqa: E402
     except ModuleNotFoundError:  # sem o módulo, lanes com privacidade ficam fechadas
         privacidade = None
-    return executar(args, catalogo, privacidade, politica_acp, acp_mod)
+    import sonda_acp  # noqa: E402  critério 5: só agente com sonda aprovada nesta versão
+    return executar(args, catalogo, privacidade, politica_acp, acp_mod, sonda=sonda_acp.bloqueio)
 
 
 if __name__ == "__main__":

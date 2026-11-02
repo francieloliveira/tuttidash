@@ -254,7 +254,7 @@ class BundleTest(unittest.TestCase):
         ctrl = tmp / "TuttiDash.app" / "Contents" / "Resources" / "controle"
         (ctrl / "lanes").mkdir(parents=True)
         (ctrl / "gasto_lanes").mkdir(parents=True)
-        for rel in ("lanes/acp_runner.py", "lanes/permissao.py"):
+        for rel in ("lanes/acp_runner.py", "lanes/permissao.py", "lanes/sonda_acp.py"):
             shutil.copy(RAIZ / rel, ctrl / rel)
         for mod in ("catalogo.py", "acp.py", "politica_acp.py", "privacidade.py", "config.py"):
             shutil.copy(RAIZ / "gasto_lanes" / mod, ctrl / "gasto_lanes" / mod)
@@ -263,7 +263,7 @@ class BundleTest(unittest.TestCase):
         for pasta in ("lanes", "gasto_lanes"):
             base = home / ".transcentia" / pasta
             base.mkdir(parents=True)
-            for nome in ("acp.py", "politica_acp.py", "catalogo.py", "permissao.py"):
+            for nome in ("acp.py", "politica_acp.py", "catalogo.py", "permissao.py", "sonda_acp.py"):
                 (base / nome).write_text(f"open({str(veneno)!r}, 'a').write('legado')\nraise SystemExit('legado')\n")
         wt = tmp / "wt"
         wt.mkdir()
@@ -277,3 +277,75 @@ class BundleTest(unittest.TestCase):
         self.assertFalse(veneno.exists(), r.stderr)
         self.assertEqual(r.returncode, acp_runner.SAIDA_FECHADA, r.stderr)
         self.assertIn("sem bloco acp", r.stdout)
+
+
+import sonda_acp  # noqa: E402
+
+
+class SondaTest(unittest.TestCase):
+    def setUp(self):
+        self.antigo = dict(os.environ)
+        self.acp = CatalogoFalso().dados["falso"]["acp"]
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self.antigo)
+
+    def rodar(self, modo):
+        os.environ["FAKE_MODO"] = modo
+        return sonda_acp.verificar(self.acp, "opencode/beam-free", ALLOW, DENY, acp, P, espera=20)
+
+    def test_aprova_quem_pergunta_e_respeita(self):
+        r = self.rodar("perguntar")
+        self.assertTrue(r["aprovada"], r["motivos"])
+        self.assertEqual(r["versao"], "9.9.9")
+        self.assertEqual(set(r["etapas"]), {"edicao", "comando", "web"})
+
+    def test_reprova_quem_age_sem_pedir(self):
+        r = self.rodar("sem_perguntar")
+        self.assertFalse(r["aprovada"])
+        self.assertTrue(any("sem pedir" in m for m in r["motivos"]), r["motivos"])
+        self.assertTrue(any(m.startswith("web: agiu sem pedir") for m in r["motivos"]),
+                        "web sem arquivo: detectado pela chamada de ferramenta")
+
+    def test_inconclusivo_reprova(self):
+        r = self.rodar("nada")
+        self.assertFalse(r["aprovada"])
+        self.assertTrue(all("inconclusivo" in m for m in r["motivos"]), r["motivos"])
+
+    def test_modelo_diferente_reprova(self):
+        r = self.rodar("modelo_fixo")
+        self.assertFalse(r["aprovada"])
+
+    def test_bloqueio(self):
+        import datetime as dt
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, True))
+        self.assertIn("sem sonda", sonda_acp.bloqueio("falso", "1", estado=tmp))
+        sonda_acp.gravar("falso", {"aprovada": False, "versao": "1", "motivos": ["x"]}, estado=tmp)
+        self.assertIn("reprovou", sonda_acp.bloqueio("falso", "1", estado=tmp))
+        sonda_acp.gravar("falso", {"aprovada": True, "versao": "1", "motivos": []}, estado=tmp)
+        self.assertIsNone(sonda_acp.bloqueio("falso", "1", estado=tmp))
+        self.assertIn("mudou de versão", sonda_acp.bloqueio("falso", "2", estado=tmp))
+        futuro = dt.datetime.now() + dt.timedelta(days=sonda_acp.VALIDADE_DIAS + 1)
+        self.assertIn("mais de", sonda_acp.bloqueio("falso", "1", estado=tmp, agora=futuro))
+        self.assertEqual(oct(os.stat(sonda_acp.arquivo_resultado("falso", tmp)).st_mode & 0o777), "0o600")
+
+    def test_runner_sem_sonda_fecha(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, True))
+        wt = tmp / "wt"
+        wt.mkdir()
+        s = tmp / "s.json"
+        s.write_text(json.dumps({"permissions": {"allow": list(ALLOW), "deny": list(DENY)}}))
+        os.environ["FAKE_MODO"] = "perguntar"
+        vistos = []
+        args = acp_runner.analisar(["--lane", "x", "--agente", "falso", "--modelo", "opencode/beam-free",
+                                    "--worktree", str(wt), "--settings", str(s)])
+        saida = io.StringIO()
+        rc = acp_runner.executar(args, CatalogoFalso(), PrivacidadeFalsa(), P, acp, entrada=io.StringIO("p"),
+                                 saida=saida, sonda=lambda a, v: vistos.append((a, v)) or "rode Testar lane")
+        self.assertEqual(rc, acp_runner.SAIDA_FECHADA)
+        self.assertEqual(vistos, [("falso", "9.9.9")])
+        self.assertIn("sonda", saida.getvalue())
+        self.assertFalse((wt / "ok.txt").exists())

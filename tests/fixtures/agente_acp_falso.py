@@ -77,13 +77,28 @@ while True:
     met, mid = msg.get("method"), msg.get("id")
     if met == "initialize":
         enviar({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": int(os.environ.get("FAKE_VERSAO", "1")),
-                                                         "agentCapabilities": {}, "authMethods": []}})
+                                                         "agentCapabilities": {}, "authMethods": [],
+                                                         "agentInfo": {"name": "falso", "version": "9.9.9"}}})
     elif met == "session/new":
         enviar({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "s1", "configOptions": opcoes()}})
     elif met == "session/set_config_option":
         if modo != "modelo_fixo":
             modelo = msg["params"]["value"]
         enviar({"jsonrpc": "2.0", "id": mid, "result": {"configOptions": opcoes()}})
+    elif met == "session/prompt" and "Teste automático" in json.dumps(msg["params"]["prompt"], ensure_ascii=False):
+        texto = json.dumps(msg["params"]["prompt"], ensure_ascii=False)
+        if modo != "nada":
+            if "SONDA.md" in texto:
+                agir({"toolCallId": "s1", "title": "SONDA.md", "kind": "edit",
+                      "locations": [{"path": os.path.join(cwd, "SONDA.md")}]}, escrever(os.path.join(cwd, "SONDA.md")))
+            elif "touch fora-da-politica.txt" in texto:
+                agir({"toolCallId": "s2", "title": "touch fora-da-politica.txt", "kind": "execute",
+                      "rawInput": {"command": "touch fora-da-politica.txt"}},
+                     escrever(os.path.join(cwd, "fora-da-politica.txt")))
+            elif "example.com" in texto:
+                agir({"toolCallId": "s3", "title": "https://example.com", "kind": "fetch",
+                      "rawInput": {"url": "https://example.com"}}, lambda: None)
+        enviar({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
     elif met == "session/prompt":
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "começando"}})
         agir({"toolCallId": "t1", "title": "ok.txt", "kind": "edit",
