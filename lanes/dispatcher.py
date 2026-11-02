@@ -3207,21 +3207,54 @@ def lane_limited_conta(lane: str) -> Optional[float]:
     return u
 
 
+def situacao_simultaneo(conta: str, na_conta) -> Optional[str]:
+    """Motivo para a conta rodar uma lane por vez (PRD lanes-v2, fase 2), ou None.
+
+    - Teste reprovado: uma por vez, em qualquer conta partilhada.
+    - Conta com lane extra (instância) ligada: uma por vez até o teste aprovar, e de novo
+      se ele vencer. O par do catálogo `opencode` + `opencode-go` já rodava junto e só
+      cai para uma por vez com teste reprovado."""
+    try:
+        import teste_simultaneo as ts
+    except ImportError:  # pragma: no cover — bundle sem o módulo: a conta fica como antes
+        return None
+    try:
+        estado, texto = ts.situacao(conta, STATE_DIR)
+    except ValueError:
+        return None
+    if estado == "reprovado":
+        return texto
+    if estado == "aprovado":
+        return None
+    ligadas = enabled_lanes()
+    if any(catalogo.instancia(l) is not None and l in ligadas for l in na_conta):
+        lane_teste = next((l for l in na_conta if l in ligadas), na_conta[0])
+        return f"{texto}; rode `teste_simultaneo.py {lane_teste}`"
+    return None
+
+
 def bloqueio_por_conta(lane: str, a_assumir=()) -> Optional[str]:
     """Motivo para segurar a lane: a conta já tem o máximo de lanes rodando.
 
     Só vale quando a conta é partilhada por mais de uma lane (instâncias, ou `opencode` e
-    `opencode-go`) e há `lanes.limite_conta` para ela. Sem limite (o padrão), a cota segura."""
+    `opencode-go`). O máximo é `lanes.limite_conta` (sem limite por padrão: a cota segura)
+    ou 1, enquanto a conta não tem teste de execução simultânea aprovado (fase 2)."""
     conta = catalogo.conta_da_lane(lane)
     na_conta = [l for l in LANES if catalogo.conta_da_lane(l) == conta]
+    if len(na_conta) <= 1:
+        return None
     limite = catalogo.limite_por_conta(conta)
-    if len(na_conta) <= 1 or limite is None:   # sem limite é o padrão: a cota segura
+    motivo = f"limite {limite}" if limite is not None else ""
+    sim = situacao_simultaneo(conta, na_conta)
+    if sim and (limite is None or limite > 1):
+        limite, motivo = 1, f"limite 1: {sim}"
+    if limite is None:
         return None
     pegando = {item[0] for item in a_assumir}
     ocupadas = [l for l in na_conta if l in pegando or load_state(l)]
     if len(ocupadas) >= limite:
         return (f"conta `{conta}` com {len(ocupadas)} lane(s) rodando "
-                f"({', '.join(sorted(ocupadas))}); limite {limite}")
+                f"({', '.join(sorted(ocupadas))}); {motivo}")
     return None
 
 

@@ -216,5 +216,126 @@ class RunLaneCliTest(unittest.TestCase):
         self.assertIn("cli desconhecido", r.stderr)
 
 
+import datetime as dt  # noqa: E402
+
+import teste_simultaneo as TS  # noqa: E402
+
+TRAVA = ('if mkdir "$TRAVA" 2>/dev/null; then sleep 1; rmdir "$TRAVA"; echo OK; '
+         'else echo "Error: database is locked"; exit 1; fi')
+
+
+class SimultaneoRegistroTest(unittest.TestCase):
+    """Fase 2: o registro por conta e a leitura que o dispatcher faz dele."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="simultaneo-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_situacoes(self):
+        self.assertEqual(TS.situacao("claude", self.tmp)[0], "pendente")
+        TS.gravar("claude", {"ok": True}, self.tmp)
+        self.assertEqual(TS.situacao("claude", self.tmp)[0], "aprovado")
+        futuro = dt.datetime.now() + dt.timedelta(days=TS.VALIDADE_DIAS + 1)
+        self.assertEqual(TS.situacao("claude", self.tmp, futuro)[0], "vencido")
+        TS.gravar("claude", {"ok": False, "motivo": "simultânea 2: saída fala de 'database is locked'"}, self.tmp)
+        estado, texto = TS.situacao("claude", self.tmp)
+        self.assertEqual(estado, "reprovado")
+        self.assertIn("database is locked", texto)
+        self.assertEqual(oct(TS.arquivo("claude", self.tmp).stat().st_mode & 0o777), "0o600")
+
+    def test_conta_invalida(self):
+        with self.assertRaises(ValueError):
+            TS.arquivo("../x", self.tmp)
+
+    def test_avaliar(self):
+        self.assertIsNone(TS.avaliar(0, '{"type":"result","result":"OK"}'))
+        self.assertEqual(TS.avaliar(None, ""), "não terminou no tempo")
+        self.assertIn("database is locked", TS.avaliar(0, "Error: database is locked"))
+        self.assertIn("Not logged in", TS.avaliar(1, "Not logged in. Run login."))
+        self.assertTrue(TS.avaliar(2, "falhou\n").startswith("código 2"))
+        self.assertEqual(TS.avaliar(0, ""), "saiu com código 0 sem responder OK")
+
+
+class SimultaneoExecucaoTest(ComConfig):
+    """A execução de verdade, com um CLI falso que trava um recurso partilhado."""
+
+    def rodar_com(self, script):
+        trava = self.tmp / "trava"
+        with mock.patch.object(d, "texto_do_agente", return_value=script), \
+                mock.patch.dict(os.environ, {"TRAVA_DIR": str(trava)}), \
+                mock.patch.object(TS, "ambiente", return_value={"PATH": "/usr/bin:/bin",
+                                                                 "TRAVA": str(trava),
+                                                                 "HOME": str(self.tmp)}):
+            return TS.executar("codex-2", d, espera=30)
+
+    def test_aprova_quando_aguenta(self):
+        r = self.rodar_com("cat >/dev/null; echo OK")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual([x["rodada"] for x in r["rodadas"]],
+                         ["simultânea 1", "simultânea 2", "depois (login continua)"])
+        self.assertEqual(r["cli"], "codex")
+
+    def test_reprova_com_recurso_travado(self):
+        r = self.rodar_com(TRAVA)
+        self.assertFalse(r["ok"])
+        self.assertIn("database is locked", r["motivo"])
+
+    def test_reprova_quando_a_terceira_perde_o_login(self):
+        marca = self.tmp / "rodou"
+        script = (f'if [ -e {marca}2 ]; then echo "not logged in"; exit 1; fi; '
+                  f'if [ -e {marca} ]; then touch {marca}2; else touch {marca}; fi; echo OK')
+        r = self.rodar_com(script)
+        self.assertFalse(r["ok"])
+        self.assertIn("depois", r["motivo"])
+
+
+class SimultaneoDispatcherTest(ComConfig):
+    dados = {"lanes": {"instancias": [{"nome": "claude-sonnet", "agente": "claude", "ligada": True}]}}
+
+    def setUp(self):
+        super().setUp()
+        for nome, valor in (("STATE_DIR", self.tmp), ("ENABLED_FILE", self.tmp / "enabled")):
+            q = mock.patch.object(d, nome, valor)
+            q.start()
+            self.addCleanup(q.stop)
+        (self.tmp / "enabled").write_text("claude opencode opencode-go\n")
+        self.rodando = set()
+        q = mock.patch.object(d, "load_state", side_effect=lambda l: {"card": "X-1"} if l in self.rodando else None)
+        q.start()
+        self.addCleanup(q.stop)
+
+    def test_extra_sem_teste_roda_uma_por_vez(self):
+        self.assertIsNone(d.bloqueio_por_conta("claude-sonnet"), "nada rodando")
+        self.rodando.add("claude")
+        motivo = d.bloqueio_por_conta("claude-sonnet")
+        self.assertIn("limite 1", motivo)
+        self.assertIn("teste_simultaneo.py", motivo)
+
+    def test_teste_aprovado_libera(self):
+        TS.gravar("claude", {"ok": True}, self.tmp)
+        self.rodando.add("claude")
+        self.assertIsNone(d.bloqueio_por_conta("claude-sonnet"))
+
+    def test_teste_reprovado_trava_ate_o_par_do_catalogo(self):
+        self.rodando.add("opencode")
+        self.assertIsNone(d.bloqueio_por_conta("opencode-go"), "o par do catálogo já rodava junto")
+        TS.gravar("opencode", {"ok": False, "motivo": "simultânea 2: código 1"}, self.tmp)
+        self.assertIn("reprovado", d.bloqueio_por_conta("opencode-go"))
+
+    def test_extra_desligada_nao_trava(self):
+        self.escrever({"lanes": {"instancias": [{"nome": "claude-sonnet", "agente": "claude"}]}})
+        self.rodando.add("claude")
+        self.assertIsNone(d.bloqueio_por_conta("claude-sonnet"))
+
+    def test_limite_explicito_menor_vence(self):
+        self.escrever({"lanes": {"instancias": [{"nome": "claude-sonnet", "agente": "claude", "ligada": True},
+                                                {"nome": "claude-3", "agente": "claude", "ligada": True}],
+                                 "limite_conta": {"claude": 2}}})
+        TS.gravar("claude", {"ok": True}, self.tmp)
+        with mock.patch.object(d, "LANES", C.lanes_por_prioridade()):
+            self.rodando.update({"claude", "claude-sonnet"})
+            self.assertIn("limite 2", d.bloqueio_por_conta("claude-3"))
+
+
 if __name__ == "__main__":
     unittest.main()

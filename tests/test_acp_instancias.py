@@ -123,6 +123,10 @@ class DispatcherTest(ComConfig):
             p = mock.patch.object(d, nome, valor)
             p.start()
             self.addCleanup(p.stop)
+        # O teste de execução simultânea (lanes-v2, fase 2) tem testes próprios.
+        q = mock.patch.object(d, "situacao_simultaneo", return_value=None)
+        q.start()
+        self.addCleanup(q.stop)
 
     def test_comando_chama_o_runner_do_bundle(self):
         cmd = d.agent_command("opencode-beam", "medio", settings=Path("/s.json"))
