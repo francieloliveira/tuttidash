@@ -142,6 +142,7 @@ EMBUTIDOS_JSON = """\
     }
   },
 "revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode/deepseek-v4.1-flash-free", "opencode/nemotron-3-ultra-free", "opencode/glm-5.3-flash-free"], "modelo_padrao": "opencode/deepseek-v4.1-flash-free", "esforcos": [], "esforco_padrao": ""},
+"acp": {"comando": ["opencode", "acp"], "ambiente_config": "OPENCODE_CONFIG_CONTENT", "chave_modelo": "model", "opcao_modelo": "model", "config": {"permission": {"edit": "ask", "bash": "ask", "webfetch": "ask"}}},
 "privacidade": "opencode",
 "instalar": {"comando": "brew install opencode", "entrar": "opencode", "dica_entrar": "Dentro do OpenCode, digite /connect e escolha o provedor da sua conta.", "docs": "https://github.com/anomalyco/opencode"},
 "uso": {
@@ -349,6 +350,27 @@ def revisores() -> tuple:
     return tuple(n for n, d in catalogo().items() if d.get("revisao") and d.get("cli"))
 
 
+def _acp(a) -> dict | None:
+    """Bloco `acp`: comando do agente e a config que o obriga a perguntar (PRD lanes-acp).
+
+    O comando e a config só valem vindos do manifesto (bundle assinado, FRA-614); a lane
+    escolhe o modelo. Bloco malformado vira None: a lane ACP desse agente fica fechada.
+    """
+    if not isinstance(a, dict):
+        return None
+    cmd = a.get("comando")
+    if not (isinstance(cmd, list) and cmd and all(isinstance(x, str) and x for x in cmd)):
+        return None
+    cfg = a.get("config") or {}
+    if not isinstance(cfg, dict):
+        return None
+    return {"comando": tuple(cmd),
+            "ambiente_config": a.get("ambiente_config") or "",
+            "config": cfg,
+            "chave_modelo": a.get("chave_modelo") or "",
+            "opcao_modelo": a.get("opcao_modelo") or "model"}
+
+
 def _normaliza(bruto: dict) -> dict:
     """Manifesto cru -> dicionário normalizado (mesmos campos para todos)."""
     uso = bruto.get("uso") or {}
@@ -384,6 +406,8 @@ def _normaliza(bruto: dict) -> dict:
         # Fonte da regra de privacidade por modelo (gasto_lanes/privacidade.py). None = a conta
         # é do próprio fornecedor (claude, codex, grok) e não passa por essa conferência.
         "privacidade": bruto.get("privacidade") or None,
+        # Execução por ACP (PRD lanes-acp). None = o agente não fala ACP com a lane.
+        "acp": _acp(bruto.get("acp")),
     }
 
 

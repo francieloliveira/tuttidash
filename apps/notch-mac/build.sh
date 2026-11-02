@@ -74,6 +74,7 @@ CTRL="$APP/Contents/Resources/controle"
 mkdir -p "$CTRL/lanes" "$CTRL/bots" "$CTRL/tools"
 install -m 755 "$REPO/lanes/dispatcher.py" "$CTRL/lanes/dispatcher.py"
 install -m 644 "$REPO/lanes/permissao.py" "$CTRL/lanes/permissao.py"
+install -m 755 "$REPO/lanes/acp_runner.py" "$CTRL/lanes/acp_runner.py"
 install -m 755 "$REPO/lanes/bancada.py" "$CTRL/lanes/bancada.py"
 install -m 755 "$REPO/lanes/lane_view.py" "$CTRL/lanes/lane_view.py"
 install -m 755 "$REPO/lanes/lanes_window.py" "$CTRL/lanes/lanes_window.py"
@@ -95,7 +96,7 @@ echo "==> módulos Python (controle/gasto_lanes, FRA-615)"
 # Uma cópia só: dispatcher, vigia, janela e ListaModelos leem esta pasta.
 # gasto_privado.py é do build pessoal; sem o arquivo a instalação pública segue.
 mkdir -p "$CTRL/gasto_lanes"
-for mod in catalogo.py projetos.py privacidade.py linear_ids.py fila.py config.py proxy_linear.py revisao_ia.py; do
+for mod in catalogo.py projetos.py privacidade.py linear_ids.py fila.py config.py proxy_linear.py revisao_ia.py acp.py politica_acp.py; do
   install -m 644 "$REPO/gasto_lanes/$mod" "$CTRL/gasto_lanes/$mod"
 done
 PRIVADO_PY="$REPO/apps/notch-mac/Privado/python/gasto_privado.py"
