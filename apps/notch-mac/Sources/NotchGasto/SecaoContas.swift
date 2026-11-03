@@ -213,6 +213,9 @@ private struct LinhaConta: View {
                         CamposCopilot(conta: $conta, estado: estado)
                     }
                     Button(String(localized: "Salvar esta conta")) { estado.salvar(conta) }
+                    if !conta.nova, let agente = ContasConfig.agente(do: conta.tipo), agente.acp {
+                        SecaoLanesDaConta(modelo: estado.modelo, agente: agente, aoSalvar: estado.aoSalvar)
+                    }
                 }
                 .padding(.leading, 4)
             }

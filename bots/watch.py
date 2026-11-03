@@ -291,8 +291,10 @@ def projeto_worktrees() -> Path:
 #: lane -> dados do manifesto (só o que o vigia precisa: o `cli` do agente).
 AGENTES = {nome: {"cli": d["cli"]} for nome, d in catalogo.catalogo().items()}
 AGENTES_NOMES = tuple(AGENTES)
-# Lanes com execução real (mesma lista do dispatcher, via manifesto).
+# Lanes com execução real (mesma lista do dispatcher, via manifesto e `lanes.acp`).
 IMPLEMENTED_LANES = catalogo.lanes_implementadas()
+# Nomes de lane que o vigia reconhece nos `lane-<nome>.json`: agentes e lanes ACP.
+LANES_CONHECIDAS = frozenset(AGENTES_NOMES) | frozenset(IMPLEMENTED_LANES)
 # Conflito entre cards (mesmos arquivos): o mais pesado mergeia primeiro, o outro rebaseia.
 EFFORT_WEIGHT = {"baixo": 1, "medio": 2, "alto": 3}
 CONFLICT_WAIT_MAX_S = _cfg("watch.conflito_espera_max_s", 6 * 3600)
@@ -1320,7 +1322,7 @@ def rebase_dirty(st: dict, diary: list[str]) -> None:
     à fila da mesma lane. A lane resolve, commita, roda a prova e o dispatcher fecha de novo."""
     repo = REPOS["app"]
     running = {json.loads(p.read_text()).get("card") for p in LANES_DIR.glob("lane-*.json")
-               if p.stem.split("-", 1)[1] in AGENTES_NOMES}
+               if p.stem.split("-", 1)[1] in LANES_CONHECIDAS}
     for pr in open_prs(repo):
         if pr.get("mergeStateStatus") != "DIRTY":
             continue
@@ -2142,7 +2144,7 @@ def heavier_conflict(ci: dict, files: set[str], others: list[tuple[dict, set[str
 
 def busy_lanes() -> set[str]:
     return {p.stem.split("-", 1)[1] for p in LANES_DIR.glob("lane-*.json")
-            if p.stem.split("-", 1)[1] in AGENTES_NOMES}
+            if p.stem.split("-", 1)[1] in LANES_CONHECIDAS}
 
 
 def lanes_ativas() -> set[str]:
@@ -2154,8 +2156,8 @@ def lanes_ativas() -> set[str]:
         # «claude opencode opencode-go» virava um nome só e o vigia via 0 lanes ativas.
         enabled = {l.strip() for l in (LANES_DIR / "enabled").read_text().split() if l.strip()}
     except OSError:
-        return set()
-    return enabled & set(IMPLEMENTED_LANES)
+        enabled = set()
+    return (enabled | catalogo.instancias_ligadas()) & set(IMPLEMENTED_LANES)
 
 
 def contexto_card(ci: dict) -> dict:
@@ -2207,7 +2209,7 @@ def cota_ok(lane: str, effort: str, medidas: dict) -> bool:
 
 
 def esforco_suportado(lane: str, effort: str) -> bool:
-    return fila.esforco_suportado(lane, effort, catalogo.catalogo().get(lane) or {})
+    return fila.esforco_suportado(lane, effort, catalogo.dados_lane(lane))
 
 
 def conflita_com_rodando(ci: dict, running_cards: set[str], issues: list[dict]) -> bool:
@@ -2225,7 +2227,7 @@ def lane_para_card(ci: dict, com_folga: set[str], medidas: dict, usados: dict,
         return None
     return fila.escolher_lane(
         ci, com_folga, medidas, usados, MAX_PER_LANE,
-        lambda lane: catalogo.catalogo().get(lane) or {},
+        lambda lane: catalogo.dados_lane(lane),
         risco_alto=LANES_RISCO_ALTO,
     )
 
@@ -2384,7 +2386,7 @@ def medidas_contas() -> dict:
         dados = json.loads(MEDIDA_CACHE.read_text())
         if time.time() - dados.get("at", 0) > 300:  # mesma validade do dispatcher
             return {}
-        return dict(dados.get("m") or {})
+        return catalogo.medidas_com_contas(dict(dados.get("m") or {}))
     except (OSError, ValueError, AttributeError):
         return {}
 

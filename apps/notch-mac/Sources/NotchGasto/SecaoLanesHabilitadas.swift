@@ -101,7 +101,9 @@ struct SecaoLanesHabilitadas: View {
 
     /// Só quem pega card. SuperGrok (via Cursor) fica na seção de baixo, sem interruptor,
     /// e essa linha não grava `enabled`.
-    private var lanesQuePegamCard: [Agentes.Def] { Agentes.todos.filter(ClarezaCota.recebeCard) }
+    private var lanesQuePegamCard: [Agentes.Def] {
+        Agentes.todos.filter(ClarezaCota.recebeCard) + Agentes.instancias
+    }
     private var contasDeUso: [Agentes.Def] { Agentes.todos.filter(ClarezaCota.contaDeUso) }
 
     var body: some View {

@@ -36,6 +36,14 @@ public enum Agentes {
         public var credencialUso: String
         /// true = não entra na lista padrão de contas. A pessoa liga em Ajustes › Contas.
         public var optIn: Bool
+        /// Fala ACP (bloco `acp` no manifesto): a conta pode ganhar lanes ACP.
+        public var acp: Bool = false
+        /// Lane ACP da config (`lanes.acp`): o agente de onde ela saiu. Vazio = lane do catálogo.
+        public var agente: String = ""
+        /// Conta da lane ACP (padrão: o agente). Vazio = lane do catálogo.
+        public var conta: String = ""
+        /// Modelo fixo da lane ACP.
+        public var modelo: String = ""
 
         init(nome: String, rotulo: String, sigla: String, custoEstimado: Bool,
              resumeCLI: String?, pesoFontes: [String], cli: String?, painel: Bool,
@@ -59,6 +67,7 @@ public enum Agentes {
                       corClaro: m.cor.claro, corPainel: m.corPainel, tipoUso: m.uso.tipo,
                       fonteUso: m.uso.fonte, credencialUso: m.uso.credencial,
                       optIn: m.optIn)
+            self.acp = m.acp
         }
     }
 
@@ -132,14 +141,26 @@ public enum Agentes {
 
     // MARK: - Consultas
 
-    /// Agente pelo nome.
-    public static func def(_ nome: String) -> Def? { todos.first { $0.nome == nome } }
+    /// Agente pelo nome. Também acha uma lane ACP da config (rótulo e cores do agente dela).
+    public static func def(_ nome: String) -> Def? {
+        todos.first { $0.nome == nome } ?? instancias.first { $0.nome == nome }
+    }
+
+    /// Lanes ACP da config (`lanes.acp`), já validadas contra o catálogo (PRD lanes-acp).
+    public static var instancias: [Def] { LanesACP.defs(Configuracao.lerArquivo()) }
+
+    /// Nomes de lane conhecidos: catálogo + lanes ACP. Para arquivos de lane, `enabled` e painel.
+    /// `ordem` continua só com o catálogo, porque também é a lista de tipos de conta.
+    public static var ordemLanes: [String] { ordem + instancias.map(\.nome) }
 
     /// Ordem dos agentes no painel (para o registro, todos).
     public static var ordem: [String] { todos.map(\.nome) }
 
     /// Só os que entram na lista de lanes do painel/notch, na ordem de exibição.
     public static var ordemPainel: [String] { todos.filter(\.painel).map(\.nome) }
+
+    /// Lanes do painel/notch com as lanes ACP depois das do catálogo.
+    public static var ordemPainelLanes: [String] { ordemPainel + instancias.map(\.nome) }
 
     public static func peso(nome: String) -> (Int, String) {
         (ordem.firstIndex(of: nome) ?? ordem.count, nome)

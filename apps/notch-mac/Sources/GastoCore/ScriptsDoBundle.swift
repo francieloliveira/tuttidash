@@ -11,6 +11,7 @@ public enum ScriptsDoBundle {
         "lanes/lanes_window.py",
         "lanes/lanes_ctl.py",
         "lanes/run_lane.sh",
+        "lanes/sonda_acp.py",
         "bots/watch.py",
         "tools/bots-chave",
         "tools/instalar-prova-remota",

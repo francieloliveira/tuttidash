@@ -3,7 +3,9 @@ import Foundation
 /// As lanes do notch (FRA-412), derivadas de `agents.d/` via `Agentes`.
 /// Só entram as com `"painel": true` no manifesto — cursor é conta de uso, não lane.
 public enum LanesPainel {
-    public static let ordem = Agentes.ordemPainel
+    /// Catálogo + lanes ACP da config (PRD lanes-acp). Calculado a cada leitura: uma lane
+    /// adicionada nos Ajustes aparece sem reabrir o app.
+    public static var ordem: [String] { Agentes.ordemPainelLanes }
 
     /// Folga do dispatcher (`HEADROOM_PCT`): abaixo disto a conta ainda aceita o esforço.
     public static let folgaBaixo = 90.0

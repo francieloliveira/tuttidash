@@ -164,8 +164,25 @@ for raw in open(sys.argv[1], encoding="utf-8", errors="replace"):
         print(sid)
         break
 ' "$LOG" 2>/dev/null)
+# Lane ACP (PRD lanes-acp): o agente vem do evento inicial do acp_runner, não do nome da lane.
+ACP_AGENTE=$(/usr/bin/python3 -c '
+import json, re, sys
+for raw in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    try:
+        ev = json.loads(raw)
+    except ValueError:
+        continue
+    if isinstance(ev, dict) and ev.get("transporte") == "acp":
+        a = str(ev.get("agente") or "")
+        print(a if re.fullmatch(r"[a-z][a-z0-9-]{0,39}", a) else "")
+        break
+' "$LOG" 2>/dev/null)
+if [ -n "$ACP_AGENTE" ]; then case "$SID" in *[!A-Za-z0-9_.:-]*) SID="";; esac; fi
 if [ "$LANE" = "grok" ]; then CLI=grok; elif [ "$LANE" = "opencode" ]; then CLI=opencode; elif [ "$LANE" = "codex" ]; then CLI=codex; elif [ "$LANE" = "deepseek" ]; then CLI=dsh; else CLI=claude; fi
-if [ "$LANE" = "deepseek" ]; then
+if [ -n "$ACP_AGENTE" ]; then
+  if [ "$ACP_AGENTE" = "opencode" ] && [ -n "$SID" ]; then RESUME="cd \"$WT\" && opencode run --session $SID";
+  else RESUME="cd \"$WT\" && sessão ACP ${SID:-desconhecida} do agente $ACP_AGENTE"; fi
+elif [ "$LANE" = "deepseek" ]; then
   # O dsh headless não tem --resume: a sessão fica no histórico (~/.dsh/sessions).
   # O retomar possível é abrir outra sessão no worktree, que já tem o trabalho.
   RESUME="cd \"$WT\" && dsh --profile headless --patch \"$RUN_DIR/deepseek.yml\" \"continue o card $CARD a partir do worktree\""

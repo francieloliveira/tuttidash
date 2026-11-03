@@ -34,6 +34,8 @@ LIMITE = 8 * 1024 * 1024
 COPIAS = (
     ("lanes/dispatcher.py", "lanes/dispatcher.py", 0o755),
     ("lanes/permissao.py", "lanes/permissao.py", 0o644),
+    ("lanes/acp_runner.py", "lanes/acp_runner.py", 0o755),
+    ("lanes/sonda_acp.py", "lanes/sonda_acp.py", 0o755),
     ("lanes/bancada.py", "lanes/bancada.py", 0o755),
     ("lanes/lane_view.py", "lanes/lane_view.py", 0o755),
     ("lanes/lanes_window.py", "lanes/lanes_window.py", 0o755),
@@ -57,6 +59,8 @@ COPIAS = (
     ("gasto_lanes/config.py", "gasto_lanes/config.py", 0o644),
     ("gasto_lanes/proxy_linear.py", "gasto_lanes/proxy_linear.py", 0o644),
     ("gasto_lanes/revisao_ia.py", "gasto_lanes/revisao_ia.py", 0o644),
+    ("gasto_lanes/acp.py", "gasto_lanes/acp.py", 0o644),
+    ("gasto_lanes/politica_acp.py", "gasto_lanes/politica_acp.py", 0o644),
 )
 PRIVADO = (
     "apps/notch-mac/Privado/python/gasto_privado.py",

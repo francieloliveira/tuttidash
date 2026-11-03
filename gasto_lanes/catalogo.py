@@ -142,6 +142,7 @@ EMBUTIDOS_JSON = """\
     }
   },
 "revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode/deepseek-v4.1-flash-free", "opencode/nemotron-3-ultra-free", "opencode/glm-5.3-flash-free"], "modelo_padrao": "opencode/deepseek-v4.1-flash-free", "esforcos": [], "esforco_padrao": ""},
+"acp": {"comando": ["opencode", "acp"], "ambiente_config": "OPENCODE_CONFIG_CONTENT", "chave_modelo": "model", "opcao_modelo": "model", "config": {"permission": {"edit": "ask", "bash": "ask", "webfetch": "ask"}}},
 "privacidade": "opencode",
 "instalar": {"comando": "brew install opencode", "entrar": "opencode", "dica_entrar": "Dentro do OpenCode, digite /connect e escolha o provedor da sua conta.", "docs": "https://github.com/anomalyco/opencode"},
 "uso": {
@@ -349,6 +350,27 @@ def revisores() -> tuple:
     return tuple(n for n, d in catalogo().items() if d.get("revisao") and d.get("cli"))
 
 
+def _acp(a) -> dict | None:
+    """Bloco `acp`: comando do agente e a config que o obriga a perguntar (PRD lanes-acp).
+
+    O comando e a config só valem vindos do manifesto (bundle assinado, FRA-614); a lane
+    escolhe o modelo. Bloco malformado vira None: a lane ACP desse agente fica fechada.
+    """
+    if not isinstance(a, dict):
+        return None
+    cmd = a.get("comando")
+    if not (isinstance(cmd, list) and cmd and all(isinstance(x, str) and x for x in cmd)):
+        return None
+    cfg = a.get("config") or {}
+    if not isinstance(cfg, dict):
+        return None
+    return {"comando": tuple(cmd),
+            "ambiente_config": a.get("ambiente_config") or "",
+            "config": cfg,
+            "chave_modelo": a.get("chave_modelo") or "",
+            "opcao_modelo": a.get("opcao_modelo") or "model"}
+
+
 def _normaliza(bruto: dict) -> dict:
     """Manifesto cru -> dicionário normalizado (mesmos campos para todos)."""
     uso = bruto.get("uso") or {}
@@ -384,6 +406,8 @@ def _normaliza(bruto: dict) -> dict:
         # Fonte da regra de privacidade por modelo (gasto_lanes/privacidade.py). None = a conta
         # é do próprio fornecedor (claude, codex, grok) e não passa por essa conferência.
         "privacidade": bruto.get("privacidade") or None,
+        # Execução por ACP (PRD lanes-acp). None = o agente não fala ACP com a lane.
+        "acp": _acp(bruto.get("acp")),
     }
 
 
@@ -552,12 +576,14 @@ def lanes_por_prioridade() -> tuple:
     """
     com_prio = [(d["prioridade"], n) for n, d in catalogo().items()
                 if d["execucao"] and d["prioridade"] is not None]
-    return tuple(n for _, n in sorted(com_prio))
+    # Lanes ACP da config (PRD lanes-acp) entram depois das do catálogo, na ordem da config.
+    return tuple(n for _, n in sorted(com_prio)) + tuple(instancias_acp())
 
 
 def lanes_implementadas() -> tuple:
     """Lanes prontas para o dispatcher (`execucao: implementada`)."""
-    return tuple(n for n, d in catalogo().items() if d["execucao"] == "implementada")
+    return (tuple(n for n, d in catalogo().items() if d["execucao"] == "implementada")
+            + tuple(instancias_acp()))
 
 
 def lanes_painel() -> tuple:
@@ -612,6 +638,143 @@ def ambientes_de_busca() -> tuple:
 def existe_ambiente() -> bool:
     """True quando os manifests vieram do disco (não do fallback embutido)."""
     return any(Path(d).is_dir() for d in _diretorios())
+
+
+# --- Lanes ACP: instâncias de uma conta (PRD lanes-acp) -------------------------
+# `lanes.acp` na config do TuttiDash: [{"nome", "agente", "conta", "modelo", "ligada"}].
+# A entrada só escolhe nome, conta e modelo. Comando, config "perguntar" e privacidade
+# vêm do manifesto assinado do agente (bloco `acp`); agente sem esse bloco não vira lane.
+# `modelo`: "auto" (padrão) segue o peso do card como as lanes do catálogo (manifesto +
+# `lanes.modelo.<agente>`); um id fixo vale para todos os pesos.
+# `lanes.acp_limite_conta` ({conta: n}): limite opcional de lanes rodando ao mesmo tempo
+# na conta. Sem a chave, não há limite: quem segura é a medida de cota da conta.
+NOME_INSTANCIA = re.compile(r"[a-z][a-z0-9-]{1,39}\Z")
+MODELO_AUTO = "auto"
+LIMITE_CONTA_PADRAO = None
+
+
+def _config_dados(arquivos=None) -> dict:
+    """Primeiro config legível do resolvedor (ou de ``arquivos``). {} se nenhum."""
+    if arquivos is None:
+        try:
+            arquivos = _arquivos_padrao()
+        except Exception:  # noqa: BLE001 — sem resolvedor, sem instâncias
+            return {}
+    for cfg in arquivos:
+        try:
+            dados = json.loads(Path(cfg).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeError):
+            continue
+        if isinstance(dados, dict):
+            return dados
+    return {}
+
+
+def _bruto_lanes(dados: dict, chave: str):
+    v = dados.get(f"lanes.{chave}")
+    if v is None:
+        v = (dados.get("lanes") or {}).get(chave) if isinstance(dados.get("lanes"), dict) else None
+    return v
+
+
+def validar_instancias(bruto, cat: dict | None = None) -> tuple:
+    """(instâncias válidas {nome: dados}, avisos). Entrada inválida é descartada com aviso."""
+    cat = catalogo() if cat is None else cat
+    saida, avisos = {}, []
+    if bruto is None:
+        return saida, avisos
+    if not isinstance(bruto, list):
+        return saida, ["lanes.acp não é lista; ignorado"]
+    for item in bruto:
+        if not isinstance(item, dict):
+            avisos.append("entrada de lanes.acp que não é objeto; ignorada")
+            continue
+        nome = str(item.get("nome") or "").strip()
+        agente = str(item.get("agente") or "").strip()
+        modelo = str(item.get("modelo") or "").strip() or MODELO_AUTO
+        if not NOME_INSTANCIA.match(nome):
+            avisos.append(f"lane ACP {nome!r}: nome inválido (a-z, 0-9 e hífen, 2 a 40)")
+            continue
+        if nome in cat or nome in saida or nome == "auto":
+            avisos.append(f"lane ACP {nome!r}: nome já usado")
+            continue
+        dados = cat.get(agente)
+        if not dados or not dados.get("acp"):
+            avisos.append(f"lane ACP {nome!r}: agente {agente!r} sem bloco acp no manifesto")
+            continue
+        if modelo != MODELO_AUTO and not _ID_MODELO.match(modelo):
+            avisos.append(f"lane ACP {nome!r}: modelo inválido")
+            continue
+        conta = str(item.get("conta") or agente).strip() or agente
+        saida[nome] = {"nome": nome, "agente": agente, "conta": conta, "modelo": modelo,
+                       "ligada": item.get("ligada") is True}
+    return saida, avisos
+
+
+def instancias_acp(arquivos=None) -> dict:
+    """Lanes ACP válidas da config, na ordem da config."""
+    return validar_instancias(_bruto_lanes(_config_dados(arquivos), "acp"))[0]
+
+
+def instancia(nome: str, arquivos=None) -> dict | None:
+    return instancias_acp(arquivos).get(nome)
+
+
+def dados_lane(nome: str, arquivos=None) -> dict:
+    """Manifesto da lane. Para uma lane ACP, o do agente dela (sem `execucao` própria)."""
+    cat = catalogo()
+    if nome in cat:
+        return cat[nome]
+    inst = instancia(nome, arquivos)
+    return cat.get(inst["agente"], {}) if inst else {}
+
+
+def limite_por_conta(conta: str, arquivos=None):
+    """Lanes rodando ao mesmo tempo na conta, ou None (sem limite, o padrão)."""
+    v = _bruto_lanes(_config_dados(arquivos), "acp_limite_conta")
+    n = v.get(conta) if isinstance(v, dict) else None
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        return LIMITE_CONTA_PADRAO
+    return n
+
+
+def nome_sugerido(agente: str, modelo: str, usados=()) -> str:
+    """Nome da lane a partir do agente e do modelo (`opencode` + `opencode/beam-free` →
+    `opencode-beam-free`). O dono pode trocar; o nome final passa por `validar_instancias`."""
+    base = (modelo.split("/", 1)[-1] if modelo else "") or "lane"
+    bruto = f"{agente}-{base}".lower()
+    nome = re.sub(r"[^a-z0-9]+", "-", bruto).strip("-")
+    if not nome or not nome[0].isalpha():
+        nome = "lane-" + nome
+    nome = nome[:40].rstrip("-")
+    ocupados = set(usados) | set(catalogo()) | {"auto"}
+    final, i = nome, 2
+    while final in ocupados or len(final) < 2:
+        sufixo = f"-{i}"
+        final = nome[:40 - len(sufixo)].rstrip("-") + sufixo
+        i += 1
+    return final
+
+
+def medidas_com_contas(m: dict, arquivos=None) -> dict:
+    """Lane ACP mede pela conta: herda a medida da lane da conta (cota partilhada).
+    Usada igual pelo dispatcher e pelo vigia."""
+    saida = dict(m)
+    for nome, inst in instancias_acp(arquivos).items():
+        if nome not in saida and inst["conta"] in saida:
+            saida[nome] = saida[inst["conta"]]
+    return saida
+
+
+def instancias_ligadas(arquivos=None) -> set:
+    """Lanes ACP com `ligada: true` (somam-se ao arquivo `enabled`)."""
+    return {n for n, i in instancias_acp(arquivos).items() if i["ligada"]}
+
+
+def conta_da_lane(nome: str, arquivos=None) -> str:
+    """Conta que a lane gasta. Lane do catálogo: o próprio nome. Lane ACP: `conta`."""
+    inst = instancia(nome, arquivos)
+    return inst["conta"] if inst else nome
 
 
 # --- Modelo por lane (FRA-521) ------------------------------------------------

@@ -101,6 +101,9 @@ public enum CatalogoAgentes {
         public var optIn: Bool = false
         /// Bloco `instalar` (FRA-570): como instala e como entra. nil = o app não oferece o botão.
         public var instalar: Instalar? = nil
+        /// O manifesto tem bloco `acp` válido (PRD lanes-acp): a conta pode ganhar lanes ACP.
+        /// O comando fica no Python (bundle assinado); aqui só a marca para a UI.
+        public var acp: Bool = false
 
         public struct Instalar: Equatable, Sendable {
             /// Nome na lista de ferramentas. Vazio = o rótulo do agente.
@@ -292,7 +295,15 @@ public enum CatalogoAgentes {
             privacidade: privacidadeDe(obj["privacidade"]),
             revisao: revisaoDe(obj["revisao"]),
             optIn: Self.flag(obj["optIn"]),
-            instalar: instalarDe(obj["instalar"]))
+            instalar: instalarDe(obj["instalar"]),
+            acp: acpDe(obj["acp"]))
+    }
+
+    /// Bloco `acp` válido: `comando` é lista não vazia de textos (mesmo critério do `catalogo._acp`).
+    static func acpDe(_ v: Any?) -> Bool {
+        guard let d = v as? [String: Any], let cmd = d["comando"] as? [Any], !cmd.isEmpty else { return false }
+        if let cfg = d["config"], !(cfg is [String: Any]) { return false }
+        return cmd.allSatisfy { ($0 as? String).map { !$0.isEmpty } ?? false }
     }
 
     /// Bloco `instalar` do manifesto. Sem `comando`, não há botão.

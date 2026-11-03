@@ -44,7 +44,7 @@ public enum LeitorPlanos {
         let mapa = (obj["lanes"] as? [String: Any]) ?? (obj["planos"] as? [String: Any]) ?? obj
         var saida: [String: PlanoLane] = [:]
         for (chave, valor) in mapa {
-            guard LanesPainel.ordem.contains(chave) || Agentes.ordem.contains(chave) else { continue }
+            guard LanesPainel.ordem.contains(chave) || Agentes.ordemLanes.contains(chave) else { continue }
             let texto: String?
             if let s = valor as? String {
                 texto = s
@@ -259,7 +259,7 @@ public enum LeitorBuildInstalada {
 public enum LeitorNomes {
     /// `disabled-by-user`: nomes separados por espaço ou linha. Diretório: um arquivo por lane.
     public static func lanes(texto: String) -> Set<String> {
-        let conhecidas = Set(Agentes.ordem)
+        let conhecidas = Set(Agentes.ordemLanes)
         return Set(texto.split(whereSeparator: \.isWhitespace).map(String.init).filter { conhecidas.contains($0) })
     }
 }
