@@ -1,32 +1,57 @@
 flowchart TD
-    A[PR pronto para revisão] --> B{Lane revisora configurada?}
+    A[PR pronto para revisão<br/>watch.review_pr()] --> B[Buscar card no Linear<br/>por título/branch]
+    B --> C{Card encontrado?}
+    C -->|Não| D[PR sem card → não entra<br/>na fila de merge automático]
+    C -->|Sim| E[Obter lane do autor do card]
+    E --> F[Ler config do revisor<br/>lane / independente / reserva]
+    F --> G[Esforço da task<br/>etiqueta de esforço no Linear]
+    G --> H{Escolher revisor<br/>escolher_revisor()}
+    H -->|Lane preferida serve| I[Usar lane preferida]
+    H -->|Reserva automática| J{Tentativa 1: mesmo esforço<br/>da task disponível?}
+    J -->|Sim| K[Usar lane com mesmo esforço]
+    J -->|Não| L{Tentativa 2: esforço >=<br/>da task disponível?}
+    L -->|Sim| M[Usar lane com esforço acima]
+    L -->|Não| N{Considerar folga<br/>% de uso da conta}
+    N -->|Livre| O[Usar lane menos ocupada]
+    N -->|Ocupada| P[Mesmo fornecedor / fallback]
     
-    B -->|Não| C[PR não entra na fila automática]
-    B -->|Sim| D[Identificar lane revisora]
+    I --> Q{Revisor é segunda_opiniao?}
+    K --> Q
+    M --> Q
+    O --> Q
+    P --> Q
     
-    D --> E[Obter modelo e esforço da lane revisora]
-    E --> F{Autor do PR é o mesmo fornecedor da lane?}
+    Q -->|Sim| R{Quem confirma disponível?<br/>quem_confirma()}
+    Q -->|Não| S[Chamar revisor<br/>com esforço da task]
     
-    F -->|Sim| G[Pular esta lane para revisão]
-    F -->|Não| H[Chamar revisor da lane revisora]
+    R -->|Não| T[Avisar espera confirmação<br/>não chama a IA]
+    R -->|Sim| S
     
-    H --> I{Revisor reserva ativado?}
+    T --> Z[Fim: não rodou IA]
     
-    I -->|Não| J[Fim: revisão atribuída]
-    I -->|Sim| K[Buscar lane reserva: mesmo esforço]
+    S --> U{Detectou segredo?}
+    U -->|Sim| V[Chamar o dono<br/>st["reviewed"] = "segredo"]
+    U -->|Não| W{Formato válido?<br/>começa com [Revisor]}
     
-    K --> L{Lane reserva com mesmo esforço disponível?}
-    L -->|Sim| M[Atribuir lane reserva]
-    L -->|Não| N[Buscar lane reserva: esforço padrão ou acima]
+    W -->|Não| X{Tentativa restante?}
+    X -->|Sim| S[Tentar novamente]
+    X -->|Não| Y[Parado sem revisão<br/>avisa o gestor]
     
-    N --> O{Lane reserva com esforço ≥ padrão disponível?}
-    O -->|Sim| M
-    O -->|Não| P[Sem revisor reserva]
+    W -->|Sim| AA{Segunda opinião aprovou?}
+    AA -->|Sim| AB[Precisa confirmação<br/>por quem aprova sozinho]
+    AA -->|Não| AC[Comentar PR e card<br/>registrar veredito]
     
-    M --> J
-    P --> J
+    AB --> AD[Chamar revisor sozinho<br/>para confirmação]
+    AD --> AE{Detectou segredo?}
+    AE -->|Sim| V
+    AE -->|Não| AC
+    
+    V --> Z
+    Y --> Z
+    Z --> AF[Fim do ciclo de revisão]
     
     style A fill:#f9f,stroke:#333
-    style J fill:#bfb,stroke:#333
-    style C fill:#fcc,stroke:#333
-    style P fill:#ffd,stroke:#333
+    style Z fill:#bfb,stroke:#333
+    style D fill:#fcc,stroke:#333
+    style T fill:#ffd,stroke:#333
+    style Y fill:#fcc,stroke:#333
