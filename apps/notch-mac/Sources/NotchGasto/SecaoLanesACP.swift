@@ -342,3 +342,33 @@ struct SecaoLanesDaConta: View {
         }
     }
 }
+
+/// Tela Lanes: "Adicionar lane" para cada conta ativa de agente ACP. Mesma seção da conta,
+/// num lugar que se acha (ninguém procura lanes dentro da edição de uma conta).
+struct SecaoAdicionarLanes: View {
+    let modelo: ModeloAjustes
+    var aoSalvar: () -> Void
+
+    private var agentes: [Agentes.Def] {
+        let ativas = Set(ContasConfig.ler(modelo.dados).filter(\.ativo).map(\.tipo))
+        return Agentes.todos.filter { $0.acp && ativas.contains($0.nome) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(String(localized: "Adicionar lanes (ACP)")).font(.headline)
+            Text(String(localized: "Uma conta pode ter várias lanes, cada uma com um modelo fixo. A lane nasce desligada: rode «Testar lane» e depois ligue."))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if agentes.isEmpty {
+                Text(String(localized: "Nenhuma conta ativa de agente que fala ACP. Ative a conta em Contas."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(agentes, id: \.nome) { a in
+                DisclosureGroup(a.rotulo) {
+                    SecaoLanesDaConta(modelo: modelo, agente: a, aoSalvar: aoSalvar)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}

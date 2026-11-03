@@ -1472,6 +1472,7 @@ def apagar_claim(lane: str) -> None:
 def soltar_lane(lane: str) -> None:
     state_file(lane).unlink(missing_ok=True)
     apagar_claim(lane)
+    _arquivo_recusa(lane).unlink(missing_ok=True)
 
 
 def sessao_de_lane(session: str) -> bool:
@@ -1489,6 +1490,41 @@ def branch_valida(nome) -> bool:
     if ".." in nome.split("/") or "//" in nome or "@{" in nome or ":" in nome:
         return False
     return True
+
+
+def branch_segura(nome, identificador: str) -> str:
+    """Nome de branch que o `branch_valida` aceita, derivado do `branchName` do Linear.
+
+    Causa raiz do FRA-630 (01/11/2026): o Linear gerou a branch com `×` (título
+    "ambiente × Watch"). O git aceita, o claim gravou, e o `branch_valida` (só ASCII)
+    recusou o próprio estado do dispatcher em todo ciclo: a lane ficou presa sem prova,
+    sem PR e sem alerta. Aqui o claim normaliza antes de criar o worktree:
+    translitera (× → x, acento some), troca o resto por hífen e garante o identificador
+    do card no nome (o Linear liga o PR ao card por ele). Determinístico: a retomada do
+    mesmo card chega ao mesmo nome. Nome já válido volta igual.
+    """
+    if branch_valida(nome):
+        return nome
+    import unicodedata
+    texto = str(nome or "").replace("×", "x").replace("÷", "-")
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^A-Za-z0-9._/-]+", "-", texto)
+    partes = []
+    for parte in texto.split("/"):
+        parte = re.sub(r"-{2,}", "-", parte).strip("-.")
+        if parte.endswith(".lock"):
+            parte = parte[: -len(".lock")].rstrip("-.")
+        if parte and parte != "..":
+            partes.append(parte)
+    texto = "/".join(partes)
+    ident = str(identificador or "").strip().lower()
+    if ident and ident not in texto.lower():
+        texto = f"{texto}-{ident}" if texto else ident
+    if branch_valida(texto):
+        return texto
+    if branch_valida(ident):
+        return ident
+    raise RuntimeError(f"sem nome de branch válido para {identificador!r} (Linear: {nome!r})")
 
 
 def _resolvido_sob(caminho: str, raiz: Path) -> Optional[Path]:
@@ -2332,6 +2368,11 @@ def prepare_worktree(branch: str, identifier: str) -> Path:
     repo, wts = projeto_repo(), projeto_worktrees()
     wt = wts / identifier.lower()
     if wt.exists():
+        # Retomada de um card claimado antes da normalização (ex.: FRA-630): a branch
+        # do worktree tem o nome do Linear; passa para o nome seguro do estado.
+        atual = sh([GIT, "branch", "--show-current"], cwd=wt, check=False).strip()
+        if atual and atual != branch and branch_segura(atual, identifier) == branch:
+            sh([GIT, "branch", "-m", atual, branch], cwd=wt)
         copiar_para_worktree(repo, wt, projeto().copiar_para_worktree)
         return wt
     sh([GIT, "fetch", "-q", "origin", "main"], cwd=repo)
@@ -2448,15 +2489,19 @@ def limit_text(lane: str, effort: str) -> str:
 def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     card = linear(QUERY_ISSUE, {"id": issue["id"]})["issue"]
     ident = card["identifier"]
-    wt = prepare_worktree(card["branchName"], ident)
+    branch = branch_segura(card["branchName"], ident)
+    nota_branch = ("" if branch == card["branchName"] else
+                   f"- a branch do Linear (`{card['branchName']}`) tem caractere que o git das lanes "
+                   f"não aceita; usando `{branch}`\n")
+    wt = prepare_worktree(branch, ident)
     linha_main, nota_main = juntar_main(wt)
     if historico_antigo(wt):
         # FRA-443 (29/10): a branch local era do repositório antigo; a lane rodou opus xhigh
         # sobre código velho e o push seria barrado no fim. Melhor falhar antes de gastar.
         raise RuntimeError(
-            f"a branch `{card['branchName']}` não tem ancestral comum com a `origin/main` (histórico "
+            f"a branch `{branch}` não tem ancestral comum com a `origin/main` (histórico "
             f"antigo do repositório). Nada foi rodado. Se ela não tem trabalho a salvar, recrie-a no "
-            f"worktree com `git checkout -B {card['branchName']} origin/main` e devolva o card à fila")
+            f"worktree com `git checkout -B {branch} origin/main` e devolva o card à fila")
     # FRA-595: a prova e o comando nascem fora do worktree. `.lane` só existe
     # para o agente gravar result.json; o dispatcher não escreve esse arquivo.
     run_id = secrets.token_hex(16)
@@ -2470,7 +2515,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     if extra.is_file():
         template += "\n" + extra.read_text(encoding="utf-8")
     prompt = (template.replace("{{CARD}}", ident).replace("{{LANE}}", lane)
-              .replace("{{BRANCH}}", card["branchName"]).replace("{{WORKTREE}}", str(wt)))
+              .replace("{{BRANCH}}", branch).replace("{{WORKTREE}}", str(wt)))
     prompt += resume_note(wt)
     prompt += nota_main
     bancada = bancada_ativa(lane, issue)
@@ -2513,7 +2558,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     # depois dele: a branch pode já trazer commits de pessoas (ex.: FRA-13).
     base = sh([GIT, "rev-parse", "HEAD"], cwd=wt)
     st = {"lane": lane, "card": ident, "issue_id": card["id"], "title": card["title"],
-          "url": card["url"], "branch": card["branchName"], "worktree": str(wt), "base": base,
+          "url": card["url"], "branch": branch, "worktree": str(wt), "base": base,
           "effort": effort, "modelo": modelo_da_lane(lane, effort),
           "modelo_fixo": aviso_modelo(lane, effort) == "modelo fixo",
           "aviso_modelo": aviso_modelo(lane, effort),
@@ -2528,7 +2573,8 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     linear(MUT_COMMENT, {"id": card["id"], "body":
         f"▶️ **lane:{lane}** assumiu o card ({now()}).\n\n"
         f"- esforço `{effort}` → `{flags}`, {limit_text(lane, effort)}, timeout {LANE_TIMEOUT_MIN} min\n"
-        f"- branch `{card['branchName']}`, worktree local\n"
+        f"- branch `{branch}`, worktree local\n"
+        + nota_branch
         + linha_main
         + (f"- lane escolhida pela medida: {measure}\n" if measure else "")
         + ("- 🔌 modo bancada: só o comando `bancada` (USB), com auditoria fora do worktree\n"
@@ -4515,11 +4561,79 @@ def razao_sem_exit(st: dict, agora: Optional[float] = None) -> Optional[str]:
     return None
 
 
+# Estado recusado sem saída (FRA-630, 01/11/2026): o `watch` retornava antes de todos os
+# freios (timeout, sem saída, sessão sumida, FRA-443) e só logava, a cada minuto, para
+# sempre. Continua sem fechar, matar ou mover nada (FRA-600: o JSON pode ser forjado),
+# mas agora avisa o dono uma vez no card do claim e loga uma vez por hora.
+RECUSA_AVISO_MIN = 15
+RECUSA_LOG_S = 3600
+_ISSUE_RE = re.compile(r"[0-9a-fA-F-]{8,64}")
+
+
+def _arquivo_recusa(lane: str) -> Path:
+    return STATE_DIR / f"recusado-{lane}.json"
+
+
+def limpar_recusa(lane: str) -> None:
+    _arquivo_recusa(lane).unlink(missing_ok=True)
+
+
+def avisar_estado_recusado(lane: str, st: dict, motivo: str, agora: Optional[float] = None) -> dict:
+    """Registra a recusa, loga no máximo 1x/hora e avisa o dono 1x depois de RECUSA_AVISO_MIN."""
+    agora = time.time() if agora is None else agora
+    f = _arquivo_recusa(lane)
+    try:
+        reg = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        reg = {}
+    if not isinstance(reg, dict) or reg.get("motivo") != motivo or not isinstance(reg.get("desde"), (int, float)):
+        reg = {"desde": agora, "motivo": motivo, "avisado": False, "ultimo_log": 0}
+    minutos = int((agora - reg["desde"]) // 60)
+    if agora - float(reg.get("ultimo_log") or 0) >= RECUSA_LOG_S:
+        log(f"lane:{lane} estado recusado: {motivo} (há {minutos} min); não fecho, não mato sessão, "
+            f"não movo o card")
+        reg["ultimo_log"] = agora
+    if not reg.get("avisado") and minutos >= RECUSA_AVISO_MIN:
+        reg["avisado"] = avisar_dono_recusa(lane, st, motivo, minutos)
+    try:
+        tmp = f.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(reg), encoding="utf-8")
+        _privar(tmp)
+        tmp.replace(f)
+    except OSError:
+        pass
+    return reg
+
+
+def avisar_dono_recusa(lane: str, st: dict, motivo: str, minutos: int) -> bool:
+    """Comentário + etiqueta do dono no card do claim. Só com claim do mesmo card."""
+    log(f"ALERTA lane:{lane} parada há {minutos} min com estado recusado ({motivo}); "
+        f"precisa do dono")
+    claim = ler_claim(lane) or {}
+    issue = claim.get("issue_id")
+    if (claim.get("card") != st.get("card") or not isinstance(issue, str)
+            or not _ISSUE_RE.fullmatch(issue)):
+        return True  # sem card confiável: o alerta fica no log e no painel
+    try:
+        linear(MUT_COMMENT, {"id": issue, "body":
+            f"⚠️ **lane:{lane}** está parada há {minutos} min: o dispatcher recusa o estado da lane "
+            f"(`{motivo}`). Nada foi fechado, morto ou movido.\n\n"
+            f"A lane não assume outro card até isso ser resolvido. Confira o "
+            f"`lane-{lane}.json` e o `claim-{lane}.json`; se o trabalho não vale, apagar os dois "
+            f"libera a lane.\n\n{linha_causa('estado-recusado')}"})
+        aplicar_label(issue, LABEL_DONO_ID, OWNER_LABEL)
+        return True
+    except Exception as exc:  # noqa: BLE001 — sem Linear, tenta de novo no próximo ciclo
+        log(f"lane:{lane} aviso de estado recusado não foi ao Linear: {exc}")
+        return False
+
+
 def watch(lane: str, st: dict) -> None:
     motivo = motivo_recusa_estado(lane, st)
     if motivo:
-        log(f"lane:{lane} estado recusado: {motivo}; não fecho, não mato sessão, não movo o card")
+        avisar_estado_recusado(lane, st, motivo)
         return
+    limpar_recusa(lane)
     if st.get("stuck"):
         return  # precisa de ação humana: ver log; apagar lane-<x>.json libera a lane
     wt = Path(st["worktree"])

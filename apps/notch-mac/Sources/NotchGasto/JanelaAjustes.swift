@@ -130,7 +130,10 @@ struct TelaAjustes: View {
                         if let nota = aba.nota { Text(nota).foregroundStyle(.secondary) }
                         if aba.agendas { SecaoAgendas(estado: EstadoAgendas(modelo: estado.modelo)) }
                         if aba.contas { SecaoContas(modelo: estado.modelo, aoSalvar: aoSalvar) }
-                        if aba.lanesHabilitadas { SecaoLanesHabilitadas() }
+                        if aba.lanesHabilitadas {
+                            SecaoLanesHabilitadas()
+                            Section { SecaoAdicionarLanes(modelo: estado.modelo, aoSalvar: aoSalvar) }
+                        }
                         if aba.modelosLane { SecaoModeloLanes(modelo: estado.modelo, aoSalvar: aoSalvar) }
                         if aba.projetos { SecaoProjetos(estado: EstadoProjetos(modelo: estado.modelo)) }
                         if aba.gestaoLanes { SecaoGestaoLanes(estado: EstadoGestaoLanes(modelo: estado.modelo), aoSalvar: aoSalvar) }
