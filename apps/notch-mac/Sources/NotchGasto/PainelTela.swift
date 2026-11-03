@@ -9,6 +9,9 @@ struct PainelTela: View {
     @ObservedObject private var nav = NavegacaoPainel.compartilhada
     private var pagina: PaginaPainel { nav.pagina }
 
+    @State private var transicao: TransicaoPainel?
+    @State private var area = AreaPainel()
+
     init(modelo: ModeloNotch, pagina: PaginaPainel? = nil) {
         self.modelo = modelo
         if let pagina { NavegacaoPainel.compartilhada.pagina = pagina }
@@ -16,17 +19,18 @@ struct PainelTela: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            BarraLateralPainel(pagina: $nav.pagina, secao: $nav.secao)
+            BarraLateralPainel(pagina: Binding(get: { nav.pagina }, set: { trocar(para: $0) }),
+                               secao: $nav.secao)
             VStack(spacing: 0) {
-                CabecalhoPainel(pagina: pagina, modelo: modelo)
+                CabecalhoPainel(pagina: pagina, modelo: modelo, ir: trocar)
                 GeometryReader { g in
                     ScrollViewReader { proxy in
                         ScrollView(.vertical) {
-                            conteudo(largura: max(g.size.width - 44, 900))
+                            ConteudoPagina(modelo: modelo, pagina: pagina,
+                                           largura: max(g.size.width - 44, 900), ir: trocar)
                                 .padding(.horizontal, 22)
                                 .padding(.bottom, pagina == .dashboard ? 0 : 22)
                                 .id(pagina == .ajustes ? "ajustes-\(nav.secao.rawValue)" : pagina.rawValue)
-                                .transition(DS.reduzir ? .identity : .opacity.combined(with: .offset(y: 8)))
                         }
                         .scrollIndicators(.automatic)
                         .onChange(of: nav.grupoFoco) { _, grupo in
@@ -39,8 +43,20 @@ struct PainelTela: View {
                     }
                 }
             }
+            .background {
+                AreaCaptura(area: area)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                if let t = transicao {
+                    TransicaoParticulas(origem: t.origem, destino: t.destino, tamanho: t.tamanho) {
+                        if transicao?.id == t.id { transicao = nil }
+                    }
+                    .id(t.id)
+                }
+            }
         }
-        .animation(DS.anim(DS.mola), value: pagina)
         .animation(DS.anim(DS.mola), value: nav.secao)
         .overlay { CamadaAvisos() }
         .background(PV.fundo)
@@ -49,10 +65,34 @@ struct PainelTela: View {
         .frame(minWidth: 1280, minHeight: 800)
     }
 
-    @ViewBuilder
-    private func conteudo(largura: CGFloat) -> some View {
+    /// Troca de página com a transição de partículas: fotografia a tela que sai, desenha a que
+    /// entra e só então muda `nav.pagina` — assim o painel novo nunca pisca antes da animação.
+    private func trocar(para destino: PaginaPainel) {
+        guard destino != nav.pagina else { return }
+        // Em andamento (ou Reduzir movimento): troca direta, sem empilhar animações.
+        guard transicao == nil, !DS.reduzir, area.tamanho.width > 10,
+              let origem = AreaPainel.foto(de: area),
+              let nova = FotoPainel.imagem(pagina: destino, modelo: modelo, tamanho: area.tamanho)
+        else {
+            transicao = nil
+            nav.pagina = destino
+            return
+        }
+        transicao = TransicaoPainel(origem: origem, destino: nova, tamanho: area.tamanho)
+        nav.pagina = destino
+    }
+}
+
+/// Conteúdo de cada página, num só lugar: o painel ao vivo e a foto usada na transição.
+struct ConteudoPagina: View {
+    var modelo: ModeloNotch
+    var pagina: PaginaPainel
+    var largura: CGFloat
+    var ir: (PaginaPainel) -> Void
+
+    var body: some View {
         switch pagina {
-        case .dashboard: DashboardPainel(modelo: modelo, largura: largura, ir: { nav.pagina = $0 })
+        case .dashboard: DashboardPainel(modelo: modelo, largura: largura, ir: ir)
         case .lanes: PaginaLanes(modelo: modelo)
         case .builds: PaginaBuilds(modelo: modelo)
         case .entregas: PaginaEntregas(modelo: modelo)
@@ -60,8 +100,43 @@ struct PainelTela: View {
         case .custos: PaginaCustos(modelo: modelo)
         case .esperando: PaginaEsperando()
         case .ajustes:
-            if let s = CatalogoAjustes.secoes().first(where: { $0.id == nav.secao }) { PaginaAjustes(secao: s) }
+            if let s = CatalogoAjustes.secoes().first(where: { $0.id == NavegacaoPainel.compartilhada.secao }) {
+                PaginaAjustes(secao: s)
+            }
         }
+    }
+}
+
+/// A mesma tela, montada fora da janela para virar imagem (destino da transição).
+struct FotoPainel: View {
+    var pagina: PaginaPainel
+    var modelo: ModeloNotch
+    var tamanho: CGSize
+
+    var body: some View {
+        VStack(spacing: 0) {
+            CabecalhoPainel(pagina: pagina, modelo: modelo, ir: { _ in })
+            ConteudoPagina(modelo: modelo, pagina: pagina,
+                           largura: max(tamanho.width - 44, 900), ir: { _ in })
+                .padding(.horizontal, 22)
+                .padding(.bottom, pagina == .dashboard ? 0 : 22)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .frame(width: tamanho.width, height: tamanho.height, alignment: .top)
+        .clipped()
+        .background(PV.fundo)
+        .environment(\.colorScheme, .dark)
+    }
+
+    /// Renderiza a página numa imagem (meia resolução basta: as partículas são uma malha grossa).
+    @MainActor
+    static func imagem(pagina: PaginaPainel, modelo: ModeloNotch, tamanho: CGSize) -> NSImage? {
+        guard tamanho.width > 2, tamanho.height > 2 else { return nil }
+        let renderizador = ImageRenderer(content: FotoPainel(pagina: pagina, modelo: modelo, tamanho: tamanho))
+        renderizador.scale = 0.5
+        renderizador.isOpaque = true
+        renderizador.proposedSize = ProposedViewSize(width: tamanho.width, height: tamanho.height)
+        return renderizador.nsImage
     }
 }
 
@@ -224,6 +299,7 @@ struct ItemNavegacao: View {
 struct CabecalhoPainel: View {
     var pagina: PaginaPainel
     @ObservedObject var modelo: ModeloNotch
+    var ir: (PaginaPainel) -> Void
     @ObservedObject private var busca = BuscaPainel.compartilhada
     @ObservedObject private var nav = NavegacaoPainel.compartilhada
 
@@ -279,7 +355,7 @@ struct CabecalhoPainel: View {
             .padding(.leading, 4)
             // Caixa do dono (PRD de 29/10): o sino mostra as respostas em aberto e abre «Esperando você».
             // Sem resposta em aberto, o ponto vermelho dos outros alertas do painel fica como antes.
-            Button { comAnimacao { NavegacaoPainel.compartilhada.pagina = .esperando } } label: {
+            Button { ir(.esperando) } label: {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell").font(.system(size: 19)).foregroundStyle(PV.icone)
                     if abertas > 0 {
