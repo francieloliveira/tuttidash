@@ -39,9 +39,9 @@ final class IndicadoresTests: XCTestCase {
         let ind = montar(.vazia, execs).indicadores
         XCTAssertEqual(ind.buildsHoje, 3)
         XCTAssertEqual(ind.buildsOntem, 2)
-        XCTAssertEqual(ind.execucoes24h, 4)
+        XCTAssertEqual(ind.execucoes24h, 3, "em andamento fica fora do %")
         XCTAssertEqual(ind.falhas24h, 2)
-        XCTAssertEqual(ind.falhasPct ?? 0, 50, accuracy: 0.001)
+        XCTAssertEqual(ind.falhasPct ?? 0, 200.0 / 3, accuracy: 0.001)
         XCTAssertEqual(ind.buildsSerie.count, 12)
         XCTAssertEqual(ind.buildsSerie[11], 2)      // 17:30 e 17:45 caem na hora corrente
         XCTAssertEqual(ind.buildsSerie[2], 1)       // 09:00 = 9 h atrás
@@ -52,19 +52,61 @@ final class IndicadoresTests: XCTestCase {
         XCTAssertNil(builds.first?.custoUSD)
     }
 
-    func testVariacaoDaSemanaComparaOMesmoPontoDaSemanaAnterior() {
+    /// Revisão de 02/11: janela atual = hoje + 6 dias (10/10 00:00 até agora); anterior = os
+    /// 7 dias antes dela até o mesmo horário (03/10 00:00 até 09/10 18:00).
+    func testVariacaoCompara7DiasCom7DiasAnterioresNoMesmoHorario() {
         let execs = [
-            ex("FRA-1-claude-20261013-100000", custo: 30),   // W42
-            ex("FRA-2-claude-20261006-100000", custo: 15),   // W41, antes do mesmo ponto
-            ex("FRA-3-claude-20261009-170000", custo: 5),    // W41, sexta 17h: ainda conta
-            ex("FRA-4-claude-20261010-100000", custo: 99),   // W41, sábado: depois do mesmo ponto
+            ex("FRA-1-claude-20261013-100000", custo: 30),   // janela atual
+            ex("FRA-7-claude-20261010-080000", custo: 10),   // sábado: janela atual (na semana ISO seria a anterior)
+            ex("FRA-2-claude-20261003-100000", custo: 15),   // 1º dia da janela anterior
+            ex("FRA-3-claude-20261009-170000", custo: 5),    // antes do mesmo horário: conta
+            ex("FRA-4-claude-20261009-190000", custo: 99),   // depois do mesmo horário: fora
+            ex("FRA-6-claude-20261002-230000", custo: 50),   // antes da janela anterior: fora
             ex("FRA-5-grok-20261007-100000", custo: nil),    // desconhecido nunca vira zero
         ]
         let snap = montar(.vazia, execs)
+        XCTAssertEqual(snap.custos.semana ?? 0, 40, accuracy: 0.001)
         XCTAssertEqual(snap.indicadores.semanaAnterior ?? 0, 20, accuracy: 0.001)
-        XCTAssertEqual(snap.indicadores.variacaoSemanaPct ?? 0, 50, accuracy: 0.001)
-        XCTAssertTrue(snap.alertasPainel.contains("Custo semanal 50% maior que a semana anterior"))
-        XCTAssertFalse(snap.alertas.contains { $0.hasPrefix("Custo semanal") }, "o notch não muda")
+        XCTAssertEqual(snap.indicadores.variacaoSemanaPct ?? 0, 100, accuracy: 0.001)
+        XCTAssertTrue(snap.alertasPainel.contains("Custo dos últimos 7 dias 100% maior que nos 7 dias anteriores"))
+        XCTAssertFalse(snap.alertas.contains { $0.hasPrefix("Custo dos últimos") }, "o notch não muda")
+    }
+
+    /// Revisão de 02/11: KPI, gasto por lane, gráfico, top 5 e lista usam a mesma janela.
+    func testBloco7DiasUsaUmaJanelaSo() {
+        let execs = [
+            ex("FRA-1-claude-20261016-100000", custo: 2),    // hoje (sexta)
+            ex("FRA-2-grok-20261011-100000", custo: 8),      // domingo: semana ISO anterior, mas dentro dos 7 dias
+            ex("FRA-3-claude-20261009-100000", custo: 50),   // fora dos 7 dias
+        ]
+        let snap = montar(.vazia, execs)
+        let p = snap.custos.periodos[.semana]
+        XCTAssertEqual(snap.custos.semana ?? 0, 10, accuracy: 0.001)
+        XCTAssertEqual(p?.total ?? 0, 10, accuracy: 0.001)
+        XCTAssertEqual(snap.custos.dias.map(\.total).reduce(0, +), 10, accuracy: 0.001)
+        let somaLanes = (p?.porLane ?? []).compactMap(\.custoUSD).reduce(0, +)
+        XCTAssertEqual(somaLanes, 10, accuracy: 0.001)
+        XCTAssertEqual(Set(p?.top.map(\.card) ?? []), ["FRA-1", "FRA-2"])
+        XCTAssertEqual(PeriodoCustos.semana.rotulo, "7 dias")
+    }
+
+    /// Lane que gastou mas não está no painel entra no fim do «Gasto por lane».
+    func testGastoDeLaneForaDoPainelNaoSome() {
+        let snap = montar(.vazia, [ex("FRA-1-fantasma-20261016-100000", custo: 3)])
+        let lanes = snap.custos.periodos[.semana]?.porLane ?? []
+        XCTAssertEqual(lanes.last?.lane, "fantasma")
+        XCTAssertEqual(lanes.last?.custoUSD ?? 0, 3, accuracy: 0.001)
+        XCTAssertEqual(Array(lanes.map(\.lane).prefix(LanesPainel.ordem.count)), LanesPainel.ordem)
+    }
+
+    /// Revisão de 02/11: a mesma regra de folga do dispatcher (janela longa afrouxa).
+    func testFolgaSegueAJanelaDoDispatcher() {
+        XCTAssertEqual(LanesPainel.folga("alto", janela: "5h"), 60)
+        XCTAssertEqual(LanesPainel.folga("alto", janela: "30 dias"), 85)
+        XCTAssertEqual(LanesPainel.folga("baixo", janela: "semana"), 95)
+        XCTAssertEqual(LanesPainel.folga("medio", janela: "mês"), 90)
+        XCTAssertEqual(LanesPainel.folga("medio", janela: nil), 80)
+        XCTAssertFalse(LanesPainel.janelaLonga("5 h"))
     }
 
     func testSemGastoAnteriorNaoInventaVariacao() {
@@ -125,5 +167,62 @@ final class IndicadoresTests: XCTestCase {
         ]
         let top = montar(.vazia, execs).custos.top
         XCTAssertEqual(top.first?.ultimoInicio, data("2026-10-16 15:00:00"))
+    }
+}
+
+/// Revisão de 02/11: a suíte vale pela última tentativa da prova.
+final class ProvaUltimaTentativaTests: XCTestCase {
+    func testSuiteQueFalhaNaPrimeiraEPassaNaSegundaContaComoOk() {
+        let log = """
+        [prova] TranscentIATests: 1ª tentativa SKIP_PREFLIGHT=1
+        Test Case '-[ScenarioTests testPortao]' failed (2.000 seconds)
+        Test Case '-[OutraTests testA]' passed (1.000 seconds)
+        [prova] TranscentIATests: 1ª falhou; 2ª tentativa com preflight
+        Test Case '-[ScenarioTests testPortao]' passed (2.500 seconds)
+        Test Case '-[OutraTests testA]' passed (1.000 seconds)
+        Executed 2 tests, with 0 failures (0 unexpected) in 3.500 (3.600) seconds
+        ** TEST SUCCEEDED **
+        """
+        let a = Provas.analisar(log)
+        XCTAssertEqual(a.suites.map(\.nome), ["ScenarioTests", "OutraTests"])
+        XCTAssertTrue(a.suites.allSatisfy { $0.estado == .ok }, "a 1ª tentativa não vale mais")
+        XCTAssertEqual(a.tentativa, 2)
+    }
+
+    func testFalhaNasDuasTentativasContinuaFalha() {
+        let log = """
+        [prova] TranscentIATests: 1ª tentativa SKIP_PREFLIGHT=1
+        Test Case '-[ScenarioTests testPortao]' failed (2.000 seconds)
+        [prova] TranscentIATests: 1ª falhou; 2ª tentativa com preflight
+        Test Case '-[ScenarioTests testPortao]' failed (2.000 seconds)
+        ** TEST FAILED **
+        """
+        XCTAssertEqual(Provas.analisar(log).suites.map(\.estado), [.falha])
+    }
+
+    func testPythonNaSegundaTentativa() {
+        let log = """
+        [prova] tests.test_x: 1ª tentativa SKIP_PREFLIGHT=1
+        Ran 3 tests in 0.1s
+        FAILED (failures=1)
+        [prova] tests.test_x: 1ª falhou; 2ª tentativa com preflight
+        Ran 3 tests in 0.1s
+        OK
+        """
+        XCTAssertEqual(Provas.analisar(log).suites.map(\.estado), [.ok])
+    }
+
+    func testDuasSuitesSoARefeitaPerdeA1aTentativa() {
+        let log = """
+        [prova] AppTests: 1ª tentativa SKIP_PREFLIGHT=1
+        Test Case '-[AppTests testA]' passed (1.000 seconds)
+        [prova] UITests: 1ª tentativa SKIP_PREFLIGHT=1
+        Test Case '-[UITests testB]' failed (1.000 seconds)
+        [prova] UITests: 1ª falhou; 2ª tentativa com preflight
+        Test Case '-[UITests testB]' passed (1.000 seconds)
+        """
+        let a = Provas.analisar(log)
+        XCTAssertEqual(a.suites.map(\.nome), ["AppTests", "UITests"])
+        XCTAssertEqual(a.suites.map(\.estado), [.ok, .ok])
     }
 }

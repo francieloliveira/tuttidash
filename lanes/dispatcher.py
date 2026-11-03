@@ -131,9 +131,10 @@ EFFORT_DEFAULT = "medio"
 # manifesto (tabela aprovada em 2026-10-03; as notas de por-lane estão em `nota`).
 EFFORT_FLAGS = {
     lane: {nivel: list(m.get("flags", ()))
-           for nivel, m in (catalogo.catalogo().get(lane, {}).get("modelos") or {}).items()}
+           for nivel, m in (catalogo.catalogo().get(catalogo.perfil_da_lane(lane), {})
+                            .get("modelos") or {}).items()}
     for lane in LANES
-}
+}   # instância: as flags do manifesto do agente dela (PRD lanes-v2)
 # Teto de gasto por execução (USD). Estourou -> lane:falhou com o motivo.
 BUDGET_USD = {"baixo": 3, "medio": 8, "alto": 20}
 # Grok não tem teto em dólar: o limite é de turnos.
@@ -144,6 +145,11 @@ DSH_ESFORCO = {"baixo": "low", "medio": "high", "alto": "max"}
 DSH_ESFORCOS_VALIDOS = {"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 # Risco alto sem lane explícita prefere estas lanes (mesma preferência do vigia).
 RISCO_ALTO_LANES = {"claude", "grok"}
+
+
+def risco_alto(lane: str) -> bool:
+    """Lane preferida para risco alto: pelo nome ou pelo agente (instância `claude-sonnet`)."""
+    return lane in RISCO_ALTO_LANES or catalogo.perfil_da_lane(lane) in RISCO_ALTO_LANES
 # Teto de cards por lane ativa: 1 RUN + (MAX_PER_LANE - 1) WAIT.
 # Deve bater com tools/cfg DEFAULTS["watch"]["max_tarefas_por_lane"].
 MAX_PER_LANE = 2
@@ -713,8 +719,8 @@ COMANDO_BANCADA = _AQUI / "bancada.py"
 
 
 def bancada_ativa(lane: str, issue: dict) -> bool:
-    """Lane `claude` + etiqueta `lane:bancada` no card + `bancada.ativo` no cadastro."""
-    if lane != "claude":
+    """Lane do CLI `claude` + etiqueta `lane:bancada` no card + `bancada.ativo` no cadastro."""
+    if catalogo.cli_da_lane(lane) != "claude":
         return False
     nomes = {str(l.get("name") or "") for l in (issue.get("labels") or {}).get("nodes") or []
              if isinstance(l, dict)}
@@ -1076,8 +1082,22 @@ def _cache_modelos() -> dict:
     return catalogo.ler_cache_modelos(CACHE_MODELOS)
 
 
+def _bruto_da_lane(lane: str):
+    """`lanes.modelo.<lane>`. Instância sem essa chave e com `modelo` fixo na própria entrada
+    (formato do piloto ACP) vale como Fixo."""
+    bruto = catalogo.bruto_modelo(lane, _arquivos_cfg())
+    if bruto is None:
+        inst = catalogo.instancia(lane)
+        if inst and inst["modelo"] != catalogo.MODELO_AUTO:
+            bruto = {"modo": "fixo", "fixo": inst["modelo"]}
+    return bruto
+
+
 def _resolucao_modelo(lane: str, effort: str) -> dict:
-    return catalogo.resolver_modelo(lane, effort, catalogo.bruto_modelo(lane, _arquivos_cfg()), _cache_modelos())
+    """Modelo, esforço e flags da lane neste peso. A config é a da lane
+    (`lanes.modelo.<lane>`); o manifesto é o do agente (PRD lanes-v2)."""
+    return catalogo.resolver_modelo(catalogo.perfil_da_lane(lane), effort, _bruto_da_lane(lane),
+                                    _cache_modelos())
 
 
 def modelo_da_lane(lane: str, effort: str) -> str:
@@ -1086,13 +1106,10 @@ def modelo_da_lane(lane: str, effort: str) -> str:
     Fixo (e a string antiga) vale para todos os pesos. Automático usa `porPeso` e, no
     que faltar, o manifesto. Sem o prefixo do provedor, ganha o do manifesto.
     Teste que troca `ler_modelo_lane` continua no caminho antigo (None = manifesto).
-    Lane ACP: o modelo fixo da instância, ou, em "auto", o mesmo que o agente dela usaria
-    neste peso (manifesto + `lanes.modelo.<agente>`)."""
-    inst = catalogo.instancia(lane)
-    if inst:
-        if inst["modelo"] == catalogo.MODELO_AUTO:
-            return modelo_da_lane(inst["agente"], effort)
-        return inst["modelo"]
+    Instância (PRD lanes-v2): a mesma resolução, com a config da instância e o manifesto
+    do agente dela."""
+    if catalogo.instancia(lane):
+        return _resolucao_modelo(lane, effort)["modelo"]
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         flags = EFFORT_FLAGS.get(lane, {}).get(effort) or []
         m = ler_modelo_lane(lane) or (flags[-1] if flags else "")
@@ -1105,11 +1122,13 @@ def modelo_da_lane(lane: str, effort: str) -> str:
 
 def flags_da_lane(lane: str, effort: str) -> list[str]:
     """Flags do CLI neste peso, já com o modelo e o esforço da config.
-    Lane ACP: só para exibir (o runner recebe `--modelo`)."""
+    Instância ACP: só para exibir (o runner recebe `--modelo`)."""
     inst = catalogo.instancia(lane)
-    if inst:
+    if inst and inst["transporte"] == "acp":
         m = modelo_da_lane(lane, effort)
         return ["-m", m] if m else []
+    if inst:
+        return list(_resolucao_modelo(lane, effort)["flags"])
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         m = ler_modelo_lane(lane)
         if not m:
@@ -1120,9 +1139,8 @@ def flags_da_lane(lane: str, effort: str) -> list[str]:
 
 def aviso_modelo(lane: str, effort: str) -> str:
     """«modelo fixo» ou o texto de modelo que saiu da lista. Vazio no automático quieto."""
-    inst = catalogo.instancia(lane)
-    if inst:
-        return "" if inst["modelo"] == catalogo.MODELO_AUTO else "modelo fixo"
+    if catalogo.instancia(lane):
+        return _resolucao_modelo(lane, effort)["aviso"]
     if ler_modelo_lane is not _ler_modelo_lane_impl:
         return "modelo fixo" if ler_modelo_lane(lane) else ""
     return _resolucao_modelo(lane, effort)["aviso"]
@@ -1155,7 +1173,7 @@ def reconciliar_modelos_sumidos() -> list[str]:
         alterou = False
         for lane in sorted(chaves):
             bruto = dados.get(f"lanes.modelo.{lane}") or modelo_map.get(lane)
-            novo, _aviso = catalogo.ajuste_sumido(lane, bruto, cache)
+            novo, _aviso = catalogo.ajuste_sumido(catalogo.perfil_da_lane(lane), bruto, cache)
             if novo is None:
                 continue
             dados.pop(f"lanes.modelo.{lane}", None)
@@ -1182,7 +1200,8 @@ def atualizar_listas_modelos() -> None:
     """Renova a lista das lanes sem lista boa do dia e devolve ao automático o que sumiu.
     Lane que falhou é tentada de novo depois de uma hora (FRA-564)."""
     try:
-        pendentes = catalogo.lanes_para_atualizar(LANES, CACHE_MODELOS)
+        pendentes = catalogo.lanes_para_atualizar([l for l in LANES if l in catalogo.catalogo()],
+                                                  CACHE_MODELOS)
         if not pendentes:
             return
         cache = _cache_modelos()
@@ -1207,7 +1226,7 @@ def privacy_block(lane: str, effort: str) -> Optional[str]:
         return "módulo de privacidade ausente (rode tools/install.sh)"
     modelo = modelo_da_lane(lane, effort)
     if catalogo.instancia(lane) and not modelo:
-        return f"lane ACP sem modelo para o peso `{effort}`: a privacidade só é conferida com um modelo"
+        return f"lane sem modelo para o peso `{effort}`: a privacidade só é conferida com um modelo"
     ok, motivo = privacidade.pode_receber_codigo(modelo)
     return None if ok else motivo
 
@@ -1230,15 +1249,15 @@ def atualizar_privacidade() -> None:
         log(f"privacidade OpenCode: erro ao conferir ({exc}); vale a última conferência")
 
 
-def deepseek_esforco(effort: str) -> str:
+def deepseek_esforco(effort: str, lane: str = "deepseek") -> str:
     """reasoningEffort do dsh: o da config, se válido; senão o padrão do peso."""
-    bruto = str(_resolucao_modelo("deepseek", effort).get("esforco") or "").strip()
+    bruto = str(_resolucao_modelo(lane, effort).get("esforco") or "").strip()
     if bruto in DSH_ESFORCOS_VALIDOS:
         return bruto
     return DSH_ESFORCO.get(effort, "high")
 
 
-def deepseek_patch(effort: str) -> str:
+def deepseek_patch(effort: str, lane: str = "deepseek") -> str:
     """Patch do perfil headless do dsh para esta execução.
 
     O perfil de fábrica monta o provedor oficial (chave de API) e desliga a conta.
@@ -1246,8 +1265,8 @@ def deepseek_patch(effort: str) -> str:
     apontar o modelo padrão para `deepseek-account`. Com DEEPSEEK_API_KEY no
     ambiente, basta fixar o modelo no provedor oficial.
     """
-    modelo = modelo_da_lane("deepseek", effort) or "deepseek-flash"
-    esforco = deepseek_esforco(effort)
+    modelo = modelo_da_lane(lane, effort) or "deepseek-flash"
+    esforco = deepseek_esforco(effort, lane)
     com_api_key = bool((os.environ.get("DEEPSEEK_API_KEY") or "").strip())
     linhas: list[str] = []
     if not com_api_key:
@@ -1275,9 +1294,9 @@ def deepseek_patch(effort: str) -> str:
     return "\n".join(linhas) + "\n"
 
 
-def deepseek_resumo(effort: str) -> str:
+def deepseek_resumo(effort: str, lane: str = "deepseek") -> str:
     """Modelo e esforço no comentário do claim (o dsh não recebe flags de modelo)."""
-    return f"{modelo_da_lane('deepseek', effort) or 'deepseek-flash'} · reasoning {deepseek_esforco(effort)}"
+    return f"{modelo_da_lane(lane, effort) or 'deepseek-flash'} · reasoning {deepseek_esforco(effort, lane)}"
 
 
 def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
@@ -1287,7 +1306,13 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
     `prompt` e `patch` são caminhos fora do worktree. O agente não pode trocar
     o arquivo que o runner vai ler.
     """
-    if lane == "claude":
+    # PRD lanes-v2: o comando sai do CLI da lane (`claude`, `grok`, `opencode`, `codex`,
+    # `dsh`), não do nome dela. Uma instância (`claude-sonnet`) usa o mesmo comando do
+    # agente, com o modelo e o esforço da própria config.
+    if catalogo.transporte_da_lane(lane) == "acp":
+        return comando_acp(lane, catalogo.instancia(lane), settings, effort)
+    cli = catalogo.cli_da_lane(lane)
+    if cli == "claude":
         return [
             "claude", "-p",  # prompt chega pelo stdin, do RUN_DIR (FRA-595)
             "--output-format", "stream-json", "--verbose",
@@ -1295,9 +1320,9 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
             "--settings", str(settings or caminho_settings()),
             "--strict-mcp-config", "--mcp-config", str(caminho_controle("lane-mcp.json")),
             "--max-budget-usd", str(BUDGET_USD[effort]),
-            *flags_da_lane("claude", effort),
+            *flags_da_lane(lane, effort),
         ]
-    if lane == "grok":
+    if cli == "grok":
         if prompt is None or ".lane" in Path(prompt).parts:
             raise RuntimeError("o prompt da lane fica fora do worktree")
         perms = lane_permissions()
@@ -1308,7 +1333,7 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
             "--sandbox", PERFIL_SANDBOX,
             "--tools", ",".join(GROK_TOOLS), "--disable-web-search",
             "--max-turns", str(GROK_MAX_TURNS[effort]),
-            *flags_da_lane("grok", effort),
+            *flags_da_lane(lane, effort),
         ]
         for rule in perms["allow"]:
             if not rule.startswith("mcp__"):      # nenhum MCP liberado na lane grok
@@ -1317,37 +1342,29 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
                                      "mcp__obsidian-filesystem", "mcp__outsystems-docs"]:
             cmd += ["--deny", rule]
         return cmd
-    if lane == "opencode":
+    if cli == "opencode":
         # FRA-374: `run` lê eventos JSON
         # linha a linha (--format json). O prompt vai como argumento (o `run` não
         # documenta leitura do stdin). `texto_do_agente` põe "$(cat <prompt>)"
         # entre aspas, com o prompt fora do worktree: o bash expande, e espaços
         # e aspas do arquivo chegam num argumento só. O run_lane.sh continua
         # redirecionando o stdin por compatibilidade com as outras lanes.
-        # Modelo pode ser customizado pelo usuário no config do TuttiDash
-        # (chave lanes.modelo.opencode).
-        modelo = modelo_da_lane("opencode", effort)
+        # Modelo da config da lane (`lanes.modelo.<lane>`); `opencode-go` é a mesma
+        # invocação com os modelos Go (ZDR, teto mensal por modelo).
+        modelo = modelo_da_lane(lane, effort)
         return [
             "opencode", "run", "--format", "json",
             "-m", modelo,
         ]
-    if lane == "opencode-go":
-        # opencode-go: modelos Go com ZDR (teto mensal por modelo).
-        # Modelo customizado pelo usuário no config (chave lanes.modelo.opencode-go).
-        modelo = modelo_da_lane("opencode-go", effort)
-        return [
-            "opencode", "run", "--format", "json",
-            "-m", modelo,
-        ]
-    if lane == "codex":
+    if cli == "codex":
         # FRA-374: `exec --json` emite eventos JSONL; o prompt vai
         # como argumento posicional (ver claim). Padrão = modelo default do CLI.
         # Sem teto de gasto no CLI; monitorado pelo ledger depois.
         return [
             "codex", "exec", "--json",
-            *flags_da_lane("codex", effort),
+            *flags_da_lane(lane, effort),
         ]
-    if lane == "deepseek":
+    if cli == "dsh":
         # dsh (DeepSeek Harness) headless: uma sessão nova, a resposta final no
         # stdout e sai. O prompt vai como argumento posicional (texto_do_agente).
         # O patch escrito no claim liga a conta e fixa modelo/reasoningEffort.
@@ -1356,9 +1373,6 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
         if patch is None:
             raise RuntimeError("o patch do dsh fica fora do worktree")
         return ["dsh", "--profile", "headless", "--patch", str(patch)]
-    inst = catalogo.instancia(lane)
-    if inst:
-        return comando_acp(lane, inst, settings, effort)
     # cursor não tem CLI headless público para execução de lanes; fica como
     # placeholder até existir comando equivalente.
     raise NotImplementedError(f"lane {lane} não tem comando de agente")
@@ -1390,7 +1404,7 @@ def texto_do_agente(lane: str, effort: str, prompt: Path,
     Na opencode e no dsh o prompt entra entre aspas. Sem aspas, um espaço ou uma
     aspa do card partia o argumento e o CLI lia lixo (ou uma flag)."""
     agent_text = shlex.join(agent_command(lane, effort, prompt=prompt, patch=patch, settings=settings))
-    if lane in ("opencode", "deepseek"):
+    if catalogo.transporte_da_lane(lane) == "cli" and catalogo.cli_da_lane(lane) in ("opencode", "dsh"):
         agent_text += f' -- "$(cat {shlex.quote(str(prompt))})"'
     return agent_text
 
@@ -1834,7 +1848,7 @@ def atualizar_cache_titulos(cards) -> None:
 
 
 def enabled_lanes() -> set[str]:
-    """Lanes do arquivo `enabled`, mais as lanes ACP com `ligada: true` na config."""
+    """Lanes do arquivo `enabled`, mais as instâncias com `ligada: true` na config."""
     ligadas = {n for n in catalogo.instancias_ligadas() if n in LANES}
     if not ENABLED_FILE.exists():
         return ligadas
@@ -2477,12 +2491,13 @@ def _juntar_main(wt: Path) -> tuple[str, str]:
 def limit_text(lane: str, effort: str) -> str:
     """Limite da execução no comentário do claim: grok tem turnos; claude e opencode,
     teto em US$ (no opencode o CLI não trava — o gasto monitora depois da rodada)."""
-    if lane == "grok":
-        return f"limite {GROK_MAX_TURNS[effort]} turnos"
-    if lane == "deepseek":
-        return "sem teto de gasto no CLI"
-    if catalogo.instancia(lane):
+    if catalogo.transporte_da_lane(lane) == "acp":
         return "sem teto de gasto no CLI (ACP: o custo vem do agente, no ledger)"
+    cli = catalogo.cli_da_lane(lane)
+    if cli == "grok":
+        return f"limite {GROK_MAX_TURNS[effort]} turnos"
+    if cli == "dsh":
+        return "sem teto de gasto no CLI"
     return f"teto US$ {BUDGET_USD[effort]}"
 
 
@@ -2510,8 +2525,10 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
 
     base_prompt = caminho_prompt("lane-prompt.md")
     template = base_prompt.read_text(encoding="utf-8") if base_prompt.is_file() else ""
-    # regras específicas do agente; lane ACP usa as regras do transporte
-    extra = caminho_prompt("lane-prompt-acp.md" if catalogo.instancia(lane) else f"lane-prompt-{lane}.md")
+    # regras específicas do agente (pelo manifesto da lane); lane ACP usa as do transporte
+    cli = catalogo.cli_da_lane(lane)
+    extra = caminho_prompt("lane-prompt-acp.md" if catalogo.transporte_da_lane(lane) == "acp"
+                           else f"lane-prompt-{catalogo.perfil_da_lane(lane)}.md")
     if extra.is_file():
         template += "\n" + extra.read_text(encoding="utf-8")
     prompt = (template.replace("{{CARD}}", ident).replace("{{LANE}}", lane)
@@ -2528,9 +2545,9 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
 
     # dsh: o patch do perfil (conta + modelo + esforço) vai junto com o prompt.
     patch_file = None
-    if lane == "deepseek":
+    if cli == "dsh":
         patch_file = prova / "deepseek.yml"
-        escrever_exclusivo(patch_file, deepseek_patch(effort))
+        escrever_exclusivo(patch_file, deepseek_patch(effort, lane))
 
     # FRA-618: settings do modo bancada no RUN_DIR (fora do worktree, a lane não reescreve).
     settings_file = None
@@ -2540,7 +2557,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
 
     # FRA-598: o perfil do Grok tem de existir antes do processo. Sem ele o CLI
     # recusa subir, em vez de rodar sem o deny de `security` e dos segredos.
-    if lane == "grok":
+    if cli == "grok":
         escrever_perfil_sandbox()
 
     # FRA-374: o `--` fecha o parsing de flags do CLI. Sem ele, um token do
@@ -2568,7 +2585,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     save_state(lane, st)
     gravar_claim(lane, st)
 
-    flags = (deepseek_resumo(effort) if lane == "deepseek"
+    flags = (deepseek_resumo(effort, lane) if cli == "dsh"
              else " ".join(flags_da_lane(lane, effort)) or "padrão do CLI")
     linear(MUT_COMMENT, {"id": card["id"], "body":
         f"▶️ **lane:{lane}** assumiu o card ({now()}).\n\n"
@@ -2590,6 +2607,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
             "bash", shlex.quote(str(runner)),
             shlex.quote(lane), shlex.quote(str(wt)), shlex.quote(ident),
             shlex.quote(str(lane_log)), shlex.quote(str(cmd_path)), shlex.quote(str(prova)),
+            shlex.quote(cli or lane),
         ])])
     # Janela única 'lanes' (claude em cima, grok embaixo). Fechar não para a lane.
     st["window_ok"] = _show_in_lanes_window(lane, session, ident)
@@ -3189,21 +3207,54 @@ def lane_limited_conta(lane: str) -> Optional[float]:
     return u
 
 
+def situacao_simultaneo(conta: str, na_conta) -> Optional[str]:
+    """Motivo para a conta rodar uma lane por vez (PRD lanes-v2, fase 2), ou None.
+
+    - Teste reprovado: uma por vez, em qualquer conta partilhada.
+    - Conta com lane extra (instância) ligada: uma por vez até o teste aprovar, e de novo
+      se ele vencer. O par do catálogo `opencode` + `opencode-go` já rodava junto e só
+      cai para uma por vez com teste reprovado."""
+    try:
+        import teste_simultaneo as ts
+    except ImportError:  # pragma: no cover — bundle sem o módulo: a conta fica como antes
+        return None
+    try:
+        estado, texto = ts.situacao(conta, STATE_DIR)
+    except ValueError:
+        return None
+    if estado == "reprovado":
+        return texto
+    if estado == "aprovado":
+        return None
+    ligadas = enabled_lanes()
+    if any(catalogo.instancia(l) is not None and l in ligadas for l in na_conta):
+        lane_teste = next((l for l in na_conta if l in ligadas), na_conta[0])
+        return f"{texto}; rode `teste_simultaneo.py {lane_teste}`"
+    return None
+
+
 def bloqueio_por_conta(lane: str, a_assumir=()) -> Optional[str]:
     """Motivo para segurar a lane: a conta já tem o máximo de lanes rodando.
 
-    Só vale quando a conta é partilhada por mais de uma lane (instâncias ACP). Sem
-    instância na conta, nada muda para as lanes do catálogo."""
+    Só vale quando a conta é partilhada por mais de uma lane (instâncias, ou `opencode` e
+    `opencode-go`). O máximo é `lanes.limite_conta` (sem limite por padrão: a cota segura)
+    ou 1, enquanto a conta não tem teste de execução simultânea aprovado (fase 2)."""
     conta = catalogo.conta_da_lane(lane)
     na_conta = [l for l in LANES if catalogo.conta_da_lane(l) == conta]
+    if len(na_conta) <= 1:
+        return None
     limite = catalogo.limite_por_conta(conta)
-    if len(na_conta) <= 1 or limite is None:   # sem limite é o padrão: a cota segura
+    motivo = f"limite {limite}" if limite is not None else ""
+    sim = situacao_simultaneo(conta, na_conta)
+    if sim and (limite is None or limite > 1):
+        limite, motivo = 1, f"limite 1: {sim}"
+    if limite is None:
         return None
     pegando = {item[0] for item in a_assumir}
     ocupadas = [l for l in na_conta if l in pegando or load_state(l)]
     if len(ocupadas) >= limite:
         return (f"conta `{conta}` com {len(ocupadas)} lane(s) rodando "
-                f"({', '.join(sorted(ocupadas))}); limite {limite}")
+                f"({', '.join(sorted(ocupadas))}); {motivo}")
     return None
 
 
@@ -3246,9 +3297,10 @@ def resume_line(st: dict) -> str:
     vazia quando o log não tem o id."""
     sid = agent_session_id(st.get("log", ""))
     # O id vem do log do agente: sem o formato seguro, a linha não entra no comentário.
-    if not sid or not sessao_citavel(sid) or st["lane"] == "deepseek":
+    cli_lane = catalogo.cli_da_lane(st["lane"])
+    if not sid or not sessao_citavel(sid) or cli_lane == "dsh":
         return ""   # o dsh headless não expõe `--resume` nem session_id no stdout
-    cli = "grok" if st["lane"] == "grok" else "claude"
+    cli = "grok" if cli_lane == "grok" else "claude"
     return (
         f"- retomar o agente: `cd {shlex.quote(st['worktree'])} && {cli} --resume {shlex.quote(sid)}`\n"
     )
@@ -3732,7 +3784,7 @@ def hold_for_limit(st: dict, until: float) -> str:
     espera até `until` e o card volta sozinho, retomando do worktree."""
     limit_file(st["lane"]).write_text(json.dumps({"until": until, "card": st["card"], "at": now()}))
     linear(MUT_COMMENT, {"id": st["issue_id"], "body":
-        f"⏳ **lane:{st['lane']}** parou pelo **limite de uso {'do provedor (HTTP 429)' if st['lane'].startswith('opencode') else 'da conta'}** (não é erro do card).\n\n"
+        f"⏳ **lane:{st['lane']}** parou pelo **limite de uso {'do provedor (HTTP 429)' if catalogo.cli_da_lane(st['lane']) == 'opencode' else 'da conta'}** (não é erro do card).\n\n"
         f"- volta sozinha às **{hhmm(until)}** e retoma este card do worktree (o trabalho fica lá)\n"
         f"{linha_causa('limite-conta')}"
         f"- log: `{st['log']}`\n- worktree: `{st['worktree']}`\n{resume_line(st)}{pending_lines(st)}"})
@@ -4743,7 +4795,7 @@ def spread_auto(auto: list, measures: dict, candidates, busy, per_lane: dict,
         if not fit_run:
             continue
         if fila.contexto_card(it).get("risk") == "risco:alto":
-            fit_run.sort(key=lambda l: (0 if l in RISCO_ALTO_LANES else 1, l))
+            fit_run.sort(key=lambda l: (0 if risco_alto(l) else 1, l))
         lane = fit_run[0]
         fill[lane] += 1
         per_lane.setdefault(lane, []).append(it)
@@ -4759,7 +4811,7 @@ def spread_auto(auto: list, measures: dict, candidates, busy, per_lane: dict,
             out.append((it, None))
             continue
         if fila.contexto_card(it).get("risk") == "risco:alto":
-            fit_wait.sort(key=lambda l: (0 if l in RISCO_ALTO_LANES else 1, l))
+            fit_wait.sort(key=lambda l: (0 if risco_alto(l) else 1, l))
         lane = fit_wait[0]
         fill[lane] += 1
         per_lane.setdefault(lane, []).append(it)

@@ -68,9 +68,10 @@ struct DashboardPainel: View {
                 rotulo: "Builds hoje", valor: "\(ind.buildsHoje)", espaco: 12) {
                 variacao(ind.buildsHoje - ind.buildsOntem, sobeBom: true)
             } abaixo: { EmptyView() } direita: {
-                Barrinhas(valores: ind.buildsSerie.suffix(11).map(Double.init)) { i, _ in
-                    i >= 8 ? PV.azul : (i >= 2 ? PV.azulIcone : Color(hex: 0x2F7BEA))
+                Barrinhas(valores: ind.buildsSerie.map(Double.init)) { i, _ in
+                    i >= 9 ? PV.azul : (i >= 3 ? PV.azulIcone : Color(hex: 0x2F7BEA))
                 }
+                .help("Execuções por hora nas últimas 12 h")
                 .padding(.top, 12)
             }
             .frame(width: 296 * k)
@@ -85,7 +86,7 @@ struct DashboardPainel: View {
             .frame(width: 336 * k)
 
             kpi(icone: IconeCartao(simbolo: "cylinder.split.1x2", cor: PV.dourado, fundo: PV.ambarFundo, tamanho: 54, tamanhoIcone: 25),
-                rotulo: "Custo da semana", valor: snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", espaco: 12) {
+                rotulo: "Custo (7 dias)", valor: snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", espaco: 12) {
                 variacaoCusto
             } abaixo: { EmptyView() } direita: {
                 Barrinhas(valores: (snap?.custos.dias ?? []).map(\.total), cor: { _, _ in PV.verde }, largura: 5)
@@ -131,7 +132,7 @@ struct DashboardPainel: View {
             .help("Comparado com ontem")
     }
 
-    /// Subiu: ↑ vermelho. Caiu: ↓ verde. Sem semana anterior: «—».
+    /// Subiu: ↑ vermelho. Caiu: ↓ verde. Sem os 7 dias anteriores: «—».
     private var variacaoCusto: some View {
         Group {
             if let v = ind.variacaoSemanaPct {
@@ -142,7 +143,7 @@ struct DashboardPainel: View {
             }
         }
         .font(PV.fonte(13, .semibold))
-        .help("Comparado com a semana anterior até o mesmo ponto")
+        .help("Comparado com os 7 dias anteriores, até o mesmo horário")
     }
 
     // MARK: Alertas
@@ -237,12 +238,18 @@ struct DashboardPainel: View {
                 if linhas.isEmpty {
                     Text("Sem leitura das lanes").font(PV.fonte(12.5)).foregroundStyle(PV.mudo).padding(.horizontal, 4)
                 } else {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 6) {
-                            ForEach(linhas, id: \.lane) { linha in
-                                LinhaLaneDashboard(linha: linha, modelo: modelo, agora: agora,
-                                                   aberta: expandida == linha.lane) {
-                                    expandida = expandida == linha.lane ? nil : linha.lane
+                    // 6 linhas de 51 pt cabem no cartão. Com mais lanes (a lane extra da conta),
+                    // a linha encolhe até 40 pt em vez de esconder a primeira atrás da rolagem.
+                    GeometryReader { g in
+                        let n = CGFloat(linhas.count)
+                        let altura = max(40, min(51, (g.size.height - 6 * (n - 1)) / n))
+                        ScrollView(.vertical, showsIndicators: altura <= 40) {
+                            VStack(spacing: 6) {
+                                ForEach(linhas, id: \.lane) { linha in
+                                    LinhaLaneDashboard(linha: linha, modelo: modelo, agora: agora,
+                                                       aberta: expandida == linha.lane, altura: altura) {
+                                        expandida = expandida == linha.lane ? nil : linha.lane
+                                    }
                                 }
                             }
                         }
@@ -317,17 +324,19 @@ struct DashboardPainel: View {
         return CartaoPV {
             VStack(alignment: .leading, spacing: 0) {
                 CabecalhoCartao(icone: IconeCartao(simbolo: "flask", tamanhoIcone: 18),
-                                titulo: "Testes", subtitulo: "Execução de provas automatizadas") {
+                                titulo: "Testes", subtitulo: "Suítes das provas de hoje") {
                     BotaoVer(texto: "Ver todos") { ir(.testes) }
                 }
                 HStack(spacing: 22) {
                     Rosca(passou: ind.testesPassou, falhou: ind.testesFalhou)
                         .frame(width: 142, height: 142)
                     VStack(alignment: .leading, spacing: 20) {
-                        legenda(cor: Color(hex: 0x19E58C), texto: "\(ind.testesPassou) passou", pct: pct(ind.testesPassou, total))
-                        legenda(cor: Color(hex: 0xF64561), texto: "\(ind.testesFalhou) falhou", pct: pct(ind.testesFalhou, total))
+                        legenda(cor: Color(hex: 0x19E58C), texto: Formato.plural(ind.testesPassou, "suíte ok", "suítes ok"),
+                                pct: pct(ind.testesPassou, total))
+                        legenda(cor: Color(hex: 0xF64561), texto: Formato.plural(ind.testesFalhou, "suíte falhou", "suítes falharam"),
+                                pct: pct(ind.testesFalhou, total))
                         // Mock: o parser da prova ainda não lê testes pulados.
-                        legenda(cor: Color(hex: 0x8DA6D0), texto: "— ignorado", pct: "—")
+                        legenda(cor: Color(hex: 0x8DA6D0), texto: "— ignoradas", pct: "—")
                             .help("Testes ignorados: em breve")
                     }
                     .padding(.vertical, 10.5).padding(.horizontal, 14)
@@ -385,14 +394,15 @@ struct DashboardPainel: View {
                 }
                 .padding(.top, 13).padding(.leading, 10).padding(.trailing, 8)
                 HStack(spacing: 0) {
-                    Text("Baixo: < \(Int(LanesPainel.folgaBaixo))%")
+                    Text("Baixo: < \(Int(LanesPainel.folgaBaixo))% (\(Int(LanesPainel.folgaLongaBaixo))%)")
                     Spacer(minLength: 8)
-                    Text("Médio: < \(Int(LanesPainel.folgaMedio))%")
+                    Text("Médio: < \(Int(LanesPainel.folgaMedio))% (\(Int(LanesPainel.folgaLongaMedio))%)")
                     Spacer(minLength: 8)
-                    Text("Alto: < \(Int(LanesPainel.folgaAlto))%")
+                    Text("Alto: < \(Int(LanesPainel.folgaAlto))% (\(Int(LanesPainel.folgaLongaAlto))%)")
                     Spacer(minLength: 0)
                 }
                 .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                .help("Uso máximo da conta para assumir card de cada esforço. Entre parênteses: conta medida em janela de 1 dia ou mais.")
                 .padding(.top, 14).padding(.leading, 10).padding(.trailing, 40)
             }
             .padding(.top, 14).padding(.horizontal, 14).padding(.bottom, 12)
@@ -435,7 +445,7 @@ struct DashboardPainel: View {
                                 Spacer(minLength: 6)
                                 Text(haPainel(e.quandoData, agora: agora) ?? "").font(PV.fonte(12)).foregroundStyle(PV.mudo)
                             }
-                            .frame(height: 26.5)
+                            .frame(height: 25.5)
                         }
                     }
                     .background(alignment: .leading) {
@@ -486,7 +496,8 @@ struct DashboardPainel: View {
     private func painelGastoLane(_ p: CustosPeriodo?) -> some View {
         let lanes = p?.porLane ?? []
         let maximo = lanes.compactMap(\.custoUSD).max() ?? 0
-        return VStack(alignment: .leading, spacing: 8) {
+        let apertado = lanes.count > 6
+        return VStack(alignment: .leading, spacing: apertado ? 3 : 8) {
             Text("Gasto por lane (\(periodo.complemento))").font(PV.fonte(13, .medium))
             ForEach(Array(lanes.enumerated()), id: \.offset) { i, l in
                 HStack(spacing: 0) {
@@ -500,7 +511,7 @@ struct DashboardPainel: View {
                         .frame(width: 66, alignment: .leading)
                         .padding(.leading, 14)
                 }
-                .frame(height: 15)
+                .frame(height: apertado ? 14 : 15)
             }
         }
         .padding(.top, 12).padding(.leading, 13).padding(.trailing, 12).padding(.bottom, 8)
@@ -555,6 +566,8 @@ struct LinhaLaneDashboard: View {
     @ObservedObject var modelo: ModeloNotch
     var agora: Date
     var aberta: Bool
+    /// Altura da linha fechada. O cartão do Dashboard encolhe quando há mais de 6 lanes.
+    var altura: CGFloat = 51
     var alternar: () -> Void
     /// Barra de uso da conta na própria linha (só na página Lanes, que tem espaço).
     var mostrarUso = false
@@ -605,7 +618,7 @@ struct LinhaLaneDashboard: View {
                 MenuLane(linha: linha, modelo: modelo)
             }
             .padding(.leading, 10).padding(.trailing, 6)
-            .frame(height: 51)
+            .frame(height: altura)
             .overlay(alignment: .bottom) {
                 if linha.estado == .rodando, let s = linha.segundosNoCard {
                     BarraProgresso(progresso: ProgressoProcesso.estimado(inicio: agora.addingTimeInterval(-Double(s)),
@@ -752,7 +765,7 @@ struct Rosca: View {
             }
             VStack(spacing: 2) {
                 Text("\(passou + falhou)").font(PV.fonte(26, .semibold))
-                Text("testes hoje").font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                Text("suítes hoje").font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
             }
         }
     }
@@ -773,7 +786,7 @@ struct GraficoGasto: View {
             HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach([3, 2, 1, 0], id: \.self) { i in
-                        Text("\(moeda.rotulo) \(Int(passo * Double(i)))").font(PV.fonte(11)).foregroundStyle(PV.texto2)
+                        Text("\(moeda.rotulo) \(GraficoGasto.marca(passo * Double(i)))").font(PV.fonte(11)).foregroundStyle(PV.texto2)
                         if i > 0 { Spacer(minLength: 0) }
                     }
                 }
@@ -824,6 +837,12 @@ struct GraficoGasto: View {
             return LinearGradient(colors: [Color(hex: 0x4C90FA), Color(hex: 0x3570E0)], startPoint: .top, endPoint: .bottom)
         }
         return LinearGradient(colors: [Color(hex: 0x3570E0)], startPoint: .top, endPoint: .bottom)
+    }
+
+    /// Valor da marca do eixo: inteiro sem casa; passo 2,5 mostra «2,5» e «7,5» (antes truncava para 2 e 7).
+    static func marca(_ v: Double) -> String {
+        if v == v.rounded() { return "\(Int(v))" }
+        return String(format: "%.1f", v).replacingOccurrences(of: ".", with: ",")
     }
 
     /// Passo «redondo» para três marcas acima de zero (20 → 0/20/40/60).

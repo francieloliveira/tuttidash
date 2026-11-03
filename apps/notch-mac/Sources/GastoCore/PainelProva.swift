@@ -172,6 +172,9 @@ public enum Provas {
         let pythonRan = try? NSRegularExpression(pattern: #"Ran (\d+) tests? in"#)
         var suitePython: String?
         var ranPython = 0
+        // Onde começa o que a tentativa atual da suíte anunciada registrou. Na 2ª tentativa,
+        // o resultado da 1ª sai: a suíte vale pela última vez que rodou (revisão de 02/11).
+        var inicioBloco = 0
         for linha in linhas {
             if linha.contains("CompileSwift") || linha.contains("SwiftCompile") || linha.contains("Compiling ") {
                 a.compilou = true
@@ -181,6 +184,13 @@ public enum Provas {
                 a.compilou = true
                 suitePython = m[0]
                 ranPython = 0
+                if let n = Int(m[1]), n >= 2 {
+                    let refeitas = ordemSuites[min(inicioBloco, ordemSuites.count)...]
+                    for nome in refeitas { acum[nome] = nil }
+                    ordemSuites.removeSubrange(min(inicioBloco, ordemSuites.count)...)
+                } else {
+                    inicioBloco = ordemSuites.count
+                }
                 if let n = Int(m[1]) {
                     a.tentativa = max(a.tentativa, n)
                     if n >= 2 { a.segunda = true }

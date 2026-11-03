@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Runner de uma lane (roda dentro da sessão tmux criada pelo dispatcher).
-#   run_lane.sh <lane> <worktree> <card> <log.jsonl> <agent_cmd> <run_dir>
+#   run_lane.sh <lane> <worktree> <card> <log.jsonl> <agent_cmd> <run_dir> [cli]
+# <cli> é o CLI da lane (claude, grok, opencode, codex, dsh). Uma instância como
+# `claude-sonnet` roda o CLI `claude` (PRD lanes-v2). Sem ele, sai do nome da lane.
 # O comando e a prova vêm do RUN_DIR (FRA-595), nunca de .lane/agent_cmd.
 # Executa o agente headless com o prompt do RUN_DIR, mostra a saída formatada,
 # grava o exit_code no RUN_DIR e espera o dispatcher fechar o card.
 set -uo pipefail
 LANE="${1:-}"; WT="${2:-}"; CARD="${3:-}"; LOG="${4:-}"
-AGENT_CMD_FILE="${5:-}"; RUN_DIR="${6:-}"
+AGENT_CMD_FILE="${5:-}"; RUN_DIR="${6:-}"; CLI="${7:-}"
 if [ -z "$LANE" ] || [ -z "$WT" ] || [ -z "$CARD" ] || [ -z "$LOG" ] || [ -z "$AGENT_CMD_FILE" ] || [ -z "$RUN_DIR" ]; then
   echo "run_lane.sh: faltou lane, worktree, card, log, agent_cmd ou RUN_DIR" >&2
   exit 1
@@ -15,6 +17,14 @@ if [ -L "$AGENT_CMD_FILE" ] || [ -L "$RUN_DIR" ]; then
   echo "run_lane.sh: symlink recusado" >&2
   exit 1
 fi
+case "$CLI" in
+  claude|grok|opencode|codex|dsh) ;;
+  "") case "$LANE" in
+        grok) CLI=grok;; opencode|opencode-go) CLI=opencode;; codex) CLI=codex;;
+        deepseek) CLI=dsh;; *) CLI=claude;;
+      esac;;
+  *) echo "run_lane.sh: cli desconhecido: $CLI" >&2; exit 1;;
+esac
 # Este script e o lane_view.py vêm do mesmo diretório (repo ou bundle assinado).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # zdotdir é estado. Escrever dentro do .app quebraria o codesign.
@@ -96,7 +106,7 @@ PY
 # dsh escreve texto puro, sem o stream JSON das outras lanes. Uma linha `result`
 # sintética no fim dá ao parser do app o desfecho (ok/erro) e mantém o custo
 # desconhecido — não inventa US$ zero.
-if [ "$LANE" = "deepseek" ]; then
+if [ "$CLI" = "dsh" ]; then
   /usr/bin/python3 - "$LOG" "$rc" <<'PY'
 import json, sys
 log, rc = sys.argv[1], int(sys.argv[2])
@@ -178,24 +188,23 @@ for raw in open(sys.argv[1], encoding="utf-8", errors="replace"):
         break
 ' "$LOG" 2>/dev/null)
 if [ -n "$ACP_AGENTE" ]; then case "$SID" in *[!A-Za-z0-9_.:-]*) SID="";; esac; fi
-if [ "$LANE" = "grok" ]; then CLI=grok; elif [ "$LANE" = "opencode" ]; then CLI=opencode; elif [ "$LANE" = "codex" ]; then CLI=codex; elif [ "$LANE" = "deepseek" ]; then CLI=dsh; else CLI=claude; fi
 if [ -n "$ACP_AGENTE" ]; then
   if [ "$ACP_AGENTE" = "opencode" ] && [ -n "$SID" ]; then RESUME="cd \"$WT\" && opencode run --session $SID";
   else RESUME="cd \"$WT\" && sessão ACP ${SID:-desconhecida} do agente $ACP_AGENTE"; fi
-elif [ "$LANE" = "deepseek" ]; then
+elif [ "$CLI" = "dsh" ]; then
   # O dsh headless não tem --resume: a sessão fica no histórico (~/.dsh/sessions).
   # O retomar possível é abrir outra sessão no worktree, que já tem o trabalho.
   RESUME="cd \"$WT\" && dsh --profile headless --patch \"$RUN_DIR/deepseek.yml\" \"continue o card $CARD a partir do worktree\""
 elif [ -n "$SID" ]; then
   # opencode/codex: --session continua a sessão (não validado ponta a ponta, FRA-374/376)
-  if [ "$LANE" = "opencode" ]; then RESUME="cd \"$WT\" && opencode run --session $SID";
-  elif [ "$LANE" = "codex" ]; then RESUME="cd \"$WT\" && codex run --session $SID";
+  if [ "$CLI" = "opencode" ]; then RESUME="cd \"$WT\" && opencode run --session $SID";
+  elif [ "$CLI" = "codex" ]; then RESUME="cd \"$WT\" && codex run --session $SID";
   else RESUME="cd \"$WT\" && $CLI --resume $SID"; fi
-elif [ "$LANE" = "grok" ]; then
+elif [ "$CLI" = "grok" ]; then
   RESUME="cd \"$WT\" && grok sessions (restaure a sessão desta lane)"
-elif [ "$LANE" = "opencode" ]; then
+elif [ "$CLI" = "opencode" ]; then
   RESUME="cd \"$WT\" && opencode run --continue"
-elif [ "$LANE" = "codex" ]; then
+elif [ "$CLI" = "codex" ]; then
   RESUME="cd \"$WT\" && codex run --continue"
 else
   RESUME="cd \"$WT\" && claude --continue"

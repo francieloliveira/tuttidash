@@ -2228,7 +2228,9 @@ def lane_para_card(ci: dict, com_folga: set[str], medidas: dict, usados: dict,
     return fila.escolher_lane(
         ci, com_folga, medidas, usados, MAX_PER_LANE,
         lambda lane: catalogo.dados_lane(lane),
-        risco_alto=LANES_RISCO_ALTO,
+        # Instância (`claude-sonnet`) herda a preferência do agente dela (PRD lanes-v2).
+        risco_alto=LANES_RISCO_ALTO | {l for l in com_folga
+                                       if catalogo.perfil_da_lane(l) in LANES_RISCO_ALTO},
     )
 
 def keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:

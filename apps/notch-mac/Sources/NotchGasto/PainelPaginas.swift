@@ -454,12 +454,12 @@ struct PaginaCustos: View {
                         HStack(spacing: 8) {
                             stat("Gasto de hoje", snap?.custos.hoje.map { moeda.texto($0) }
                                  ?? ((snap?.custos.desconhecidasHoje ?? 0) > 0 ? "—" : "sem dado"), cor: PV.texto)
-                            stat("Gasto da semana", snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", cor: PV.texto)
-                            stat("Semana anterior (mesmo ponto)", snap?.indicadores.semanaAnterior.map { moeda.texto($0) } ?? "sem dado",
+                            stat("Gasto dos últimos 7 dias", snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", cor: PV.texto)
+                            stat("7 dias anteriores (mesmo horário)", snap?.indicadores.semanaAnterior.map { moeda.texto($0) } ?? "sem dado",
                                  cor: PV.texto)
                         }
                         if let n = snap?.custos.desconhecidasSemana, n > 0 {
-                            Text("\(Formato.plural(n, "execução", "execuções")) da semana com custo desconhecido, fora da soma.")
+                            Text("\(Formato.plural(n, "execução", "execuções")) dos últimos 7 dias com custo desconhecido, fora da soma.")
                                 .font(PV.fonte(12)).foregroundStyle(PV.mudo)
                         }
                     }

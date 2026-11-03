@@ -39,6 +39,7 @@ O `tools/install.sh` ainda espelha a pasta, mas esse espelho não manda no CLI.
 | `resume` | para lanes | CLI do `<cli> --resume <id>`. `null` = cai em `claude`. O `dsh` não tem `--resume`: a lane deepseek mantém `dsh` e a sessão fica em `~/.dsh/sessions`. |
 | `pesoFontes` | não | Fontes de peso do dispatcher, em ordem: `quota` → `gasto` → `manual`. |
 | `modelos` | para lanes | `{ baixo, medio, alto }`, cada um `{ id, flags }`. `flags` é o que o dispatcher passa ao CLI; vazio = default do CLI. `deepseek` usa `id` para o patch do dsh e não passa `flags`. |
+| `conta` | não | Conta (outro manifesto) que esta lane gasta, quando não é a própria. Ex.: `opencode-go` → `opencode` (mesmo CLI, mesmo login; PRD lanes-v2). Agrupa as lanes por conta na tela e no limite por conta. Ausente = a própria. |
 | `uso` | sim | `{ tipo, fonte, credencial }`. `tipo` é a chave que o `ColetorUso` usa para achar o código de medição (duas lanes podem medir a mesma conta — `opencode` e `opencode-go`). `fonte` e `credencial` são texto de apoio. |
 | `label_linear` | não | UUID do label da lane no Linear. `null` = ainda sem label. |
 | `instalar` | não | `{ comando, entrar, dica_entrar, docs, nome? }`. O app mostra o agente em Ajustes › Geral › Ferramentas com os botões Instalar e Entrar, que abrem o Terminal com estes comandos (a pessoa vê e confirma antes de rodar). Use só o comando da documentação oficial em `docs`. Sem `comando` = sem botão. |
@@ -94,6 +95,27 @@ PY
 
 `tests/test_catalogo.py::ParidadeTest::test_embutido_igual_ao_disco` falha se
 esquecer.
+## Várias lanes por conta (`lanes.instancias` na config do TuttiDash)
+
+Cada lane do catálogo é a lane padrão da sua conta. Lanes a mais (PRD lanes-v2) ficam na
+config do app, não no manifesto:
+
+```json
+"lanes": {
+  "instancias": [{"nome": "claude-sonnet", "agente": "claude", "ligada": true}],
+  "modelo": {"claude-sonnet": {"modo": "fixo", "fixo": "sonnet"}},
+  "limite_conta": {"claude": 2}
+}
+```
+
+- `agente` é um manifesto com `execucao: implementada`. O comando e as flags saem dele (bundle
+  assinado, FRA-614); a config escolhe só nome, agente, conta, modelo e `ligada`.
+- `conta` é opcional: o padrão é o `conta` do manifesto do agente, ou o próprio agente.
+- O modelo segue `lanes.modelo.<nome>` (Automático, Fixo ou Por peso), igual às lanes do catálogo.
+- `limite_conta` limita quantas lanes da conta rodam ao mesmo tempo. Ausente = sem limite.
+- O dispatcher decide o comando pelo `cli` do manifesto, nunca pelo nome da lane.
+- `lanes.acp` (piloto ACP) continua lido, com transporte ACP; o restante roda o CLI direto.
+
 ## Revisão de PR (`revisao`, opcional)
 
 Agente com o bloco `revisao` pode ser o revisor dos PRs (Ajustes → *Bots e revisão*).

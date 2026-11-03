@@ -176,8 +176,9 @@ final class CarregadorTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: ledger), antes)
     }
 
-    /// Toggle geral (FRA-372): lane desligada não entra em gasto, estado nem retomadas.
-    func testLanesDesabilitadasNaoEntramEmNada() throws {
+    /// Toggle geral (FRA-372): lane desligada não entra no estado nem nas retomadas.
+    /// O gasto dela continua no histórico (revisão de 02/11: desligar não apaga custo).
+    func testLaneDesabilitadaSaiDoEstadoMasNaoDoHistorico() throws {
         let t = try PastaTemp()
         try t.escrever("logs/FRA-10-claude-20261005-100000.jsonl",
                        #"{"type":"result","subtype":"success","total_cost_usd":1.0}"#)
@@ -192,7 +193,7 @@ final class CarregadorTests: XCTestCase {
 
         cfg.lanesHabilitadas = ["claude"]
         let r = Carregador().carregar(config: cfg)
-        XCTAssertEqual(r.execucoes.map(\.lane), ["claude"])
+        XCTAssertEqual(r.execucoes.map(\.lane), ["claude", "grok"])
         XCTAssertTrue(r.estado.lanes.isEmpty)
         XCTAssertTrue(r.retomadas.allSatisfy { $0.lane == "claude" })
     }

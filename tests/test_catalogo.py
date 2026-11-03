@@ -147,6 +147,14 @@ class ParidadeTest(unittest.TestCase):
         self.addCleanup(C._resetar_cache)
         self.disco = C.ler_diretorio(AGENTS_D)
         self.embutido = C.EMBUTIDOS
+        # As views derivadas somam as instâncias da config (PRD lanes-v2): sem config aqui,
+        # o teste não depende das lanes que a pessoa criou no Mac dela.
+        import os as _os
+        from unittest import mock as _mock
+        from gasto_lanes.config import ENV_CONFIG
+        p = _mock.patch.dict(_os.environ, {ENV_CONFIG: str(AGENTS_D / "nao-existe.json")})
+        p.start()
+        self.addCleanup(p.stop)
 
     def test_embutido_igual_ao_disco(self):
         self.assertEqual(list(self.embutido), list(self.disco))

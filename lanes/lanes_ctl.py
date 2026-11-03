@@ -118,6 +118,13 @@ def main(argv):
         current.discard(lane)
     D.mkdir(parents=True, exist_ok=True)
     _gravar(ENABLED, current)
+    # Instância (PRD lanes-v2): o dispatcher soma `ligada: true` da config ao `enabled`.
+    # Sem gravar `ligada` também, o desligar do menu não desligava a instância.
+    try:
+        if catalogo.instancia(lane) is not None:
+            catalogo.gravar_ligada(lane, action == "enable")
+    except Exception as exc:  # noqa: BLE001
+        print(f"aviso: não gravei `ligada` da lane {lane} na config: {exc}", file=sys.stderr)
     print(f"habilitadas: {' '.join(sorted(current)) or 'nenhuma'}")
     if action == "enable" and liberar_desligada_pelo_usuario(lane):
         print(f"{lane} saiu de disabled-by-user")

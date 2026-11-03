@@ -36,8 +36,9 @@ public final class Carregador: @unchecked Sendable {
     public func carregar(config: Configuracao) -> Resultado {
         let fm = FileManager.default
         let estadoLido = EstadoLanes.ler(pasta: config.stateDir)
-        // Toggle geral (FRA-372): lane desligada não entra em nada — nem gasto,
-        // nem retomadas, nem "agora". Sem chave `contas`, valem todas.
+        // Toggle geral (FRA-372): lane desligada não entra nas retomadas nem no "agora".
+        // O gasto e os builds dela continuam no histórico (revisão de 02/11).
+        // Sem chave `contas`, valem todas.
         let hab = config.lanesHabilitadas
         let estado = hab.map { h in
             EstadoLanes(heartbeat: estadoLido.heartbeat, lanes: estadoLido.lanes.filter { h.contains($0.lane) })
@@ -83,9 +84,11 @@ public final class Carregador: @unchecked Sendable {
             ? Retomadas.ler(logsDir: config.logsDir, cardsRodando: Set(estado.lanes.map(\.card)),
                               rotuloDono: config.rotuloDono).filter { hab?.contains($0.lane) ?? true }
             : []
-        var lista = registros.values.sorted { ($0.inicio, $0.id) < ($1.inicio, $1.id) }
+        // Revisão de 02/11: o histórico de custo e de builds não depende de a lane estar ligada
+        // hoje. Antes, desligar uma lane apagava o gasto dela de todos os números do painel.
+        // O filtro de habilitadas vale para o estado (lanes, «agora») e para as retomadas.
+        let lista = registros.values.sorted { ($0.inicio, $0.id) < ($1.inicio, $1.id) }
         let ordinais = Indicadores.ordinais(lista)
-        if let hab { lista.removeAll { !hab.contains($0.lane) } }
         return Resultado(execucoes: lista, estado: estado, config: config, ledgerExiste: ledgerExiste,
                          logsDirExiste: logsExiste, lidosDosLogs: lidos, retomadas: retomadas, ordinais: ordinais)
     }

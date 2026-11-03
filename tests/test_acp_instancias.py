@@ -61,7 +61,7 @@ class ValidacaoTest(unittest.TestCase):
             {"nome": "modelo-ruim", "agente": "opencode", "modelo": "x; rm -rf /"},
             "texto",
         ]
-        inst, avisos = C.validar_instancias(casos)
+        inst, avisos = C.validar_instancias(casos, transporte="acp")
         self.assertEqual(inst, {})
         self.assertEqual(len(avisos), len(casos))
 
@@ -95,7 +95,7 @@ class CatalogoComConfigTest(ComConfig):
 
     def test_limite_por_conta(self):
         self.assertIsNone(C.limite_por_conta("opencode"), "sem limite é o padrão")
-        self.escrever({"lanes": {"acp": INST, "acp_limite_conta": {"opencode": 2, "x": 0, "y": True}}})
+        self.escrever({"lanes": {"acp": INST, "limite_conta": {"opencode": 2, "x": 0, "y": True}}})
         self.assertEqual(C.limite_por_conta("opencode"), 2)
         self.assertIsNone(C.limite_por_conta("x"))
         self.assertIsNone(C.limite_por_conta("y"))
@@ -123,6 +123,10 @@ class DispatcherTest(ComConfig):
             p = mock.patch.object(d, nome, valor)
             p.start()
             self.addCleanup(p.stop)
+        # O teste de execução simultânea (lanes-v2, fase 2) tem testes próprios.
+        q = mock.patch.object(d, "situacao_simultaneo", return_value=None)
+        q.start()
+        self.addCleanup(q.stop)
 
     def test_comando_chama_o_runner_do_bundle(self):
         cmd = d.agent_command("opencode-beam", "medio", settings=Path("/s.json"))
@@ -197,7 +201,7 @@ class DispatcherTest(ComConfig):
             self.assertIsNone(d.bloqueio_por_conta("opencode-beam"), "todas rodam; a cota segura")
 
     def test_bloqueio_por_conta(self):
-        self.escrever({"lanes": {"acp": INST, "acp_limite_conta": {"opencode": 1}}})
+        self.escrever({"lanes": {"acp": INST, "limite_conta": {"opencode": 1}}})
         rodando = set()
         with mock.patch.object(d, "load_state", side_effect=lambda l: {"card": "X-1"} if l in rodando else None):
             self.assertIsNone(d.bloqueio_por_conta("opencode-beam"))
@@ -209,7 +213,7 @@ class DispatcherTest(ComConfig):
             self.assertIn("limite 1", d.bloqueio_por_conta("opencode-ds", [("opencode-beam", {}, "medio", "")]),
                           "conta o que vai ser assumido no mesmo ciclo")
             self.assertIsNone(d.bloqueio_por_conta("claude"), "conta sem instância não muda")
-            self.escrever({"lanes": {"acp": INST, "acp_limite_conta": {"opencode": 2}}})
+            self.escrever({"lanes": {"acp": INST, "limite_conta": {"opencode": 2}}})
             rodando.add("opencode")
             self.assertIsNone(d.bloqueio_por_conta("opencode-beam"))
 
