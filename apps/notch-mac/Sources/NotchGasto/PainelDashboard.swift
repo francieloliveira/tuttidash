@@ -238,12 +238,18 @@ struct DashboardPainel: View {
                 if linhas.isEmpty {
                     Text("Sem leitura das lanes").font(PV.fonte(12.5)).foregroundStyle(PV.mudo).padding(.horizontal, 4)
                 } else {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 6) {
-                            ForEach(linhas, id: \.lane) { linha in
-                                LinhaLaneDashboard(linha: linha, modelo: modelo, agora: agora,
-                                                   aberta: expandida == linha.lane) {
-                                    expandida = expandida == linha.lane ? nil : linha.lane
+                    // 6 linhas de 51 pt cabem no cartão. Com mais lanes (a lane extra da conta),
+                    // a linha encolhe até 40 pt em vez de esconder a primeira atrás da rolagem.
+                    GeometryReader { g in
+                        let n = CGFloat(linhas.count)
+                        let altura = max(40, min(51, (g.size.height - 6 * (n - 1)) / n))
+                        ScrollView(.vertical, showsIndicators: altura <= 40) {
+                            VStack(spacing: 6) {
+                                ForEach(linhas, id: \.lane) { linha in
+                                    LinhaLaneDashboard(linha: linha, modelo: modelo, agora: agora,
+                                                       aberta: expandida == linha.lane, altura: altura) {
+                                        expandida = expandida == linha.lane ? nil : linha.lane
+                                    }
                                 }
                             }
                         }
@@ -318,7 +324,7 @@ struct DashboardPainel: View {
         return CartaoPV {
             VStack(alignment: .leading, spacing: 0) {
                 CabecalhoCartao(icone: IconeCartao(simbolo: "flask", tamanhoIcone: 18),
-                                titulo: "Testes", subtitulo: "Suítes das provas de hoje (última tentativa)") {
+                                titulo: "Testes", subtitulo: "Suítes das provas de hoje") {
                     BotaoVer(texto: "Ver todos") { ir(.testes) }
                 }
                 HStack(spacing: 22) {
@@ -439,7 +445,7 @@ struct DashboardPainel: View {
                                 Spacer(minLength: 6)
                                 Text(haPainel(e.quandoData, agora: agora) ?? "").font(PV.fonte(12)).foregroundStyle(PV.mudo)
                             }
-                            .frame(height: 26.5)
+                            .frame(height: 25.5)
                         }
                     }
                     .background(alignment: .leading) {
@@ -490,7 +496,8 @@ struct DashboardPainel: View {
     private func painelGastoLane(_ p: CustosPeriodo?) -> some View {
         let lanes = p?.porLane ?? []
         let maximo = lanes.compactMap(\.custoUSD).max() ?? 0
-        return VStack(alignment: .leading, spacing: 8) {
+        let apertado = lanes.count > 6
+        return VStack(alignment: .leading, spacing: apertado ? 3 : 8) {
             Text("Gasto por lane (\(periodo.complemento))").font(PV.fonte(13, .medium))
             ForEach(Array(lanes.enumerated()), id: \.offset) { i, l in
                 HStack(spacing: 0) {
@@ -504,7 +511,7 @@ struct DashboardPainel: View {
                         .frame(width: 66, alignment: .leading)
                         .padding(.leading, 14)
                 }
-                .frame(height: 15)
+                .frame(height: apertado ? 14 : 15)
             }
         }
         .padding(.top, 12).padding(.leading, 13).padding(.trailing, 12).padding(.bottom, 8)
@@ -559,6 +566,8 @@ struct LinhaLaneDashboard: View {
     @ObservedObject var modelo: ModeloNotch
     var agora: Date
     var aberta: Bool
+    /// Altura da linha fechada. O cartão do Dashboard encolhe quando há mais de 6 lanes.
+    var altura: CGFloat = 51
     var alternar: () -> Void
     /// Barra de uso da conta na própria linha (só na página Lanes, que tem espaço).
     var mostrarUso = false
@@ -609,7 +618,7 @@ struct LinhaLaneDashboard: View {
                 MenuLane(linha: linha, modelo: modelo)
             }
             .padding(.leading, 10).padding(.trailing, 6)
-            .frame(height: 51)
+            .frame(height: altura)
             .overlay(alignment: .bottom) {
                 if linha.estado == .rodando, let s = linha.segundosNoCard {
                     BarraProgresso(progresso: ProgressoProcesso.estimado(inicio: agora.addingTimeInterval(-Double(s)),
@@ -756,7 +765,7 @@ struct Rosca: View {
             }
             VStack(spacing: 2) {
                 Text("\(passou + falhou)").font(PV.fonte(26, .semibold))
-                Text("testes hoje").font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                Text("suítes hoje").font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
             }
         }
     }
