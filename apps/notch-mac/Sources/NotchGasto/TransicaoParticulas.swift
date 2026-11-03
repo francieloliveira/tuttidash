@@ -122,6 +122,9 @@ private final class MotorParticulas {
     init(origem: NSImage, destino: NSImage, tamanho: CGSize) {
         // Malha fina: as partículas são bem pequenas (pontos), não blocos.
         let colunas = 170
+        // Lado do ponto, em fração da célula da malha. 0,5 era metade da célula; 0,3 deixa os
+        // pontos ~40% menores, com mais ar entre eles (pedido do dono, 02/11).
+        let tamanhoPonto: CGFloat = 0.3
         let proporcao = tamanho.height / max(tamanho.width, 1)
         let linhas = max(24, min(110, Int((CGFloat(colunas) * proporcao).rounded())))
         let total = colunas * linhas
@@ -159,7 +162,7 @@ private final class MotorParticulas {
                     curvaX: CGFloat(cos(angulo)) * forca,
                     curvaY: CGFloat(sin(angulo)) * forca,
                     // Fração da célula ocupada pelo ponto: bem pequeno, com ar entre as partículas.
-                    lado: 0.5 / CGFloat(colunas),
+                    lado: tamanhoPonto / CGFloat(colunas),
                     atraso: atraso,
                     r0: corOrigem.r, g0: corOrigem.g, b0: corOrigem.b,
                     r1: corDestino.r, g1: corDestino.g, b1: corDestino.b))
