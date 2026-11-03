@@ -8,7 +8,7 @@ public enum PeriodoCustos: String, CaseIterable, Equatable, Hashable, Sendable {
 
     public var rotulo: String {
         switch self {
-        case .semana: return "Semana"
+        case .semana: return "7 dias"
         case .mes: return "Mês"
         case .ano: return "Ano"
         }
@@ -17,7 +17,7 @@ public enum PeriodoCustos: String, CaseIterable, Equatable, Hashable, Sendable {
     /// Complemento do título «Gasto por lane (…)».
     public var complemento: String {
         switch self {
-        case .semana: return "semana"
+        case .semana: return "últimos 7 dias"
         case .mes: return "mês"
         case .ano: return "ano"
         }
@@ -148,14 +148,16 @@ public struct IndicadoresPainel: Equatable, Sendable {
     public var buildsSerie: [Int]
     /// Execuções com status erro ou morta que começaram nas últimas 24 h.
     public var falhas24h: Int
+    /// Execuções terminadas nas últimas 24 h (canceladas e em andamento ficam fora do %).
     public var execucoes24h: Int
     /// 12 barras de 2 h nas últimas 24 h.
     public var falhasSerie: [Int]
-    /// Custo conhecido da semana ISO anterior até o mesmo ponto da semana. nil = sem gasto conhecido.
+    /// Custo conhecido dos 7 dias anteriores à janela atual, até o mesmo horário
+    /// (de 00:00 de 13 dias atrás até agora − 7 dias). nil = sem gasto conhecido.
     public var semanaAnterior: Double?
-    /// (semana atual − anterior) / anterior, em %. nil quando não dá para comparar.
+    /// (7 dias atuais − 7 dias anteriores) / anteriores, em %. nil quando não dá para comparar.
     public var variacaoSemanaPct: Double?
-    /// Suítes (classe Swift ou módulo unittest) das provas pedidas hoje.
+    /// Suítes (classe Swift ou módulo unittest) das provas pedidas hoje, pela última tentativa.
     public var testesPassou: Int
     public var testesFalhou: Int
     public var provasHoje: Int
@@ -176,7 +178,7 @@ public struct IndicadoresPainel: Equatable, Sendable {
 /// Cálculos do painel v2 sobre dados que já existem (execuções, estado e provas).
 /// Só leitura, sem relógio próprio: tudo depende de `agora` e do calendário recebidos.
 public enum Indicadores {
-    /// Variação do custo semanal a partir da qual vira alerta na faixa do painel.
+    /// Variação do custo dos últimos 7 dias a partir da qual vira alerta na faixa do painel.
     public static let alertaVariacaoPct = 20.0
 
     /// `#N` estável de cada execução: posição no histórico inteiro ordenado por início e id.
@@ -209,8 +211,9 @@ public enum Indicadores {
         var serieBuilds = Array(repeating: 0, count: 12)
         var serieFalhas = Array(repeating: 0, count: 12)
         var exec24 = 0, falhas24 = 0
-        let semanaPassada = calendario.date(byAdding: .day, value: -7, to: agora) ?? agora
-        let rotuloAnterior = Datas.rotuloSemana(semanaPassada, calendario: calendario)
+        // Janela anterior: os 7 dias antes da janela atual (hoje + 6), até o mesmo horário.
+        let mesmoPonto = calendario.date(byAdding: .day, value: -7, to: agora) ?? agora
+        let anteriorInicio = calendario.date(byAdding: .day, value: -13, to: hojeInicio) ?? hojeInicio
         var anteriorSoma = 0.0, anteriorTeve = false
 
         for ex in execucoes {
@@ -222,13 +225,13 @@ public enum Indicadores {
                 serieBuilds[11 - Int(idade / 3600)] += 1
             }
             if idade >= 0 && idade < 24 * 3600 {
-                exec24 += 1
+                if ex.status != .cancelada && ex.status != .emAndamento { exec24 += 1 }
                 if ex.status == .erro || ex.status == .morta {
                     falhas24 += 1
                     serieFalhas[11 - Int(idade / 7200)] += 1
                 }
             }
-            if ex.semana == rotuloAnterior, inicio <= semanaPassada, let custo = ex.custoConhecido {
+            if inicio >= anteriorInicio, inicio <= mesmoPonto, let custo = ex.custoConhecido {
                 anteriorSoma += custo
                 anteriorTeve = true
             }
@@ -299,7 +302,7 @@ public enum Indicadores {
             lista.append("\(ind.falhas24h) builds falharam nas últimas 24h")
         }
         if let v = ind.variacaoSemanaPct, v >= alertaVariacaoPct {
-            lista.append("Custo semanal \(Int(v.rounded()))% maior que a semana anterior")
+            lista.append("Custo dos últimos 7 dias \(Int(v.rounded()))% maior que nos 7 dias anteriores")
         }
         return lista
     }
@@ -313,9 +316,13 @@ public enum Indicadores {
         let ano = comps.year ?? 0, mes = comps.month ?? 1
         let prefixoAno = String(format: "%04d-", ano)
         let prefixoMes = String(format: "%04d-%02d-", ano, mes)
+        let hojeInicio = calendario.startOfDay(for: agora)
+        let seteDias = Set((0..<7).compactMap { off in
+            calendario.date(byAdding: .day, value: -off, to: hojeInicio).map { Datas.diaISO($0, calendario: calendario) }
+        })
         let filtradas = execucoes.filter { ex in
             switch periodo {
-            case .semana: return ex.semana == Datas.rotuloSemana(agora, calendario: calendario)
+            case .semana: return seteDias.contains(ex.dia)
             case .mes: return ex.dia.hasPrefix(prefixoMes)
             case .ano: return ex.dia.hasPrefix(prefixoAno)
             }
@@ -360,7 +367,7 @@ public enum Indicadores {
             }
             porLane[ex.lane] = lane
         }
-        let gastos = LanesPainel.ordem.map { lane in
+        let gastos = MontadorPainel.lanesDoGasto(Array(porLane.keys)).map { lane in
             let item = porLane[lane]
             return GastoLanePainel(lane: lane, custoUSD: item?.teve == true ? item?.custo : nil,
                                    desconhecidas: item?.desc ?? 0, plano: planos[lane])

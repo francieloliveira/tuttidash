@@ -11,15 +11,40 @@ public enum LanesPainel {
     public static let folgaBaixo = 90.0
     public static let folgaMedio = 80.0
     public static let folgaAlto = 60.0
+    /// Folga em janela de 1 dia ou mais (`HEADROOM_PCT_LONGA`): a cota se renova devagar,
+    /// então o dispatcher afrouxa. Revisão de 02/11: o painel usava sempre a tabela curta.
+    public static let folgaLongaBaixo = 95.0
+    public static let folgaLongaMedio = 90.0
+    public static let folgaLongaAlto = 85.0
+    /// Mesma regra do `JANELA_LONGA_RE` do dispatcher.
+    private static let reJanelaLonga = try! NSRegularExpression(
+        pattern: #"\d+\s*dias?\b|semana|m[êe]s\b|mensal"#, options: [.caseInsensitive])
+
+    /// A janela da medida é longa (1 dia ou mais)?
+    public static func janelaLonga(_ janela: String?) -> Bool {
+        guard let janela, !janela.isEmpty else { return false }
+        let ns = janela as NSString
+        return reJanelaLonga.firstMatch(in: janela, range: NSRange(location: 0, length: ns.length)) != nil
+    }
+
+    /// Teto de uso para a conta ainda aceitar card do esforço (`baixo`, `medio`, `alto`).
+    public static func folga(_ esforco: String, janela: String?) -> Double {
+        let longa = janelaLonga(janela)
+        switch esforco {
+        case "alto": return longa ? folgaLongaAlto : folgaAlto
+        case "medio": return longa ? folgaLongaMedio : folgaMedio
+        default: return longa ? folgaLongaBaixo : folgaBaixo
+        }
+    }
     /// Prova acima disto vira alerta. O texto do card pede «passa de 10 min».
     public static let alertaProvaSegundos = 10 * 60
     /// Sem batimento novo por este tempo, o dispatcher conta como parado.
     public static let batimentoParadoSegundos = 10 * 60
 
     public static let regrasRisco = [
-        "baixo: entra abaixo de 90%",
-        "médio: entra abaixo de 80%",
-        "alto: entra abaixo de 60%",
+        "baixo: entra abaixo de 90% (95% em janela de 1 dia ou mais)",
+        "médio: entra abaixo de 80% (90% em janela de 1 dia ou mais)",
+        "alto: entra abaixo de 60% (85% em janela de 1 dia ou mais)",
     ]
 }
 
@@ -291,6 +316,7 @@ public enum MoedaPainel: Equatable, Sendable {
 public struct CustosPainel: Equatable, Sendable {
     public var porLane: [GastoLanePainel]
     public var hoje: Double?
+    /// Gasto conhecido dos últimos 7 dias (hoje + 6). O nome ficou do tempo da semana ISO.
     public var semana: Double?
     public var desconhecidasHoje: Int
     public var desconhecidasSemana: Int

@@ -125,7 +125,9 @@ final class LeituraDiscoTests: XCTestCase {
         cfg.lanesHabilitadas = ["grok"]
         let segunda = LeituraDisco.ler(config: cfg, carregador: c, anterior: primeira.leitura, agora: agora + 30)
         XCTAssertFalse(segunda.pulou)
-        XCTAssertTrue(segunda.leitura.resultado.execucoes.isEmpty)
+        XCTAssertEqual(segunda.leitura.lidaEm, agora + 30, "a config mudou: releu")
+        // Revisão de 02/11: desligar a lane não apaga o histórico de execuções.
+        XCTAssertEqual(segunda.leitura.resultado.execucoes, primeira.leitura.resultado.execucoes)
     }
 
     func testLeituraVelhaRele() throws {

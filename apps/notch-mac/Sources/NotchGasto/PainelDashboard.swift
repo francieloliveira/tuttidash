@@ -68,9 +68,10 @@ struct DashboardPainel: View {
                 rotulo: "Builds hoje", valor: "\(ind.buildsHoje)", espaco: 12) {
                 variacao(ind.buildsHoje - ind.buildsOntem, sobeBom: true)
             } abaixo: { EmptyView() } direita: {
-                Barrinhas(valores: ind.buildsSerie.suffix(11).map(Double.init)) { i, _ in
-                    i >= 8 ? PV.azul : (i >= 2 ? PV.azulIcone : Color(hex: 0x2F7BEA))
+                Barrinhas(valores: ind.buildsSerie.map(Double.init)) { i, _ in
+                    i >= 9 ? PV.azul : (i >= 3 ? PV.azulIcone : Color(hex: 0x2F7BEA))
                 }
+                .help("Execuções por hora nas últimas 12 h")
                 .padding(.top, 12)
             }
             .frame(width: 296 * k)
@@ -85,7 +86,7 @@ struct DashboardPainel: View {
             .frame(width: 336 * k)
 
             kpi(icone: IconeCartao(simbolo: "cylinder.split.1x2", cor: PV.dourado, fundo: PV.ambarFundo, tamanho: 54, tamanhoIcone: 25),
-                rotulo: "Custo da semana", valor: snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", espaco: 12) {
+                rotulo: "Custo (7 dias)", valor: snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", espaco: 12) {
                 variacaoCusto
             } abaixo: { EmptyView() } direita: {
                 Barrinhas(valores: (snap?.custos.dias ?? []).map(\.total), cor: { _, _ in PV.verde }, largura: 5)
@@ -131,7 +132,7 @@ struct DashboardPainel: View {
             .help("Comparado com ontem")
     }
 
-    /// Subiu: ↑ vermelho. Caiu: ↓ verde. Sem semana anterior: «—».
+    /// Subiu: ↑ vermelho. Caiu: ↓ verde. Sem os 7 dias anteriores: «—».
     private var variacaoCusto: some View {
         Group {
             if let v = ind.variacaoSemanaPct {
@@ -142,7 +143,7 @@ struct DashboardPainel: View {
             }
         }
         .font(PV.fonte(13, .semibold))
-        .help("Comparado com a semana anterior até o mesmo ponto")
+        .help("Comparado com os 7 dias anteriores, até o mesmo horário")
     }
 
     // MARK: Alertas
@@ -317,17 +318,19 @@ struct DashboardPainel: View {
         return CartaoPV {
             VStack(alignment: .leading, spacing: 0) {
                 CabecalhoCartao(icone: IconeCartao(simbolo: "flask", tamanhoIcone: 18),
-                                titulo: "Testes", subtitulo: "Execução de provas automatizadas") {
+                                titulo: "Testes", subtitulo: "Suítes das provas de hoje (última tentativa)") {
                     BotaoVer(texto: "Ver todos") { ir(.testes) }
                 }
                 HStack(spacing: 22) {
                     Rosca(passou: ind.testesPassou, falhou: ind.testesFalhou)
                         .frame(width: 142, height: 142)
                     VStack(alignment: .leading, spacing: 20) {
-                        legenda(cor: Color(hex: 0x19E58C), texto: "\(ind.testesPassou) passou", pct: pct(ind.testesPassou, total))
-                        legenda(cor: Color(hex: 0xF64561), texto: "\(ind.testesFalhou) falhou", pct: pct(ind.testesFalhou, total))
+                        legenda(cor: Color(hex: 0x19E58C), texto: Formato.plural(ind.testesPassou, "suíte ok", "suítes ok"),
+                                pct: pct(ind.testesPassou, total))
+                        legenda(cor: Color(hex: 0xF64561), texto: Formato.plural(ind.testesFalhou, "suíte falhou", "suítes falharam"),
+                                pct: pct(ind.testesFalhou, total))
                         // Mock: o parser da prova ainda não lê testes pulados.
-                        legenda(cor: Color(hex: 0x8DA6D0), texto: "— ignorado", pct: "—")
+                        legenda(cor: Color(hex: 0x8DA6D0), texto: "— ignoradas", pct: "—")
                             .help("Testes ignorados: em breve")
                     }
                     .padding(.vertical, 10.5).padding(.horizontal, 14)
@@ -385,14 +388,15 @@ struct DashboardPainel: View {
                 }
                 .padding(.top, 13).padding(.leading, 10).padding(.trailing, 8)
                 HStack(spacing: 0) {
-                    Text("Baixo: < \(Int(LanesPainel.folgaBaixo))%")
+                    Text("Baixo: < \(Int(LanesPainel.folgaBaixo))% (\(Int(LanesPainel.folgaLongaBaixo))%)")
                     Spacer(minLength: 8)
-                    Text("Médio: < \(Int(LanesPainel.folgaMedio))%")
+                    Text("Médio: < \(Int(LanesPainel.folgaMedio))% (\(Int(LanesPainel.folgaLongaMedio))%)")
                     Spacer(minLength: 8)
-                    Text("Alto: < \(Int(LanesPainel.folgaAlto))%")
+                    Text("Alto: < \(Int(LanesPainel.folgaAlto))% (\(Int(LanesPainel.folgaLongaAlto))%)")
                     Spacer(minLength: 0)
                 }
                 .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                .help("Uso máximo da conta para assumir card de cada esforço. Entre parênteses: conta medida em janela de 1 dia ou mais.")
                 .padding(.top, 14).padding(.leading, 10).padding(.trailing, 40)
             }
             .padding(.top, 14).padding(.horizontal, 14).padding(.bottom, 12)
@@ -773,7 +777,7 @@ struct GraficoGasto: View {
             HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach([3, 2, 1, 0], id: \.self) { i in
-                        Text("\(moeda.rotulo) \(Int(passo * Double(i)))").font(PV.fonte(11)).foregroundStyle(PV.texto2)
+                        Text("\(moeda.rotulo) \(GraficoGasto.marca(passo * Double(i)))").font(PV.fonte(11)).foregroundStyle(PV.texto2)
                         if i > 0 { Spacer(minLength: 0) }
                     }
                 }
@@ -824,6 +828,12 @@ struct GraficoGasto: View {
             return LinearGradient(colors: [Color(hex: 0x4C90FA), Color(hex: 0x3570E0)], startPoint: .top, endPoint: .bottom)
         }
         return LinearGradient(colors: [Color(hex: 0x3570E0)], startPoint: .top, endPoint: .bottom)
+    }
+
+    /// Valor da marca do eixo: inteiro sem casa; passo 2,5 mostra «2,5» e «7,5» (antes truncava para 2 e 7).
+    static func marca(_ v: Double) -> String {
+        if v == v.rounded() { return "\(Int(v))" }
+        return String(format: "%.1f", v).replacingOccurrences(of: ".", with: ",")
     }
 
     /// Passo «redondo» para três marcas acima de zero (20 → 0/20/40/60).

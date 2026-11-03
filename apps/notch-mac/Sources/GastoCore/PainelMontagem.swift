@@ -161,7 +161,7 @@ public enum MontadorPainel {
                                  pct: medida?.pct, janela: medida?.janela, plano: plano,
                                  segundosNoCard: prova.segundos)
             }
-            if let pct = medida?.pct, pct >= LanesPainel.folgaBaixo {
+            if let pct = medida?.pct, pct >= LanesPainel.folga("baixo", janela: medida?.janela) {
                 return LinhaLane(lane: lane, estado: .semFolga, card: nil, descricao: "Sem card, sem folga",
                                  detalhe: medida?.janela.map { "janela \($0)" } ?? "conta sem folga",
                                  pct: pct, janela: medida?.janela, plano: plano, segundosNoCard: nil)
@@ -210,7 +210,7 @@ public enum MontadorPainel {
         for linha in linhas {
             guard let pct = linha.pct else { continue }
             let janela = linha.janela.map { " da \($0)" } ?? ""
-            if pct >= LanesPainel.folgaBaixo {
+            if pct >= LanesPainel.folga("baixo", janela: linha.janela) {
                 lista.append("\(linha.lane) sem folga (\(Formato.pct(pct))\(janela)).")
             } else if pct >= Uso.pctAtencao {
                 lista.append("\(linha.lane) em \(Formato.pct(pct))\(janela).")
@@ -333,8 +333,10 @@ public enum MontadorPainel {
 
     static func custos(entrada: EntradaPainel, execucoes: [Execucao], medidas: [MedidaConta],
                        agora: Date, calendario: Calendar, moeda: MoedaPainel) -> (painel: CustosPainel, buildsSemana: [CardCaro]) {
+        // Revisão de 02/11: o bloco «7 dias» usa uma janela só, os últimos 7 dias (hoje + 6),
+        // no KPI, no gasto por lane, no gráfico, no top 5 e na lista. Antes o KPI e o gasto
+        // por lane eram a semana ISO e o resto os 7 dias: na segunda o KPI quase zerava.
         let hojeISO = Datas.diaISO(agora, calendario: calendario)
-        let semana = Datas.rotuloSemana(agora, calendario: calendario)
         let hojeInicio = calendario.startOfDay(for: agora)
         var dias: [GastoDiaPainel] = []
         var indice: [String: Int] = [:]
@@ -355,14 +357,14 @@ public enum MontadorPainel {
             if ex.dia == hojeISO {
                 if let conhecido { hojeSoma += conhecido; hojeTeve = true } else { hojeDesc += 1 }
             }
-            if ex.semana == semana {
+            if indice[ex.dia] != nil {
                 var lane = porLane[ex.lane] ?? (0, false, 0)
                 if let conhecido { lane.custo += conhecido; lane.teve = true } else { lane.desc += 1 }
                 porLane[ex.lane] = lane
                 if let conhecido { semanaSoma += conhecido; semanaTeve = true } else { semanaDesc += 1 }
             }
         }
-        let gastosLane = LanesPainel.ordem.map { lane in
+        let gastosLane = lanesDoGasto(Array(porLane.keys)).map { lane in
             let item = porLane[lane]
             return GastoLanePainel(lane: lane, custoUSD: item?.teve == true ? item?.custo : nil,
                                    desconhecidas: item?.desc ?? 0, plano: entrada.planos[lane])
@@ -372,6 +374,14 @@ public enum MontadorPainel {
                                   desconhecidasHoje: hojeDesc, desconhecidasSemana: semanaDesc, dias: dias,
                                   uso: medidas, top: Array(caros.prefix(5)), moeda: moeda)
         return (painel: painel, buildsSemana: ListaBuilds.porRecencia(caros))
+    }
+
+    /// Lanes do «Gasto por lane»: as do painel, na ordem dele, e depois as que gastaram no
+    /// recorte mas não estão mais no painel (lane removida, lane da config que o app ainda não
+    /// lista). Sem isso a soma das lanes não fechava com o total.
+    static func lanesDoGasto(_ comGasto: [String]) -> [String] {
+        let ordem = LanesPainel.ordem
+        return ordem + comGasto.filter { !ordem.contains($0) }.sorted()
     }
 
     /// Cards mais caros do recorte: custo conhecido, duração e tentativas somados por card.
