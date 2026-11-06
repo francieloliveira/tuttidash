@@ -14,6 +14,7 @@ final class ControladorBarra: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let host: NSHostingView<PilulaBarra>
     private var assinatura: AnyCancellable?
+    private var assinaturas: [AnyCancellable] = []
     let estado = EstadoBarra()
 
     init(modelo: ModeloNotch, menu: NSMenu) {
@@ -48,11 +49,17 @@ final class ControladorBarra: NSObject, NSPopoverDelegate {
         assinatura = modelo.$snapshot.receive(on: RunLoop.main).sink { [weak self] _ in
             Task { @MainActor in self?.ajustarLargura() }
         }
+        let assinaturaAberto = estado.$aberto.receive(on: RunLoop.main).sink { [weak self] _ in
+            Task { @MainActor in self?.ajustarLargura() }
+        }
+        assinaturas.append(assinaturaAberto)
         ajustarLargura()
     }
 
-    /// Largura do item = largura natural da pílula. O teto cabe as 5 lanes ligadas;
-    /// acima disso o resumo já está no modo curto e a pílula é só o número.
+    /// Largura do item = largura natural da pílula, limitada para não colar na borda direita.
+    /// O teto cabe ~8 lanes com % e a seta aberta; acima disso entra no modo curto.
+    /// 460 fica próximo do tamanho da pílula do relógio do sistema.
+    public static let larguraMaximaBarra = 460.0
     func ajustarLargura() {
         host.layoutSubtreeIfNeeded()
         let w = min(host.fittingSize.width, ResumoBarra.larguraMaximaBarra)
@@ -102,49 +109,154 @@ final class EstadoBarra: ObservableObject {
     @Published var aberto = false
 }
 
-/// A pílula escura da barra (a que o app mostra por padrão): logo + um ponto aceso
-/// com % por lane ligada, ou «N rodando» no modo curto. O notch antigo fica à parte.
+/// A pílula da barra de menus: logo, contagem de lanes ativas e um indicador
+/// animado quando há trabalho em curso. Sem porcentagens — foco no essencial.
+/// Ponto vermelho no ícone quando alguma lane está em atenção (≥ 80%).
 struct PilulaBarra: View {
     @ObservedObject var modelo: ModeloNotch
     @ObservedObject var estado: EstadoBarra
 
+    /// Alguma lane ligada está em atenção ou sem folga?
+    private var temAlerta: Bool {
+        r.itens.contains { $0.pct.map { $0 >= Uso.pctAtencao } == true }
+    }
+
+    private var r: ResumoBarra { ResumoBarra.montar(modelo.snapshot) }
+
+    /// Cores das lanes ativas para o mosaico de pontos (a contagem fica visual).
+    private var coresAtivas: [Color] { r.itens.map { TemaPainel.cor($0.lane) } }
+
     var body: some View {
-        let r = ResumoBarra.montar(modelo.snapshot)
-        HStack(spacing: 6) {
-            Image(nsImage: AppDelegate.iconeBarra())
-                .renderingMode(.template)
-                .resizable().scaledToFit()
-                .frame(width: 13, height: 13)
-                .foregroundStyle(.white)
-                .overlay(alignment: .topTrailing) {
-                    // Build de teste (alpha): ponto laranja no ícone da barra de menus.
-                    if VersaoApp.atual.alpha { Circle().fill(PV.ambar).frame(width: 5, height: 5).offset(x: 2, y: -2) }
-                }
-            if r.compacto {
-                Text(r.itens.isEmpty && modelo.snapshot != nil ? "0" : "\(r.rodando)")
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
-            } else {
-                ForEach(r.itens, id: \.lane) { i in
-                    HStack(spacing: 3) {
-                        Circle().fill(TemaPainel.cor(i.lane)).frame(width: 7, height: 7)
-                            .overlay(Circle().strokeBorder(Color.white.opacity(i.rodando ? 0.95 : 0), lineWidth: 1))
-                        Text(ResumoBarra.textoPct(i.pct))
-                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                    }
-                    .help(i.titulo)
+        HStack(spacing: 7) {
+            // Marca "TD" no lugar do ícone (mais legível no tamanho da barra).
+            ZStack(alignment: .topTrailing) {
+                Text("TD")
+                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .tracking(-0.3)
+                if temAlerta {
+                    Circle().fill(PV.vermelho).frame(width: 5, height: 5)
+                        .overlay(Circle().strokeBorder(Color.black.opacity(0.7), lineWidth: 1))
+                        .offset(x: 3, y: -3)
                 }
             }
+
+            if modelo.snapshot == nil {
+                Text("…")
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(PV.mudo)
+            } else {
+                MosaicoLanes(cores: coresAtivas, rodando: r.rodando)
+            }
+
             if estado.aberto {
-                Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.55))
             }
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 8)
-        .frame(height: 20)
-        .background(Capsule().fill(Color.black.opacity(0.85)))
+        .padding(.horizontal, 9)
+        .frame(height: 22)
+        .background(
+            Capsule()
+                .fill(
+                    LinearGradient(colors: [Color(hex: 0x14141C), Color(hex: 0x0A0A10)],
+                                   startPoint: .top, endPoint: .bottom)
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.03)],
+                                           startPoint: .top, endPoint: .bottom),
+                            lineWidth: 1
+                        )
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(r.rodando > 0 ? PV.verde.opacity(0.22) : .clear, lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.5), radius: 6, x: 0, y: 3)
+        )
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(ResumoBarra.rotuloAcessivel(r))
+    }
+}
+
+/// Mosaico criativo das lanes ativas: pontos coloridos + número.
+/// Quando há lanes rodando, um pulso vivo acompanha a contagem.
+private struct MosaicoLanes: View {
+    let cores: [Color]
+    let rodando: Int
+    @State private var pulso = false
+    @Environment(\.accessibilityReduceMotion) private var reduzirMovimento
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if cores.isEmpty {
+                Text("0")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(PV.apagado)
+                Text("ativas")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(PV.apagado)
+            } else {
+                // Pontos das lanes ativas: a quantidade é lida de relance, sem porcentagem.
+                HStack(spacing: 3) {
+                    let visiveis = Array(cores.prefix(6))
+                    ForEach(Array(visiveis.enumerated()), id: \.offset) { _, cor in
+                        Circle()
+                            .fill(cor)
+                            .frame(width: 5.5, height: 5.5)
+                            .shadow(color: cor.opacity(0.55), radius: 2)
+                    }
+                    if cores.count > 6 {
+                        Text("+\(cores.count - 6)")
+                            .font(.system(size: 8, weight: .bold).monospacedDigit())
+                            .foregroundStyle(PV.mudo)
+                    }
+                }
+
+                Text("\(cores.count)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+
+                if rodando > 0 {
+                    IndicadorRodando(ativo: pulso && !reduzirMovimento)
+                        .onAppear { iniciarPulso() }
+                }
+            }
+        }
+    }
+
+    private func iniciarPulso() {
+        guard !reduzirMovimento else { pulso = false; return }
+        pulso = false
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+            pulso = true
+        }
+    }
+}
+
+/// Pulso vivo: núcleo verde que respira, sinalizando lanes em execução.
+private struct IndicadorRodando: View {
+    let ativo: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(PV.verde.opacity(ativo ? 0.0 : 0.28))
+                .frame(width: ativo ? 14 : 8, height: ativo ? 14 : 8)
+            Circle()
+                .fill(PV.verde.opacity(0.25))
+                .frame(width: 8, height: 8)
+            Circle()
+                .fill(PV.verde)
+                .frame(width: 4.5, height: 4.5)
+                .shadow(color: PV.verde.opacity(0.9), radius: ativo ? 4 : 2)
+        }
+        .frame(width: 14, height: 14)
+        .help(Text("Lanes em execução"))
     }
 }
 

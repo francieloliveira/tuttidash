@@ -28,11 +28,13 @@ public struct ResumoBarra: Equatable, Sendable {
     /// Texto do modo curto e do leitor de tela.
     public var texto: String
 
-    public static let limiteItens = 5
-    /// Teto da pílula da barra, em pontos. Cabe as 5 lanes com % e a seta aberta.
-    /// 260 cortava a última — o Grok CLI — quando as cinco estavam ligadas e a pílula
-    /// não entrava no modo curto (o curto só começa acima de `limiteItens`).
-    public static let larguraMaximaBarra = 360.0
+    public static let limiteItens = 6
+    /// Teto da pílula da barra, em pontos. Cabe as 10 lanes com % e a seta aberta.
+    /// 520 evita colapsar para o modo curto na maioria dos monitores; acima disso a
+    /// pílula já ocupa muito da barra de menus e entra no resumo numérico.
+    public static let larguraMaximaBarra = 560.0
+    /// No modo curto, quantos círculos de lane mostrar antes de resumir em «…N».
+    public static let modoCurtoMaxCirculos = 4
 
     public static func montar(_ snap: SnapshotPainel?, limite: Int = limiteItens) -> ResumoBarra {
         guard let snap else { return ResumoBarra(itens: [], rodando: 0, compacto: true, texto: "…") }
@@ -56,11 +58,14 @@ public struct ResumoBarra: Equatable, Sendable {
         }
     }
 
-    /// Leitor de tela da pílula: no modo curto ainda cita cada lane ligada pelo nome.
+    /// Leitor de tela da pílula: quantas lanes ativas, quantas rodando e quais são.
     public static func rotuloAcessivel(_ r: ResumoBarra) -> String {
-        let partes = r.itens.map { "\($0.titulo) \(textoPct($0.pct))" }
-        guard !partes.isEmpty else { return "TuttiDash: \(r.texto)" }
-        return "TuttiDash: \(r.texto). " + partes.joined(separator: ", ")
+        let ativas = r.itens.count
+        guard ativas > 0 else { return "TuttiDash: nenhuma lane ativa" }
+        let nomes = r.itens.map(\.titulo).joined(separator: ", ")
+        let rodando = r.rodando == 1 ? "1 rodando" : "\(r.rodando) rodando"
+        let lanes = ativas == 1 ? "1 lane ativa" : "\(ativas) lanes ativas"
+        return "TuttiDash: \(lanes), \(rodando). \(nomes)"
     }
 
     public static func titulo(_ lane: String) -> String {
