@@ -207,5 +207,58 @@ class CadastroDoProjeto(unittest.TestCase):
                 self.assertIs(projetos._do_registro([item])[0].bancada, esperado)
 
 
+class DockerValidador(unittest.TestCase):
+    """FRA-619: validações básicas do compose antes de rodar docker."""
+
+    def test_aceita_com_digest_e_named_volume(self):
+        bom = """
+services:
+  broker:
+    image: "eclipse-mosquitto@sha256:d12c8f80dfc65b768bb9acecc7ef182b976f71fb681640b66358e5e0cf94e9e9"
+    volumes:
+      - mosquitto-data:/mosquitto
+"""
+        b._validar_compose(bom, Path("/tmp/wt"))
+
+    def test_recusa_sem_digest(self):
+        ruim = "services:\n  x:\n    image: python:3.12"
+        with self.assertRaises(b.Recusa):
+            b._validar_compose(ruim, Path("/tmp/wt"))
+
+    def test_recusa_privileged(self):
+        ruim = "services:\n  x:\n    privileged: true\n    image: foo@sha256:abc"
+        with self.assertRaises(b.Recusa):
+            b._validar_compose(ruim, Path("/tmp/wt"))
+
+    def test_recusa_network_host(self):
+        ruim = "services:\n  x:\n    network_mode: host\n    image: foo@sha256:abc"
+        with self.assertRaises(b.Recusa):
+            b._validar_compose(ruim, Path("/tmp/wt"))
+
+
+class DockerExecutar(Base):
+    def _rodar_docker(self, argv, **kw):
+        chamadas = []
+        kw.setdefault("achar_portas", lambda: ["/dev/cu.usbmodem3101"])
+        with mock.patch("sys.stdout", new=io.StringIO()):
+            # copia o POC para o local default esperado por docker (dentro do wt)
+            poc = RAIZ / "tools" / "poc" / "docker" / "compose.yml"
+            (self.wt / "docker").mkdir(parents=True, exist_ok=True)
+            (self.wt / "docker" / "compose.yml").write_text(poc.read_text())
+            rc = b.executar(argv, self.wt, self.proj, **kw)
+        return rc, chamadas
+
+    def test_docker_subir_valida_e_chama(self):
+        # mock para não rodar docker de verdade
+        with mock.patch("bancada._rodar_docker", return_value=0) as mock_run:
+            rc, _ = self._rodar_docker(["docker", "subir"])
+            self.assertEqual(rc, 0)
+            self.assertTrue(mock_run.called)
+
+    def test_docker_recusa_fora_do_wt(self):
+        with self.assertRaises(b.Recusa):
+            b.executar(["docker", "subir", "--file", "../fora.yml"], self.wt, self.proj)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -59,8 +59,8 @@ Não limita a lane. A lane continua rodando como o dono da máquina e pode ler
 
 ## Remote review / Revisão remota
 
-Pull requests into `main` also run the check `revisao-ia`. The workflow is
-`pull_request` (never `pull_request_target`), with `contents: read` and no
+Pull requests into `main` run the check `revisao-ia` only when the project's `main` contains the workflow (FRA-620/621). For TuttiDash the workflow was removed (FRA-621); the real review is the `[Revisor]` from the watcher.
+The workflow (when present) is `pull_request` (never `pull_request_target`), with `contents: read` and no
 secrets. The reviewer script is the git blob `scripts/revisao-ia.sh` at the
 base SHA. It receives the diff and the pull request context. It does not
 receive the home directory, and it has no Bash, no global Read, no `security`
@@ -68,7 +68,7 @@ and no write-capable `gh`. The output is redacted before a comment is
 published. If a secret is detected, the comment is not published and the
 owner is called. The `[Revisor]` comment carries the full head SHA.
 
-Branch protection on `main` has to require the check `revisao-ia` before
+Branch protection on `main` has to require the check `revisao-ia` (when the project keeps the workflow) before
 merge. This workflow does not create that ruleset: the token cannot change
 branch protection. A failed check blocks the merge.
 

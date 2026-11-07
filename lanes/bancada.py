@@ -20,6 +20,10 @@ Uso:
   bancada chip [--porta P] [--chip C]
   bancada gravar [--porta P] [--chip C] ENDERECO ARQUIVO [ENDERECO ARQUIVO ...]
   bancada serial [--porta P] [--baud N] SEGUNDOS
+  bancada docker subir|logs|baixar [--file RELPATH]
+    # Fase 2 (FRA-619): valida compose (digest obrigatório, sem privileged,
+    # sem network_mode: host, volumes só dentro do worktree ou named).
+    # Ex.: bancada docker --file tools/poc/docker/compose.yml subir
 """
 from __future__ import annotations
 
@@ -241,6 +245,64 @@ def auditar(linha: dict, log: Path = LOG) -> None:
         os.close(fd)
 
 
+# --- Docker (FRA-619) --------------------------------------------------------
+DOCKER_COMPOSE_TIMEOUT = 120
+DOCKER_DEFAULT_FILE = "docker/compose.yml"
+
+
+def _validar_compose(texto: str, wt: Path) -> None:
+    """Recusa compose inseguro conforme aceite do FRA-619.
+
+    - image deve ter @sha256:
+    - sem privileged: true
+    - sem network_mode: host
+    - bind mounts com caminho absoluto fora do worktree são recusados (named volumes ok)
+    """
+    lower = texto.lower()
+    if "privileged: true" in lower or "privileged: yes" in lower:
+        raise Recusa("compose com privileged recusado")
+    if "network_mode: host" in lower:
+        raise Recusa("network_mode: host recusado")
+
+    # imagens sem digest
+    for line in texto.splitlines():
+        if line.strip().lower().startswith("image:"):
+            if "@sha256:" not in line:
+                raise Recusa("image deve usar digest fixo @sha256:")
+
+    # bind mounts absolutos suspeitos fora do wt (heurística simples)
+    for line in texto.splitlines():
+        s = line.strip().lower()
+        if s.startswith("- /") and (":/" in s):
+            if str(wt).lower() not in s:
+                raise Recusa("bind mount com caminho fora do worktree recusado")
+
+
+def _docker_cmd(compose: Path, sub: str, op: dict) -> list[str]:
+    base = ["docker", "compose", "-f", str(compose)]
+    if sub == "subir":
+        return base + ["up", "-d"]
+    if sub == "logs":
+        tail = op.get("--tail", "50")
+        return base + ["logs", "--tail", str(tail)]
+    if sub == "baixar":
+        return base + ["down", "--volumes", "--remove-orphans"]
+    raise Recusa(f"subcomando docker desconhecido: {sub}")
+
+
+def _rodar_docker(argv: list[str], timeout: int = DOCKER_COMPOSE_TIMEOUT) -> int:
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print("bancada: docker compose passou do timeout; interrompido", file=sys.stderr)
+        return 124
+    saida = (proc.stdout + proc.stderr)[-SAIDA_MAX:]
+    sys.stdout.write(saida)
+    if proc.returncode != 0:
+        print(f"bancada: docker compose saiu com {proc.returncode}", file=sys.stderr)
+    return proc.returncode
+
+
 # --- Linha de comando --------------------------------------------------------
 def _opcoes(args: list[str], aceitas: set[str]) -> tuple[dict, list[str]]:
     opcoes, resto = {}, []
@@ -292,6 +354,19 @@ def executar(argv: list[str], cwd: Path, projetos: list, achar_portas=portas,
             raise Recusa(f"baud fora da lista: {baud_txt} (aceitos: {sorted(BAUDS)})")
         porta = escolher_porta(op.get("--porta"), achar_portas())
         return serial(porta, segundos, int(baud_txt))
+    if sub == "docker":
+        op, resto = _opcoes(args, {"--file", "--tail"})
+        file_rel = op.get("--file", DOCKER_DEFAULT_FILE)
+        compose = (wt / file_rel).resolve()
+        if not _dentro(compose, wt) or not compose.is_file():
+            raise Recusa(f"compose não encontrado ou fora do worktree: {file_rel}")
+        texto = compose.read_text(encoding="utf-8", errors="replace")
+        _validar_compose(texto, wt)
+        if not resto:
+            raise Recusa("use: docker subir|logs|baixar [--file PATH] [--tail N]")
+        sub2 = resto[0]
+        cmd = _docker_cmd(compose, sub2, op)
+        return _rodar_docker(cmd)
     raise Recusa(f"subcomando desconhecido: {sub}\n" + USO)
 
 

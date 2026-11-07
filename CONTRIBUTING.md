@@ -19,10 +19,9 @@ Obrigado pelo interesse. O TuttiDash é um projeto pessoal compartilhado como es
   The dispatcher opens that PR as a draft and moves the card to In Review only after the check is green on the full head SHA.
   / Um PR para a `main` também roda `prova-remota`: o script da prova é o do commit da base.
   O dispatcher abre esse PR em rascunho e só move o card para In Review quando o check está verde no SHA completo.
-- The same pull request runs `revisao-ia` on a clean runner (`contents: read`, no secrets).
-  Merge waits for that check on the full head SHA. The reviewer comment is redacted before it is published.
-  / O mesmo PR roda `revisao-ia` num runner limpo (`contents: read`, sem secrets).
-  O merge espera esse check no SHA completo. O comentário do revisor é redigido antes de sair.
+- The same pull request runs `revisao-ia` on a clean runner **only if** the project keeps the workflow (FRA-620/621). For TuttiDash it was removed (FRA-621); real review is the `[Revisor]`.
+  Merge waits when required. The reviewer comment is redacted.
+  / O mesmo PR roda `revisao-ia` num runner limpo **só se** o projeto mantém o workflow. No TuttiDash foi removido (FRA-621); a revisão real é o `[Revisor]`.
 - Keep the Python side standard library only, and the Swift side without external packages.
   / Python só com a biblioteca padrão; Swift sem pacotes externos.
 - Adding an agent is one manifest in `agents.d/` (see `docs/gasto.md`). / Agente novo = um manifesto em `agents.d/`.

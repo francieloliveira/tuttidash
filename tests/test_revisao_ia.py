@@ -174,6 +174,10 @@ class Publicacao(unittest.TestCase):
 
 class Contrato(unittest.TestCase):
     def test_workflow_e_pull_request_sem_secrets(self):
+        # FRA-621: no TuttiDash o workflow foi removido (o check real é o [Revisor]).
+        # O contrato abaixo vale para projetos que mantêm o workflow.
+        if not WORKFLOW.exists():
+            self.skipTest("workflow removido neste repo (FRA-621)")
         texto = WORKFLOW.read_text()
         proibido = "pull_request_" + "target"
         self.assertNotIn(proibido, texto)

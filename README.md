@@ -115,14 +115,14 @@ A lane still runs as the owner of the machine.
 
 ## Remote review
 
-A pull request into `main` also runs `revisao-ia` on a clean GitHub-hosted runner.
-The workflow is `pull_request`, with read-only contents permission and no secrets.
+A pull request into `main` runs `revisao-ia` on a clean GitHub-hosted runner **only if** the project's `main` contains the workflow (see FRA-620/621). For TuttiDash the workflow was removed (FRA-621); the authoritative review is the `[Revisor]` from the watcher on Mac.
+The workflow (when present) is `pull_request`, with read-only contents permission and no secrets.
 The reviewer gets the diff and the pull request context. It does not get the home
 directory, Bash, a global Read, `security` or a write-capable `gh`. The comment is
 redacted before it is published. A detected secret is not published, and the owner
 is called. The `[Revisor]` comment includes the full head SHA. Branch protection
-has to require the check `revisao-ia`; this repository does not create that ruleset.
-A failed check blocks the merge.
+has to require the check `revisao-ia` when the project keeps the workflow; this repository does not create that ruleset.
+A failed check blocks the merge when required.
 
 ## Project layout
 
