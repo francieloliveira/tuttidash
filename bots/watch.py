@@ -1165,20 +1165,62 @@ def publicar_revisoes_remotas(repo: dict, st: dict, diary: list[str]) -> None:
             log(f"revisão remota PR #{pr.get('number')}: {exc}")
 
 
-# FRA-620: o check revisao-ia só é exigido quando a main do projeto tem o workflow. Projeto
-# sem ele (ex.: TranscentIA) segue com a revisão de verdade ([Revisor]) e a prova-remota.
+def garantir_revisao(repo: dict, st: dict, diary: list[str]) -> None:
+    """Garante que o PR tenha revisão (APROVADO ou AJUSTES).
+
+    Sempre produz revisão:
+    - Tenta o runner remoto primeiro (quando o workflow existe na main).
+    - Fallback local via review_pr para projetos sem workflow (docs, TranscentIA etc.).
+    - Detecta mudanças só de documentação e usa revisão mais leve (ainda exige APROVADO).
+    """
+    publicar_revisoes_remotas(repo, st, diary)
+
+    usar_fallback = _cfg("watch.usar_fallback_local_revisao", True)
+    if not usar_fallback:
+        return
+
+    for pr in open_prs(repo):
+        head = pr.get("headRefOid") or ""
+        if not head:
+            continue
+        v = st.get("reviewed", {}).get(head)
+        if v in ("APROVADO", "AJUSTES"):
+            continue
+
+        docs_only = eh_mudanca_somente_documentacao(pr)
+        tag = "fallback-local-docs" if docs_only else "fallback-local"
+        if docs_only:
+            log(f"PR #{pr.get('number')}: mudança somente documentação — revisão leve")
+
+        # Fallback local: chama a lógica existente de review_pr
+        # (que já lida com escolher_revisor, prompt, publicação de comentário etc.)
+        try:
+            review_pr(tag, repo, pr, st, diary)
+            log(f"revisao fallback local usada para PR #{pr.get('number')}" + (" (docs-only)" if docs_only else ""))
+        except Exception as exc:  # noqa: BLE001
+            log(f"revisao fallback local falhou PR #{pr.get('number')}: {exc}")
+
+
+# O check revisao-ia é opcional (exige_revisao_ia). 
+# Mesmo sem o workflow, o fluxo agora GARANTE revisão via fallback local
+# (garantir_revisao + review_pr). Projetos de documentação e sem workflow
+# recebem revisão automática (leve quando só docs).
 WORKFLOW_REVISAO = ".github/workflows/revisao-ia.yml"
 
 
 def exige_revisao_ia(repo: dict) -> bool:
-    """True se a `origin/main` do repo tem o workflow da revisao-ia. Na dúvida, exige."""
+    """True se a `origin/main` do repo tem o workflow da revisao-ia.
+
+    Nota: mesmo quando False, o fluxo agora garante revisão via fallback local
+    (garantir_revisao). O check só é exigido para o status do CI.
+    """
     pasta = repo.get("dir")
     if not pasta:
         return True
     try:
         sh(["git", "rev-parse", "--verify", "-q", "origin/main^{commit}"], cwd=pasta, timeout=30)
     except (RuntimeError, OSError, subprocess.TimeoutExpired):
-        return True                                  # repo ou main ilegível: falha fechada
+        return True                                  # repo ou main ilegível: falha fechado
     try:
         sh(["git", "cat-file", "-e", f"origin/main:{WORKFLOW_REVISAO}"], cwd=pasta, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
@@ -1218,7 +1260,7 @@ def merge_ready(st: dict, diary: list[str]) -> None:
         revisao = revisao_ia.veredito_check(sha_head, sha_head, rollup) if exigir_revisao else "verde"
         if not exigir_revisao:
             log(f"{ci['identifier']} PR #{pr['number']}: {revisao_ia.NOME_DO_CHECK} dispensado "
-                f"(a main do projeto não tem {WORKFLOW_REVISAO})")
+                f"(sem workflow — revisão garantida por fallback local)")
         if revisao == "vermelho":
             # Check falho bloqueia o merge e chama o dono. O corpo da revisão não entra aqui.
             chamar_dono_revisao(st, ci, pr)
@@ -1266,6 +1308,34 @@ def pr_files(pr: dict) -> set[str]:
     raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "files", "-q", ".files[].path"],
              cwd=REPOS["app"]["dir"], check=False)
     return {l.rsplit("/", 1)[-1] for l in raw.splitlines() if l.strip()}
+
+
+def eh_mudanca_somente_documentacao(pr: dict) -> bool:
+    """Detecta PRs que tocam apenas arquivos de documentação (não código).
+
+    Usado para revisão mais leve, mas *ainda exige* APROVADO.
+    Nunca pula a revisão.
+    """
+    try:
+        arquivos = pr_files(pr) | set(pr.get("files") or [])
+        if not arquivos:
+            # fallback: consulta completa
+            raw = sh(["gh", "pr", "view", str(pr["number"]), "--json", "files", "-q", ".files[].path"],
+                     cwd=REPOS.get("app", {}).get("dir", "."), check=False)
+            arquivos = {l.rsplit("/", 1)[-1] for l in raw.splitlines() if l.strip()}
+        doc_exts = (".md", ".mdx", ".rst", ".txt", ".adoc")
+        doc_dirs = ("docs/", "doc/", "documentation/", "README")
+        for f in arquivos:
+            f_lower = f.lower()
+            if any(f_lower.endswith(ext) for ext in doc_exts):
+                continue
+            if any(d in f_lower for d in doc_dirs):
+                continue
+            # Qualquer outro arquivo (código, config, etc.) → não é só docs
+            return False
+        return bool(arquivos)  # só docs se tinha arquivos e todos eram docs
+    except Exception:
+        return False
 
 
 def pr_paths(pr: dict) -> list[str]:
@@ -2896,6 +2966,19 @@ def main() -> int:
                 for pr in json.loads(raw):
                     st["done_moves"][f"{key}#{pr['number']}"] = "historico"
         step("instalação", check_install, st, diary)
+
+        # Garantir revisão ANTES do merge (remoto + fallback local).
+        # Isso assegura que projetos sem workflow (documentação, TranscentIA etc.)
+        # e mudanças puramente de docs sempre passem por revisão.
+        heads_abertos: set[str] = set()
+        for repo in REPOS.values():
+            prs_abertos = open_prs(repo)
+            heads_abertos |= {p["headRefOid"] for p in prs_abertos}
+            for pr in prs_abertos:
+                avisar_pr_sem_card(pr, st)
+            step("revisao (remota + fallback)", garantir_revisao, repo, st, diary)
+        limpar_revisoes_fechadas(st, heads_abertos)
+
         step("merge", merge_ready, st, diary)
         step("conflito", rebase_dirty, st, diary)
         step("instalar main", install_main_if_pending, st, diary)
@@ -2920,15 +3003,6 @@ def main() -> int:
         step("caixa do dono", caixa_do_ciclo, atuais, st, diary)
         step("worktrees", avisar_worktrees_fora, st, diary)
         step("fila", keep_lanes_busy, atuais, st, diary)
-        heads_abertos: set[str] = set()
-        for repo in REPOS.values():
-            prs_abertos = open_prs(repo)
-            heads_abertos |= {p["headRefOid"] for p in prs_abertos}
-            for pr in prs_abertos:
-                avisar_pr_sem_card(pr, st)
-            # FRA-612: a revisão de IA roda no runner limpo. Aqui só se publica o texto já redigido.
-            step("revisao remota", publicar_revisoes_remotas, repo, st, diary)
-        limpar_revisoes_fechadas(st, heads_abertos)
     except Exception as exc:  # noqa: BLE001
         log(f"tick falhou: {exc}")
     finally:
