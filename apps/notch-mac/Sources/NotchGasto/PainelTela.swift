@@ -70,7 +70,7 @@ struct PainelTela: View {
     /// bitmap e a transição vira origem→origem.
     private func trocar(para destino: PaginaPainel) {
         guard destino != nav.pagina, transicao == nil else { return }
-        guard !DS.reduzir, area.tamanho.width > 10,
+        guard CatalogoAjustes.transicaoTelasLigada(), !DS.reduzir, area.tamanho.width > 10,
               let origem = AreaPainel.foto(de: area),
               let nova = FotoPainel.imagem(pagina: destino, modelo: modelo, tamanho: area.tamanho)
         else {

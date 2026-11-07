@@ -94,6 +94,8 @@ public enum CatalogoAjustes {
                 CampoAjuste("state_dir", String(localized: "Pasta de estado das lanes"), .caminho(deveExistir: true, opcional: true), "~/" + Legado.estadoLanes),
                 CampoAjuste("ledger", String(localized: "Arquivo do ledger"), .caminho(deveExistir: false, opcional: true), "~/" + Legado.ledger),
                 CampoAjuste("geral.abrir_no_login", String(localized: "Abrir ao iniciar sessão"), .booleano, "false"),
+                CampoAjuste("geral.transicao_telas", String(localized: "Transição entre telas"), .booleano, "true",
+                            ajuda: String(localized: "Ao trocar de página, partículas saem da tela atual e formam a próxima. Desligado, a troca é imediata.")),
                 // geral.tela saiu (FRA-534): a pílula é NSStatusItem e fica onde está a barra de menus.
             ], nota: nil),
             AbaAjustes(nome: String(localized: "Contas e gasto"), simbolo: "dollarsign.circle", campos: [

@@ -141,12 +141,15 @@ extension CatalogoAjustes {
         let esf = nomesEsforco
         return [
             SecaoAjustes(id: .geral, nome: String(localized: "Geral"), simbolo: "gearshape",
-                         subtitulo: String(localized: "Quando o TuttiDash abre e o que cada lane mostra"), grupos: [
+                         subtitulo: String(localized: "Quando o TuttiDash abre, a troca de telas e o que cada lane mostra"), grupos: [
                 GrupoAjustes(String(localized: "Ferramentas e logins"),
                              ajuda: String(localized: "O que precisa estar instalado e conectado para as lanes funcionarem."),
                              blocos: [.ferramentas]),
                 GrupoAjustes(String(localized: "Abertura"), campos: [
                     campo("geral.abrir_no_login", ajuda: String(localized: "O TuttiDash abre sozinho quando você entra no Mac.")),
+                ]),
+                GrupoAjustes(String(localized: "Telas"), campos: [
+                    campo("geral.transicao_telas"),
                 ]),
                 GrupoAjustes(String(localized: "Janela de cada lane"), ajuda: String(localized: "Vale na próxima tarefa que a lane pegar."), campos: [
                     campo("lane_view.pensamento", ajuda: String(localized: "Mostra o que o agente está pensando enquanto trabalha.")),
@@ -284,6 +287,15 @@ extension CatalogoAjustes {
             }
         }
         return r
+    }
+
+    /// Transição de partículas entre páginas. Sem a chave, fica ligada (padrão do catálogo).
+    public static let chaveTransicaoTelas = "geral.transicao_telas"
+
+    public static func transicaoTelasLigada(em dados: [String: Any] = Configuracao.lerArquivo()) -> Bool {
+        guard let v = Configuracao.valor(chaveTransicaoTelas, em: dados) else { return true }
+        if let s = v as? String { return s == "true" || s == "1" }
+        return JV.verdadeiro(v)
     }
 
     /// Chaves do Linear mostradas só para leitura.

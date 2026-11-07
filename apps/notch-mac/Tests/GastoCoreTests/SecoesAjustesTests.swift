@@ -44,6 +44,14 @@ final class SecoesAjustesTests: XCTestCase {
         let geral = CatalogoAjustes.secoes().first { $0.id == .geral }!
         XCTAssertFalse(geral.campos.contains { $0.chave == "geral.tela" })
         XCTAssertTrue(geral.campos.contains { $0.chave == "geral.abrir_no_login" })
+        let transicao = geral.campos.first { $0.chave == CatalogoAjustes.chaveTransicaoTelas }
+        XCTAssertEqual(transicao?.tipo, .booleano as TipoCampo?)
+        XCTAssertEqual(transicao?.padrao, "true")
+        XCTAssertEqual(transicao?.rotulo, "Transição entre telas")
+        XCTAssertTrue(CatalogoAjustes.transicaoTelasLigada(em: [:]))
+        XCTAssertTrue(CatalogoAjustes.transicaoTelasLigada(em: ["geral": ["transicao_telas": true] as [String: Any]]))
+        XCTAssertFalse(CatalogoAjustes.transicaoTelasLigada(em: ["geral": ["transicao_telas": false] as [String: Any]]))
+        XCTAssertFalse(CatalogoAjustes.transicaoTelasLigada(em: ["geral": ["transicao_telas": "false"] as [String: Any]]))
         XCTAssertFalse(CatalogoAjustes.abas().flatMap(\.campos).contains { $0.chave == "geral.tela" })
         // Continua no cfg (compatibilidade); o app não a lê para posicionar a pílula.
         XCTAssertEqual(CatalogoAjustes.buscar("Tela").filter { $0.campo?.chave == "geral.tela" }.count, 0)

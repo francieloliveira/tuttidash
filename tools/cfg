@@ -47,7 +47,7 @@ def _legado():
 DEFAULTS = {
     "version": VERSION,
     # geral.tela: legado (FRA-534). Continua no padrão para configs antigas; o TuttiDash ignora (a pílula é NSStatusItem).
-    "geral": {"abrir_no_login": False, "tela": "principal"},
+    "geral": {"abrir_no_login": False, "tela": "principal", "transicao_telas": True},
     "contas": [
         {"id": "claude", "tipo": "claude", "rotulo": "Claude Code", "nome": "claude", "sigla": "CL"},
         {"id": "grok", "tipo": "grok", "rotulo": "Grok CLI", "nome": "grok", "sigla": "GR"},
