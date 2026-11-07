@@ -10,7 +10,7 @@ D="$(cd "$(dirname "$0")" && pwd)"
 trap 'pkill -P $$ 2>/dev/null; exit 0' TERM INT HUP
 desde=$(stat -f %SB -t '%Y-%m-%d %H:%M:%S' "$F" 2>/dev/null)
 ultima=$(stat -f %Sm -t '%H:%M:%S' "$F" 2>/dev/null)
-printf '\033[2m(linhas anteriores sem hora · arquivo de %s · última escrita %s)\033[0m\n' "$desde" "$ultima"
+printf '\033[2mcontexto · linhas anteriores sem hora · desde %s · última %s\033[0m\n' "$desde" "$ultima"
 L=$(wc -l < "$F" 2>/dev/null | tr -d ' '); L=${L:-0}
 head -n "$L" "$F" 2>/dev/null | tail -n "$N" | bash "$D/colorir.sh" "$R"
 tail -n +$((L + 1)) -F "$F" 2>/dev/null | bash "$D/carimbo.sh" | bash "$D/colorir.sh" "$R" &

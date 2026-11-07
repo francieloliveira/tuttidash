@@ -99,11 +99,11 @@ def _tmux(*args: str) -> str:
 
 
 def idle_title(lane: str) -> str:
-    return f"lane {lane} · livre"
+    return f"ociosa · {lane}"
 
 
 def task_title(lane: str, card: str) -> str:
-    return f"lane {lane} · {card}"
+    return f"executar · {lane} · {card}"
 
 
 PYTHON = "/usr/bin/python3"   # fixo: o launchd pode rodar o dispatcher com outro python
@@ -231,7 +231,7 @@ def idle(lane: str) -> None:
     if pane:
         _tmux("select-pane", "-t", pane, "-T", idle_title(lane))
     print("\033[H\033[2J\033[3J", end="")  # limpa o "[exited]" do attach anterior
-    print("\n  A próxima tarefa desta lane aparece aqui.\n", flush=True)
+    print(f"\n  ociosa · {lane}\n  a próxima tarefa aparece aqui.\n", flush=True)
     while True:
         time.sleep(3600)
 

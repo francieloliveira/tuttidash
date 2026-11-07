@@ -33,10 +33,9 @@ STATE_DIR="$HOME/.transcentia/lanes"
 DSH_BIN="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin"
 export LANE PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$DSH_BIN:$PATH"
 cd "$WT" || exit 1
-printf '\033]0;lane:%s · %s\007' "$LANE" "$CARD"   # título da janela
-echo "━━ lane:$LANE · $CARD · $(date '+%H:%M:%S') ━━"
-echo "worktree: $WT"
-echo "log bruto: $LOG"
+printf '\033]0;executar · %s · %s\007' "$LANE" "$CARD"
+echo "━━ executar · $LANE · $CARD · $(date '+%H:%M:%S') ━━"
+printf '\033[2mworktree %s\033[0m\n' "$WT"
 echo
 
 # FRA-269: shell limpo. O agente e os comandos que ele abre não leem o .zshrc/.bashrc
@@ -133,7 +132,7 @@ finally:
 PY
 )"
 echo
-echo "━━ agente terminou (código ${CODIGO}) · o dispatcher assume: prova e fechamento ━━"
+echo "━━ prova · agente saiu (código ${CODIGO}) ━━"
 # Acompanha a prova do dispatcher (segundo plano, pode levar dezenas de minutos) até o card
 # fechar, sem limite de tempo. Cada etapa aparece aqui e vai para o log do painel.
 PAINEL="$HOME/Library/Logs/TranscentIA/lanes-dispatcher.log"
@@ -161,7 +160,7 @@ while [ ! -f "$FINAL" ] || [ -L "$FINAL" ]; do
 done
 mostrar_prova
 printf '\r\033[K'
-echo "━━ resultado: $(/usr/bin/python3 -c 'import os,sys; fd=os.open(sys.argv[1], os.O_RDONLY|getattr(os,"O_NOFOLLOW",0)); print(os.read(fd,400).decode("utf-8","replace").strip()); os.close(fd)' "$FINAL") ━━"
+echo "━━ resultado · $(/usr/bin/python3 -c 'import os,sys; fd=os.open(sys.argv[1], os.O_RDONLY|getattr(os,"O_NOFOLLOW",0)); print(os.read(fd,400).decode("utf-8","replace").strip()); os.close(fd)' "$FINAL") ━━"
 # Id da sessão do agente: o init e o result do stream trazem session_id.
 SID=$(/usr/bin/python3 -c '
 import json, sys
@@ -239,11 +238,11 @@ cols = int(sys.argv[2]) if sys.argv[2].isdigit() else 100
 print("\n\n".join(textwrap.fill(str(p), width=max(40, cols - 2)) for p in partes))
 ' "$WT/.lane/result.json" "$(tput cols 2>/dev/null || echo 100)" 2>/dev/null)
 clear || true
-echo "━━ lane:$LANE · $CARD · terminou $(date '+%H:%M') ━━"
+echo "━━ encerrado · $LANE · $CARD · $(date '+%H:%M') ━━"
 echo
-echo "Resultado: $RESULTADO"
+echo "resultado · $RESULTADO"
 echo
 echo "$RESUMO"
 echo
-echo "Retomar: $RESUME"
+echo "retomar · $RESUME"
 while :; do sleep 86400; done
