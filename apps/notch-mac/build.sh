@@ -67,6 +67,7 @@ echo "==> proxy do Linear (o app sobe o processo; a chave entra pelo stdin)"
 cp "$HERE/../../gasto_lanes/proxy_linear.py" "$APP/Contents/Resources/proxy_linear.py"
 cp "$HERE/../../gasto_lanes/linear_ids.py" "$APP/Contents/Resources/linear_ids.py"
 cp "$HERE/../../gasto_lanes/config.py" "$APP/Contents/Resources/config.py"
+# brainstorm agora é nativo em SwiftUI (sem HTML)
 
 echo "==> plano de controle (scripts no bundle assinado, FRA-613)"
 REPO="$(cd "$HERE/../.." && pwd)"

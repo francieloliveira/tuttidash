@@ -22,7 +22,7 @@ struct PainelTela: View {
             BarraLateralPainel(pagina: Binding(get: { nav.pagina }, set: { trocar(para: $0) }),
                                secao: $nav.secao)
             VStack(spacing: 0) {
-                CabecalhoPainel(pagina: pagina, modelo: modelo, ir: trocar)
+                CabecalhoPainel(pagina: pagina, modelo: modelo, ir: trocar, foto: false)
                 GeometryReader { g in
                     ScrollViewReader { proxy in
                         ScrollView(.vertical) {
@@ -50,7 +50,7 @@ struct PainelTela: View {
             }
             .overlay {
                 if let t = transicao {
-                    TransicaoParticulas(origem: t.origem, destino: t.destino, tamanho: t.tamanho) {
+                    TransicaoParticulas(origem: t.origem, destino: t.destino, tamanho: t.tamanho, duracao: 0.40) {
                         if transicao?.id == t.id { transicao = nil }
                     }
                     .id(t.id)
@@ -65,16 +65,15 @@ struct PainelTela: View {
         .frame(minWidth: 1280, minHeight: 800)
     }
 
-    /// Troca de página com a transição de partículas: fotografia a tela que sai, desenha a que
-    /// entra e só então muda `nav.pagina` — assim o painel novo nunca pisca antes da animação.
+    /// Origem = foto ao vivo; destino = render offscreen da página nova.
+    /// Não fotografar o destino com `cacheDisplay` depois de cobrir a tela: a capa entra no
+    /// bitmap e a transição vira origem→origem.
     private func trocar(para destino: PaginaPainel) {
-        guard destino != nav.pagina else { return }
-        // Em andamento (ou Reduzir movimento): troca direta, sem empilhar animações.
-        guard transicao == nil, !DS.reduzir, area.tamanho.width > 10,
+        guard destino != nav.pagina, transicao == nil else { return }
+        guard !DS.reduzir, area.tamanho.width > 10,
               let origem = AreaPainel.foto(de: area),
               let nova = FotoPainel.imagem(pagina: destino, modelo: modelo, tamanho: area.tamanho)
         else {
-            transicao = nil
             nav.pagina = destino
             return
         }
@@ -99,6 +98,7 @@ struct ConteudoPagina: View {
         case .testes: PaginaTestes(modelo: modelo)
         case .custos: PaginaCustos(modelo: modelo)
         case .esperando: PaginaEsperando()
+        case .brainstorm: PaginaBrainstorm(modelo: modelo)
         case .ajustes:
             if let s = CatalogoAjustes.secoes().first(where: { $0.id == NavegacaoPainel.compartilhada.secao }) {
                 PaginaAjustes(secao: s)
@@ -115,7 +115,7 @@ struct FotoPainel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            CabecalhoPainel(pagina: pagina, modelo: modelo, ir: { _ in })
+            CabecalhoPainel(pagina: pagina, modelo: modelo, ir: { _ in }, foto: true)
             ConteudoPagina(modelo: modelo, pagina: pagina,
                            largura: max(tamanho.width - 44, 900), ir: { _ in })
                 .padding(.horizontal, 22)
@@ -300,6 +300,9 @@ struct CabecalhoPainel: View {
     var pagina: PaginaPainel
     @ObservedObject var modelo: ModeloNotch
     var ir: (PaginaPainel) -> Void
+    /// Foto da transição: texto estático. O `TextField` no `ImageRenderer` pinta o
+    /// placeholder em amarelo/laranja e as partículas herdam essa cor.
+    var foto = false
     @ObservedObject private var busca = BuscaPainel.compartilhada
     @ObservedObject private var nav = NavegacaoPainel.compartilhada
 
@@ -322,12 +325,23 @@ struct CabecalhoPainel: View {
             } else if pagina != .dashboard {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(PV.icone)
-                    TextField("Buscar lanes, builds, entregas...", text: $busca.texto)
-                        .textFieldStyle(.plain).font(PV.fonte(13))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if !busca.texto.isEmpty {
-                        Button { busca.texto = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(PV.apagado) }
-                            .buttonStyle(.plain)
+                    if foto {
+                        Text(busca.texto.isEmpty ? "Buscar lanes, builds, entregas..." : busca.texto)
+                            .font(PV.fonte(13))
+                            .foregroundStyle(busca.texto.isEmpty ? PV.mudo : PV.texto)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        TextField("", text: $busca.texto,
+                                  prompt: Text("Buscar lanes, builds, entregas...").foregroundColor(PV.mudo))
+                            .textFieldStyle(.plain).font(PV.fonte(13))
+                            .foregroundStyle(PV.texto)
+                            .tint(PV.azul)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if !busca.texto.isEmpty {
+                            Button { busca.texto = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(PV.apagado) }
+                                .buttonStyle(.plain)
+                        }
                     }
                 }
                 .padding(.leading, 12).padding(.trailing, 10)

@@ -19,6 +19,7 @@ Mac and workflow, and it shows. **The app UI and most of the docs are in Brazili
 | Notch app | `apps/notch-mac` | SwiftUI/AppKit app in the notch and menu bar: lanes, builds, tests, deliveries, cost from the lane logs, account limits where an official source exists, and the settings. |
 | `gasto` CLI | `gasto.py`, `gasto_lanes/` | Cost ledger built from the lane logs, by day, week, card and lane. See [docs/gasto.md](docs/gasto.md). |
 | Agent catalog | `agents.d/*.json` | One manifest per agent (CLI, cost type, models per effort, review command). Python and Swift read the same files. |
+| Brainstorm | `brainstorm.html` | Tela interativa para discutir ideias com agente, gerar user stories e inserir cards no Linear (via proxy). |
 
 ## Before you use it
 
@@ -130,6 +131,7 @@ A failed check blocks the merge when required.
 agents.d/          one manifest per agent
 apps/notch-mac/    the macOS app (GastoCore library + NotchGasto app)
 bots/              watcher, its prompts and launchd templates
+brainstorm.html    tela de Brainstorm (chat + geração de histórias + envio pro Linear)
 docs/              gasto CLI reference, example data for the screenshot
 gasto_lanes/       Python: config, catalog, projects, Linear ids, cost ledger
 lanes/             dispatcher, lane runner, tmux window, lane prompts

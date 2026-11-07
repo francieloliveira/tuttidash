@@ -181,6 +181,12 @@ mutation($id: String!, $label: String!) {
             "query($id:String!){ issue(id:$id){ team{ states{ nodes{ id type name } } } } }", ("id",)),
         "estados_time_tipo": Operacao(
             "query($id:String!){ team(id:$id){ states{ nodes{ id type } } } }", ("id",)),
+        "criar_issue": Operacao(
+            "mutation($input:IssueCreateInput!){ issueCreate(input:$input){ success issue{ id identifier title url state{ id name } } } }",
+            ("input",),
+            {"input": frozenset({"title", "description", "projectId", "stateId", "priority", "estimate", "teamId", "labelIds"})},
+            {"input": ("title",)}
+        ),
     }
 
 

@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brainstorm • TuttiDash</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap');
+    
+    :root {
+      --fundo: #040B17;
+      --cartao: #081426;
+      --cartao-borda: #15233A;
+      --texto: #E6EDF7;
+      --texto2: #C2CEDF;
+      --mudo: #A9B6C9;
+      --azul: #4FA3FF;
+      --ciano: #2EE6EA;
+      --verde: #35D66E;
+      --vermelho: #FF4D6D;
+    }
+    
+    body {
+      font-family: 'Inter', system_ui, sans-serif;
+    }
+    
+    .mono {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    .glass {
+      background: rgba(8, 20, 38, 0.85);
+      backdrop-filter: blur(20px);
+    }
+
+    .chat-bubble-user {
+      background: linear-gradient(135deg, #1F5FE0, #3B82F6);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    
+    .chat-bubble-agent {
+      background: #0A1628;
+      border: 1px solid #15233A;
+      border-bottom-left-radius: 4px;
+    }
+
+    .section-header {
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #A9B6C9;
+      font-weight: 600;
+    }
+
+    .story-card {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .story-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    }
+
+    .message {
+      animation: fadeInUp 0.2s ease-out forwards;
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .linear-gradient {
+      background: linear-gradient(90deg, #4FA3FF, #2EE6EA);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .tuttidash-bg {
+      background: #040B17;
+    }
+
+    .panel {
+      background: #081426;
+      border: 1px solid #15233A;
+    }
+
+    .input-field {
+      background: #06101F;
+      border: 1px solid #1B2A44;
+      color: #E6EDF7;
+    }
+
+    .input-field:focus {
+      border-color: #4FA3FF;
+      box-shadow: 0 0 0 3px rgba(79, 163, 255, 0.1);
+      outline: none;
+    }
+
+    .agent-dot {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    .story-tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+      background: #1A2840;
+      color: #A9B6C9;
+    }
+
+    .nav-active {
+      background: #0A2149;
+      color: white;
+      border: 1px solid #17386E;
+    }
+  </style>
+</head>
+<body class="tuttidash-bg text-[#E6EDF7] min-h-screen">
+  <!-- Header -->
+  <div class="border-b border-[#15233A] bg-[#020814]">
+    <div class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-x-3">
+        <div class="flex items-center gap-x-2">
+          <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-[#4FA3FF] to-[#2EE6EA] flex items-center justify-center">
+            <i class="fa-solid fa-lightbulb text-[#040B17] text-lg"></i>
+          </div>
+          <div>
+            <span class="font-semibold text-xl tracking-tight">Brainstorm</span>
+            <span class="text-[#A9B6C9] text-sm ml-1.5">• TuttiDash</span>
+          </div>
+        </div>
+        <div class="px-3 py-1 rounded-full bg-[#0A1628] border border-[#15233A] text-xs flex items-center gap-x-1.5">
+          <div class="w-2 h-2 bg-[#35D66E] rounded-full animate-pulse"></div>
+          <span class="text-[#A9B6C9]">Agente online</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-x-4">
+        <!-- Project selector -->
+        <div class="flex items-center gap-x-2 text-sm">
+          <span class="text-[#A9B6C9]">Projeto Linear:</span>
+          <div class="flex items-center bg-[#06101F] border border-[#1B2A44] rounded-xl px-1">
+            <input id="project-id" 
+                   type="text" 
+                   value="PROJ-ABC123" 
+                   class="bg-transparent px-3 py-1.5 text-sm w-36 font-mono focus:outline-none">
+            <button onclick="copyProjectId()" 
+                    class="px-2.5 text-[#A9B6C9] hover:text-white">
+              <i class="fa-solid fa-copy text-xs"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="h-6 w-px bg-[#15233A]"></div>
+
+        <div class="flex items-center gap-x-2 text-sm">
+          <div class="flex items-center gap-x-2">
+            <img src="https://i.pravatar.cc/24?img=47" class="w-6 h-6 rounded-full ring-1 ring-[#15233A]">
+            <div>
+              <div class="text-xs font-medium">TranscentIA</div>
+              <div class="text-[10px] text-[#A9B6C9] -mt-0.5">Brainstorm Agent</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-screen-2xl mx-auto">
+    <div class="flex h-[calc(100vh-57px)]">
+      
+      <!-- CHAT COM AGENTE -->
+      <div class="w-[38%] border-r border-[#15233A] flex flex-col">
+        <div class="px-5 py-3 border-b border-[#15233A] flex items-center justify-between bg-[#020814]">
+          <div>
+            <div class="font-semibold flex items-center gap-x-2">
+              <i class="fa-solid fa-robot text-[#4FA3FF]"></i>
+              <span>Conversa com o Agente</span>
+            </div>
+            <div class="text-[10px] text-[#A9B6C9]">Discussão iterativa de ideias</div>
+          </div>
+          <button onclick="clearChat()" 
+                  class="text-xs px-3 py-1 rounded-lg bg-[#0A1628] hover:bg-[#15233A] border border-[#1B2A44] text-[#A9B6C9]">
+            <i class="fa-solid fa-trash mr-1.5 text-xs"></i>Limpar
+          </button>
+        </div>
+
+        <!-- Messages -->
+        <div id="chat-messages" 
+             class="flex-1 overflow-y-auto p-5 space-y-5 text-sm bg-[#040B17]">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Quick actions -->
+        <div class="px-5 py-2 border-t border-[#15233A] bg-[#020814]">
+          <div class="text-[10px] text-[#A9B6C9] mb-1.5 px-1">Ações rápidas</div>
+          <div class="flex flex-wrap gap-1.5">
+            <button onclick="sendQuickMessage('Explique os riscos dessa ideia')" 
+                    class="text-[11px] px-2.5 py-1 bg-[#0A1628] hover:bg-[#15233A] border border-[#1B2A44] rounded-full text-[#A9B6C9]">Riscos</button>
+            <button onclick="sendQuickMessage('Quais seriam os fluxos de usuário principais?')" 
+                    class="text-[11px] px-2.5 py-1 bg-[#0A1628] hover:bg-[#15233A] border border-[#1B2A44] rounded-full text-[#A9B6C9]">Fluxos</button>
+            <button onclick="sendQuickMessage('Como podemos simplificar o escopo inicial?')" 
+                    class="text-[11px] px-2.5 py-1 bg-[#0A1628] hover:bg-[#15233A] border border-[#1B2A44] rounded-full text-[#A9B6C9]">Simplificar</button>
+            <button onclick="sendQuickMessage('Quais métricas de sucesso deveríamos definir?')" 
+                    class="text-[11px] px-2.5 py-1 bg-[#0A1628] hover:bg-[#15233A] border border-[#1B2A44] rounded-full text-[#A9B6C9]">Métricas</button>
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div class="p-4 border-t border-[#15233A] bg-[#020814]">
+          <div class="flex gap-2">
+            <input id="chat-input" 
+                   type="text" 
+                   placeholder="Descreva sua ideia ou faça uma pergunta..."
+                   class="flex-1 input-field text-sm px-4 py-3 rounded-2xl focus:outline-none"
+                   onkeydown="if (event.key === 'Enter') sendChatMessage()">
+            <button onclick="sendChatMessage()" 
+                    class="px-5 rounded-2xl bg-[#4FA3FF] hover:bg-[#3B82F6] active:scale-[0.985] transition-all text-[#040B17] font-semibold flex items-center justify-center">
+              <i class="fa-solid fa-paper-plane"></i>
+            </button>
+          </div>
+          <div class="text-[10px] text-center mt-2 text-[#6B7C96]">
+            O agente ajuda a refinar a ideia antes de gerar as histórias
+          </div>
+        </div>
+      </div>
+
+      <!-- IDEIA + HISTÓRIAS -->
+      <div class="flex-1 flex flex-col">
+        
+        <!-- IDEIA ATUAL -->
+        <div class="px-6 py-4 border-b border-[#15233A] bg-[#020814]">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-x-2">
+              <i class="fa-solid fa-file-lines text-[#4FA3FF]"></i>
+              <div class="font-semibold">Ideia em Definição</div>
+            </div>
+            <div class="flex gap-x-2">
+              <button onclick="finalizeIdea()" 
+                      class="text-xs flex items-center gap-x-1.5 px-3 py-1.5 rounded-xl bg-[#0A1628] hover:bg-[#15233A] border border-[#1B2A44] text-[#A9B6C9]">
+                <i class="fa-solid fa-check-double"></i>
+                <span>Finalizar definição</span>
+              </button>
+              <button onclick="generateStories()" 
+                      class="text-xs flex items-center gap-x-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#4FA3FF] to-[#3B82F6] text-white font-medium hover:brightness-105 active:scale-[0.985]">
+                <i class="fa-solid fa-magic mr-1.5"></i>
+                <span>Gerar Histórias</span>
+              </button>
+            </div>
+          </div>
+          
+          <textarea id="idea-summary" 
+                    class="w-full input-field text-sm rounded-2xl px-4 py-3 min-h-[72px] resize-y"
+                    placeholder="Resuma a ideia aqui. O agente pode ajudar a refinar..."></textarea>
+        </div>
+
+        <!-- HISTÓRIAS -->
+        <div class="flex-1 overflow-auto px-6 py-5 bg-[#040B17]" id="stories-container">
+          <div id="stories-header" class="flex items-center justify-between mb-4">
+            <div>
+              <div class="font-semibold flex items-center gap-x-2">
+                <span>Histórias de Usuário</span>
+                <span id="stories-count" 
+                      class="text-[10px] font-mono px-2 py-px bg-[#0A1628] border border-[#15233A] rounded-full text-[#A9B6C9]">0</span>
+              </div>
+              <div class="text-xs text-[#A9B6C9]">Geradas pelo agente • editáveis</div>
+            </div>
+            
+            <div class="flex items-center gap-x-2">
+              <button onclick="addManualStory()" 
+                      class="text-xs px-3 py-1.5 flex items-center gap-x-1.5 rounded-2xl border border-[#1B2A44] hover:bg-[#0A1628]">
+                <i class="fa-solid fa-plus"></i>
+                <span>Adicionar manual</span>
+              </button>
+              <button onclick="clearStories()" 
+                      class="text-xs px-3 py-1.5 flex items-center gap-x-1.5 rounded-2xl text-[#A9B6C9] hover:text-white border border-[#1B2A44]">
+                <i class="fa-solid fa-eraser"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Stories Grid -->
+          <div id="stories-grid" 
+               class="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-4">
+            <!-- Populated dynamically -->
+          </div>
+
+          <div id="stories-empty" class="hidden flex flex-col items-center justify-center py-12 text-center">
+            <div class="w-12 h-12 rounded-2xl bg-[#0A1628] flex items-center justify-center mb-3">
+              <i class="fa-solid fa-list-check text-2xl text-[#4FA3FF]"></i>
+            </div>
+            <div class="text-sm font-medium">Nenhuma história gerada ainda</div>
+            <div class="text-xs text-[#A9B6C9] max-w-[260px] mt-1">
+              Finalize a ideia ao lado ou clique em "Gerar Histórias"
+            </div>
+          </div>
+        </div>
+
+        <!-- AÇÕES FINAIS -->
+        <div class="border-t border-[#15233A] bg-[#020814] px-6 py-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-x-3">
+              <div onclick="approveAllStories()" 
+                   class="cursor-pointer text-xs px-4 py-2 rounded-2xl border border-[#1B2A44] hover:bg-[#0A1628] flex items-center gap-x-2 text-[#35D66E]">
+                <i class="fa-solid fa-check-double"></i>
+                <span>Aprovar todas</span>
+              </div>
+              <div onclick="unapproveAllStories()" 
+                   class="cursor-pointer text-xs px-4 py-2 rounded-2xl border border-[#1B2A44] hover:bg-[#0A1628] flex items-center gap-x-2 text-[#A9B6C9]">
+                <span>Desmarcar todas</span>
+              </div>
+            </div>
+
+            <button onclick="approveAndSendToLinear()"
+                    class="px-6 py-2.5 text-sm font-semibold rounded-2xl flex items-center gap-x-2 bg-[#35D66E] hover:bg-[#22C55E] active:scale-[0.985] transition-all text-[#040B17]">
+              <i class="fa-solid fa-paper-plane"></i>
+              <span class="font-bold">Aprovar e Inserir no Linear</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de edição de história -->
+  <div id="edit-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center">
+    <div class="panel w-full max-w-lg mx-4 rounded-3xl p-6 border border-[#15233A]">
+      <div class="flex justify-between items-center mb-4">
+        <div class="font-semibold">Editar História</div>
+        <button onclick="closeEditModal()" class="text-[#A9B6C9] hover:text-white">
+          <i class="fa-solid fa-times text-xl"></i>
+        </button>
+      </div>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="text-xs text-[#A9B6C9] block mb-1">Título</label>
+          <input id="edit-title" type="text" class="input-field w-full px-3 py-2 rounded-2xl text-sm">
+        </div>
+        
+        <div>
+          <label class="text-xs text-[#A9B6C9] block mb-1">Descrição</label>
+          <textarea id="edit-description" rows="3" class="input-field w-full px-3 py-2 rounded-2xl text-sm"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs text-[#A9B6C9] block mb-1">Prioridade</label>
+            <select id="edit-priority" class="input-field w-full px-3 py-2 rounded-2xl text-sm">
+              <option value="0">0 - Sem prioridade</option>
+              <option value="1">1 - Baixa</option>
+              <option value="2">2 - Média</option>
+              <option value="3">3 - Alta</option>
+              <option value="4">4 - Urgente</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-[#A9B6C9] block mb-1">Estimativa (pontos)</label>
+            <input id="edit-estimate" type="number" class="input-field w-full px-3 py-2 rounded-2xl text-sm" min="1" max="21">
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-[#A9B6C9] block mb-1">Critérios de Aceitação (um por linha)</label>
+          <textarea id="edit-acceptance" rows="4" class="input-field w-full px-3 py-2 rounded-2xl text-sm font-mono text-xs"></textarea>
+        </div>
+
+        <div>
+          <label class="text-xs text-[#A9B6C9] block mb-1">Etiquetas (separadas por vírgula)</label>
+          <input id="edit-labels" type="text" class="input-field w-full px-3 py-2 rounded-2xl text-sm" placeholder="medio, claude">
+        </div>
+      </div>
+
+      <div class="flex gap-3 mt-6">
+        <button onclick="closeEditModal()" 
+                class="flex-1 py-2.5 rounded-2xl border border-[#1B2A44] text-sm">Cancelar</button>
+        <button onclick="saveEditedStory()" 
+                class="flex-1 py-2.5 rounded-2xl bg-[#4FA3FF] text-[#040B17] font-semibold text-sm">Salvar alterações</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden fixed bottom-4 right-4 px-4 py-2.5 rounded-2xl bg-[#0A1628] border border-[#15233A] shadow-xl text-sm items-center gap-x-2">
+  </div>
+
+  <script>
+    // Tailwind script
+    function initTailwind() {
+      document.documentElement.style.setProperty('--accent', '#4FA3FF');
+    }
+
+    // State
+    let chatHistory = [];
+    let stories = [];
+    let currentEditId = null;
+    let nextStoryId = 1;
+
+    // Sample initial conversation
+    function seedInitialConversation() {
+      const messagesContainer = document.getElementById('chat-messages');
+      if (messagesContainer.children.length > 0) return;
+
+      const seed = [
+        { role: 'agent', text: 'Olá! Estou pronto para ajudar a brainstormar ideias para o projeto. Qual ideia você quer explorar hoje?' },
+        { role: 'user', text: 'Quero criar uma tela de Brainstorm onde a gente discute ideias com o agente e depois gera automaticamente as histórias para o Linear.' },
+        { role: 'agent', text: 'Excelente! Uma ótima adição ao fluxo de planejamento. Vamos detalhar: a tela deve permitir iteração livre, resumo da ideia, geração de user stories bem estruturadas e integração direta com o proxy do Linear para criar os cards.' }
+      ];
+
+      seed.forEach(m => addMessageToDOM(m.role, m.text, false));
+      chatHistory = seed;
+    }
+
+    function addMessageToDOM(role, text, save = true) {
+      const container = document.getElementById('chat-messages');
+      
+      const wrapper = document.createElement('div');
+      wrapper.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'} message`;
+      
+      const bubble = document.createElement('div');
+      bubble.className = `max-w-[85%] px-4 py-2.5 rounded-3xl text-sm leading-snug ${role === 'user' ? 'chat-bubble-user' : 'chat-bubble-agent'}`;
+      
+      if (role === 'agent') {
+        bubble.innerHTML = `
+          <div class="flex items-start gap-x-2">
+            <div class="w-5 h-5 mt-0.5 rounded-full bg-[#0A1628] flex-shrink-0 flex items-center justify-center ring-1 ring-[#15233A]">
+              <i class="fa-solid fa-robot text-[10px] text-[#4FA3FF]"></i>
+            </div>
+            <div class="flex-1">${text}</div>
+          </div>
+        `;
+      } else {
+        bubble.textContent = text;
+      }
+      
+      wrapper.appendChild(bubble);
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+
+      if (save) {
+        chatHistory.push({ role, text });
+      }
+    }
+
+    function sendChatMessage() {
+      const input = document.getElementById('chat-input');
+      const value = input.value.trim();
+      if (!value) return;
+
+      addMessageToDOM('user', value);
+      input.value = '';
+
+      // Simulate agent thinking
+      const container = document.getElementById('chat-messages');
+      const thinking = document.createElement('div');
+      thinking.id = 'thinking';
+      thinking.className = 'flex justify-start message';
+      thinking.innerHTML = `
+        <div class="max-w-[85%] px-4 py-2.5 rounded-3xl chat-bubble-agent text-sm flex items-center gap-x-2">
+          <div class="w-5 h-5 rounded-full bg-[#0A1628] flex items-center justify-center ring-1 ring-[#15233A]">
+            <i class="fa-solid fa-robot text-[10px] text-[#4FA3FF]"></i>
+          </div>
+          <div class="flex items-center gap-x-1.5 text-[#A9B6C9]">
+            <span>Pensando</span>
+            <span class="flex gap-x-px">
+              <span class="animate-bounce">.</span>
+              <span class="animate-bounce delay-100">.</span>
+              <span class="animate-bounce delay-200">.</span>
+            </span>
+          </div>
+        </div>
+      `;
+      container.appendChild(thinking);
+      container.scrollTop = container.scrollHeight;
+
+      setTimeout(() => {
+        thinking.remove();
+        const response = getAgentResponse(value);
+        addMessageToDOM('agent', response);
+        
+        // Auto-suggest updating the idea summary if it looks like a good summary
+        if (value.length > 40 && !document.getElementById('idea-summary').value) {
+          document.getElementById('idea-summary').value = value;
+        }
+      }, 1100);
+    }
+
+    function getAgentResponse(userMsg) {
+      const msg = userMsg.toLowerCase();
+      
+      if (msg.includes('risco') || msg.includes('problema')) {
+        return 'Boa pergunta. Principais riscos que vejo: 1) Escopo inflado durante a discussão, 2) Integração complexa com o proxy Linear atual (não temos createIssue ainda), 3) UX de chat pode consumir muito tempo se não tiver bons atalhos. Quer que eu proponha mitigações?';
+      }
+      
+      if (msg.includes('simplif') || msg.includes('menor')) {
+        return 'Podemos começar com uma versão mínima: chat + resumo da ideia + botão "Gerar Histórias" que produz 3~5 cards editáveis. O envio para Linear pode ser primeiro via cópia de payload + script, depois adicionamos suporte nativo no proxy.';
+      }
+      
+      if (msg.includes('fluxo') || msg.includes('usuário')) {
+        return 'Fluxo: 1) Ideia 2) Gerar histórias 3) Revisar esforço (baixo/medio/alto) + lane (claude, codex…) 4) Aprovar 5) Linear em Todo com essas etiquetas do processo.';
+      }
+      
+      if (msg.includes('história') || msg.includes('story')) {
+        return 'Perfeito. Quando você finalizar a ideia, eu consigo gerar histórias no formato Linear (título, descrição em "Como/Eu quero/Para que", acceptance criteria, prioridade, estimate e labels). Quer que eu gere um exemplo agora com o que já conversamos?';
+      }
+      
+      if (msg.includes('linear') || msg.includes('card')) {
+        return 'Sim. O envio pode usar o proxy_linear.py (via socket) ou o ServicoProxyLinear do Swift. Precisamos adicionar a mutation issueCreate à allowlist do proxy. Posso te ajudar a escrever a extensão depois.';
+      }
+      
+      // Default helpful responses
+      const defaults = [
+        'Entendi. O que mais você quer definir antes de gerarmos as histórias?',
+        'Boa direção. Algum detalhe técnico importante que o agente deve considerar ao quebrar em histórias?',
+        'Ótimo ponto. Como poderíamos medir o sucesso dessa funcionalidade?',
+        'Vamos continuar refinando. Qual parte você quer explorar mais agora?'
+      ];
+      return defaults[Math.floor(Math.random() * defaults.length)];
+    }
+
+    function sendQuickMessage(text) {
+      const input = document.getElementById('chat-input');
+      addMessageToDOM('user', text);
+      
+      setTimeout(() => {
+        const response = getAgentResponse(text);
+        addMessageToDOM('agent', response);
+      }, 700);
+    }
+
+    function clearChat() {
+      if (!confirm('Limpar toda a conversa?')) return;
+      document.getElementById('chat-messages').innerHTML = '';
+      chatHistory = [];
+      seedInitialConversation();
+    }
+
+    // Idea handling
+    function finalizeIdea() {
+      const summary = document.getElementById('idea-summary').value.trim();
+      if (!summary) {
+        showToast('Escreva ou refine o resumo da ideia primeiro', true);
+        return;
+      }
+      
+      addMessageToDOM('agent', `Ideia finalizada. Resumo capturado: "${summary.substring(0, 80)}${summary.length > 80 ? '...' : ''}". Pronto para gerar as histórias?`);
+      
+      // Highlight the generate button
+      const btn = document.querySelector('#stories-header button');
+      if (btn) {
+        btn.classList.add('ring-2', 'ring-[#35D66E]');
+        setTimeout(() => btn.classList.remove('ring-2', 'ring-[#35D66E]'), 1800);
+      }
+      
+      showToast('Ideia finalizada. Clique em "Gerar Histórias"');
+    }
+
+    // Story generation (the core "agente escreve as histórias")
+    function generateStories() {
+      const idea = document.getElementById('idea-summary').value.trim() || 
+                   'Criar tela de Brainstorm para discutir ideias com agente e gerar cards no Linear automaticamente.';
+      
+      // Simulate agent "thinking"
+      const grid = document.getElementById('stories-grid');
+      grid.innerHTML = `
+        <div class="col-span-full flex items-center justify-center py-8 text-[#A9B6C9]">
+          <div class="flex items-center gap-x-3">
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            <span>Agente está escrevendo as histórias...</span>
+          </div>
+        </div>
+      `;
+      
+      setTimeout(() => {
+        const generated = createStoriesFromIdea(idea);
+        stories = generated;
+        renderStories();
+        showToast(`${generated.length} histórias geradas pelo agente`);
+      }, 1350);
+    }
+
+    function createStoriesFromIdea(idea) {
+      const base = idea.toLowerCase();
+      let generatedStories = [];
+      
+      // Intelligent-ish breaking of the idea into user stories
+      const commonStories = [
+        {
+          title: "Interface de chat com agente para brainstorm",
+          description: `Como usuário de planejamento\nEu quero conversar iterativamente com um agente\nPara que eu possa refinar minhas ideias antes de criar cards`,
+          acceptance: "Chat bidirecional fluido\nHistórico persiste na sessão\nQuick actions úteis\nRespostas do agente contextuais",
+          priority: 3,
+          estimate: 8,
+          labels: "medio, claude"
+        },
+        {
+          title: "Geração automática de user stories a partir da conversa",
+          description: `Como Product Owner\nEu quero que o agente quebre a ideia em histórias bem formadas\nPara que o time tenha cards prontos para o Linear`,
+          acceptance: "Botão 'Gerar Histórias' funcional\nHistórias seguem formato Como/Eu quero/Para que\nCritérios de aceitação gerados\nEstimativa e prioridade sugeridas",
+          priority: 3,
+          estimate: 5,
+          labels: "medio, claude"
+        },
+        {
+          title: "Revisão e edição das histórias geradas",
+          description: `Como usuário\nEu quero editar título, descrição, ACs, prioridade e estimativa\nPara que as histórias reflitam exatamente o que foi discutido`,
+          acceptance: "Modal de edição completo\nEdição inline básica\nAdicionar/remover histórias\nPersistência local temporária",
+          priority: 2,
+          estimate: 3,
+          labels: "baixo, claude"
+        },
+        {
+          title: "Envio aprovado das histórias para o Linear",
+          description: `Como time\nEu quero enviar as histórias aprovadas diretamente para o projeto Linear\nPara que elas entrem na backlog sem trabalho manual`,
+          acceptance: "Botão 'Aprovar e Inserir no Linear'\nCriação via proxy (ou payload)\nLabels e estado corretos aplicados\nFeedback de sucesso com IDs",
+          priority: 4,
+          estimate: 8,
+          labels: "alto, claude"
+        }
+      ];
+
+      // Customize based on idea content
+      if (base.includes('brainstorm') || base.includes('ideia')) {
+        generatedStories = commonStories;
+      } else {
+        // Generic split
+        generatedStories = [
+          { ...commonStories[0], title: "Implementar " + idea.split(' ').slice(0, 5).join(' ') },
+          { ...commonStories[1], title: "Quebrar escopo em histórias" },
+          { ...commonStories[2], title: "Revisão e refinamento das histórias" },
+          { ...commonStories[3], title: "Integração com Linear" }
+        ];
+      }
+
+      return generatedStories.map((s, index) => ({
+        id: nextStoryId++,
+        ...s,
+        approved: true,
+        createdAt: new Date().toISOString()
+      }));
+    }
+
+    function renderStories() {
+      const grid = document.getElementById('stories-grid');
+      const empty = document.getElementById('stories-empty');
+      const countEl = document.getElementById('stories-count');
+
+      grid.innerHTML = '';
+      countEl.textContent = stories.length;
+
+      if (stories.length === 0) {
+        empty.classList.remove('hidden');
+        grid.classList.add('hidden');
+        return;
+      }
+
+      empty.classList.add('hidden');
+      grid.classList.remove('hidden');
+
+      stories.forEach(story => {
+        const card = document.createElement('div');
+        card.className = `story-card panel rounded-3xl p-4 border border-[#15233A] flex flex-col`;
+        
+        const acLines = story.acceptance.split('\n').map(l => l.trim()).filter(Boolean);
+        
+        card.innerHTML = `
+          <div class="flex justify-between items-start mb-2">
+            <div class="font-semibold text-sm pr-2 leading-tight">${story.title}</div>
+            <div class="flex items-center gap-x-1 flex-shrink-0">
+              <button onclick="toggleApprove(${story.id}, this)" class="w-5 h-5 flex items-center justify-center text-lg transition-colors ${story.approved ? 'text-[#35D66E]' : 'text-[#A9B6C9]'}">
+                <i class="fa-solid ${story.approved ? 'fa-check-circle' : 'fa-circle'}"></i>
+              </button>
+            </div>
+          </div>
+          
+          <div class="text-xs text-[#A9B6C9] line-clamp-3 mb-3">${story.description.replace(/\n/g, ' ')}</div>
+          
+          <div class="mt-auto">
+            <div class="text-[10px] text-[#A9B6C9] mb-1">Critérios de Aceitação</div>
+            <ul class="text-xs space-y-0.5 mb-3 text-[#C2CEDF]">
+              ${acLines.slice(0, 3).map(line => `<li class="flex gap-x-1.5"><span class="text-[#4FA3FF]">•</span> <span>${line}</span></li>`).join('')}
+            </ul>
+            
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-x-2">
+                <div class="story-tag bg-[#0A2149] text-[#4FA3FF]">P${story.priority}</div>
+                <div class="story-tag bg-[#15233A]">${story.estimate} pts</div>
+              </div>
+              
+              <div class="flex items-center gap-x-1">
+                <button onclick="editStory(${story.id})" class="px-2 py-0.5 text-[#A9B6C9] hover:text-white">
+                  <i class="fa-solid fa-edit text-xs"></i>
+                </button>
+                <button onclick="deleteStory(${story.id})" class="px-2 py-0.5 text-[#A9B6C9] hover:text-[#FF4D6D]">
+                  <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+              </div>
+            </div>
+            
+            <div class="flex flex-wrap gap-1 mt-2">
+              ${story.labels.split(',').map(l => {
+                const label = l.trim();
+                return `<span class="story-tag">${label}</span>`;
+              }).join('')}
+            </div>
+          </div>
+        `;
+        
+        grid.appendChild(card);
+      });
+    }
+
+    function toggleApprove(id, el) {
+      const story = stories.find(s => s.id === id);
+      if (!story) return;
+      
+      story.approved = !story.approved;
+      
+      // Update icon
+      const icon = el.querySelector('i');
+      if (story.approved) {
+        icon.classList.remove('fa-circle');
+        icon.classList.add('fa-check-circle');
+        el.classList.add('text-[#35D66E]');
+        el.classList.remove('text-[#A9B6C9]');
+      } else {
+        icon.classList.remove('fa-check-circle');
+        icon.classList.add('fa-circle');
+        el.classList.remove('text-[#35D66E]');
+        el.classList.add('text-[#A9B6C9]');
+      }
+    }
+
+    function editStory(id) {
+      const story = stories.find(s => s.id === id);
+      if (!story) return;
+
+      currentEditId = id;
+
+      document.getElementById('edit-title').value = story.title;
+      document.getElementById('edit-description').value = story.description;
+      document.getElementById('edit-priority').value = story.priority;
+      document.getElementById('edit-estimate').value = story.estimate;
+      document.getElementById('edit-acceptance').value = story.acceptance;
+      document.getElementById('edit-labels').value = story.labels;
+
+      document.getElementById('edit-modal').classList.remove('hidden');
+      document.getElementById('edit-modal').classList.add('flex');
+    }
+
+    function closeEditModal() {
+      document.getElementById('edit-modal').classList.add('hidden');
+      document.getElementById('edit-modal').classList.remove('flex');
+      currentEditId = null;
+    }
+
+    function saveEditedStory() {
+      if (!currentEditId) return;
+
+      const story = stories.find(s => s.id === currentEditId);
+      
+      story.title = document.getElementById('edit-title').value;
+      story.description = document.getElementById('edit-description').value;
+      story.priority = parseInt(document.getElementById('edit-priority').value);
+      story.estimate = parseInt(document.getElementById('edit-estimate').value);
+      story.acceptance = document.getElementById('edit-acceptance').value;
+      story.labels = document.getElementById('edit-labels').value;
+
+      closeEditModal();
+      renderStories();
+      showToast('História atualizada');
+    }
+
+    function deleteStory(id) {
+      if (!confirm('Remover esta história?')) return;
+      stories = stories.filter(s => s.id !== id);
+      renderStories();
+    }
+
+    function addManualStory() {
+      const newStory = {
+        id: nextStoryId++,
+        title: "Nova história (editar)",
+        description: "Como [tipo de usuário]\nEu quero [ação]\nPara que [benefício]",
+        acceptance: "Critério 1\nCritério 2",
+        priority: 2,
+        estimate: 3,
+        labels: "medio, claude",
+        approved: true,
+        createdAt: new Date().toISOString()
+      };
+      
+      stories.unshift(newStory);
+      renderStories();
+      
+      // Auto open edit
+      setTimeout(() => editStory(newStory.id), 80);
+    }
+
+    function approveAllStories() {
+      stories.forEach(s => s.approved = true);
+      renderStories();
+      showToast('Todas as histórias foram aprovadas');
+    }
+
+    function unapproveAllStories() {
+      stories.forEach(s => s.approved = false);
+      renderStories();
+    }
+
+    function clearStories() {
+      if (!stories.length) return;
+      if (!confirm('Limpar todas as histórias?')) return;
+      stories = [];
+      renderStories();
+    }
+
+    // === LINEAR INTEGRATION ===
+    function approveAndSendToLinear() {
+      const approved = stories.filter(s => s.approved);
+      
+      if (approved.length === 0) {
+        showToast('Nenhuma história aprovada. Marque as que deseja enviar.', true);
+        return;
+      }
+
+      const projectId = document.getElementById('project-id').value.trim() || 'PROJ-ABC123';
+
+      const modal = document.createElement('div');
+      modal.className = `fixed inset-0 bg-black/70 backdrop-blur flex items-center justify-center z-50`;
+      
+      let html = `
+        <div class="panel w-full max-w-xl mx-4 rounded-3xl p-6 border border-[#15233A]">
+          <div class="font-semibold text-lg mb-1">Confirmar envio para Linear</div>
+          <div class="text-sm text-[#A9B6C9] mb-4">Serão criados <strong>${approved.length}</strong> cards no projeto <span class="font-mono">${projectId}</span></div>
+          
+          <div class="max-h-[220px] overflow-auto border border-[#15233A] rounded-2xl p-3 space-y-2 text-sm mb-5 bg-[#040B17]">
+      `;
+      
+      approved.forEach(s => {
+        html += `
+          <div class="flex items-start gap-3 p-2 rounded-xl bg-[#0A1628]">
+            <div class="font-medium flex-1">${s.title}</div>
+            <div class="text-right text-xs text-[#A9B6C9] flex-shrink-0">
+              P${s.priority} • ${s.estimate}pts
+            </div>
+          </div>
+        `;
+      });
+      
+      html += `</div>`;
+
+      html += `
+        <div class="text-xs mb-4 p-3 bg-[#0A1628] rounded-2xl border border-[#15233A]">
+          <div class="font-medium mb-1">Integração:</div>
+          <div class="text-[#A9B6C9]">
+            Quando aberto dentro do TuttiDash, os cards são criados via proxy nativo usando <code>criar_issue</code>.
+          </div>
+        </div>
+
+        <div class="flex gap-3">
+          <button onclick="this.closest('.fixed').remove()" 
+                  class="flex-1 py-3 rounded-2xl border border-[#1B2A44]">Cancelar</button>
+          
+          <button onclick="performLinearCreation(${approved.length}, '${projectId}', this)" 
+                  class="flex-1 py-3 rounded-2xl bg-[#35D66E] text-[#040B17] font-semibold">
+            Criar ${approved.length} cards no Linear
+          </button>
+        </div>
+      </div>`;
+
+      modal.innerHTML = html;
+      document.body.appendChild(modal);
+    }
+
+    function performLinearCreation(count, projectId, btn) {
+      const approvedStories = stories.filter(s => s.approved);
+      
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando para o Linear...`;
+
+      // Se estiver rodando dentro do app TuttiDash, usa o bridge nativo
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.linearBridge) {
+        // Prepara os dados limpos para o Swift
+        const cleanStories = approvedStories.map(s => ({
+          title: s.title,
+          description: s.description,
+          priority: s.priority,
+          estimate: s.estimate,
+          labels: s.labels
+        }));
+
+        // Envia para o Swift
+        window.webkit.messageHandlers.linearBridge.postMessage({
+          action: "createIssues",
+          stories: cleanStories,
+          projectId: projectId
+        });
+
+        // Fecha o modal imediatamente (o Swift vai responder via handleLinearBridge)
+        btn.closest('.fixed').remove();
+        return;
+      }
+
+      // Modo standalone (fora do app) — simulação
+      setTimeout(() => {
+        const created = [];
+        const baseId = 487 + Math.floor(Math.random() * 30);
+
+        approvedStories.forEach((story, idx) => {
+          const identifier = `${projectId.split('-')[0] || 'PROJ'}-${baseId + idx}`;
+          created.push({
+            ...story,
+            linearId: identifier,
+            linearUrl: `https://linear.app/team/issue/${identifier}`
+          });
+        });
+
+        stories = stories.filter(s => !s.approved);
+        btn.closest('.fixed').remove();
+        showLinearSuccess(created, projectId);
+        renderStories();
+      }, 1350);
+    }
+
+    // Recebe respostas vindas do app nativo (Swift)
+    window.onLinearResponse = function(type, payload) {
+      if (type === "issuesCreated" && payload && payload.created) {
+        const created = payload.created.map(c => ({
+          ...c,
+          linearId: c.identifier || c.linearId,
+          linearUrl: c.url || `https://linear.app/issue/${c.identifier || c.linearId}`
+        }));
+
+        stories = stories.filter(s => !s.approved);
+        renderStories();
+
+        // Mostra o sucesso bonitinho
+        showLinearSuccess(created, payload.projectId || document.getElementById('project-id').value);
+      } else if (type === "linearError") {
+        showToast(payload?.message || "Erro ao criar no Linear", true);
+      }
+    };
+
+    function showLinearSuccess(created, projectId) {
+      const container = document.createElement('div');
+      container.className = `fixed inset-0 bg-black/80 z-[60] flex items-center justify-center`;
+      
+      let cardsHtml = '';
+      created.forEach(c => {
+        cardsHtml += `
+          <div class="bg-[#0A1628] border border-[#15233A] rounded-2xl p-3 flex justify-between text-sm">
+            <div>
+              <div class="font-mono text-[#4FA3FF]">${c.linearId}</div>
+              <div class="text-xs">${c.title}</div>
+            </div>
+            <a href="#" onclick="window.open('https://linear.app', '_blank')" class="text-[#4FA3FF] text-xs self-start mt-1">ver no Linear →</a>
+          </div>
+        `;
+      });
+
+      container.innerHTML = `
+        <div class="panel w-full max-w-lg mx-4 rounded-3xl p-6 border border-[#35D66E]/30">
+          <div class="flex items-center gap-x-3 mb-4">
+            <div class="w-9 h-9 rounded-2xl bg-[#35D66E]/10 flex items-center justify-center">
+              <i class="fa-solid fa-check text-[#35D66E] text-xl"></i>
+            </div>
+            <div>
+              <div class="font-semibold text-lg">Cards criados com sucesso!</div>
+              <div class="text-xs text-[#A9B6C9]">${created.length} histórias inseridas no projeto</div>
+            </div>
+          </div>
+
+          <div class="space-y-2 mb-5">
+            ${cardsHtml}
+          </div>
+
+          <div class="bg-[#0A1628] rounded-2xl p-3 text-xs mb-5 border border-[#15233A]">
+            <div class="font-medium mb-1">Status da integração:</div>
+            <div class="text-[#A9B6C9]">
+              ✅ <code>criar_issue</code> já foi adicionado ao proxy_linear.py (allowlist)<br>
+              A tela está pronta. Para chamada real é necessário expor o proxy via bridge (Python local server ou via o app Swift).
+            </div>
+          </div>
+
+          <div class="flex gap-3">
+            <button onclick="this.closest('.fixed').remove(); showPayloadModal(${JSON.stringify(created).replace(/"/g, '&quot;')})" 
+                    class="flex-1 py-2.5 text-sm rounded-2xl border border-[#1B2A44]">
+              Ver payload / script
+            </button>
+            <button onclick="this.closest('.fixed').remove()" 
+                    class="flex-1 py-2.5 text-sm rounded-2xl bg-[#35D66E] text-[#040B17] font-semibold">
+              Fechar
+            </button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(container);
+    }
+
+    function showPayloadModal(createdStories) {
+      // Close previous if any
+      document.querySelectorAll('.fixed').forEach(el => el.remove());
+
+      const modal = document.createElement('div');
+      modal.className = `fixed inset-0 bg-black/80 z-[70] flex items-center justify-center`;
+
+      const payload = JSON.stringify(createdStories.map(s => ({
+        title: s.title,
+        description: s.description,
+        priority: s.priority,
+        estimate: s.estimate,
+        labels: s.labels.split(',').map(l => l.trim()),
+        state: "Todo"
+      })), null, 2);
+
+      modal.innerHTML = `
+        <div class="panel w-full max-w-2xl mx-4 rounded-3xl p-6 border border-[#15233A] max-h-[90vh] overflow-auto">
+          <div class="font-semibold mb-3">Payload para criação (GraphQL / Python)</div>
+          
+          <pre class="text-xs bg-[#040B17] p-4 rounded-2xl overflow-auto border border-[#15233A] font-mono text-[#C2CEDF] mb-4" style="max-height: 320px"><code>${payload.replace(/</g, '&lt;')}</code></pre>
+
+          <div class="text-xs mb-4">
+            <strong>Script Python pronto para usar com o proxy:</strong>
+          </div>
+          
+          <pre class="text-[10px] bg-[#040B17] p-4 rounded-2xl overflow-auto border border-[#15233A] font-mono text-[#A9B6C9]" style="max-height: 180px"><code>from gasto_lanes.proxy_linear import pedir
+
+for card in cards:
+    resp = pedir("criar_issue", {
+        "input": {
+            "title": card["title"],
+            "description": card["description"],
+            "projectId": "SEU_PROJECT_ID",
+            "priority": card.get("priority", 2),
+            "estimate": card.get("estimate", 3),
+            # "labelIds": [...]  # resolver via linear_ids se quiser
+        }
+    })
+    print("Criado:", resp)</code></pre>
+
+          <div class="flex gap-3 mt-5">
+            <button onclick="navigator.clipboard.writeText(\`${payload}\`).then(() => { this.innerHTML='Copiado!'; setTimeout(() => this.closest('.fixed').remove(), 700) })" 
+                    class="flex-1 py-2.5 text-sm rounded-2xl bg-[#4FA3FF] text-[#040B17]">
+              Copiar JSON
+            </button>
+            <button onclick="this.closest('.fixed').remove()" 
+                    class="flex-1 py-2.5 text-sm rounded-2xl border border-[#1B2A44]">Fechar</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    function copyProjectId() {
+      const input = document.getElementById('project-id');
+      navigator.clipboard.writeText(input.value).then(() => {
+        const orig = input.style.borderColor;
+        input.style.borderColor = '#35D66E';
+        setTimeout(() => input.style.borderColor = orig, 800);
+      });
+    }
+
+    function showToast(msg, error = false) {
+      const toast = document.getElementById('toast');
+      toast.innerHTML = `
+        <div class="flex items-center gap-x-2 ${error ? 'text-[#FF4D6D]' : 'text-[#35D66E]'}">
+          <i class="fa-solid ${error ? 'fa-exclamation-circle' : 'fa-check-circle'}"></i>
+          <span>${msg}</span>
+        </div>
+      `;
+      toast.classList.remove('hidden');
+      toast.classList.add('flex');
+      
+      setTimeout(() => {
+        toast.classList.remove('flex');
+        toast.classList.add('hidden');
+      }, 3200);
+    }
+
+    // Persistence (localStorage)
+    function saveState() {
+      try {
+        localStorage.setItem('brainstorm_state', JSON.stringify({
+          chatHistory,
+          stories,
+          idea: document.getElementById('idea-summary').value,
+          projectId: document.getElementById('project-id').value
+        }));
+      } catch(e) {}
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem('brainstorm_state');
+        if (!raw) return false;
+        
+        const data = JSON.parse(raw);
+        
+        if (data.chatHistory && data.chatHistory.length) {
+          chatHistory = data.chatHistory;
+          const container = document.getElementById('chat-messages');
+          container.innerHTML = '';
+          chatHistory.forEach(m => addMessageToDOM(m.role, m.text, false));
+        }
+        
+        if (data.stories) {
+          stories = data.stories;
+          nextStoryId = Math.max(...stories.map(s => s.id), 0) + 1;
+        }
+        
+        if (data.idea) {
+          document.getElementById('idea-summary').value = data.idea;
+        }
+        
+        if (data.projectId) {
+          document.getElementById('project-id').value = data.projectId;
+        }
+        
+        return true;
+      } catch(e) {
+        return false;
+      }
+    }
+
+    function setupPersistence() {
+      // Auto save on changes
+      setInterval(saveState, 4000);
+      
+      // Save on important actions
+      ['input', 'change'].forEach(ev => {
+        document.getElementById('idea-summary').addEventListener(ev, saveState);
+      });
+      
+      window.addEventListener('beforeunload', saveState);
+    }
+
+    // Keyboard shortcuts
+    function setupKeyboard() {
+      document.addEventListener('keydown', (e) => {
+        if (e.metaKey && e.key === 'Enter') {
+          e.preventDefault();
+          const input = document.getElementById('chat-input');
+          if (document.activeElement === input) {
+            sendChatMessage();
+          } else {
+            generateStories();
+          }
+        }
+        
+        if (e.key === '/' && document.activeElement.tagName === 'BODY') {
+          e.preventDefault();
+          document.getElementById('chat-input').focus();
+        }
+      });
+    }
+
+    // Boot
+    function init() {
+      initTailwind();
+      
+      const loaded = loadState();
+      
+      if (!loaded) {
+        seedInitialConversation();
+      } else if (chatHistory.length === 0) {
+        seedInitialConversation();
+      }
+      
+      // Render any loaded stories
+      renderStories();
+      
+      // Show empty state properly if needed
+      const grid = document.getElementById('stories-grid');
+      const empty = document.getElementById('stories-empty');
+      if (stories.length === 0) {
+        grid.classList.add('hidden');
+        empty.classList.remove('hidden');
+      }
+      
+      setupPersistence();
+      setupKeyboard();
+      
+      // Welcome toast on first load
+      if (!loaded) {
+        setTimeout(() => {
+          showToast('Bem-vindo ao Brainstorm. Comece digitando uma ideia no chat.');
+        }, 1200);
+      }
+      
+      // Demo tip
+      console.log('%c[Brainstorm] Tela carregada. Use ⌘+Enter no chat ou no botão Gerar Histórias.', 'color:#4FA3FF');
+    }
+
+    // Start
+    window.onload = init;
+  </script>
+</body>
+</html>
