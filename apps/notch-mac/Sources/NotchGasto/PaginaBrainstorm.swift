@@ -234,7 +234,7 @@ struct PaginaBrainstorm: View {
     }
 
     /// Espera do chat, no formato da pílula do Cursor: cápsula escura, borda fina,
-    /// «::», a palavra Working e quantas perguntas estão no ar. O mesmo corpo do texto.
+    /// «::», a palavra Trabalhando e quantas perguntas estão no ar. O mesmo corpo do texto.
     private struct PilulaWorking: View {
         var quantidade: Int
 
@@ -242,7 +242,7 @@ struct PaginaBrainstorm: View {
             HStack(spacing: 6) {
                 Text("::")
                     .foregroundStyle(PV.apagado)
-                Text("Working")
+                Text("Trabalhando")
                     .foregroundStyle(PV.texto)
                 Text("\(quantidade)")
                     .foregroundStyle(PV.mudo)
