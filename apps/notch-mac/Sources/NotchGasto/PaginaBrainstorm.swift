@@ -8,7 +8,7 @@ struct PaginaBrainstorm: View {
     var modelo: ModeloNotch
 
     @State private var messages: [ChatMessage] = [
-        ChatMessage(isAgent: true, text: "Descreva a ideia. Eu leio este repositório e respondo curto: o furo e uma proposta.")
+        ChatMessage(isAgent: true, text: "Descreva a ideia. Eu respondo curto: o furo e uma proposta.")
     ]
     @State private var chatInput: String = ""
     @State private var ideaSummary: String = ""
@@ -19,7 +19,8 @@ struct PaginaBrainstorm: View {
     @State private var projectName: String = ""
     @State private var editingStory: UserStory? = nil
     @State private var chatAberto = true
-    @State private var agentePensando = false
+    /// Perguntas cuja resposta ainda não voltou. A pílula mostra esse número.
+    @State private var perguntasEmVoo = 0
     @State private var precisaLogin = false
 
     private let esforcos = EsforcoHistoria.allCases
@@ -200,9 +201,9 @@ struct PaginaBrainstorm: View {
                                 }
                             }
                         }
-                        if agentePensando {
+                        if perguntasEmVoo > 0 {
                             HStack {
-                                agentBubble("Lendo o projeto…")
+                                PilulaWorking(quantidade: perguntasEmVoo)
                                 Spacer(minLength: 24)
                             }
                         }
@@ -223,13 +224,37 @@ struct PaginaBrainstorm: View {
                             .font(.system(size: 22))
                             .foregroundStyle(PV.azul)
                     }
-                    .disabled(agentePensando || chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(perguntasEmVoo > 0 || chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(PV.cartao))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(PV.cartaoBorda, lineWidth: 1))
+    }
+
+    /// Espera do chat, no formato da pílula do Cursor: cápsula escura, borda fina,
+    /// «::», a palavra Working e quantas perguntas estão no ar. O mesmo corpo do texto.
+    private struct PilulaWorking: View {
+        var quantidade: Int
+
+        var body: some View {
+            HStack(spacing: 6) {
+                Text("::")
+                    .foregroundStyle(PV.apagado)
+                Text("Working")
+                    .foregroundStyle(PV.texto)
+                Text("\(quantidade)")
+                    .foregroundStyle(PV.mudo)
+                    .monospacedDigit()
+            }
+            .font(PV.fonte(12))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(PV.campo))
+            .overlay(Capsule().strokeBorder(PV.campoBorda, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+        }
     }
 
     private func agentBubble(_ text: String) -> some View {
@@ -256,7 +281,7 @@ struct PaginaBrainstorm: View {
     private func enviar(texto: String?) {
         let ideia = ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         let digitado = (texto ?? chatInput).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !digitado.isEmpty, !agentePensando else { return }
+        guard !digitado.isEmpty, perguntasEmVoo == 0 else { return }
         let pedido = texto == nil && !ideia.isEmpty && !digitado.contains(ideia)
             ? "\(digitado)\n\nIdeia: \(ideia)"
             : digitado
@@ -267,7 +292,7 @@ struct PaginaBrainstorm: View {
         let historico = messages
         let historias = stories.map { "\($0.title) [\($0.esforco.rawValue)/\($0.lane)]" }
         let repo = AgenteBrainstorm.repoDoProjeto()
-        agentePensando = true
+        perguntasEmVoo += 1
         Task {
             let resp: String
             do {
@@ -278,7 +303,7 @@ struct PaginaBrainstorm: View {
                 resp = error.localizedDescription
             }
             await MainActor.run {
-                agentePensando = false
+                perguntasEmVoo = max(0, perguntasEmVoo - 1)
                 let semSessao = resp.contains("Claude sem sessão")
                 precisaLogin = semSessao
                 messages.append(ChatMessage(isAgent: true, text: resp))
@@ -691,7 +716,9 @@ struct PaginaBrainstorm: View {
 
 // MARK: - Agente
 
-/// Lane preferida do revisor (`revisores.pr.lane`), só leitura. Sem sessão, cai no OpenCode em modo plan.
+/// Lane preferida do revisor (`revisores.pr.lane`), só leitura.
+/// A primeira resposta abre uma sessão; a seguinte retoma essa sessão.
+/// Sem login no Claude, o OpenCode responde e a pergunta seguinte não espera o Claude de novo.
 enum AgenteBrainstorm {
     enum Falha: LocalizedError {
         case semRepo
@@ -717,13 +744,17 @@ enum AgenteBrainstorm {
         }
     }
 
-    private static let sistema = """
-    Você é o agente de brainstorm deste repositório. Leia o código e os docs \
-    quando a pergunta depender do que já existe. Não edite arquivos.
-    Tom: sucinto, crítico e criativo. Aponte o furo antes de elogiar. \
-    Proponha uma melhoria concreta, não um cardápio.
-    Português. No máximo 8 linhas. Sem título e sem preâmbulo.
-    """
+    /// CLI que já respondeu neste processo, e o id da sessão dele nesse repositório.
+    private struct Memoria {
+        var repo: String
+        var cli: String
+        var sessao: String?
+    }
+
+    private static let trava = NSLock()
+    private static var memoria: Memoria?
+    /// Claude sem login, ou o binário recusou o comando. Não entra nas próximas perguntas.
+    private static var claudeFora = false
 
     static func repoDoProjeto() -> URL? {
         let cru = Configuracao.resolver().projetoPadrao?.repo
@@ -740,35 +771,82 @@ enum AgenteBrainstorm {
     static func responder(mensagem: String, ideia: String, historias: [String],
                           historico: [ChatMessage], repo: URL?) async throws -> String {
         guard let repo else { throw Falha.semRepo }
-        let prompt = montarPrompt(mensagem: mensagem, ideia: ideia, historias: historias, historico: historico)
-        let fila = filaDeCLIs()
+        let fala = historico.map { (agente: $0.isAgent, texto: $0.text) }
+        let completo = BrainstormCLI.prompt(mensagem: mensagem, ideia: ideia, historias: historias,
+                                             historico: fala, retomando: false)
+        let curto = BrainstormCLI.prompt(mensagem: mensagem, ideia: ideia, historias: historias,
+                                          historico: fala, retomando: true)
+        let preferida = cliPreferido()
         return try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                var ultima: Error = Falha.semClaude
-                var pediuLogin = false
-                for cli in fila {
-                    guard let bin = binario(cli) else { continue }
-                    do {
-                        cont.resume(returning: try executar(cli: cli, bin: bin, repo: repo, prompt: prompt))
-                        return
-                    } catch let falha as Falha {
-                        if case .semLogin = falha { pediuLogin = true }
-                        ultima = falha
-                    } catch {
-                        ultima = error
-                    }
+                do {
+                    cont.resume(returning: try responderSync(repo: repo, preferida: preferida,
+                                                              completo: completo, curto: curto))
+                } catch {
+                    cont.resume(throwing: error)
                 }
-                if pediuLogin { abrirLogin() }
-                cont.resume(throwing: pediuLogin ? Falha.semLogin : ultima)
             }
         }
     }
 
-    /// Preferida dos Ajustes e, se for outra, o OpenCode como reserva de leitura.
-    private static func filaDeCLIs() -> [String] {
-        let preferida = cliPreferido()
-        if preferida == "opencode" { return ["opencode"] }
-        return [preferida, "opencode"]
+    /// Uma resposta, um CLI. O outro só entra se o primeiro não tem sessão ou recusou
+    /// o comando. Erro depois de rodar não dispara outro agente.
+    private static func responderSync(repo: URL, preferida: String, completo: String, curto: String) throws -> String {
+        let foto = lerMemoria(repo: repo.path)
+        let ordem = BrainstormCLI.fila(preferida: preferida, escolhida: foto.cli, claudeFora: foto.claudeFora)
+        var ultima: Error = Falha.semClaude
+        var pediuLogin = false
+        var encerrar = false
+        for cli in ordem {
+            guard let bin = binario(cli) else { continue }
+            if cli == "claude", foto.cli != "claude", claudeDeslogado(bin) {
+                marcarClaudeFora()
+                pediuLogin = true
+                ultima = Falha.semLogin
+                continue
+            }
+            let sessao = foto.cli == cli ? foto.sessao : nil
+            do {
+                return try umaVez(cli: cli, bin: bin, repo: repo,
+                                  prompt: sessao == nil ? completo : curto, sessao: sessao)
+            } catch {
+                switch classificar(error, tinhaSessao: sessao != nil) {
+                case .recomecar:
+                    do {
+                        return try umaVez(cli: cli, bin: bin, repo: repo, prompt: completo, sessao: nil)
+                    } catch {
+                        ultima = error
+                        if ehSemLogin(error) {
+                            pediuLogin = true
+                            if cli == "claude" { marcarClaudeFora() }
+                            continue
+                        }
+                        encerrar = true
+                    }
+                case .proximo:
+                    ultima = error
+                    if ehSemLogin(error) {
+                        pediuLogin = true
+                        if cli == "claude" { marcarClaudeFora() }
+                    } else if cli == "claude", BrainstormCLI.flagDesconhecida(texto(de: error)) {
+                        marcarClaudeFora()
+                    }
+                case .parar:
+                    ultima = error
+                    encerrar = true
+                }
+            }
+            if encerrar { break }
+        }
+        if pediuLogin { abrirLogin() }
+        throw pediuLogin ? Falha.semLogin : ultima
+    }
+
+    private static func umaVez(cli: String, bin: String, repo: URL, prompt: String, sessao: String?) throws -> String {
+        let saida = try executar(cli: cli, bin: bin, repo: repo, prompt: prompt, sessao: sessao)
+        let id = BrainstormCLI.sessaoUtil(saida.sessao) ?? BrainstormCLI.sessaoUtil(sessao)
+        lembrar(repo: repo.path, cli: cli, sessao: id)
+        return saida.texto
     }
 
     private static func cliPreferido() -> String {
@@ -777,29 +855,6 @@ enum AgenteBrainstorm {
         let agente = CatalogoAgentes.carregar().first { $0.nome == nome }
         let cli = agente?.cli?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return cli.isEmpty ? nome : cli
-    }
-
-    private static func montarPrompt(mensagem: String, ideia: String, historias: [String],
-                                     historico: [ChatMessage]) -> String {
-        let fala = historico.suffix(8).map { ($0.isAgent ? "Agente" : "Pessoa") + ": " + $0.text }
-            .joined(separator: "\n")
-        let cards = historias.isEmpty ? "(nenhuma)" : historias.joined(separator: "\n")
-        let assunto = ideia.trimmingCharacters(in: .whitespacesAndNewlines)
-        return """
-        A ideia abaixo é o assunto. O pedido refere-se a ela. Não responda só ao rótulo do pedido.
-
-        Ideia:
-        \(assunto.isEmpty ? "(ainda vazia)" : assunto)
-
-        Pedido:
-        \(mensagem)
-
-        Histórias já geradas:
-        \(cards)
-
-        Conversa:
-        \(fala)
-        """
     }
 
     /// Abre o Terminal num `.command`. Não usa AppleScript: o app não tem permissão para controlar o Terminal.
@@ -847,39 +902,20 @@ enum AgenteBrainstorm {
         return marcas.contains { l.contains($0) }
     }
 
-    /// Comando só leitura. `nil` = este CLI não entra no brainstorm.
-    private static func argumentos(cli: String, prompt: String, saidaCodex: URL?) -> [String]? {
-        let completo = sistema + "\n\n" + prompt
-        switch cli {
-        case "claude":
-            return ["-p", "--output-format", "text", "--permission-mode", "plan",
-                    "--permission-prompts", "none", "--tools", "Read,Grep,Glob",
-                    "--append-system-prompt", sistema]
-        case "opencode":
-            return ["run", "-m", "opencode/deepseek-v4.1-flash-free", "--agent", "plan", "--", completo]
-        case "grok":
-            return ["--tools", "read_file,grep,list_dir", "--disable-web-search",
-                    "-m", "grok-4.7", "--effort", "high", "-p", completo]
-        case "codex":
-            guard let saidaCodex else { return nil }
-            return ["exec", "--sandbox", "read-only", "--skip-git-repo-check", "--color", "never",
-                    "--output-last-message", saidaCodex.path, "-"]
-        default:
-            return nil
-        }
-    }
-
-    private static func executar(cli: String, bin: String, repo: URL, prompt: String) throws -> String {
+    private static func executar(cli: String, bin: String, repo: URL, prompt: String,
+                                 sessao: String?) throws -> BrainstormCLI.Saida {
         let saidaCodex = cli == "codex"
             ? FileManager.default.temporaryDirectory.appendingPathComponent("brainstorm-codex-\(UUID().uuidString).txt")
             : nil
-        guard let args = argumentos(cli: cli, prompt: prompt, saidaCodex: saidaCodex) else {
+        defer { if let saidaCodex { try? FileManager.default.removeItem(at: saidaCodex) } }
+        guard let chamada = BrainstormCLI.chamada(cli: cli, prompt: prompt, sessao: sessao,
+                                                   saidaCodex: saidaCodex?.path) else {
             throw Falha.saida(127, "CLI \(cli) sem modo só leitura no brainstorm")
         }
         let processo = Process()
         processo.executableURL = URL(fileURLWithPath: bin)
         processo.currentDirectoryURL = repo
-        processo.arguments = args
+        processo.arguments = chamada.argumentos
         var ambiente = ProcessInfo.processInfo.environment
         let prefixo = "\(NSHomeDirectory())/.local/bin:/opt/homebrew/bin:/usr/local/bin"
         ambiente["PATH"] = prefixo + ":" + (ambiente["PATH"] ?? "")
@@ -904,29 +940,106 @@ enum AgenteBrainstorm {
             dadosErro = erros.fileHandleForReading.readDataToEndOfFile()
             grupo.leave()
         }
-        let noStdin = cli == "opencode" || cli == "grok"
-        if !noStdin, let corpo = (cli == "claude" ? prompt : sistema + "\n\n" + prompt).data(using: .utf8) {
+        if let corpo = chamada.stdin?.data(using: .utf8) {
             entrada.fileHandleForWriting.write(corpo)
         }
         try? entrada.fileHandleForWriting.close()
         processo.waitUntilExit()
         grupo.wait()
-        var texto = String(data: dados, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let bruto = String(data: dados, encoding: .utf8) ?? ""
+        var lido = BrainstormCLI.interpretar(cli: cli, saida: bruto)
         if let saidaCodex, let gravado = try? String(contentsOf: saidaCodex, encoding: .utf8) {
             let limpo = gravado.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !limpo.isEmpty { texto = limpo }
-            try? FileManager.default.removeItem(at: saidaCodex)
+            if !limpo.isEmpty {
+                lido.texto = limpo
+                lido.erro = false
+            }
         }
         let erro = String(data: dadosErro, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let combinado = [texto, erro].filter { !$0.isEmpty }.joined(separator: "\n")
-        if processo.terminationStatus != 0 || semSessao(combinado) {
+        let combinado = [lido.texto, erro].filter { !$0.isEmpty }.joined(separator: "\n")
+        if processo.terminationStatus != 0 || lido.erro || semSessao(combinado) {
             if semSessao(combinado) { throw Falha.semLogin }
             throw Falha.saida(processo.terminationStatus, combinado.isEmpty ? "sem saída" : combinado)
         }
-        if texto.isEmpty { throw Falha.vazio }
-        return texto
+        if lido.texto.isEmpty { throw Falha.vazio }
+        return lido
+    }
+
+    /// true só quando o status deixa claro que não há sessão. Timeout ou saída ambígua não pula o Claude.
+    private static func claudeDeslogado(_ bin: String) -> Bool {
+        let processo = Process()
+        processo.executableURL = URL(fileURLWithPath: bin)
+        processo.arguments = ["auth", "status"]
+        let pipe = Pipe()
+        processo.standardOutput = pipe
+        processo.standardError = pipe
+        processo.standardInput = FileHandle.nullDevice
+        guard (try? processo.run()) != nil else { return false }
+        let grupo = DispatchGroup()
+        grupo.enter()
+        var dados = Data()
+        DispatchQueue.global(qos: .utility).async {
+            dados = pipe.fileHandleForReading.readDataToEndOfFile()
+            grupo.leave()
+        }
+        if grupo.wait(timeout: .now() + 4) == .timedOut {
+            if processo.isRunning { processo.terminate() }
+            grupo.wait()
+            return false
+        }
+        if processo.isRunning { processo.waitUntilExit() }
+        guard processo.terminationStatus != 0 else { return false }
+        let texto = String(data: dados, encoding: .utf8) ?? ""
+        let compacto = texto.lowercased().replacingOccurrences(of: " ", with: "")
+        return semSessao(texto) || compacto.contains("\"loggedin\":false")
+    }
+
+    private static func lerMemoria(repo: String) -> (cli: String?, sessao: String?, claudeFora: Bool) {
+        trava.lock()
+        defer { trava.unlock() }
+        let mesmo = memoria?.repo == repo
+        return (mesmo ? memoria?.cli : nil, mesmo ? memoria?.sessao : nil, claudeFora)
+    }
+
+    private static func lembrar(repo: String, cli: String, sessao: String?) {
+        trava.lock()
+        defer { trava.unlock() }
+        memoria = Memoria(repo: repo, cli: cli, sessao: BrainstormCLI.sessaoUtil(sessao))
+    }
+
+    private static func marcarClaudeFora() {
+        trava.lock()
+        defer { trava.unlock() }
+        claudeFora = true
+        if memoria?.cli == "claude" { memoria = nil }
+    }
+
+    private static func ehSemLogin(_ erro: Error) -> Bool {
+        if let falha = erro as? Falha, case .semLogin = falha { return true }
+        return semSessao(texto(de: erro))
+    }
+
+    private static func texto(de erro: Error) -> String {
+        if let falha = erro as? Falha, case .saida(_, let detalhe) = falha { return detalhe }
+        return erro.localizedDescription
+    }
+
+    private static func classificar(_ erro: Error, tinhaSessao: Bool) -> BrainstormCLI.Seguinte {
+        guard let falha = erro as? Falha else {
+            let descricao = erro.localizedDescription
+            return BrainstormCLI.seguinte(texto: descricao, codigo: nil,
+                                           semLogin: semSessao(descricao), tinhaSessao: tinhaSessao)
+        }
+        switch falha {
+        case .semLogin:
+            return .proximo
+        case .saida(let codigo, let detalhe):
+            return BrainstormCLI.seguinte(texto: detalhe, codigo: codigo,
+                                           semLogin: semSessao(detalhe), tinhaSessao: tinhaSessao)
+        case .vazio, .semRepo, .semClaude:
+            return .parar
+        }
     }
 }
 
