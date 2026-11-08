@@ -241,4 +241,26 @@ final class CaixaDonoTests: XCTestCase {
         do { try await CaixaDono.executar(["a", "b"], cliente: ruim, token: "t"); XCTFail("devia falhar") } catch {}
         XCTAssertEqual(ruim.feitas, ["a"])
     }
+
+    func testTirarEtiquetaQueJaSaiuNaoEhErro() async throws {
+        final class Falso: ClienteLinear, @unchecked Sendable {
+            var feitas: [String] = []
+            func consultar(_ query: String, token: String) async throws -> [String: Any] {
+                feitas.append(query)
+                if query.contains("issueRemoveLabel") { throw ErroLinear.resposta("Label not on issue") }
+                if query.contains("issueAddLabel") { throw ErroLinear.resposta("Label not on issue") }
+                return ["x": ["success": true]]
+            }
+        }
+        let c = Falso()
+        let tirar = "mutation { issueRemoveLabel(id: \"i\", labelId: \"l\") { success } }"
+        try await CaixaDono.executar(["comentar", tirar, "depois"], cliente: c, token: "t")
+        XCTAssertEqual(c.feitas.count, 3, "seguiu depois da etiqueta que já tinha saído")
+        // Só a remoção é idempotente: o mesmo texto em outra mutação continua erro.
+        do {
+            try await CaixaDono.executar(["mutation { issueAddLabel(id: \"i\", labelId: \"l\") { success } }"],
+                                         cliente: Falso(), token: "t")
+            XCTFail("devia falhar")
+        } catch {}
+    }
 }

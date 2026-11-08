@@ -316,7 +316,14 @@ public enum CaixaDono {
     /// Roda as mutações em ordem e para no primeiro erro (o que já foi feito fica feito).
     public static func executar(_ passos: [String], cliente: ClienteLinear, token: String) async throws {
         for q in passos {
-            let d = try await cliente.consultar(q, token: token)
+            let d: [String: Any]
+            do {
+                d = try await cliente.consultar(q, token: token)
+            } catch let ErroLinear.resposta(m) where q.contains("issueRemoveLabel") && m.contains("Label not on issue") {
+                // Tirar uma etiqueta que já saiu (o vigia, outro clique ou o Linear tirou antes)
+                // já é o resultado pedido: não é erro.
+                continue
+            }
             let ok = d.values.contains { (($0 as? [String: Any])?["success"] as? Bool) == true }
             guard ok else { throw ErroLinear.resposta(String(q.prefix(60))) }
         }

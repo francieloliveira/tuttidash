@@ -235,17 +235,17 @@ Confirmação de privacidade e assinatura continuam com o dono.
 
 ## Revisão de IA no runner limpo (FRA-621)
 
-O check `revisao-ia` ([FRA-612](https://linear.app/francieloliveira/issue/FRA-612/seguranca-5b3-revisao-de-ia-no-runner-limpo-token-de-leitura)) roda `gasto_lanes/revisao_ia.py` com `modelo_padrao`: "revisão sem modelo externo". Ele não lê o código, só monta um texto fixo, e o workflow não tem chave de API nem permissão de comentar. Por isso leva ~5 s e fica verde em qualquer PR. A revisão de verdade é o `[Revisor]` do vigia (`veredito_do_head`), que roda no Mac.
+O check `revisao-ia` (FRA-612) roda `gasto_lanes/revisao_ia.py` com `modelo_padrao`: "revisão sem modelo externo". Ele não lê o código, só monta um texto fixo, e o workflow não tem chave de API nem permissão de comentar. Por isso leva ~5 s e fica verde em qualquer PR. A revisão de verdade é o `[Revisor]` do vigia (`veredito_do_head`), que roda no Mac.
 
-**Decisão (01/11/2026):** remover o check do TuttiDash. O vigia já dispensa a `revisao-ia` quando a `main` não tem o workflow (feito no PR do [FRA-620](https://linear.app/francieloliveira/issue/FRA-620/lanes-prova-remota-no-linux-docker-sem-rede-para-projetos-sem-mac-no)), então tirar o workflow do TuttiDash não trava o merge; a revisão real continua sendo o `[Revisor]`.
+**Decisão (01/11/2026):** remover o check do TuttiDash. O vigia já dispensa a `revisao-ia` quando a `main` não tem o workflow (feito no PR do FRA-620), então tirar o workflow do TuttiDash não trava o merge; a revisão real continua sendo o `[Revisor]`.
 
 A caixa segura do runner limpo (sem segredo, sem home, saída redigida, segredo detectado → não publica) continua válida. Enquanto isso, o check não deve ser descrito como "revisão de IA" na documentação.
 
-Referências: [FRA-612](https://linear.app/francieloliveira/issue/FRA-612/seguranca-5b3-revisao-de-ia-no-runner-limpo-token-de-leitura), [FRA-620](https://linear.app/francieloliveira/issue/FRA-620/lanes-prova-remota-no-linux-docker-sem-rede-para-projetos-sem-mac-no); `bots/watch.py` (`exige_revisao_ia`, `merge_ready`).
+Referências: FRA-612, FRA-620; `bots/watch.py` (`exige_revisao_ia`, `merge_ready`).
 
 ## Modo bancada, fase 2: Docker + consumidor Python (FRA-619)
 
-Fase 1 ([FRA-618](https://linear.app/francieloliveira/issue/FRA-618/lanes-modo-bancada-fase-1-perfil-opt-in-e-comando-bancada-para-usb)) deu à lane a USB pelo comando `bancada`. A bancada do [FRA-539](https://linear.app/francieloliveira/issue/FRA-539/app-poc-captura-csi-no-macbook-simulado-hardware-esp32-s3) também precisa de Docker (broker Mosquitto com TLS e RuView simulado) e do consumidor `csi_poc.py` ouvindo o broker.
+Fase 1 (FRA-618) deu à lane a USB pelo comando `bancada`. A bancada do FRA-539 também precisa de Docker (broker Mosquitto com TLS e RuView simulado) e do consumidor `csi_poc.py` ouvindo o broker.
 
 **Implementação:** `tools/poc/docker/compose.yml` e `tools/poc/consumidor/csi_poc.py`
 
