@@ -2655,7 +2655,10 @@ def limpar_saida(out: str) -> str:
 
 def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
                 esforco: str | None = None) -> str:
-    """Revisão na caixa: Grok (`read_file,grep,list_dir`), Codex e os outros só enxergam o repo."""
+    """Revisão com as travas de leitura do CLI (manifesto): Grok `read_file,grep,list_dir`,
+    Codex `--sandbox read-only`, Claude `--settings` só leitura, OpenCode `--agent plan`.
+    Os revisores de nuvem rodam fora da caixa sem rede (precisam de rede e do login da home);
+    só o que é local (`"local": true` no bloco `revisao` do manifesto) roda dentro dela."""
     RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
     m = manifesto_revisao(agente) or {}
     scratch = Path(tempfile.mkdtemp(prefix="revisor-"))
@@ -2671,7 +2674,10 @@ def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
     started = time.time()
     out = ""
     try:
-        proc = caixa.executar(argv, cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada, escritas=[scratch])
+        if m.get("local"):
+            proc = caixa.executar(argv, cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada, escritas=[scratch])
+        else:
+            proc = caixa.executar_com_rede(argv, cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada)
         out = proc.stdout or ""
         err = proc.stderr or ""
         if m.get("saida") == "arquivo":

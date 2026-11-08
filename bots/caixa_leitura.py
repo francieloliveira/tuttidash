@@ -222,6 +222,25 @@ def executar(argv: list[str], cwd: Path, timeout: int = 120, inp: str | None = N
     raise CaixaIndisponivel("revisor sem sandbox (falta unshare ou sandbox-exec)")
 
 
+def executar_com_rede(argv: list[str], cwd: Path, timeout: int = 120,
+                      inp: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Revisor de nuvem (Claude, Grok, Codex, OpenCode): precisa de rede e do login que a
+    ferramenta guardou na home, que a caixa nega. Roda fora dela, com as travas de leitura
+    do próprio CLI (vêm do manifesto: `--settings` só leitura, `--tools read_file,grep,…`,
+    `--sandbox read-only`, `--agent plan`). O `git-leitura` vai no PATH."""
+    if not argv:
+        raise CaixaIndisponivel("comando vazio")
+    repo = Path(cwd).resolve()
+    if not repo.is_dir() or repo == Path("/"):
+        raise CaixaIndisponivel(f"repositório inválido: {repo}")
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(Path(__file__).resolve().parent), _path_busca()])
+    env.pop("GIT_DIR", None)
+    env.pop("GIT_WORK_TREE", None)
+    return subprocess.run(argv, cwd=repo, capture_output=True, text=True, timeout=timeout,
+                          input=inp, env=env)
+
+
 def _unshare(argv: list[str], repo: Path, timeout: int, inp: str | None,
              escritas: list[Path]) -> subprocess.CompletedProcess[str]:
     spec = {

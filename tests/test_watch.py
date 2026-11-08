@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -1708,3 +1709,36 @@ class ExigeRevisaoIa(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertTrue(watch.exige_revisao_ia({"dir": Path(d)}))      # não é repositório
         self.assertTrue(watch.exige_revisao_ia({}))
+
+
+class RevisorForaDaCaixa(unittest.TestCase):
+    """Causa raiz de 08/11: revisor de nuvem na caixa sem rede nunca respondia."""
+
+    def setUp(self):
+        w = watch
+        self.w = w
+        self.chamadas = []
+        self.tmp = Path(tempfile.mkdtemp())
+        nomes = ["manifesto_revisao", "comando_revisao", "RUN_LOG_DIR", "_log_saida_agente", "log"]
+        antes = {n: getattr(w, n) for n in nomes}
+        self.addCleanup(lambda: [setattr(w, n, v) for n, v in antes.items()])
+        antes_caixa = (w.caixa.executar, w.caixa.executar_com_rede)
+        self.addCleanup(lambda: (setattr(w.caixa, "executar", antes_caixa[0]),
+                                 setattr(w.caixa, "executar_com_rede", antes_caixa[1])))
+        w.RUN_LOG_DIR = self.tmp
+        w._log_saida_agente = lambda *a: None
+        w.log = lambda *a: None
+        w.comando_revisao = lambda agente, conf, ctx, esforco=None: (["eco", ctx["prompt"]], None)
+        ok = types.SimpleNamespace(returncode=0, stdout="[Revisor] REVISOR: APROVADO", stderr="")
+        w.caixa.executar = lambda *a, **k: (self.chamadas.append("caixa"), ok)[1]
+        w.caixa.executar_com_rede = lambda *a, **k: (self.chamadas.append("rede"), ok)[1]
+
+    def test_revisor_de_nuvem_roda_fora_da_caixa(self):
+        self.w.manifesto_revisao = lambda a: {"saida": "stdout"}
+        self.w.run_revisor("grok", "p", self.tmp, "t", {})
+        self.assertEqual(self.chamadas, ["rede"])
+
+    def test_revisor_local_continua_na_caixa(self):
+        self.w.manifesto_revisao = lambda a: {"saida": "stdout", "local": True}
+        self.w.run_revisor("local", "p", self.tmp, "t", {})
+        self.assertEqual(self.chamadas, ["caixa"])
