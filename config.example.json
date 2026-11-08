@@ -22,7 +22,8 @@
       "worktrees": "~/Developer/meu-app-worktrees",
       "prova": "./scripts/testar.sh {suite}",
       "prova_tentativas": 1,
-      "protegidos": [".github/workflows/*", "scripts/release.sh"]
+      "protegidos": [".github/workflows/*", "scripts/release.sh"],
+      "norte": "docs/produto/caminho.md"
     }
   ],
   "lanes": {

@@ -156,6 +156,43 @@ final class ProjetosConfigTests: XCTestCase {
         XCTAssertEqual(declarado.protegidosEfetivos, ["agents.d/*"])
     }
 
+    // MARK: - Norte
+
+    func testNorteSomaAoFreioPadraoEAoDeclarado() {
+        let norte = "docs/produto/caminho.md"
+        let semDeclarar = ProjetoCadastro(projetoID: notch, repo: "~/r", norte: norte)
+        XCTAssertEqual(semDeclarar.protegidosEfetivos, ProjetoCadastro.protegidosPadrao + [norte])
+        let declarado = ProjetoCadastro(projetoID: notch, repo: "~/r", protegidos: ["build/*"], norte: norte)
+        XCTAssertEqual(declarado.protegidosEfetivos, ["build/*", norte])
+        let repetido = ProjetoCadastro(projetoID: notch, repo: "~/r", protegidos: [norte], norte: norte)
+        XCTAssertEqual(repetido.protegidosEfetivos, [norte])
+    }
+
+    func testNorteInvalidoFicaVazio() {
+        for ruim in ["/etc/passwd", "~/caminho.md", "../fora.md", "docs/../x.md", "docs/",
+                     "docs//x.md", "./x.md", "a\nb.md", "a\\b.md", ""] {
+            XCTAssertEqual(ProjetoCadastro.norteValido(ruim), "", ruim)
+        }
+        XCTAssertEqual(ProjetoCadastro.norteValido(" docs/produto/caminho.md "), "docs/produto/caminho.md")
+    }
+
+    func testSalvarOCadastroGuardaONorte() {
+        var d: [String: Any] = ["projetos": [["id": notch, "nome": "P", "repo": "~/r",
+                                              "norte": "docs/produto/caminho.md"]]]
+        let ps = ProjetosConfig.ler(d)
+        XCTAssertEqual(ps.first?.norte, "docs/produto/caminho.md")
+        ProjetosConfig.gravar(ps, em: &d)
+        XCTAssertEqual((d["projetos"] as? [[String: Any]])?.first?["norte"] as? String, "docs/produto/caminho.md")
+        // O freio efetivo não é gravado: o `protegidos` continua sendo só o declarado.
+        XCTAssertNil((d["projetos"] as? [[String: Any]])?.first?["protegidos"])
+    }
+
+    func testSemNorteNaoGravaChave() {
+        var d: [String: Any] = [:]
+        ProjetosConfig.gravar([ProjetoCadastro(projetoID: notch, repo: "~/r")], em: &d)
+        XCTAssertNil((d["projetos"] as? [[String: Any]])?.first?["norte"])
+    }
+
     // MARK: - Validação
 
     func testProblemaApontaCadaAusencia() {
