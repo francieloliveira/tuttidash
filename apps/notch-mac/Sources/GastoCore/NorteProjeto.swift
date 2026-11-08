@@ -1,0 +1,87 @@
+import Foundation
+
+/// Norte de um projeto do cadastro, para o wizard em Ajustes › Projetos.
+///
+/// - **importar**: a `origin/main` do projeto já tem `docs/produto/caminho.md`. Nada é escrito
+///   no repositório; o cadastro só passa a apontar para ele (e o norte entra no freio).
+/// - **criar**: não tem. O wizard rascunha, o dono revisa e o `tools/instalar-norte` abre o PR.
+public enum NorteProjeto {
+    public enum Estado: Equatable, Sendable {
+        /// O cadastro aponta para o norte e ele está na `origin/main`.
+        case ativo
+        /// Está na `origin/main`, mas o cadastro ainda não aponta para ele.
+        case importavel
+        /// O cadastro aponta, mas a `origin/main` ainda não tem (PR do norte aberto ou não mergeado).
+        case aguardandoMerge
+        case falta
+        case semPasta
+        case desconhecido(String)
+
+        public var rotulo: String {
+            switch self {
+            case .ativo: return String(localized: "ativo: nenhuma lane edita o norte")
+            case .importavel: return String(localized: "o repositório já tem norte; falta apontar o cadastro para ele")
+            case .aguardandoMerge: return String(localized: "aguardando o merge do PR do norte")
+            case .falta: return String(localized: "sem norte: os cards não têm a que se ancorar")
+            case .semPasta: return String(localized: "escolha a pasta do projeto")
+            case .desconhecido(let m): return String(localized: "não deu para conferir (\(m))")
+            }
+        }
+
+        public var ok: Bool { self == .ativo }
+    }
+
+    /// Confere o arquivo na `origin/main` da pasta (sem rede: vale o último fetch).
+    public static func estado(_ projeto: ProjetoCadastro,
+                              home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                              git: (String, [String]) -> Subprocesso.Resultado = { Subprocesso.rodar($0, $1) })
+        -> Estado {
+        let limpo = projeto.repo.trimmingCharacters(in: .whitespaces)
+        guard !limpo.isEmpty else { return .semPasta }
+        let pasta = limpo.hasPrefix("~/") ? home.appendingPathComponent(String(limpo.dropFirst(2))).path : limpo
+        guard FileManager.default.fileExists(atPath: pasta + "/.git") else {
+            return .desconhecido(String(localized: "a pasta não é um repositório git"))
+        }
+        let caminho = projeto.norte.isEmpty ? NorteRascunho.caminhoPadrao : projeto.norte
+        let naMain = git("/usr/bin/git", ["-C", pasta, "cat-file", "-e", "origin/main:\(caminho)"]).codigo == 0
+        switch (projeto.norte.isEmpty, naMain) {
+        case (false, true): return .ativo
+        case (true, true): return .importavel
+        case (false, false): return .aguardandoMerge
+        case (true, false): return .falta
+        }
+    }
+
+    /// Respostas do dono no formato que o prompt do rascunho recebe. Pergunta sem resposta fica de fora.
+    public static func respostas(perguntas: [String], respostas: [String]) -> String {
+        zip(perguntas, respostas).compactMap { p, r in
+            let t = r.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : "- \(p)\n  \(t)"
+        }.joined(separator: "\n")
+    }
+
+    /// Texto do norte pronto para o PR. Objetivo, restrições, desempate e o que nunca se faz
+    /// não podem ficar "a definir"; o glossário (§5) pode.
+    public static func problema(_ markdown: String) -> String? {
+        let t = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return String(localized: "O norte está vazio.") }
+        let essencial = t.range(of: "## §5").map { String(t[..<$0.lowerBound]) } ?? t
+        if essencial.contains(NorteRascunho.aDefinir) {
+            return String(localized: "Ainda há seções \(NorteRascunho.aDefinir). Responda às perguntas e refaça, ou escreva à mão.")
+        }
+        return nil
+    }
+
+    /// Comando que grava o norte no projeto e abre o PR. O instalador fica no bundle assinado.
+    public static func comandoInstalar(projetoID: String, arquivoNorte: URL, bundle: Bundle = .main) -> [String]? {
+        guard let script = ScriptsDoBundle.url("tools/instalar-norte", bundle: bundle),
+              !projetoID.isEmpty, !projetoID.hasPrefix("-") else { return nil }
+        return ["/usr/bin/python3", script.path, projetoID, "--norte", arquivoNorte.path, "--pr"]
+    }
+
+    /// Esqueleto para escrever sem agente: as seções, todas a definir.
+    public static var esqueleto: NorteRascunho.Rascunho {
+        NorteRascunho.Rascunho(corpos: Array(repeating: NorteRascunho.aDefinir, count: NorteRascunho.secoes.count),
+                               perguntas: [])
+    }
+}

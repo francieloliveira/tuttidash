@@ -1084,10 +1084,34 @@ enum AgenteBrainstorm {
         }
     }
 
+    /// Rascunho do norte no wizard de projeto. Lê o repositório do próprio projeto (não o do
+    /// Brainstorm) e não abre o login sozinho: sem conta, o wizard oferece login, Ollama ou
+    /// escrever à mão. Resposta sem nenhuma seção reconhecida vira `Falha.vazio`.
+    static func rascunharNorte(nome: String, repo: URL, respostas: String) async throws -> NorteRascunho.Rascunho {
+        let leitura = NorteRascunho.lerRepositorio(repo)
+        let pedido = NorteRascunho.prompt(nome: nome, leitura: leitura, respostas: respostas)
+        let preferida = cliPreferido()
+        return try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let bruto = try responderSync(repo: repo, preferida: preferida, completo: pedido, curto: pedido,
+                                                  papel: .norte, abrirLoginSeFaltar: false)
+                    guard let r = NorteRascunho.ler(bruto) else { throw Falha.vazio }
+                    cont.resume(returning: r)
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// `Falha.semLogin`: nenhum CLI do Brainstorm tem conta configurada.
+    static func ehFaltaDeConta(_ erro: Error) -> Bool { ehSemLogin(erro) }
+
     /// Uma resposta, um CLI. O outro só entra se o primeiro não tem sessão ou recusou
     /// o comando. Erro depois de rodar não dispara outro agente.
     private static func responderSync(repo: URL, preferida: String, completo: String, curto: String,
-                                      papel: BrainstormCLI.Papel) throws -> String {
+                                      papel: BrainstormCLI.Papel, abrirLoginSeFaltar: Bool = true) throws -> String {
         let foto = lerMemoria(repo: repo.path, papel: papel)
         let ordem = BrainstormCLI.fila(preferida: preferida, escolhida: foto.cli, claudeFora: foto.claudeFora)
         var ultima: Error = Falha.semClaude
@@ -1134,7 +1158,7 @@ enum AgenteBrainstorm {
             }
             if encerrar { break }
         }
-        if pediuLogin { abrirLogin() }
+        if pediuLogin, abrirLoginSeFaltar { abrirLogin() }
         throw pediuLogin ? Falha.semLogin : ultima
     }
 
