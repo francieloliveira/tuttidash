@@ -88,6 +88,33 @@ public enum LeitorStrikes {
     }
 }
 
+/// Desfechos da prova remota que o dispatcher grava em `provas-remotas.jsonl` (uma linha por
+/// card + SHA + estado). Só as últimas `limite` linhas, a mais nova primeiro.
+public enum LeitorProvasRemotas {
+    public static let arquivo = "provas-remotas.jsonl"
+
+    public static func ler(pasta: URL, limite: Int = 200) -> [ProvaRemota] {
+        guard let dados = try? Data(contentsOf: pasta.appendingPathComponent(arquivo)),
+              let texto = String(data: dados, encoding: .utf8) else { return [] }
+        return ler(texto: texto, limite: limite)
+    }
+
+    public static func ler(texto: String, limite: Int = 200) -> [ProvaRemota] {
+        let linhas = texto.split(whereSeparator: \.isNewline).suffix(max(0, limite))
+        return linhas.reversed().compactMap { linha -> ProvaRemota? in
+            guard let obj = JV.objeto(Data(linha.utf8)),
+                  let card = JV.texto(obj["card"]),
+                  let estado = JV.texto(obj["estado"]).flatMap(ProvaRemota.Estado.init(rawValue:)),
+                  estado != .rodando else { return nil }
+            let data: (Any?) -> Date? = { JV.numero($0).map { Date(timeIntervalSince1970: $0) } }
+            return ProvaRemota(card: card.uppercased(), titulo: JV.texto(obj["titulo"]),
+                               lane: JV.texto(obj["lane"]) ?? "", sha: JV.texto(obj["sha"]) ?? "",
+                               pr: JV.texto(obj["pr"]), check: JV.texto(obj["check"]),
+                               inicio: data(obj["inicio"]), fim: data(obj["fim"]), estado: estado)
+        }
+    }
+}
+
 /// Lê o cache de títulos gravado pelo dispatcher (titulos-cache.json).
 public enum LeitorTitulosCache {
     public static func ler(pasta: URL) -> [String: String] {
@@ -331,7 +358,7 @@ public enum LeitorPainelDisco {
             provas: provas, simulador: simulador.flatMap { $0.isEmpty ? nil : $0 },
             instalacoes: instalacoes, limitesAte: limites, logTexto: logTexto,
             fechamentos: fechamentos, textoModelo: modelos.texto, avisoModelo: modelos.aviso,
-            pastasLane: pastasLane)
+            pastasLane: pastasLane, provasRemotas: LeitorProvasRemotas.ler(pasta: pasta))
     }
 
     /// Pasta `.lane` do worktree da lane (`worktree` no `lane-<lane>.json`).

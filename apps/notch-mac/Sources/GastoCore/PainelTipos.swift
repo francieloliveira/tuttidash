@@ -199,6 +199,48 @@ public struct ResumoProvaHistorico: Equatable, Sendable {
     public var zeroTestes: Bool
     public var falha: Bool
     public var emCurso: Bool
+    /// Quando a prova terminou. nil = a fonte não guarda (prova local antiga).
+    public var quando: Date? = nil
+    /// Link do check (ou do PR) da prova remota.
+    public var url: String? = nil
+}
+
+/// Prova remota (check `prova-remota` no GitHub): em curso, lida do `lane-<lane>.json`, ou um
+/// desfecho de `provas-remotas.jsonl` gravado pelo dispatcher.
+public struct ProvaRemota: Equatable, Sendable {
+    public enum Estado: String, Sendable { case rodando, verde, vermelho, mainVermelha = "main-vermelha", tempo }
+    public var card: String
+    public var titulo: String?
+    public var lane: String
+    public var sha: String
+    public var pr: String?
+    public var check: String?
+    public var inicio: Date?
+    public var fim: Date?
+    public var estado: Estado
+
+    public init(card: String, titulo: String? = nil, lane: String, sha: String = "", pr: String? = nil,
+                check: String? = nil, inicio: Date? = nil, fim: Date? = nil, estado: Estado) {
+        self.card = card; self.titulo = titulo; self.lane = lane; self.sha = sha; self.pr = pr
+        self.check = check; self.inicio = inicio; self.fim = fim; self.estado = estado
+    }
+
+    public var selo: String {
+        switch estado {
+        case .rodando: return "remota…"
+        case .verde: return "remota ✓"
+        case .vermelho: return "remota ✗"
+        case .mainVermelha: return "main vermelha"
+        case .tempo: return "tempo esgotado"
+        }
+    }
+
+    public var link: String? { check ?? pr }
+
+    public func segundos(agora: Date) -> Int {
+        guard let inicio else { return 0 }
+        return max(0, Int((fim ?? agora).timeIntervalSince(inicio)))
+    }
 }
 
 public struct PontoNotch: Equatable, Sendable {
@@ -395,6 +437,8 @@ public struct SnapshotPainel: Equatable, Sendable {
     public var buildsHoje: [BuildPainel] = []
     /// Cards esperando o dono (último desfecho `needs:...` no log do dispatcher).
     public var esperandoVoce: Int = 0
+    /// Lanes com PR esperando o check `prova-remota` (tela Testes).
+    public var provasRemotasEmCurso: [ProvaRemota] = []
 
     /// As últimas `n` linhas do log do dispatcher (só leitura).
     public func ultimasLinhasLog(_ n: Int = 10) -> [String] {
@@ -439,6 +483,8 @@ public struct EntradaPainel: Equatable, Sendable {
     /// Pastas `.lane` dos worktrees das lanes rodando (a prova mora lá). Entram no carimbo
     /// da próxima leitura (FRA-580).
     public var pastasLane: [URL] = []
+    /// Desfechos da prova remota (`provas-remotas.jsonl`), o mais novo primeiro.
+    public var provasRemotas: [ProvaRemota] = []
 
     public static let vazia = EntradaPainel(
         heartbeat: nil, rodando: [], titulos: [:], habilitadas: nil, desligadasPeloUsuario: [],

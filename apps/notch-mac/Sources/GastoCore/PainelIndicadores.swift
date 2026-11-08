@@ -161,6 +161,9 @@ public struct IndicadoresPainel: Equatable, Sendable {
     public var testesPassou: Int
     public var testesFalhou: Int
     public var provasHoje: Int
+    /// Provas remotas (GitHub) que terminaram hoje.
+    public var remotasVerdes: Int = 0
+    public var remotasVermelhas: Int = 0
 
     public static let vazio = IndicadoresPainel(
         lanesAtivas: 0, lanesTotal: 0, buildsHoje: 0, buildsOntem: 0, buildsSerie: Array(repeating: 0, count: 12),
@@ -203,7 +206,8 @@ public enum Indicadores {
     }
 
     static func calcular(linhas: [LinhaLane], execucoes: [Execucao], provas: [ProvaBruta],
-                         semanaAtual: Double?, agora: Date, calendario: Calendar) -> IndicadoresPainel {
+                         semanaAtual: Double?, agora: Date, calendario: Calendar,
+                         remotas: [ProvaRemota] = []) -> IndicadoresPainel {
         let hojeInicio = calendario.startOfDay(for: agora)
         let hojeISO = Datas.diaISO(agora, calendario: calendario)
         let ontemISO = calendario.date(byAdding: .day, value: -1, to: hojeInicio).map { Datas.diaISO($0, calendario: calendario) } ?? ""
@@ -255,12 +259,24 @@ public enum Indicadores {
             falhou += carta.suites.filter { $0.estado == .falha }.count
         }
 
+        var remotasVerdes = 0, remotasVermelhas = 0
+        for r in remotas {
+            guard let fim = r.fim, calendario.isDate(fim, inSameDayAs: agora) else { continue }
+            switch r.estado {
+            case .verde: remotasVerdes += 1
+            case .vermelho, .tempo: remotasVermelhas += 1
+            case .mainVermelha, .rodando: continue
+            }
+            provasHoje += 1
+        }
+
         return IndicadoresPainel(
             lanesAtivas: linhas.filter { $0.estado == .rodando || $0.estado == .livre }.count,
             lanesTotal: linhas.count, buildsHoje: buildsHoje, buildsOntem: buildsOntem,
             buildsSerie: serieBuilds, falhas24h: falhas24, execucoes24h: exec24, falhasSerie: serieFalhas,
             semanaAnterior: anterior, variacaoSemanaPct: variacao,
-            testesPassou: passou, testesFalhou: falhou, provasHoje: provasHoje)
+            testesPassou: passou, testesFalhou: falhou, provasHoje: provasHoje,
+            remotasVerdes: remotasVerdes, remotasVermelhas: remotasVermelhas)
     }
 
     /// Execuções que começaram hoje, a mais nova primeiro (até `limite`).
