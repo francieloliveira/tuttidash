@@ -137,6 +137,7 @@ struct PaginaAjustes: View {
         case .manifestos: BlocoManifestos()
         case .ferramentas: SecaoFerramentas(embutido: true)
         case .revisaoAtual: BlocoRevisaoAtual(modelo: estado.modelo)
+        case .ollama: BlocoOllama(modelo: estado.modelo, aoSalvar: aoSalvar)
         }
     }
 }
