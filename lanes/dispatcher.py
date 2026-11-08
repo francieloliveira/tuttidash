@@ -5359,7 +5359,10 @@ def classificar_esforco_com_ollama(titulo: str, descricao: str, timeout: int = 3
             "baixo, medio ou alto. Responda só a palavra.\n\n"
             f"Título: {titulo}\nDescrição: {descricao[:500]}"
         )
-        body = json.dumps({"model": "qwen2.5-coder:7b", "prompt": prompt, "stream": False}).encode()
+        modelo = str(_cfg("watch.modelo_needs_ollama", "") or "").strip()
+        if not modelo:
+            return None  # sem modelo nos Ajustes, a regra decide sozinha
+        body = json.dumps({"model": modelo, "prompt": prompt, "stream": False}).encode()
         req = urllib.request.Request("http://127.0.0.1:11434/api/generate", data=body, method="POST",
                                     headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
