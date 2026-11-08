@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""Instala o norte num projeto do cadastro do TuttiDash, por PR (modo criar do wizard).
+
+Grava no repositório do projeto:
+
+  docs/produto/caminho.md   o norte, do arquivo revisado pelo dono (--norte)
+  docs/produto/mapa.md      a parte gerada (módulos e prova) + a parte escrita
+  AGENTS.md / CLAUDE.md     uma linha: ler o norte antes de planejar; não editar sem o dono
+
+O merge do PR é a permissão do dono para a criação. Depois dele, o norte entra no freio
+de caminho protegido pelo campo `norte` do cadastro: nenhuma lane o edita.
+
+Se a `origin/main` do projeto já tem docs/produto/caminho.md, recusa (modo importar:
+nada é escrito no repositório).
+
+Uso:
+  tools/instalar-norte PROJETO --norte ARQ --saida PASTA   grava os arquivos numa pasta
+  tools/instalar-norte PROJETO --norte ARQ --pr            worktree, commit, push e PR
+  tools/instalar-norte PROJETO --mapa --pr                 só atualiza a parte gerada do mapa
+  tools/instalar-norte PROJETO --mapa --verificar          sai 1 se a parte gerada divergiu
+
+PROJETO é o id ou o nome do cadastro.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+RAIZ = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ / "gasto_lanes"))
+import mapa  # noqa: E402
+import projetos  # noqa: E402
+
+AMBIENTE = dict(os.environ, PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+NORTE = "docs/produto/caminho.md"
+BRANCH_NORTE = "tuttidash/norte"
+BRANCH_MAPA = "tuttidash/mapa"
+LINHA = ("Antes de planejar ou implementar, ler `docs/produto/caminho.md` (norte do projeto). "
+         "Não editar esse arquivo sem permissão explícita do dono; para mudar, proponha.")
+REFERENCIAS = ("AGENTS.md", "CLAUDE.md")
+
+
+def achar_projeto(chave: str):
+    for p in projetos.projetos():
+        if chave in (p.id, p.nome):
+            return p
+    raise SystemExit(f"projeto não está no cadastro: {chave}")
+
+
+def git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=AMBIENTE)
+    if check and r.returncode:
+        raise SystemExit(f"git {' '.join(args)} falhou: {r.stderr.strip()[:300]}")
+    return r
+
+
+def com_referencia(texto: str | None) -> str | None:
+    """Conteúdo com a linha do norte; None quando já cita o norte (não duplica)."""
+    if texto is not None and NORTE in texto:
+        return None
+    if not texto or not texto.strip():
+        return f"# Instruções para agentes\n\n{LINHA}\n"
+    return texto.rstrip("\n") + f"\n\n## Norte\n\n{LINHA}\n"
+
+
+def gravar(p, destino: Path, norte_md: str | None, ignorado=lambda rel: False,
+           fonte: Path | None = None) -> tuple[list[str], list[str]]:
+    """Grava em `destino` (raiz do repo). Devolve (escritos, avisos). Nada de rede.
+
+    `fonte`: árvore de onde sai a parte gerada do mapa (padrão: o próprio `destino`)."""
+    escritos: list[str] = []
+    avisos: list[str] = []
+    if norte_md is not None:
+        alvo = destino / NORTE
+        if alvo.exists():
+            raise SystemExit(f"{NORTE} já existe: modo importar, nada é escrito")
+        if not norte_md.strip():
+            raise SystemExit("o norte revisado está vazio")
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        alvo.write_text(norte_md.rstrip("\n") + "\n", encoding="utf-8")
+        escritos.append(NORTE)
+        for rel in REFERENCIAS:
+            arq = destino / rel
+            if ignorado(rel):
+                avisos.append(f"{rel} está no .gitignore: a referência ao norte não vai no PR "
+                              "(use `copiar_para_worktree` no cadastro)")
+                continue
+            atual = arq.read_text(encoding="utf-8") if arq.exists() else None
+            novo = com_referencia(atual)
+            if novo is not None:
+                arq.write_text(novo, encoding="utf-8")
+                escritos.append(rel)
+    arq_mapa = destino / mapa.CAMINHO
+    atual = arq_mapa.read_text(encoding="utf-8") if arq_mapa.exists() else None
+    # A pasta do mapa existe antes de gerar a lista: senão a próxima rodada veria
+    # `docs/produto/` como módulo novo e acusaria divergência logo depois do merge.
+    arq_mapa.parent.mkdir(parents=True, exist_ok=True)
+    novo = mapa.montar(atual, mapa.parte_gerada(fonte or destino, p.prova, p.suites), p.nome)
+    if novo != atual:
+        arq_mapa.write_text(novo, encoding="utf-8")
+        escritos.append(mapa.CAMINHO)
+    return escritos, avisos
+
+
+def corpo_do_pr(arquivos: list[str], avisos: list[str], so_mapa: bool) -> str:
+    if so_mapa:
+        topo = ("Atualização da parte gerada do `docs/produto/mapa.md` (módulos e prova), feita pelo "
+                "TuttiDash a partir da árvore do repositório. A parte escrita não muda.\n\n")
+    else:
+        topo = (
+            "Norte do projeto criado pelo wizard do TuttiDash (`tools/instalar-norte`).\n\n"
+            "- `docs/produto/caminho.md`: o norte, revisado pelo dono no wizard. **O merge deste PR é a "
+            "permissão do dono para criá-lo.** Depois do merge, o TuttiDash põe o arquivo no freio de "
+            "caminho protegido: nenhuma lane o edita; mudança é proposta ao dono.\n"
+            "- `docs/produto/mapa.md`: a parte entre os marcadores é gerada (módulos e prova); o resto é "
+            "escrito e revisado em PR normal.\n"
+            "- AGENTS.md / CLAUDE.md: uma linha mandando ler o norte antes de planejar.\n\n")
+    texto = topo + "## Arquivos\n\n" + "\n".join(f"- `{a}`" for a in arquivos) + "\n"
+    if avisos:
+        texto += "\n## Avisos\n\n" + "\n".join(f"- {a}" for a in avisos) + "\n"
+    return texto + "\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n"
+
+
+def preparar_worktree(p, branch: str) -> Path:
+    repo = Path(p.repo)
+    if not (repo / ".git").exists() or not p.github:
+        raise SystemExit("o projeto precisa de `repo` local e `github` no cadastro")
+    wt = Path(p.worktrees) / branch.replace("/", "-")
+    git(["fetch", "-q", "origin", "main"], repo)
+    if wt.exists():
+        if git(["status", "--porcelain"], wt).stdout.strip():
+            raise SystemExit(f"{wt} tem mudanças pendentes; resolva antes")
+        git(["checkout", "-q", "-B", branch, "origin/main"], wt)
+    else:
+        git(["worktree", "add", "-q", "-B", branch, str(wt), "origin/main"], repo)
+    return wt
+
+
+def abrir_pr(p, norte_md: str | None) -> str:
+    so_mapa = norte_md is None
+    branch = BRANCH_MAPA if so_mapa else BRANCH_NORTE
+    repo = Path(p.repo)
+    if not so_mapa and git(["cat-file", "-e", f"origin/main:{NORTE}"], repo, check=False).returncode == 0:
+        git(["fetch", "-q", "origin", "main"], repo)
+        if git(["cat-file", "-e", f"origin/main:{NORTE}"], repo, check=False).returncode == 0:
+            return f"modo importar: {NORTE} já existe na main do projeto; nada foi escrito"
+    wt = preparar_worktree(p, branch)
+    ignorado = lambda rel: git(["check-ignore", "-q", rel], wt, check=False).returncode == 0  # noqa: E731
+    arquivos, avisos = gravar(p, wt, norte_md, ignorado)
+    if not arquivos:
+        return "nada mudou: o mapa já está em dia"
+    git(["add", "--", *arquivos], wt)
+    titulo = "[TuttiDash] mapa do projeto: parte gerada" if so_mapa else "[TuttiDash] norte do projeto"
+    git(["commit", "-q", "-m", f"{titulo}\n\nGerado por tuttidash/tools/instalar-norte."], wt)
+    if p.antes_do_push:
+        r = subprocess.run(p.antes_do_push, shell=True, cwd=wt, capture_output=True, text=True, env=AMBIENTE)
+        if r.returncode:
+            raise SystemExit(f"conferência antes do push falhou: {(r.stdout + r.stderr).strip()[:300]}")
+    git(["push", "-q", "-f", "-u", "origin", f"HEAD:{branch}"], wt)
+    existente = subprocess.run(
+        ["gh", "pr", "list", "--repo", p.github, "--head", branch, "--state", "open", "--json", "url",
+         "--jq", ".[0].url"], capture_output=True, text=True, env=AMBIENTE).stdout.strip()
+    if existente:
+        return f"PR atualizado: {existente}"
+    r = subprocess.run(["gh", "pr", "create", "--repo", p.github, "--base", "main", "--head", branch,
+                        "--title", titulo, "--body", corpo_do_pr(arquivos, avisos, so_mapa)],
+                       capture_output=True, text=True, env=AMBIENTE)
+    if r.returncode:
+        raise SystemExit(f"gh pr create falhou: {r.stderr.strip()[:300]}")
+    return r.stdout.strip() + ("".join(f"\naviso: {a}" for a in avisos))
+
+
+def verificar_mapa(p) -> int:
+    repo = Path(p.repo)
+    arq = repo / mapa.CAMINHO
+    atual = arq.read_text(encoding="utf-8") if arq.exists() else None
+    if mapa.divergente(atual, mapa.parte_gerada(repo, p.prova, p.suites)):
+        print("divergente")
+        return 1
+    print("em dia")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    # O app só lê o stdout: o motivo de uma recusa sai por ele, com código 1.
+    try:
+        return _main(argv)
+    except SystemExit as exc:
+        if isinstance(exc.code, str):
+            print(f"erro: {exc.code}")
+            return 1
+        raise
+
+
+def _main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("projeto")
+    grupo = ap.add_mutually_exclusive_group(required=True)
+    grupo.add_argument("--norte", help="markdown do norte revisado pelo dono")
+    grupo.add_argument("--mapa", action="store_true", help="só a parte gerada do mapa")
+    acao = ap.add_mutually_exclusive_group(required=True)
+    acao.add_argument("--saida")
+    acao.add_argument("--pr", action="store_true")
+    acao.add_argument("--verificar", action="store_true")
+    a = ap.parse_args(argv)
+    p = achar_projeto(a.projeto)
+    norte_md = Path(a.norte).read_text(encoding="utf-8") if a.norte else None
+    if a.verificar:
+        if not a.mapa:
+            raise SystemExit("--verificar só vale com --mapa")
+        return verificar_mapa(p)
+    if a.saida:
+        escritos, avisos = gravar(p, Path(a.saida), norte_md, fonte=Path(p.repo))
+        for rel in escritos:
+            print(rel)
+        for av in avisos:
+            print(f"aviso: {av}")
+        return 0
+    print(abrir_pr(p, norte_md))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
