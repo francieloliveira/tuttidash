@@ -351,12 +351,26 @@ final class AreaPainel {
     var tamanho: CGSize = .zero
 
     /// Foto exata do que está na tela agora (inclui o cabeçalho e a rolagem).
+    ///
+    /// A foto só alimenta a malha de 160×100 partículas: não precisa da resolução do Retina.
+    /// O rep de 2× fazia o `cacheDisplay` rasterizar sombras e blurs na CPU e custava segundos
+    /// (Testes chegava a ~6 s de atraso antes do primeiro quadro). Em 0,5× o mesmo painel cai
+    /// para dezenas de ms, e a malha de partículas continua com folga (≈5 px por célula).
     static func foto(de area: AreaPainel?) -> NSImage? {
         guard let vista = area?.vista, let janela = vista.window,
               let conteudo = janela.contentView else { return nil }
         let alvo = conteudo.convert(vista.bounds, from: vista).intersection(conteudo.bounds)
-        guard alvo.width > 2, alvo.height > 2,
-              let rep = conteudo.bitmapImageRepForCachingDisplay(in: alvo) else { return nil }
+        guard alvo.width > 2, alvo.height > 2 else { return nil }
+        let escala: CGFloat = 0.5
+        let largura = max(1, Int(alvo.width * escala))
+        let altura = max(1, Int(alvo.height * escala))
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                         pixelsWide: largura, pixelsHigh: altura,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                         isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        // `size` em pontos mantém o desenho alinhado; `cacheDisplay` escala para os pixels do rep.
+        rep.size = alvo.size
         conteudo.cacheDisplay(in: alvo, to: rep)
         let imagem = NSImage(size: rep.size)
         imagem.addRepresentation(rep)
