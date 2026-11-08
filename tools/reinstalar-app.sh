@@ -6,8 +6,8 @@
 # 1. Build (apps/notch-mac/build.sh) com o app atual ainda rodando. Falhou: nada muda.
 # 2. Âncora nova gerada do `controle` do app novo (integridade-controle.py gerar).
 # 3. PAUSE: o dispatcher não assume card novo.
-# 4. Espera não haver sessão tmux `lane-*` (até --espera minutos, padrão 120).
-#    Trocar o bundle com lane rodando mata a sessão dela.
+# 4. Espera não haver lane com card (sessão `lane-*` com `lane-<x>.json`; até --espera
+#    minutos, padrão 120). Trocar o bundle com lane rodando mata a sessão dela.
 # 5. Um único comando de administrador: grava a âncora e troca o app. O anterior vai para
 #    a Lixeira como `TuttiDash-anterior-<data>.app`. Âncora e app nunca ficam divergentes
 #    por mais que esse comando (a 1ª instalação de 02/11 parou o dispatcher 1 h 29 min).
@@ -38,8 +38,15 @@ case "$ESPERA_MIN" in ''|*[!0-9]*) echo "--espera precisa ser número de minutos
 
 log() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
+# Lane rodando = sessão `lane-<x>` com card ainda dela (`$STATE/lane-<x>.json`). Depois que o
+# dispatcher fecha o card, a sessão fica de pé de propósito (tela final com o resumo e o
+# «retomar», até o próximo card): ela não segura a troca do app. Antes contava e travava.
 lanes_rodando() {
-  "$TMUX_BIN" ls -F '#{session_name}' 2>/dev/null | grep -c '^lane-' || true
+  local n=0 s
+  for s in $("$TMUX_BIN" ls -F '#{session_name}' 2>/dev/null | grep '^lane-'); do
+    [ -e "$STATE/$s.json" ] && n=$((n + 1))
+  done
+  echo "$n"
 }
 
 # 1. build
@@ -79,7 +86,7 @@ while :; do
     echo "ainda há $n lane(s) rodando depois de $ESPERA_MIN min; não troquei o app" >&2
     exit 1
   fi
-  log "esperando $n lane(s) terminar ($("$TMUX_BIN" ls -F '#{session_name}' 2>/dev/null | grep '^lane-' | tr '\n' ' '))"
+  log "esperando $n lane(s) terminar ($(cd "$STATE" 2>/dev/null && ls lane-*.json 2>/dev/null | sed 's/\.json$//' | tr '\n' ' '))"
   sleep 30
 done
 log "nenhuma lane rodando"
