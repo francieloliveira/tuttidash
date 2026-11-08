@@ -143,6 +143,14 @@ final class NorteRascunhoTests: XCTestCase {
         XCTAssertEqual(r.pendentes, ["Restrições inegociáveis", "Desempate", "O que nunca se faz", "Glossário"])
     }
 
+    func testMarcadorEmNegritoOuComoCabecalho() throws {
+        for marcador in ["**PERGUNTAS:**", "## Perguntas", "PERGUNTAS", "### Perguntas ao dono"] {
+            let r = try XCTUnwrap(NorteRascunho.ler("**NORTE:**\n## 5. Glossário\n- lane: fila\n\(marcador)\n- Quem usa?"))
+            XCTAssertEqual(r.perguntas, ["Quem usa?"], marcador)
+            XCTAssertEqual(r.corpos[4], "- lane: fila", marcador)
+        }
+    }
+
     func testRespostaSemSecaoNenhumaENil() {
         XCTAssertNil(NorteRascunho.ler("Não consegui ler o repositório."))
         XCTAssertNil(NorteRascunho.ler(""))
