@@ -97,7 +97,9 @@ struct DashboardPainel: View {
         larguraMinimaDelta: CGFloat = 0,
         larguraMinimaAbaixo: CGFloat = 0,
         larguraMinimaDireita: CGFloat = 0,
-        @ViewBuilder delta: () -> Delta, @ViewBuilder abaixo: () -> Abaixo, @ViewBuilder direita: () -> Direita
+        @ViewBuilder delta: @escaping () -> Delta,
+        @ViewBuilder abaixo: @escaping () -> Abaixo,
+        @ViewBuilder direita: @escaping () -> Direita
     ) -> some View {
         // O espaço que vale é o do cartão, medido abaixo; a janela não entra na conta.
         // Primeiro saem os detalhes (gráfico), depois a variação e a barra de apoio;
