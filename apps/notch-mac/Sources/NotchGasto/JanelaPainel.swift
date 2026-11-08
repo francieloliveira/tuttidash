@@ -20,14 +20,16 @@ final class JanelaPainel: NSObject, NSWindowDelegate {
         PresencaApp.aplicar(PoliticaDock.aoMostrarPainel())
         if janela == nil {
             let host = NSHostingController(rootView: PainelTela(modelo: modelo))
-            host.sizingOptions = [.minSize]
-            let w = NSWindow(contentViewController: host)
+            // standardBounds: a vista SwiftUI recebe o tamanho da janela e o desenho
+            // acompanha o redimensionamento. minSize vem do frame mínimo do painel.
+            host.sizingOptions = [.standardBounds, .minSize]
+            let w = JanelaComAtalhos(contentViewController: host)
             w.title = "TuttiDash · \(VersaoApp.atual.texto)"
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             w.titlebarAppearsTransparent = true
             w.appearance = NSAppearance(named: .darkAqua)
             w.isReleasedWhenClosed = false
-            // Painel v2: desenhado para 1600×900 (imagem de referência); abaixo disso rola.
+            // Painel v2: desenhado para 1600×900. Abaixo disso os blocos dividem a largura.
             w.setContentSize(NSSize(width: 1600, height: 900))
             w.minSize = NSSize(width: 1280, height: 800)
             w.backgroundColor = NSColor(srgbRed: 2 / 255, green: 8 / 255, blue: 20 / 255, alpha: 1)
@@ -59,6 +61,7 @@ final class JanelaPainel: NSObject, NSWindowDelegate {
         guard let modelo = modeloFoto else { return }
         if let secao { NavegacaoPainel.compartilhada.abrirAjustes(secao) } else { NavegacaoPainel.compartilhada.pagina = pagina }
         let host = NSHostingView(rootView: PainelTela(modelo: modelo))
+        host.sizingOptions = [.standardBounds]
         let w = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: tamanho),
                          styleMask: [.borderless], backing: .buffered, defer: false)
         w.appearance = NSAppearance(named: .darkAqua)

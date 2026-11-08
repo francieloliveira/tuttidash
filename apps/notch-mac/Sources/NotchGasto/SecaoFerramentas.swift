@@ -84,7 +84,7 @@ struct SecaoFerramentas: View {
 
     private var rodape: some View {
         Text(String(localized: "Instalar e Entrar abrem o Terminal com o comando oficial. Ele mostra o comando e só roda depois do Enter. Para os agentes, Entrar abre o CLI: na primeira vez ele pede o login."))
-            .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+            .fontePainel(11.5).foregroundStyle(PV.mudo)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

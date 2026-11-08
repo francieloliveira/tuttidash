@@ -118,10 +118,10 @@ struct SecaoGestaoLanes: View {
                 .frame(width: 34).contentTransition(.symbolEffect(.replace))
             VStack(alignment: .leading, spacing: 4) {
                 if let q = estado.quem {
-                    Text(q.titulo).font(PV.fonte(15, .semibold)).foregroundStyle(PV.texto)
-                    Text(q.motivo).font(PV.fonte(12.5)).foregroundStyle(PV.texto2).fixedSize(horizontal: false, vertical: true)
+                    Text(q.titulo).fontePainel(15, .semibold).foregroundStyle(PV.texto)
+                    Text(q.motivo).fontePainel(12.5).foregroundStyle(PV.texto2).fixedSize(horizontal: false, vertical: true)
                     ForEach(q.avisos, id: \.self) { a in
-                        Label(a, systemImage: "exclamationmark.triangle").font(PV.fonte(12)).foregroundStyle(PV.ambar)
+                        Label(a, systemImage: "exclamationmark.triangle").fontePainel(12).foregroundStyle(PV.ambar)
                     }
                 } else {
                     Esqueleto(altura: 16, largura: 180); Esqueleto(altura: 12, largura: 320)
@@ -155,6 +155,6 @@ struct SecaoGestaoLanes: View {
 
     private var rodape: some View {
         Text(String(localized: "Uma pausa geral feita por você sempre vence esta escolha."))
-            .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+            .fontePainel(11.5).foregroundStyle(PV.mudo)
     }
 }

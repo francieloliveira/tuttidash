@@ -26,32 +26,32 @@ struct BlocoRevisaoAtual: View {
         VStack(alignment: .leading, spacing: DS.e2) {
             if laneSelecionada.isEmpty {
                 Text(String(localized: "Selecione uma lane revisora acima."))
-                    .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    .fontePainel(11.5).foregroundStyle(PV.mudo)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
                     Text(String(localized: "Lane revisora"))
-                        .font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                        .fontePainel(12.5).foregroundStyle(PV.texto2)
                     Spacer(minLength: DS.e3)
                     Text(agente?.rotulo ?? laneSelecionada)
-                        .font(PV.fonte(12.5)).foregroundStyle(PV.texto)
+                        .fontePainel(12.5).foregroundStyle(PV.texto)
                         .textSelection(.enabled)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
                     Text(String(localized: "Modelo na revisão"))
-                        .font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                        .fontePainel(12.5).foregroundStyle(PV.texto2)
                     Spacer(minLength: DS.e3)
                     Text(modeloRevisao)
                         .font(.system(size: 12, design: .monospaced)).foregroundStyle(PV.texto)
                         .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
                 }
                 Text(String(localized: "Esforço: definido pela task do card (não pela lane)."))
-                    .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    .fontePainel(11.5).foregroundStyle(PV.mudo)
                 if agente?.revisao?.auto == true {
                     Text(String(localized: "Pode ser usado como revisor reserva automático."))
-                        .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        .fontePainel(11.5).foregroundStyle(PV.mudo)
                 } else {
                     Text(String(localized: "Não entra na reserva automática (auto desligado no manifesto)."))
-                        .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        .fontePainel(11.5).foregroundStyle(PV.mudo)
                 }
             }
         }

@@ -166,7 +166,7 @@ struct BlocoModeloLane: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(ClarezaCota.titulo(nome: agente.nome, rotulo: agente.rotulo))
-                    .font(PV.fonte(13.5, .semibold))
+                    .fontePainel(13.5, .semibold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(ClarezaCota.detalhe(nome: agente.nome) ?? ClarezaCota.titulo(nome: agente.nome, rotulo: agente.rotulo))
                 IndicadorAcao(estado: retorno)

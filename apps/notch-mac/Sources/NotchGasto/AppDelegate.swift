@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let modelo = ModeloNotch()
     private var controlador: ControladorNotch?
     private var barra: ControladorBarra?
+    private let acoesMenu = AcoesMenu()
     private var itemResumo: NSMenuItem?
     private var itemUso: NSMenuItem?
     private var itemRetomar: NSMenuItem?
@@ -56,6 +57,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Intervalos (dados 30 s, uso 120 s: endpoints limitados por IP) vivem em `PoliticaAtualizacao`.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        acoesMenu.aoAbrirPainel = { [weak self] in self?.modelo.abrirPainel() }
+        acoesMenu.aoAtualizar = { [weak self] in self?.acaoAtualizar() }
+        acoesMenu.aoAjustes = { [weak self] in self?.abrirConfig() }
+        acoesMenu.aoSair = { PresencaApp.sair() }
+        acoesMenu.aoBuscar = { NavegacaoPainel.compartilhada.pedirFocoBusca() }
+        MenuPrincipalApp.instalar(acoes: acoesMenu)
         // O dispatcher/vigia/chave só trabalham enquanto este PID estiver vivo.
         PresencaDoApp.marcarAberta()
         // O proxy lê o token no Keychain do app e não o devolve aos scripts (FRA-607).

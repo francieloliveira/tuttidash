@@ -162,13 +162,13 @@ struct PaginaBrainstorm: View {
             Spacer(minLength: 8)
             if !projectName.isEmpty {
                 Text(projectName)
-                    .font(PV.fonte(11))
+                    .fontePainel(11)
                     .foregroundStyle(PV.mudo)
                     .lineLimit(1)
             }
             Button("Limpar tudo") { limparConversa() }
                 .buttonStyle(.plain)
-                .font(PV.fonte(12, .semibold))
+                .fontePainel(12, .semibold)
                 .foregroundStyle(PV.vermelho)
         }
         .padding(.horizontal, 4)
@@ -185,12 +185,12 @@ struct PaginaBrainstorm: View {
         let ativo = passoAtual >= n
         return HStack(spacing: 6) {
             Text("\(n)")
-                .font(PV.fonte(10, .bold))
+                .fontePainel(10, .bold)
                 .foregroundStyle(ativo ? Color.white : PV.mudo)
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(ativo ? PV.azul : PV.tag))
             Text(titulo)
-                .font(PV.fonte(12, ativo ? .semibold : .regular))
+                .fontePainel(12, ativo ? .semibold : .regular)
                 .foregroundStyle(ativo ? PV.texto : PV.mudo)
         }
     }
@@ -201,24 +201,24 @@ struct PaginaBrainstorm: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Idéia")
-                    .font(PV.fonte(13, .semibold))
+                    .fontePainel(13, .semibold)
                     .foregroundStyle(PV.mudo)
                 Spacer()
                 if reescrevendo {
                     EfeitoThinking()
                 } else {
                     Text(status)
-                        .font(PV.fonte(10))
+                        .fontePainel(10)
                         .foregroundStyle(PV.apagado)
                         .lineLimit(1)
                 }
             }
             Text("Gerar idéia no chat reúne a conversa e os itens marcados. Continuar o chat e gerar de novo acrescenta. A caixa continua editável.")
-                .font(PV.fonte(11))
+                .fontePainel(11)
                 .foregroundStyle(PV.mudo)
 
             TextEditor(text: $sessao.ideaSummary)
-                .font(PV.fonte(13))
+                .fontePainel(13)
                 .frame(minHeight: 90)
                 .scrollContentBackground(.hidden)
                 .padding(10)
@@ -236,7 +236,7 @@ struct PaginaBrainstorm: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("Chat")
-                    .font(PV.fonte(13, .semibold))
+                    .fontePainel(13, .semibold)
                     .foregroundStyle(PV.mudo)
                 Spacer(minLength: 8)
                 Button("Entrar no Claude") { AgenteBrainstorm.abrirLogin() }
@@ -272,7 +272,7 @@ struct PaginaBrainstorm: View {
                 HStack(spacing: 6) {
                     ForEach(["Explorar riscos", "Quais fluxos principais?", "Simplificar escopo", "Métricas de sucesso"], id: \.self) { q in
                         Button(q) { enviar(texto: q) }
-                            .font(PV.fonte(10))
+                            .fontePainel(10)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
@@ -296,6 +296,7 @@ struct PaginaBrainstorm: View {
             HStack(spacing: 8) {
                 TextField("Pergunte ou descreva a ideia…", text: $sessao.chatInput)
                     .textFieldStyle(.plain)
+                    .fontePainel(13)
                     .padding(10)
                     .background(RoundedRectangle(cornerRadius: 8).fill(PV.campo))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(PV.campoBorda, lineWidth: 1))
@@ -316,8 +317,8 @@ struct PaginaBrainstorm: View {
 
     /// Palavra “Thinking” com um brilho que atravessa as letras, como no chat do Cursor.
     private struct EfeitoThinking: View {
-        private var rotulo: Text {
-            Text("Thinking").font(PV.fonte(14, .medium))
+        private var rotulo: some View {
+            Text("Thinking").fontePainel(14, .medium)
         }
 
         var body: some View {
@@ -348,7 +349,7 @@ struct PaginaBrainstorm: View {
     private func agentBubble(_ msg: ChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(msg.text)
-                .font(PV.fonte(12))
+                .fontePainel(12)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .frame(maxWidth: 420, alignment: .leading)
@@ -371,7 +372,7 @@ struct PaginaBrainstorm: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .font(PV.fonte(11))
+                            .fontePainel(11)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -389,7 +390,7 @@ struct PaginaBrainstorm: View {
 
     private func userBubble(_ text: String) -> some View {
         Text(text)
-            .font(PV.fonte(12))
+            .fontePainel(12)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(RoundedRectangle(cornerRadius: 12).fill(PV.azulFundo))
@@ -557,33 +558,33 @@ struct PaginaBrainstorm: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Histórias")
-                    .font(PV.fonte(13, .semibold))
+                    .fontePainel(13, .semibold)
                 Text("\(stories.count)")
-                    .font(PV.fonte(10))
+                    .fontePainel(10)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
                 if !stories.isEmpty {
                     Text("\(stories.filter(\.approved).count) marcadas")
-                        .font(PV.fonte(10))
+                        .fontePainel(10)
                         .foregroundStyle(PV.mudo)
                 }
                 Spacer()
                 Button("Adicionar") { novaHistoria() }
-                    .font(PV.fonte(11))
+                    .fontePainel(11)
             }
 
             Text("Cards no quadro. Clique para editar. Esforço e lane são as etiquetas do Linear.")
-                .font(PV.fonte(11))
+                .fontePainel(11)
                 .foregroundStyle(PV.mudo)
 
             if stories.isEmpty {
                 VStack(spacing: 12) {
                     Text("Nenhuma história ainda")
-                        .font(PV.fonte(13, .semibold))
+                        .fontePainel(13, .semibold)
                         .foregroundStyle(PV.mudo)
                     Text("Aceite itens no chat ou escreva a idéia, depois gere.")
-                        .font(PV.fonte(11))
+                        .fontePainel(11)
                         .foregroundStyle(PV.mudo)
                         .multilineTextAlignment(.center)
                 }
@@ -608,14 +609,14 @@ struct PaginaBrainstorm: View {
             } label: {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(story.wrappedValue.title)
-                        .font(PV.fonte(13, .semibold))
+                        .fontePainel(13, .semibold)
                         .foregroundStyle(PV.texto)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.trailing, 22)
                     Text(story.wrappedValue.description)
-                        .font(PV.fonte(11))
+                        .fontePainel(11)
                         .foregroundStyle(PV.texto2)
                         .multilineTextAlignment(.leading)
                         .lineLimit(3)
@@ -654,7 +655,7 @@ struct PaginaBrainstorm: View {
 
     private func tag(text: String, destaque: Bool) -> some View {
         Text(text)
-            .font(PV.fonte(10, destaque ? .semibold : .regular))
+            .fontePainel(10, destaque ? .semibold : .regular)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 4).fill(destaque ? PV.azulFundo : PV.tag))
@@ -681,7 +682,7 @@ struct PaginaBrainstorm: View {
                 .buttonStyle(.bordered)
             Spacer(minLength: 8)
             Text(status)
-                .font(PV.fonte(11))
+                .fontePainel(11)
                 .foregroundStyle(PV.mudo)
                 .lineLimit(1)
         }
@@ -1440,17 +1441,17 @@ struct EditStorySheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(criando ? "Nova história" : "Editar história")
-                .font(PV.fonte(16, .semibold))
+                .fontePainel(16, .semibold)
 
             TextField("Título", text: $title)
                 .textFieldStyle(.roundedBorder)
 
             VStack(alignment: .leading) {
                 Text("Descrição")
-                    .font(PV.fonte(11))
+                    .fontePainel(11)
                     .foregroundStyle(PV.mudo)
                 TextEditor(text: $description)
-                    .font(PV.fonte(12))
+                    .fontePainel(12)
                     .frame(minHeight: 80)
                     .padding(6)
                     .background(RoundedRectangle(cornerRadius: 6).fill(PV.campo))
@@ -1458,10 +1459,10 @@ struct EditStorySheet: View {
 
             VStack(alignment: .leading) {
                 Text("Critérios de aceitação (um por linha)")
-                    .font(PV.fonte(11))
+                    .fontePainel(11)
                     .foregroundStyle(PV.mudo)
                 TextEditor(text: $acText)
-                    .font(PV.fonte(12))
+                    .fontePainel(12)
                     .frame(minHeight: 60)
                     .padding(6)
                     .background(RoundedRectangle(cornerRadius: 6).fill(PV.campo))
@@ -1469,15 +1470,15 @@ struct EditStorySheet: View {
 
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading) {
-                    Text("Prioridade").font(PV.fonte(11)).foregroundStyle(PV.mudo)
+                    Text("Prioridade").fontePainel(11).foregroundStyle(PV.mudo)
                     Stepper(value: $priority, in: 1...4) { Text("P\(priority)") }
                 }
                 VStack(alignment: .leading) {
-                    Text("Estimativa").font(PV.fonte(11)).foregroundStyle(PV.mudo)
+                    Text("Estimativa").fontePainel(11).foregroundStyle(PV.mudo)
                     Stepper(value: $estimate, in: 1...20) { Text("\(estimate) pts") }
                 }
                 VStack(alignment: .leading) {
-                    Text("Esforço").font(PV.fonte(11)).foregroundStyle(PV.mudo)
+                    Text("Esforço").fontePainel(11).foregroundStyle(PV.mudo)
                     Picker("", selection: $esforco) {
                         ForEach(EsforcoHistoria.allCases) { e in
                             Text(e.rotuloTag).tag(e)
@@ -1486,7 +1487,7 @@ struct EditStorySheet: View {
                     .labelsHidden()
                 }
                 VStack(alignment: .leading) {
-                    Text("Lane").font(PV.fonte(11)).foregroundStyle(PV.mudo)
+                    Text("Lane").fontePainel(11).foregroundStyle(PV.mudo)
                     Picker("", selection: $lane) {
                         ForEach(lanes, id: \.self) { Text($0).tag($0) }
                     }
@@ -1496,7 +1497,7 @@ struct EditStorySheet: View {
             }
 
             Text("As etiquetas esforço e lane são as mesmas do Linear (grupo esforco + grupo lane).")
-                .font(PV.fonte(10))
+                .fontePainel(10)
                 .foregroundStyle(PV.apagado)
 
             HStack {

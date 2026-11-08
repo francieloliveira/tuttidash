@@ -178,10 +178,10 @@ struct PaginaEsperando: View {
     var body: some View {
         HStack(alignment: .top, spacing: 13) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(String(localized: "Respostas em aberto · \(caixa.abertas)")).font(PV.fonte(15, .semibold))
+                Text(String(localized: "Respostas em aberto · \(caixa.abertas)")).fontePainel(15, .semibold)
                 if caixa.itens.isEmpty {
                     Text(String(localized: "Nada esperando por você agora."))
-                        .font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                        .fontePainel(12.5).foregroundStyle(PV.mudo)
                 }
                 ForEach(caixa.itens) { item in linhaLista(item) }
                 Spacer(minLength: 0)
@@ -194,7 +194,7 @@ struct PaginaEsperando: View {
             Group {
                 if let item = atual { detalhe(item) } else {
                     Text(String(localized: "Quando um card precisar de você, a pendência e as decisões aparecem aqui."))
-                        .font(PV.fonte(13)).foregroundStyle(PV.mudo)
+                        .fontePainel(13).foregroundStyle(PV.mudo)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -211,16 +211,16 @@ struct PaginaEsperando: View {
         return Button { caixa.selecionado = item.card; resposta = "" } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(item.card).font(PV.fonte(13.5, .semibold)).foregroundStyle(PV.texto)
+                    Text(item.card).fontePainel(13.5, .semibold).foregroundStyle(PV.texto)
                     Spacer()
                     if caixa.enviando.contains(item.card) {
                         ProgressView().controlSize(.small)
                     } else if respondida {
-                        Text(String(localized: "enviado")).font(PV.fonte(11)).foregroundStyle(PV.verde)
+                        Text(String(localized: "enviado")).fontePainel(11).foregroundStyle(PV.verde)
                     }
                 }
-                Text(item.titulo).font(PV.fonte(12)).foregroundStyle(PV.texto2).lineLimit(1)
-                Text(meta(item)).font(PV.fonte(11)).foregroundStyle(PV.mudo).lineLimit(1)
+                Text(item.titulo).fontePainel(12).foregroundStyle(PV.texto2).lineLimit(1)
+                Text(meta(item)).fontePainel(11).foregroundStyle(PV.mudo).lineLimit(1)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -250,31 +250,31 @@ struct PaginaEsperando: View {
     private func detalhe(_ item: ItemCaixa) -> some View {
         let ocupado = caixa.enviando.contains(item.card) || caixa.respondidas.contains(item.perguntaId)
         VStack(alignment: .leading, spacing: 12) {
-            Text("\(item.card) · \(item.titulo)").font(PV.fonte(15, .semibold)).lineLimit(2)
+            Text("\(item.card) · \(item.titulo)").fontePainel(15, .semibold).lineLimit(2)
             VStack(alignment: .leading, spacing: 4) {
-                Text(String(localized: "Pendência")).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                Text(String(localized: "Pendência")).fontePainel(11.5).foregroundStyle(PV.mudo)
                 Text(item.pendencia.isEmpty ? (item.motivo.isEmpty ? String(localized: "Sem resumo ainda: veja o card no Linear.") : item.motivo)
                                             : item.pendencia)
-                    .font(PV.fonte(13.5)).fixedSize(horizontal: false, vertical: true)
+                    .fontePainel(13.5).fixedSize(horizontal: false, vertical: true)
                 if !item.pendencia.isEmpty && !item.motivo.isEmpty {
-                    Text(String(localized: "Motivo: \(item.motivo)")).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    Text(String(localized: "Motivo: \(item.motivo)")).fontePainel(11.5).foregroundStyle(PV.mudo)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if !item.opcoes.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(String(localized: "Decisões sugeridas")).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    Text(String(localized: "Decisões sugeridas")).fontePainel(11.5).foregroundStyle(PV.mudo)
                     ForEach(item.opcoes) { op in
                         VStack(alignment: .leading, spacing: 3) {
                             botaoOpcao(op, item: item, recomendada: op.letra == item.recomenda).disabled(ocupado)
                             Text(String(localized: "O que acontece: \(oQueAcontece(.opcao(op, comentario: ""), item))"))
-                                .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                                .fontePainel(11.5).foregroundStyle(PV.mudo)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.leading, 12)
                         }
                     }
                     if !item.porque.isEmpty {
-                        Text(String(localized: "Por que \(item.recomenda): \(item.porque)")).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        Text(String(localized: "Por que \(item.recomenda): \(item.porque)")).fontePainel(11.5).foregroundStyle(PV.mudo)
                     }
                 }
             }
@@ -296,7 +296,7 @@ struct PaginaEsperando: View {
                 Button(String(localized: "Cancelar o card…"), role: .destructive) { confirmarCancelar = true }.disabled(ocupado)
             }
             if let e = caixa.erros[item.card] {
-                Text(e).font(PV.fonte(12)).foregroundStyle(PV.vermelho)
+                Text(e).fontePainel(12).foregroundStyle(PV.vermelho)
             }
             Spacer(minLength: 0)
         }
@@ -310,10 +310,10 @@ struct PaginaEsperando: View {
     private func botaoOpcao(_ op: OpcaoCaixa, item: ItemCaixa, recomendada: Bool) -> some View {
         Button { caixa.decidir(.opcao(op, comentario: resposta), item: item); resposta = "" } label: {
             HStack {
-                Text("\(op.letra)) \(op.texto)").font(PV.fonte(13)).foregroundStyle(PV.texto)
+                Text("\(op.letra)) \(op.texto)").fontePainel(13).foregroundStyle(PV.texto)
                     .multilineTextAlignment(.leading)
                 Spacer()
-                if recomendada { Text(String(localized: "recomendada")).font(PV.fonte(11)).foregroundStyle(PV.verde) }
+                if recomendada { Text(String(localized: "recomendada")).fontePainel(11).foregroundStyle(PV.verde) }
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)

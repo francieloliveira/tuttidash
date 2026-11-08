@@ -129,8 +129,8 @@ struct AbaLinear: View {
         let selecionado = itens.first { (c.porNome ? $0.nome : $0.id) == atual }
         return HStack(alignment: .top, spacing: DS.e4) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(c.titulo).font(PV.fonte(13)).foregroundStyle(PV.texto)
-                Text(c.ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                Text(c.titulo).fontePainel(13).foregroundStyle(PV.texto)
+                Text(c.ajuda).fontePainel(11.5).foregroundStyle(PV.mudo)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: DS.e4)
@@ -178,7 +178,7 @@ struct AbaLinear: View {
     @ViewBuilder private var conteudo: some View {
         if !estado.conectado {
             Text(String(localized: "Conecte o Linear para escolher os projetos e as colunas."))
-                .font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                .fontePainel(12.5).foregroundStyle(PV.texto2)
             if !estado.tokenConferido {
                 ProgressView().controlSize(.small)
             } else if estado.temToken {
@@ -191,23 +191,23 @@ struct AbaLinear: View {
                     .buttonStyle(.borderedProminent)
             }
             if estado.carregando { ProgressView().controlSize(.small) }
-            if let e = estado.erro { Text(e).font(PV.fonte(11.5)).foregroundStyle(PV.vermelho) }
+            if let e = estado.erro { Text(e).fontePainel(11.5).foregroundStyle(PV.vermelho) }
         } else {
             HStack(spacing: DS.e3) {
                 Label(String(localized: "Conectado a \(estado.workspace ?? "Linear")"),
                       systemImage: "checkmark.circle.fill")
-                    .font(PV.fonte(12.5)).foregroundStyle(PV.verde)
+                    .fontePainel(12.5).foregroundStyle(PV.verde)
                 Spacer(minLength: DS.e3)
                 Button(String(localized: "Recarregar")) { Task { await estado.conectar() } }
                 Button(String(localized: "Desconectar")) { estado.esquecerToken() }
             }
-            if let e = estado.erro { Text(e).font(PV.fonte(11.5)).foregroundStyle(PV.vermelho) }
+            if let e = estado.erro { Text(e).fontePainel(11.5).foregroundStyle(PV.vermelho) }
 
             SubtituloAjuste(texto: String(localized: "Colunas do quadro"),
                             ajuda: String(localized: "Sem escolha, valem as colunas com o nome padrão (Todo, In Progress, In Review) no time de cada projeto."))
             if estado.timeDasColunas == nil {
                 Text(String(localized: "Cadastre o projeto em Lanes › Projetos: as colunas vêm do time dele."))
-                    .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    .fontePainel(11.5).foregroundStyle(PV.mudo)
             }
             ForEach(CampoLinear.colunas()) { linha($0) }
             linha(CampoLinear.etiqueta())

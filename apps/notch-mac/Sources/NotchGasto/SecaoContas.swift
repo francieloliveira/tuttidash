@@ -143,7 +143,7 @@ struct SecaoContas: View {
 
     private var rodape: some View {
         Text(String(localized: "Estas contas entram em limites, gasto e retomadas. Só tipos que o app já mede. Provedor novo entra pelo catálogo agents.d, não por um nome livre."))
-            .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+            .fontePainel(11.5).foregroundStyle(PV.mudo)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

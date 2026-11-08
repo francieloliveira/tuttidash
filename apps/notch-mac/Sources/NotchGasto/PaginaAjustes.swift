@@ -15,6 +15,10 @@ final class NavegacaoPainel: ObservableObject {
 
     /// Grupo aberto pela busca. A página expande e o painel rola até ele; depois zera.
     @Published var grupoFoco: String?
+    /// ⌘F. O cabeçalho observa e põe o cursor no campo de busca.
+    @Published var pedidoFocoBusca = 0
+
+    func pedirFocoBusca() { pedidoFocoBusca += 1 }
 
     func abrirAjustes(_ s: IdSecaoAjustes? = nil) {
         if let s { secao = s }
@@ -76,7 +80,7 @@ struct PaginaAjustes: View {
         HStack(spacing: 6) {
             Image(systemName: "info.circle").font(.system(size: 10.5))
             Text(String(localized: "As mudanças são gravadas na hora. Nos campos de texto, aperte Enter para gravar."))
-                .font(PV.fonte(11.5))
+                .fontePainel(11.5)
         }
         .foregroundStyle(PV.apagado)
         .padding(.horizontal, 30)
@@ -148,9 +152,9 @@ private struct CabecalhoGrupo: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(grupo.nome).font(PV.fonte(15, .semibold)).foregroundStyle(PV.texto)
+                Text(grupo.nome).fontePainel(15, .semibold).foregroundStyle(PV.texto)
                 if let ajuda = grupo.ajuda {
-                    Text(ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    Text(ajuda).fontePainel(11.5).foregroundStyle(PV.mudo)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -161,7 +165,7 @@ private struct CabecalhoGrupo: View {
                         Image(systemName: "arrow.counterclockwise").font(.system(size: 10, weight: .semibold))
                         Text(CatalogoAjustes.rotuloRestaurarCampos)
                     }
-                    .font(PV.fonte(11.5))
+                    .fontePainel(11.5)
                     .foregroundStyle(PV.mudo)
                 }
                 .buttonStyle(.plain)
@@ -193,9 +197,9 @@ private struct LinhaGrupoRecolhivel: View {
                             .rotationEffect(.degrees(aberto ? 90 : 0))
                     }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(grupo.nome).font(PV.fonte(13.5, .semibold)).foregroundStyle(PV.texto)
+                        Text(grupo.nome).fontePainel(13.5, .semibold).foregroundStyle(PV.texto)
                         if let ajuda = grupo.ajuda {
-                            Text(ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                            Text(ajuda).fontePainel(11.5).foregroundStyle(PV.mudo)
                                 .lineLimit(aberto ? nil : 2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -211,10 +215,10 @@ private struct LinhaGrupoRecolhivel: View {
             if aberto && !grupo.campos.isEmpty {
                 Button(CatalogoAjustes.rotuloRestaurarCampos) { estado.restaurar(grupo.campos, aoSalvar: aoSalvar) }
                     .buttonStyle(.link)
-                    .font(PV.fonte(11.5))
+                    .fontePainel(11.5)
             } else if !grupo.campos.isEmpty {
                 Text(String(localized: "\(grupo.campos.count) opções"))
-                    .font(PV.fonte(11)).foregroundStyle(PV.apagado)
+                    .fontePainel(11).foregroundStyle(PV.apagado)
             }
         }
         .padding(.vertical, 2)
@@ -227,9 +231,9 @@ struct SubtituloAjuste: View {
     var ajuda: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(texto).font(PV.fonte(12.5, .semibold)).foregroundStyle(PV.texto2)
+            Text(texto).fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
             if let ajuda {
-                Text(ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                Text(ajuda).fontePainel(11.5).foregroundStyle(PV.mudo)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -245,6 +249,7 @@ struct CampoBuscaAjustes: View {
     @Binding var texto: String
     var largura: CGFloat = 260
     var altura: CGFloat = 32
+    var pedidoFoco: Int = 0
     @FocusState private var foco: Bool
 
     var body: some View {
@@ -257,11 +262,12 @@ struct CampoBuscaAjustes: View {
                     .buttonStyle(.plain).help(String(localized: "Limpar busca"))
             }
         }
-        .font(PV.fonte(13))
+        .fontePainel(13)
         .padding(.horizontal, 10).frame(width: largura, height: altura)
         .background(RoundedRectangle(cornerRadius: DS.raioP + 1).fill(PV.campo))
         .overlay(RoundedRectangle(cornerRadius: DS.raioP + 1).strokeBorder(foco ? PV.azul.opacity(0.7) : PV.campoBorda, lineWidth: 1))
         .animation(DS.anim(DS.suave), value: foco)
+        .onChange(of: pedidoFoco) { _, _ in foco = true }
     }
 }
 
@@ -280,7 +286,7 @@ struct ResultadosBusca: View {
                     HStack(spacing: DS.e3) {
                         Image(systemName: "magnifyingglass").font(.system(size: 15)).foregroundStyle(PV.apagado)
                         Text(String(localized: "Nada encontrado para «\(termo)»."))
-                            .font(PV.fonte(13)).foregroundStyle(PV.mudo)
+                            .fontePainel(13).foregroundStyle(PV.mudo)
                     }
                     .padding(.vertical, 8)
                 }
@@ -295,7 +301,7 @@ struct ResultadosBusca: View {
                                     Image(systemName: "arrow.turn.down.right")
                                         .font(.system(size: 9, weight: .semibold))
                                     Text("\(secoes[item.secao] ?? "") › \(item.grupo)")
-                                        .font(PV.fonte(11.5))
+                                        .fontePainel(11.5)
                                 }
                                 .foregroundStyle(PV.azul)
                             }
@@ -304,7 +310,7 @@ struct ResultadosBusca: View {
                                 LinhaCampoAjuste(campo: campo, estado: estado, aoSalvar: aoSalvar,
                                                 mostrarChave: item.secao == .avancado)
                             } else if let bloco = item.bloco {
-                                Text(bloco.nome).font(PV.fonte(13, .semibold)).foregroundStyle(PV.texto)
+                                Text(bloco.nome).fontePainel(13, .semibold).foregroundStyle(PV.texto)
                             }
                         }
                         .padding(.vertical, 3)
@@ -312,7 +318,7 @@ struct ResultadosBusca: View {
                 } header: {
                     HStack {
                         Text(String(localized: "\(r.count) resultado(s)"))
-                            .font(PV.fonte(15, .semibold)).foregroundStyle(PV.texto)
+                            .fontePainel(15, .semibold).foregroundStyle(PV.texto)
                         Spacer()
                     }
                     .padding(.bottom, 3)
@@ -337,6 +343,7 @@ struct LinhaCampoAjuste: View {
     var mostrarChave = false
 
     @FocusState private var focado: Bool
+    @Environment(\.fatorTexto) private var fatorTexto
 
     private var texto: Binding<String> {
         Binding(get: { estado.textos[campo.chave] ?? campo.padrao },
@@ -360,9 +367,9 @@ struct LinhaCampoAjuste: View {
     }
 
     private var fonteCampo: Font {
-        if ehCaminho { return .system(size: 11.5, design: .monospaced) }
-        if ehNumero { return .system(size: 12.5, design: .monospaced) }
-        return PV.fonte(12.5)
+        if ehCaminho { return .system(size: 11.5 * fatorTexto, design: .monospaced) }
+        if ehNumero { return .system(size: 12.5 * fatorTexto, design: .monospaced) }
+        return .system(size: 12.5 * fatorTexto)
     }
 
     private let larguraControle: CGFloat = 272
@@ -373,10 +380,10 @@ struct LinhaCampoAjuste: View {
             HStack(alignment: .top, spacing: DS.e4) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(campo.rotulo)
-                        .font(PV.fonte(13)).foregroundStyle(PV.texto)
+                        .fontePainel(13).foregroundStyle(PV.texto)
                         .fixedSize(horizontal: false, vertical: true)
                     if !ajuda.isEmpty {
-                        Text(ajuda).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        Text(ajuda).fontePainel(11.5).foregroundStyle(PV.mudo)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if mostrarChave {
@@ -394,12 +401,12 @@ struct LinhaCampoAjuste: View {
             }
             if pendente {
                 Text(String(localized: "Não gravado ainda. Aperte Enter para gravar."))
-                    .font(PV.fonte(11.5)).foregroundStyle(PV.ambar)
+                    .fontePainel(11.5).foregroundStyle(PV.ambar)
                     .transition(.opacity)
             }
             if let e = estado.erros[campo.chave] {
                 Label(e, systemImage: "exclamationmark.triangle.fill")
-                    .font(PV.fonte(11.5)).foregroundStyle(PV.vermelho)
+                    .fontePainel(11.5).foregroundStyle(PV.vermelho)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -457,7 +464,7 @@ struct BlocoJobs: View {
             SubtituloAjuste(texto: String(localized: "Serviços agendados"))
             ForEach(GerenciadorAgendas(config: modelo.dados).trabalhos) { t in
                 HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
-                    Text(t.nome).font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                    Text(t.nome).fontePainel(12.5).foregroundStyle(PV.texto2)
                     Spacer(minLength: DS.e3)
                     Text(String(localized: "padrão a cada \(t.intervaloPadrao) s"))
                         .font(.system(size: 11.5, design: .monospaced))
@@ -493,7 +500,7 @@ struct BlocoLinearLeitura: View {
         VStack(alignment: .leading, spacing: DS.e2) {
             ForEach(CatalogoAjustes.chavesLinearLeitura, id: \.self) { k in
                 HStack(alignment: .firstTextBaseline, spacing: DS.e3) {
-                    Text(nome(k)).font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                    Text(nome(k)).fontePainel(12.5).foregroundStyle(PV.texto2)
                     Spacer(minLength: DS.e3)
                     Text(valor(k))
                         .font(.system(size: 11.5, design: .monospaced))
@@ -520,12 +527,12 @@ struct BlocoManifestos: View {
                 HStack(spacing: DS.e3) {
                     Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(PV.mudo)
                     Text(ClarezaCota.titulo(nome: a.nome, rotulo: a.rotulo))
-                        .font(PV.fonte(12.5)).foregroundStyle(PV.texto2)
+                        .fontePainel(12.5).foregroundStyle(PV.texto2)
                     Spacer(minLength: DS.e3)
                     Button(String(localized: "Abrir manifesto")) {
                         if let u = url(a.nome) { NSWorkspace.shared.open(u) }
                     }
-                    .font(PV.fonte(11.5))
+                    .fontePainel(11.5)
                     .disabled(url(a.nome) == nil)
                 }
                 .padding(.vertical, 1)

@@ -9,6 +9,7 @@ enum PresencaApp {
         switch politica {
         case .regular:
             NSApp.setActivationPolicy(.regular)
+            MenuPrincipalApp.reexibir()
             NSApp.activate(ignoringOtherApps: true)
         case .accessory:
             NSApp.setActivationPolicy(.accessory)

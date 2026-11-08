@@ -18,6 +18,14 @@ struct PainelTela: View {
     }
 
     var body: some View {
+        ComEscalaTexto {
+            painel
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(minWidth: 1280, minHeight: 800)
+    }
+
+    private var painel: some View {
         HStack(spacing: 0) {
             BarraLateralPainel(pagina: Binding(get: { nav.pagina }, set: { trocar(para: $0) }),
                                secao: $nav.secao)
@@ -26,8 +34,11 @@ struct PainelTela: View {
                 GeometryReader { g in
                     ScrollViewReader { proxy in
                         ScrollView(.vertical) {
+                            // A largura é a da coluna. Sem isso o título longo empurra as
+                            // colunas seguintes para fora e a página ganha rolagem horizontal.
                             ConteudoPagina(modelo: modelo, pagina: pagina,
-                                           largura: max(g.size.width - 44, 900), ir: trocar)
+                                           largura: max(g.size.width - 44, 1), ir: trocar)
+                                .frame(width: max(g.size.width - 44, 1), alignment: .topLeading)
                                 .padding(.horizontal, 22)
                                 .padding(.bottom, pagina == .dashboard ? 0 : 22)
                                 .id(pagina == .ajustes ? "ajustes-\(nav.secao.rawValue)" : pagina.rawValue)
@@ -62,7 +73,6 @@ struct PainelTela: View {
         .background(PV.fundo)
         .foregroundStyle(PV.texto)
         .environment(\.colorScheme, .dark)
-        .frame(minWidth: 1280, minHeight: 800)
     }
 
     /// Origem = foto ao vivo; destino = render offscreen da página nova.
@@ -117,7 +127,8 @@ struct FotoPainel: View {
         VStack(spacing: 0) {
             CabecalhoPainel(pagina: pagina, modelo: modelo, ir: { _ in }, foto: true)
             ConteudoPagina(modelo: modelo, pagina: pagina,
-                           largura: max(tamanho.width - 44, 900), ir: { _ in })
+                           largura: max(tamanho.width - 44, 1), ir: { _ in })
+                .frame(width: max(tamanho.width - 44, 1), alignment: .topLeading)
                 .padding(.horizontal, 22)
                 .padding(.bottom, pagina == .dashboard ? 0 : 22)
                 .frame(maxHeight: .infinity, alignment: .top)
@@ -126,6 +137,7 @@ struct FotoPainel: View {
         .clipped()
         .background(PV.fundo)
         .environment(\.colorScheme, .dark)
+        .environment(\.fatorTexto, CGFloat(EscalaTextoApp.compartilhada.fator))
     }
 
     /// Renderiza a página numa imagem (meia resolução basta: as partículas são uma malha grossa).
@@ -154,7 +166,7 @@ struct BarraLateralPainel: View {
             HStack(spacing: 15) {
                 MarcaTuttiDash().frame(width: 28, height: 28)
                 (Text(verbatim: "TUTTI").foregroundColor(.white) + Text(verbatim: "DASH").foregroundColor(PV.azul))
-                    .font(PV.fonte(18.5, .bold))
+                    .fontePainel(18.5, .bold)
                     .fixedSize()
             }
             .padding(.horizontal, 14)
@@ -187,6 +199,7 @@ struct BarraLateralPainel: View {
         .padding(.top, 18)
         .padding(.horizontal, 8)
         .frame(width: 208)
+        .layoutPriority(1)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(PV.lateral)
         .overlay(alignment: .trailing) { Rectangle().fill(PV.lateralBorda).frame(width: 1) }
@@ -207,7 +220,7 @@ struct ItemSubsecao: View {
             HStack(spacing: 9) {
                 Image(systemName: simbolo).font(.system(size: 12)).frame(width: 16)
                     .foregroundStyle(selecionado ? PV.azul : PV.mudo)
-                Text(texto).font(PV.fonte(13, selecionado ? .semibold : .regular))
+                Text(texto).fontePainel(13, selecionado ? .semibold : .regular)
                     .foregroundStyle(selecionado ? Color.white : PV.icone)
                 Spacer(minLength: 0)
             }
@@ -261,7 +274,7 @@ struct ItemNavegacao: View {
                     .foregroundStyle(selecionado ? PV.azul : PV.icone)
                     .frame(width: 20)
                 Text(texto)
-                    .font(PV.fonte(14.5, selecionado ? .semibold : .regular))
+                    .fontePainel(14.5, selecionado ? .semibold : .regular)
                     .foregroundStyle(selecionado ? Color.white : PV.icone)
                 Spacer(minLength: 0)
                 if chevron {
@@ -305,6 +318,7 @@ struct CabecalhoPainel: View {
     var foto = false
     @ObservedObject private var busca = BuscaPainel.compartilhada
     @ObservedObject private var nav = NavegacaoPainel.compartilhada
+    @FocusState private var focoBusca: Bool
 
     private var secaoAjustes: SecaoAjustes? {
         guard pagina == .ajustes else { return nil }
@@ -314,27 +328,28 @@ struct CabecalhoPainel: View {
     var body: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(secaoAjustes?.nome ?? pagina.titulo).font(PV.fonte(22, .semibold))
-                Text(secaoAjustes?.subtitulo ?? pagina.subtitulo).font(PV.fonte(13)).foregroundStyle(PV.mudo)
+                Text(secaoAjustes?.nome ?? pagina.titulo).fontePainel(22, .semibold)
+                Text(secaoAjustes?.subtitulo ?? pagina.subtitulo).fontePainel(13).foregroundStyle(PV.mudo)
                     .lineLimit(1)
             }
             .padding(.leading, 5).padding(.top, 2)
             Spacer(minLength: 16)
             if pagina == .ajustes {
-                CampoBuscaAjustes(texto: $nav.busca, largura: 300, altura: 36)
+                CampoBuscaAjustes(texto: $nav.busca, largura: 300, altura: 36, pedidoFoco: nav.pedidoFocoBusca)
             } else if pagina != .dashboard {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(PV.icone)
                     if foto {
                         Text(busca.texto.isEmpty ? "Buscar lanes, builds, entregas..." : busca.texto)
-                            .font(PV.fonte(13))
+                            .fontePainel(13)
                             .foregroundStyle(busca.texto.isEmpty ? PV.mudo : PV.texto)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         TextField("", text: $busca.texto,
                                   prompt: Text("Buscar lanes, builds, entregas...").foregroundColor(PV.mudo))
-                            .textFieldStyle(.plain).font(PV.fonte(13))
+                            .textFieldStyle(.plain).fontePainel(13)
+                            .focused($focoBusca)
                             .foregroundStyle(PV.texto)
                             .tint(PV.azul)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -373,7 +388,7 @@ struct CabecalhoPainel: View {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell").font(.system(size: 19)).foregroundStyle(PV.icone)
                     if abertas > 0 {
-                        Text("\(abertas)").font(PV.fonte(10.5, .bold)).foregroundStyle(.white)
+                        Text("\(abertas)").fontePainel(10.5, .bold).foregroundStyle(.white)
                             .padding(.horizontal, 5).frame(minWidth: 17, minHeight: 17)
                             .background(Capsule().fill(PV.vermelhoPonto))
                             .overlay(Capsule().strokeBorder(PV.fundo, lineWidth: 1.5))
@@ -396,6 +411,7 @@ struct CabecalhoPainel: View {
         }
         .padding(.horizontal, 22)
         .frame(height: 60)
+        .onChange(of: nav.pedidoFocoBusca) { _, _ in focoBusca = true }
     }
 
     @ObservedObject private var caixa = EstadoCaixa.compartilhada

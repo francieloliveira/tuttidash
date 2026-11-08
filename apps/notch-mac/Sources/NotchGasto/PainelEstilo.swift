@@ -59,10 +59,6 @@ enum PV {
         Color(hex: 0x2EE6EA), Color(hex: 0x3D8BFD), Color(hex: 0x8B8CF8), Color(hex: 0xF45FBE), Color(hex: 0xF0A271),
         Color(hex: 0x5CFFC8), Color(hex: 0xFFD23F),
     ]
-
-    static func fonte(_ tamanho: CGFloat, _ peso: Font.Weight = .regular) -> Font {
-        .system(size: tamanho, weight: peso)
-    }
 }
 
 /// Páginas da barra lateral.
@@ -231,8 +227,8 @@ struct CabecalhoCartao<Direita: View>: View {
         HStack(spacing: 0) {
             icone.padding(.trailing, 14)
             VStack(alignment: .leading, spacing: 2) {
-                Text(titulo).font(PV.fonte(17, .semibold)).foregroundStyle(PV.texto)
-                Text(subtitulo).font(PV.fonte(12.5)).foregroundStyle(PV.mudo).lineLimit(1)
+                Text(titulo).fontePainel(17, .semibold).foregroundStyle(PV.texto)
+                Text(subtitulo).fontePainel(12.5).foregroundStyle(PV.mudo).lineLimit(1)
             }
             .layoutPriority(1)
             Spacer(minLength: 8)
@@ -250,7 +246,7 @@ struct SeloVersao: View {
     var body: some View {
         HStack(spacing: 6) {
             if versao.alpha {
-                Text(verbatim: "ALPHA TEST").font(PV.fonte(compacto ? 9.5 : 10, .bold)).foregroundStyle(.black)
+                Text(verbatim: "ALPHA TEST").fontePainel(compacto ? 9.5 : 10, .bold).foregroundStyle(.black)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill(PV.ambar))
             }
@@ -278,7 +274,7 @@ struct BotaoVer: View {
                 Image(systemName: "arrow.right").font(.system(size: pequeno ? 10 : 11, weight: .semibold))
             }
             .fixedSize()
-            .font(PV.fonte(pequeno ? 11.5 : 12.5))
+            .fontePainel(pequeno ? 11.5 : 12.5)
             .foregroundStyle(PV.texto)
             .padding(.horizontal, pequeno ? 10 : 11)
             .frame(height: pequeno ? 26 : 32)
@@ -298,7 +294,7 @@ struct PilulaEstado: View {
     var body: some View {
         HStack(spacing: 7) {
             Circle().fill(estado == .ativa ? PV.verde : PV.pontoPilula).frame(width: 8, height: 8)
-            Text(estado.rotulo).font(PV.fonte(12, .medium)).foregroundStyle(PV.texto)
+            Text(estado.rotulo).fontePainel(12, .medium).foregroundStyle(PV.texto)
         }
         .padding(.leading, 11).padding(.trailing, 13)
         .frame(height: 28)
@@ -377,7 +373,7 @@ struct BotaoPV: View {
 
     var body: some View {
         Button(action: acao) {
-            Text(texto).font(PV.fonte(12.5)).foregroundStyle(cor)
+            Text(texto).fontePainel(12.5).foregroundStyle(cor)
                 .padding(.horizontal, 12).frame(minHeight: 34)
                 .frame(maxWidth: .infinity)
                 .background(RoundedRectangle(cornerRadius: 8).fill(hover ? PV.azulFundo : PV.botao))
@@ -412,7 +408,7 @@ struct SeletorAbasCustos: View {
             ForEach(AbaListaCustos.allCases, id: \.self) { item in
                 Button { comAnimacao { aba = item } } label: {
                     Text(item.rotulo)
-                        .font(PV.fonte(12.5, aba == item ? .semibold : .regular))
+                        .fontePainel(12.5, aba == item ? .semibold : .regular)
                         .foregroundStyle(aba == item ? Color.white : PV.texto)
                         .padding(.horizontal, 12)
                         .frame(height: 28)
@@ -444,7 +440,7 @@ struct SeletorPeriodo: View {
             ForEach(PeriodoCustos.allCases, id: \.self) { p in
                 Button { comAnimacao { periodo = p } } label: {
                     Text(p.rotulo)
-                        .font(PV.fonte(12.5, periodo == p ? .semibold : .regular))
+                        .fontePainel(12.5, periodo == p ? .semibold : .regular)
                         .foregroundStyle(periodo == p ? Color.white : PV.texto)
                         .frame(width: p == .semana ? 78 : 66, height: 28)
                         .background { if periodo == p { RoundedRectangle(cornerRadius: 7).fill(PV.azulBotao).matchedGeometryEffect(id: "periodo", in: ns) } }
@@ -463,7 +459,7 @@ struct SeletorPeriodo: View {
 struct RotuloColuna: View {
     var texto: String
     var body: some View {
-        Text(texto.uppercased()).font(PV.fonte(11)).tracking(0.6).foregroundStyle(Color(hex: 0x8FA0BA))
+        Text(texto.uppercased()).fontePainel(11).tracking(0.6).foregroundStyle(Color(hex: 0x8FA0BA))
     }
 }
 

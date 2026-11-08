@@ -20,7 +20,7 @@ final class JanelaAjustes {
     private func mostrarAntiga(aoSalvar: @escaping () -> Void) {
         if janela == nil {
             let host = NSHostingController(rootView: TelaAjustes(aoSalvar: aoSalvar))
-            let w = NSWindow(contentViewController: host)
+            let w = JanelaComAtalhos(contentViewController: host)
             w.title = String(localized: "Ajustes")
             w.styleMask = [.titled, .closable, .miniaturizable]
             w.isReleasedWhenClosed = false
@@ -119,6 +119,7 @@ struct TelaAjustes: View {
     private let abas = CatalogoAjustes.abas()
 
     var body: some View {
+        ComEscalaTexto {
         VStack(spacing: 0) {
             TabView {
                 ForEach(abas) { aba in
@@ -148,6 +149,7 @@ struct TelaAjustes: View {
                 .font(.caption).foregroundStyle(.secondary).padding(8)
         }
         .frame(minWidth: 600, minHeight: 440)
+        }
     }
 }
 

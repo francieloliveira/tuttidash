@@ -12,7 +12,7 @@ final class JanelaPrimeiraAbertura {
         let host = NSHostingController(rootView: TelaPrimeiraAbertura(aoConcluir: { [weak self] in
             self?.janela?.close(); aoConcluir()
         }))
-        let w = NSWindow(contentViewController: host)
+        let w = JanelaComAtalhos(contentViewController: host)
         w.title = String(localized: "Bem-vindo ao TuttiDash")
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
@@ -37,6 +37,7 @@ struct TelaPrimeiraAbertura: View {
     }
 
     var body: some View {
+        ComEscalaTexto {
         VStack(alignment: .leading, spacing: 12) {
             Text(titulos[passo]).font(.title2.bold())
             Group {
@@ -67,6 +68,7 @@ struct TelaPrimeiraAbertura: View {
         }
         .padding(20)
         .frame(minWidth: 600, minHeight: 500)
+        }
     }
 
     private var boasVindas: some View {

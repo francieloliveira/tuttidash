@@ -81,8 +81,8 @@ struct CartaoAviso: View {
         HStack(alignment: .top, spacing: DS.e3) {
             Image(systemName: simbolo).font(.system(size: 16, weight: .semibold)).foregroundStyle(cor)
             VStack(alignment: .leading, spacing: 2) {
-                Text(aviso.titulo).font(PV.fonte(13, .semibold)).foregroundStyle(PV.texto)
-                if let d = aviso.detalhe { Text(d).font(PV.fonte(12)).foregroundStyle(PV.mudo).lineLimit(3) }
+                Text(aviso.titulo).fontePainel(13, .semibold).foregroundStyle(PV.texto)
+                if let d = aviso.detalhe { Text(d).fontePainel(12).foregroundStyle(PV.mudo).lineLimit(3) }
             }
             Spacer(minLength: 0)
             Button(action: fechar) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(PV.apagado) }
@@ -164,7 +164,7 @@ struct BotaoAcao: View {
                 else if let simbolo { Image(systemName: simbolo) }
                 Text(titulo)
             }
-            .font(PV.fonte(12.5, destaque ? .semibold : .regular))
+            .fontePainel(12.5, destaque ? .semibold : .regular)
             .foregroundStyle(destaque ? Color.white : PV.texto)
             .padding(.horizontal, 12).frame(height: 30)
             .background(RoundedRectangle(cornerRadius: DS.raioP + 1, style: .continuous)
@@ -216,7 +216,7 @@ struct BarraProgresso: View {
             if mostrarLegenda {
                 TimelineView(.periodic(from: .now, by: 1)) { ctx in
                     let t = progresso.legenda(agora: ctx.date)
-                    if !t.isEmpty { Text(t).font(PV.fonte(11)).foregroundStyle(PV.mudo).monospacedDigit() }
+                    if !t.isEmpty { Text(t).fontePainel(11).foregroundStyle(PV.mudo).monospacedDigit() }
                 }
             }
         }
@@ -274,7 +274,7 @@ struct BarraUso: View {
             .frame(height: altura)
             if mostrarNumero {
                 Text(pct.map { "\(Int($0.rounded()))%" } ?? "—")
-                    .font(PV.fonte(12, .semibold)).monospacedDigit()
+                    .fontePainel(12, .semibold).monospacedDigit()
                     .foregroundStyle(pct.map { Uso.nivel($0).cor } ?? PV.apagado)
                     .contentTransition(.numericText())
                     .frame(width: 40, alignment: .trailing)
@@ -298,7 +298,7 @@ struct SeloAtualizado: View {
             else { Circle().fill(data == nil ? PV.apagado : PV.verde).frame(width: 6, height: 6) }
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 Text(carregando ? String(localized: "atualizando…") : TextoTempo.atualizado(data, agora: ctx.date))
-                    .font(PV.fonte(11)).foregroundStyle(PV.mudo).monospacedDigit()
+                    .fontePainel(11).foregroundStyle(PV.mudo).monospacedDigit()
             }
         }
     }

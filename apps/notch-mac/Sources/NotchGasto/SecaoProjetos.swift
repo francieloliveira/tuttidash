@@ -330,7 +330,7 @@ struct SecaoProjetos: View {
 
     private var rodape: some View {
         Text(String(localized: "As lanes pegam cards só de projetos ligados. Com mais de um ligado, vale o principal; os outros esperam a vez."))
-            .font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+            .fontePainel(11.5).foregroundStyle(PV.mudo)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

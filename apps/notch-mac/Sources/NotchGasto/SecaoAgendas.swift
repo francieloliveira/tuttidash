@@ -159,12 +159,12 @@ struct SecaoAgendas: View {
                             fundo: corStatus(estado.status[t.label]).opacity(0.14), tamanho: 32, tamanhoIcone: 15)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
-                        Text(t.nomeCurto).font(PV.fonte(13.5, .semibold))
+                        Text(t.nomeCurto).fontePainel(13.5, .semibold)
                         HStack(spacing: 5) {
                             Circle().fill(corStatus(estado.status[t.label])).frame(width: 6, height: 6)
                             Text(estado.status[t.label]?.rotulo ?? String(localized: "lendo…"))
                         }
-                        .font(PV.fonte(11)).foregroundStyle(corStatus(estado.status[t.label]))
+                        .fontePainel(11).foregroundStyle(corStatus(estado.status[t.label]))
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Capsule().fill(corStatus(estado.status[t.label]).opacity(0.12)))
                     }

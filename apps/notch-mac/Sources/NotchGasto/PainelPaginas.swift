@@ -7,7 +7,7 @@ private func cartaoPagina<C: View>(_ titulo: String, @ViewBuilder direita: () ->
                                    @ViewBuilder conteudo: () -> C) -> some View {
     VStack(alignment: .leading, spacing: 10) {
         HStack(spacing: 10) {
-            Text(titulo).font(PV.fonte(15, .semibold))
+            Text(titulo).fontePainel(15, .semibold)
             Spacer(minLength: 8)
             direita()
         }
@@ -24,13 +24,13 @@ private func par(_ nome: String, _ valor: String, cor: Color = PV.texto) -> some
         Spacer(minLength: 8)
         Text(valor).foregroundStyle(cor).lineLimit(1).truncationMode(.middle)
     }
-    .font(PV.fonte(12.5))
+    .fontePainel(12.5)
 }
 
 private func stat(_ nome: String, _ valor: String, cor: Color = PV.verde) -> some View {
     VStack(alignment: .leading, spacing: 3) {
-        Text(nome).font(PV.fonte(11)).foregroundStyle(PV.mudo)
-        Text(valor).font(PV.fonte(14, .semibold)).foregroundStyle(cor).lineLimit(1)
+        Text(nome).fontePainel(11).foregroundStyle(PV.mudo)
+        Text(valor).fontePainel(14, .semibold).foregroundStyle(cor).lineLimit(1)
     }
     .padding(.horizontal, 12).padding(.vertical, 10)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -63,30 +63,30 @@ struct PaginaLanes: View {
                     } else if modelo.snapshot == nil {
                         VStack(spacing: 6) { ForEach(0..<4, id: \.self) { _ in Esqueleto(altura: 51) } }
                     } else {
-                        Text("Sem leitura das lanes").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                        Text("Sem leitura das lanes").fontePainel(12.5).foregroundStyle(PV.mudo)
                     }
                 }
                 VStack(spacing: 12) {
                     cartaoPagina("Parou · retomar", direita: {
-                        Text("últimos 7 dias").font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        Text("últimos 7 dias").fontePainel(11.5).foregroundStyle(PV.mudo)
                     }) {
                         // Card cancelado não é retomado (caixa do dono, 29/10): o vigia já limpou as pendências.
                         let retomadas = modelo.retomadas.filter { !EstadoCaixa.compartilhada.arquivo.cancelados.contains($0.card) }
                         if retomadas.isEmpty {
-                            Text("Nenhuma lane parou sem fechar o card.").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                            Text("Nenhuma lane parou sem fechar o card.").fontePainel(12.5).foregroundStyle(PV.mudo)
                         } else {
                             ForEach(Array(retomadas.enumerated()), id: \.offset) { _, r in
                                 HStack(spacing: 10) {
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(spacing: 6) {
-                                            Text(r.card).font(PV.fonte(12.5, .semibold)).foregroundStyle(PV.azul)
-                                            Text("· \(r.lane)").font(PV.fonte(12.5))
+                                            Text(r.card).fontePainel(12.5, .semibold).foregroundStyle(PV.azul)
+                                            Text("· \(r.lane)").fontePainel(12.5)
                                         }
                                         Text("\(r.rotulo) · \(haPainel(r.inicio, agora: ctx.date) ?? "")")
-                                            .font(PV.fonte(11.5))
+                                            .fontePainel(11.5)
                                             .foregroundStyle(r.rotulo == "lane:falhou" ? Color(hex: 0xFF8DA3) : PV.ambar)
                                         if let m = r.motivo {
-                                            Text(m).font(PV.fonte(11)).foregroundStyle(PV.mudo).lineLimit(1)
+                                            Text(m).fontePainel(11).foregroundStyle(PV.mudo).lineLimit(1)
                                         }
                                     }
                                     Spacer(minLength: 6)
@@ -97,7 +97,7 @@ struct PaginaLanes: View {
                                 .linhaPV(borda: false)
                             }
                             Text("retomar copia o comando para a área de transferência.")
-                                .font(PV.fonte(11.5)).foregroundStyle(Color(hex: 0x8FA0BA))
+                                .fontePainel(11.5).foregroundStyle(Color(hex: 0x8FA0BA))
                         }
                     }
                     cartaoPagina("Ferramentas") {
@@ -137,7 +137,7 @@ struct PaginaBuilds: View {
                             BarraPV(fracao: 0, cor: PV.azulIcone, altura: 6, trilho: PV.trilho)
                         }
                         if let ctx = ResumoLock.contexto(lockLane: snap?.lockLane, rodando: snap?.lanes ?? []) {
-                            Text(ctx).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                            Text(ctx).fontePainel(11.5).foregroundStyle(PV.mudo)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         if let s = snap?.simulador, s != "sem leitura ainda" {
@@ -145,21 +145,21 @@ struct PaginaBuilds: View {
                         }
                     }
                     cartaoPagina("Esperando o lock (\(fila.count))", direita: {
-                        Text("uma prova por vez").font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        Text("uma prova por vez").fontePainel(11.5).foregroundStyle(PV.mudo)
                     }) {
                         if fila.isEmpty {
-                            Text("Nenhuma prova esperando para compilar.").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                            Text("Nenhuma prova esperando para compilar.").fontePainel(12.5).foregroundStyle(PV.mudo)
                         }
                         ForEach(Array(fila.enumerated()), id: \.offset) { _, carta in
                             HStack(spacing: 10) {
                                 Text("#—").foregroundStyle(PV.mudo).frame(width: 46, alignment: .leading)
                                 Text("\(carta.lane) · \(carta.card)").lineLimit(1)
                                 Spacer(minLength: 6)
-                                Text("aguardando · \(carta.posicaoFila ?? 0)º").font(PV.fonte(10)).foregroundStyle(PV.mudo)
+                                Text("aguardando · \(carta.posicaoFila ?? 0)º").fontePainel(10).foregroundStyle(PV.mudo)
                                     .padding(.horizontal, 7).padding(.vertical, 3)
                                     .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
                             }
-                            .font(PV.fonte(12.5))
+                            .fontePainel(12.5)
                             .padding(.horizontal, 12).padding(.vertical, 10)
                             .linhaPV(borda: false)
                         }
@@ -173,12 +173,12 @@ struct PaginaBuilds: View {
 
                 VStack(spacing: 12) {
                     cartaoPagina("Builds de hoje", direita: {
-                        Text(resumoBuilds).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        Text(resumoBuilds).fontePainel(11.5).foregroundStyle(PV.mudo)
                     }) {
                         let builds = FiltroBusca(busca.texto).filtrar(snap?.buildsHoje ?? []) { b in
                             [b.card, b.titulo, b.lane] }
                         if builds.isEmpty {
-                            Text("Nenhuma build hoje").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                            Text("Nenhuma build hoje").fontePainel(12.5).foregroundStyle(PV.mudo)
                         } else {
                             HStack(spacing: 0) {
                                 RotuloColuna(texto: "Build").frame(width: 80, alignment: .leading)
@@ -195,7 +195,7 @@ struct PaginaBuilds: View {
                                     Text(verbatim: b.numero.map { "#" + String($0) } ?? "—").frame(width: 80, alignment: .leading)
                                     Button { modelo.abrirCard(b.card) } label: {
                                         Text(b.card)
-                                            .font(PV.fonte(12.5, .semibold))
+                                            .fontePainel(12.5, .semibold)
                                             .foregroundStyle(PV.azul)
                                             .frame(width: 100, alignment: .leading)
                                             .contentShape(Rectangle())
@@ -211,7 +211,7 @@ struct PaginaBuilds: View {
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(b.textoStatus).foregroundStyle(b.naProva ? PV.ambar : cor(b.status))
                                         if let d = b.desfecho {
-                                            Text(d).font(PV.fonte(10)).foregroundStyle(PV.mudo).lineLimit(1)
+                                            Text(d).fontePainel(10).foregroundStyle(PV.mudo).lineLimit(1)
                                         }
                                     }
                                     .frame(width: 100, alignment: .leading)
@@ -220,7 +220,7 @@ struct PaginaBuilds: View {
                                         .foregroundStyle(b.custo.rotuloFixo == nil && b.custoUSD != nil ? PV.texto : PV.mudo)
                                         .frame(width: 110, alignment: .trailing)
                                 }
-                                .font(PV.fonte(12.5))
+                                .fontePainel(12.5)
                                 .padding(.horizontal, 10)
                                 .frame(height: 40)
                                 .background(RoundedRectangle(cornerRadius: 8).fill(PV.linha))
@@ -236,7 +236,7 @@ struct PaginaBuilds: View {
                         }
                     }
                     cartaoPagina("Log do dispatcher", direita: {
-                        Text("só leitura").font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        Text("só leitura").fontePainel(11.5).foregroundStyle(PV.mudo)
                         BotaoVer(texto: modelo.logDetalhado ? "Ocultar log detalhado" : "Ver log detalhado", pequeno: true) {
                             modelo.logDetalhado.toggle()
                         }
@@ -325,11 +325,11 @@ struct PaginaEntregas: View {
                 }
                 cartaoPagina("Entregas") {
                     if fatia.total == 0 {
-                        Text("Nenhum card fechado neste registro").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                        Text("Nenhum card fechado neste registro").fontePainel(12.5).foregroundStyle(PV.mudo)
                     } else {
                         HStack(spacing: 10) {
                             Text("Total: \(Formato.plural(fatia.total, "card", "cards"))")
-                                .font(PV.fonte(12)).foregroundStyle(PV.mudo)
+                                .fontePainel(12).foregroundStyle(PV.mudo)
                             Spacer(minLength: 8)
                             controles(fatia)
                         }
@@ -344,10 +344,10 @@ struct PaginaEntregas: View {
 
     private func controles(_ fatia: ListaPaginada<EntregaPainel>) -> some View {
         HStack(spacing: 8) {
-            Text(fatia.intervalo).font(PV.fonte(12)).foregroundStyle(PV.mudo)
+            Text(fatia.intervalo).fontePainel(12).foregroundStyle(PV.mudo)
             BotaoPaginaCustos(texto: "Anterior", ativo: fatia.temAnterior) { pagina = fatia.pagina - 1 }
             Text("página \(fatia.pagina) de \(fatia.paginas)")
-                .font(PV.fonte(12)).foregroundStyle(PV.mudo)
+                .fontePainel(12).foregroundStyle(PV.mudo)
                 .fixedSize()
             BotaoPaginaCustos(texto: "Próxima", ativo: fatia.temProxima) { pagina = fatia.pagina + 1 }
         }
@@ -388,7 +388,7 @@ private struct TabelaEntregas: View {
                         .lineLimit(1)
                         .frame(width: 130, alignment: .trailing)
                 }
-                .font(PV.fonte(12.5))
+                .fontePainel(12.5)
                 .padding(.horizontal, 10).frame(height: 40)
                 .background(RoundedRectangle(cornerRadius: 8).fill(PV.linha))
             }
@@ -398,7 +398,7 @@ private struct TabelaEntregas: View {
     private func celulaCard(_ card: String) -> some View {
         Button { abrirCard(card) } label: {
             Text(card)
-                .font(PV.fonte(12.5, .semibold))
+                .fontePainel(12.5, .semibold)
                 .foregroundStyle(PV.azul)
                 .frame(width: 100, alignment: .leading)
                 .contentShape(Rectangle())
@@ -413,7 +413,7 @@ private struct TabelaEntregas: View {
         if let endereco = entrega.urlPR, let url = URL(string: endereco) {
             Button { abrirEndereco(url) } label: {
                 Text(Self.rotuloPR(entrega.pr))
-                    .font(PV.fonte(12.5, .semibold))
+                    .fontePainel(12.5, .semibold)
                     .foregroundStyle(PV.azul)
                     .frame(width: 90, alignment: .leading)
                     .contentShape(Rectangle())
@@ -449,7 +449,7 @@ struct PaginaCustos: View {
             VStack(spacing: 13) {
                 HStack(alignment: .top, spacing: 13) {
                     cartaoPagina("Resumo", direita: {
-                        Text(moeda.detalhe).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                        Text(moeda.detalhe).fontePainel(11.5).foregroundStyle(PV.mudo)
                     }) {
                         HStack(spacing: 8) {
                             stat("Gasto de hoje", snap?.custos.hoje.map { moeda.texto($0) }
@@ -460,17 +460,17 @@ struct PaginaCustos: View {
                         }
                         if let n = snap?.custos.desconhecidasSemana, n > 0 {
                             Text("\(Formato.plural(n, "execução", "execuções")) dos últimos 7 dias com custo desconhecido, fora da soma.")
-                                .font(PV.fonte(12)).foregroundStyle(PV.mudo)
+                                .fontePainel(12).foregroundStyle(PV.mudo)
                         }
                     }
                     cartaoPagina("Uso por conta") {
                         ForEach(Array((snap?.custos.uso ?? []).enumerated()), id: \.offset) { _, uso in
                             HStack(spacing: 10) {
-                                Text(uso.lane).font(PV.fonte(12.5)).frame(width: 90, alignment: .leading)
+                                Text(uso.lane).fontePainel(12.5).frame(width: 90, alignment: .leading)
                                 BarraPV(fracao: (uso.pct ?? 0) / 100, cor: uso.pct.map { Uso.nivel($0).cor } ?? PV.azulIcone,
                                         altura: 8, trilho: PV.trilho)
                                 Text(uso.pct.map { Formato.pct($0) + (uso.janela.map { " \($0)" } ?? "") } ?? "sem medida")
-                                    .font(PV.fonte(12.5, uso.pct == nil ? .regular : .semibold))
+                                    .fontePainel(12.5, uso.pct == nil ? .regular : .semibold)
                                     .foregroundStyle(uso.pct == nil ? PV.mudo : ((uso.pct ?? 0) >= Uso.pctAtencao ? PV.ambar : PV.texto))
                                     .frame(width: 90, alignment: .trailing)
                             }
@@ -489,7 +489,7 @@ struct PaginaCustos: View {
                         HStack(spacing: 10) {
                             if let total = p?.total {
                                 Text("Total do período: \(moeda.texto(total))")
-                                    .font(PV.fonte(12)).foregroundStyle(PV.mudo)
+                                    .fontePainel(12).foregroundStyle(PV.mudo)
                             }
                             Spacer(minLength: 8)
                             if aba == .todos, fatia.total > 0 {
@@ -500,7 +500,7 @@ struct PaginaCustos: View {
                     switch aba {
                     case .todos:
                         if fatia.total == 0 {
-                            Text("Nenhum build neste período").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                            Text("Nenhum build neste período").fontePainel(12.5).foregroundStyle(PV.mudo)
                         } else {
                             TabelaCustosBuilds(cards: fatia.itens,
                                                indiceInicial: (fatia.pagina - 1) * fatia.tamanho,
@@ -508,7 +508,7 @@ struct PaginaCustos: View {
                         }
                     case .maisCaros:
                         if top.isEmpty {
-                            Text("Sem gasto conhecido neste período").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                            Text("Sem gasto conhecido neste período").fontePainel(12.5).foregroundStyle(PV.mudo)
                         } else {
                             TabelaCustosBuilds(cards: top, indiceInicial: 0, moeda: moeda,
                                                agora: ctx.date, abrir: modelo.abrirCard)
@@ -524,10 +524,10 @@ struct PaginaCustos: View {
 
     private func controles(_ fatia: GastoCore.PaginaBuilds) -> some View {
         HStack(spacing: 8) {
-            Text(fatia.intervalo).font(PV.fonte(12)).foregroundStyle(PV.mudo)
+            Text(fatia.intervalo).fontePainel(12).foregroundStyle(PV.mudo)
             BotaoPaginaCustos(texto: "Anterior", ativo: fatia.temAnterior) { pagina = fatia.pagina - 1 }
             Text("página \(fatia.pagina) de \(fatia.paginas)")
-                .font(PV.fonte(12)).foregroundStyle(PV.mudo)
+                .fontePainel(12).foregroundStyle(PV.mudo)
                 .fixedSize()
             BotaoPaginaCustos(texto: "Próxima", ativo: fatia.temProxima) { pagina = fatia.pagina + 1 }
         }
@@ -544,42 +544,69 @@ private struct TabelaCustosBuilds: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 0) {
-                RotuloColuna(texto: "#").frame(width: 40, alignment: .leading)
-                RotuloColuna(texto: "Card").frame(width: 100, alignment: .leading)
-                RotuloColuna(texto: "Título").frame(maxWidth: .infinity, alignment: .leading)
-                RotuloColuna(texto: "Lane").frame(width: 100, alignment: .leading)
-                RotuloColuna(texto: "Status").frame(width: 90, alignment: .leading)
-                RotuloColuna(texto: "Duração").frame(width: 90, alignment: .trailing)
-                RotuloColuna(texto: "Custo").frame(width: 110, alignment: .trailing)
-                RotuloColuna(texto: "Quando").frame(width: 100, alignment: .trailing)
+            HStack(spacing: 8) {
+                rotulo("#", 36)
+                rotulo("Card", 88)
+                RotuloColuna(texto: "Título").lineLimit(1)
+                    .padding(.trailing, 12)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                rotulo("Lane", 96)
+                rotulo("Status", 110)
+                rotulo("Duração", 78, .trailing)
+                rotulo("Custo", 88, .trailing)
+                rotulo("Quando", 72, .trailing)
             }
             .padding(.horizontal, 10)
             ForEach(Array(cards.enumerated()), id: \.element.card) { i, card in
-                HStack(spacing: 0) {
-                    Text("\(indiceInicial + i + 1)").frame(width: 40, alignment: .leading)
+                HStack(spacing: 8) {
+                    celula("\(indiceInicial + i + 1)", 36)
                     Button { abrir(card.card) } label: {
-                        Text(card.card).font(PV.fonte(12.5, .semibold)).foregroundStyle(PV.azul)
+                        Text(card.card).fontePainel(12.5, .semibold).foregroundStyle(PV.azul).lineLimit(1)
                     }
-                    .buttonStyle(.plain).frame(width: 100, alignment: .leading)
-                    Text(card.descricao ?? card.card).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(card.lane).frame(width: 100, alignment: .leading)
+                    .buttonStyle(.plain)
+                    .frame(width: 88, alignment: .leading)
+                    .layoutPriority(1)
+                    Text(card.descricao ?? card.card)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.trailing, 12)
+                        .frame(minWidth: 40, maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(-1)
+                    celula(card.lane, 96)
                     Text(card.motivo ?? Formato.plural(card.tentativas, "tentativa", "tentativas"))
                         .foregroundStyle(card.destaque ? Color(hex: 0xFF8DA3) : PV.mudo)
                         .lineLimit(1)
-                        .frame(width: 90, alignment: .leading)
-                    Text(Formato.duracao(ms: card.duracaoMs)).frame(width: 90, alignment: .trailing)
+                        .frame(width: 110, alignment: .leading)
+                        .layoutPriority(1)
+                    celula(Formato.duracao(ms: card.duracaoMs), 78, .trailing)
                     Text(card.custoUSD.map { moeda.texto($0) } ?? "sem custo")
-                        .font(PV.fonte(12.5, .semibold)).foregroundStyle(card.custoUSD == nil ? PV.mudo : PV.vermelho)
-                        .frame(width: 110, alignment: .trailing)
-                    Text(haPainel(card.ultimoInicio, agora: agora) ?? "").foregroundStyle(PV.mudo)
-                        .frame(width: 100, alignment: .trailing)
+                        .fontePainel(12.5, .semibold).foregroundStyle(card.custoUSD == nil ? PV.mudo : PV.vermelho)
+                        .lineLimit(1)
+                        .frame(width: 88, alignment: .trailing)
+                        .layoutPriority(1)
+                    celula(haPainel(card.ultimoInicio, agora: agora) ?? "", 72, .trailing, mudo: true)
                 }
-                .font(PV.fonte(12.5))
+                .fontePainel(12.5)
                 .padding(.horizontal, 10).frame(height: 40)
                 .background(RoundedRectangle(cornerRadius: 8).fill(card.destaque ? Color(hex: 0x2A1324) : PV.linha))
             }
         }
+    }
+
+    private func rotulo(_ texto: String, _ largura: CGFloat, _ alinhamento: Alignment = .leading) -> some View {
+        RotuloColuna(texto: texto)
+            .frame(width: largura, alignment: alinhamento)
+            .layoutPriority(1)
+    }
+
+    /// Coluna de largura fixa. A prioridade impede o título de pintar por cima dela.
+    private func celula(_ texto: String, _ largura: CGFloat, _ alinhamento: Alignment = .leading, mudo: Bool = false) -> some View {
+        Text(texto)
+            .lineLimit(1)
+            .foregroundStyle(mudo ? PV.mudo : PV.texto)
+            .frame(width: largura, alignment: alinhamento)
+            .layoutPriority(1)
     }
 }
 
@@ -592,7 +619,7 @@ private struct BotaoPaginaCustos: View {
     var body: some View {
         Button(action: acao) {
             Text(texto)
-                .font(PV.fonte(12.5, .medium))
+                .fontePainel(12.5, .medium)
                 .foregroundStyle(ativo ? PV.texto : PV.apagado)
                 .padding(.horizontal, 12)
                 .frame(height: 28)
@@ -619,7 +646,7 @@ struct PaginaTestes: View {
         VStack(spacing: 13) {
             HStack(alignment: .top, spacing: 13) {
                 cartaoPagina("Prova em curso", direita: {
-                    Text("lock único: uma prova por vez").font(PV.fonte(11.5)).foregroundStyle(PV.ambar)
+                    Text("lock único: uma prova por vez").fontePainel(11.5).foregroundStyle(PV.ambar)
                 }) {
                     if let provas = snap?.provas, !provas.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -633,7 +660,7 @@ struct PaginaTestes: View {
                                             Text(prova.posicaoFila.map { "fila \($0)º" } ?? (prova.emCurso ? "rodando" : prova.card))
                                                 .foregroundStyle(PV.mudo)
                                         }
-                                        .font(PV.fonte(12))
+                                        .fontePainel(12)
                                         .padding(.horizontal, 12).frame(height: 32)
                                         .background(Capsule().fill(foco ? PV.navSelecao : PV.linha))
                                         .overlay(Capsule().strokeBorder(foco ? PV.navSelecaoBorda : PV.campoBorda, lineWidth: 1))
@@ -646,7 +673,7 @@ struct PaginaTestes: View {
                             CartaoProvaV2(carta: carta)
                         }
                     } else {
-                        Text("Nenhuma prova agora").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                        Text("Nenhuma prova agora").fontePainel(12.5).foregroundStyle(PV.mudo)
                         RegraZeroTestes(alerta: false)
                     }
                 }
@@ -660,7 +687,7 @@ struct PaginaTestes: View {
                             Text("— ignorado").foregroundStyle(PV.mudo).help("Testes ignorados: em breve")
                             Text(Formato.plural(ind.provasHoje, "prova hoje", "provas hoje")).foregroundStyle(PV.mudo)
                         }
-                        .font(PV.fonte(12.5))
+                        .fontePainel(12.5)
                     }
                 }
                 .frame(width: 380)
@@ -669,13 +696,13 @@ struct PaginaTestes: View {
                 let historico = FiltroBusca(busca.texto).filtrar(snap?.historico ?? []) { h in
                     [h.card, h.titulo, h.lane, h.selo] }
                 if historico.isEmpty {
-                    Text("Sem prova terminada ainda").font(PV.fonte(12.5)).foregroundStyle(PV.mudo)
+                    Text("Sem prova terminada ainda").fontePainel(12.5).foregroundStyle(PV.mudo)
                 } else {
                     let fatia = ListaPaginada.cortar(historico, numero: paginaHistorico, vazio: "0 provas")
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 10) {
                             Text(Formato.plural(historico.count, "prova", "provas"))
-                                .font(PV.fonte(12)).foregroundStyle(PV.mudo)
+                                .fontePainel(12).foregroundStyle(PV.mudo)
                             Spacer(minLength: 8)
                             controlesHistorico(fatia)
                         }
@@ -689,10 +716,10 @@ struct PaginaTestes: View {
 
     private func controlesHistorico(_ fatia: ListaPaginada<ResumoProvaHistorico>) -> some View {
         HStack(spacing: 8) {
-            Text(fatia.intervalo).font(PV.fonte(12)).foregroundStyle(PV.mudo)
+            Text(fatia.intervalo).fontePainel(12).foregroundStyle(PV.mudo)
             BotaoPaginaCustos(texto: "Anterior", ativo: fatia.temAnterior) { paginaHistorico = fatia.pagina - 1 }
             Text("página \(fatia.pagina) de \(fatia.paginas)")
-                .font(PV.fonte(12)).foregroundStyle(PV.mudo)
+                .fontePainel(12).foregroundStyle(PV.mudo)
                 .fixedSize()
             BotaoPaginaCustos(texto: "Próxima", ativo: fatia.temProxima) { paginaHistorico = fatia.pagina + 1 }
         }
@@ -719,7 +746,7 @@ private struct TabelaHistoricoTestes: View {
                 let falha = item.falha || item.zeroTestes
                 HStack(spacing: 0) {
                     Button { abrir(item.card) } label: {
-                        Text(item.card).font(PV.fonte(12.5, .semibold)).foregroundStyle(PV.azul)
+                        Text(item.card).fontePainel(12.5, .semibold).foregroundStyle(PV.azul)
                             .lineLimit(1)
                     }
                     .buttonStyle(.plain).frame(width: 90, alignment: .leading)
@@ -732,7 +759,7 @@ private struct TabelaHistoricoTestes: View {
                         .lineLimit(1)
                         .frame(width: 90, alignment: .leading)
                     Text(item.selo)
-                        .font(PV.fonte(12.5, .semibold))
+                        .fontePainel(12.5, .semibold)
                         .foregroundStyle(corSelo(item))
                         .lineLimit(1)
                         .frame(width: 90, alignment: .leading)
@@ -744,7 +771,7 @@ private struct TabelaHistoricoTestes: View {
                         .frame(width: 110, alignment: .trailing)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .font(PV.fonte(12.5))
+                .fontePainel(12.5)
                 .padding(.horizontal, 10).frame(height: 40)
                 .background(RoundedRectangle(cornerRadius: 8).fill(falha ? Color(hex: 0x2A1324) : PV.linha))
             }
@@ -770,31 +797,31 @@ struct CartaoProvaV2: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 14) {
-                Text(carta.card).font(PV.fonte(16, .bold)).foregroundStyle(PV.azul)
+                Text(carta.card).fontePainel(16, .bold).foregroundStyle(PV.azul)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(carta.descricao).font(PV.fonte(12.5)).lineLimit(2)
-                    Text(subtitulo).font(PV.fonte(11.5)).foregroundStyle(PV.mudo)
+                    Text(carta.descricao).fontePainel(12.5).lineLimit(2)
+                    Text(subtitulo).fontePainel(11.5).foregroundStyle(PV.mudo)
                 }
                 Spacer(minLength: 8)
                 Text(carta.posicaoFila.map { "posição \($0) na fila" } ?? "tentativa \(carta.tentativa) de \(carta.tentativas)")
-                    .font(PV.fonte(12, .semibold)).foregroundStyle(PV.ambar)
+                    .fontePainel(12, .semibold).foregroundStyle(PV.ambar)
             }
             if carta.posicaoFila != nil {
                 HStack(spacing: 12) {
                     Text(carta.esperaSegundos.map { Formato.relogio($0) } ?? "sem relógio")
-                        .font(PV.fonte(20, .semibold)).foregroundStyle(PV.ambar)
-                    Text(carta.proximaAcao).font(PV.fonte(12)).foregroundStyle(PV.mudo)
+                        .fontePainel(20, .semibold).foregroundStyle(PV.ambar)
+                    Text(carta.proximaAcao).fontePainel(12).foregroundStyle(PV.mudo)
                 }
             } else {
                 fases
                 if !carta.suites.isEmpty { GradeSuites(suites: carta.suites) }
                 if let motivo = carta.motivo {
-                    Text(motivo).font(PV.fonte(12))
+                    Text(motivo).fontePainel(12)
                         .foregroundStyle(carta.zeroTestes || carta.falha ? Color(hex: 0xFFB3C1) : PV.texto)
                         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 8).fill(PV.vermelho.opacity(carta.falha || carta.zeroTestes ? 0.16 : 0.08)))
                 }
-                Text("Próxima ação: \(carta.proximaAcao)").font(PV.fonte(12.5)).foregroundStyle(Color(hex: 0x8CC4FF))
+                Text("Próxima ação: \(carta.proximaAcao)").fontePainel(12.5).foregroundStyle(Color(hex: 0x8CC4FF))
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 8).fill(PV.navSelecao))
                 RegraZeroTestes(alerta: carta.zeroTestes)
@@ -815,13 +842,13 @@ struct CartaoProvaV2: View {
             ForEach(Array(carta.fases.enumerated()), id: \.offset) { i, fase in
                 VStack(spacing: 4) {
                     Text(marca(fase, i))
-                        .font(PV.fonte(11, .semibold))
+                        .fontePainel(11, .semibold)
                         .foregroundStyle(fase.marca == .atual ? Color(hex: 0x04121F) : PV.texto)
                         .frame(width: 28, height: 28)
                         .background(Circle().fill(fundo(fase.marca)))
                         .overlay(Circle().strokeBorder(borda(fase.marca), lineWidth: 1))
-                    Text(fase.fase.rotulo).font(PV.fonte(12.5, .semibold))
-                    Text(fase.detalhe).font(PV.fonte(11)).foregroundStyle(PV.mudo).lineLimit(1)
+                    Text(fase.fase.rotulo).fontePainel(12.5, .semibold)
+                    Text(fase.detalhe).fontePainel(11).foregroundStyle(PV.mudo).lineLimit(1)
                 }
                 .frame(maxWidth: .infinity)
                 .background(alignment: .top) {
@@ -878,7 +905,7 @@ struct GradeSuites: View {
                 if !falhas.isEmpty { Text("\(falhas.count) falha").foregroundStyle(PV.vermelho) }
                 if pendentes > 0 { Text("\(pendentes) pendente").foregroundStyle(PV.mudo) }
             }
-            .font(PV.fonte(12.5))
+            .fontePainel(12.5)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 9, maximum: 12), spacing: 3)], alignment: .leading, spacing: 3) {
                 ForEach(Array(suites.enumerated()), id: \.offset) { _, suite in
                     RoundedRectangle(cornerRadius: 2).fill(cor(suite.estado)).frame(height: 9)
@@ -891,7 +918,7 @@ struct GradeSuites: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(suite.nome).font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .lineLimit(1).truncationMode(.middle)
-                            Text(legenda(suite)).font(PV.fonte(11)).foregroundStyle(Color(hex: 0xFFB3C1))
+                            Text(legenda(suite)).fontePainel(11).foregroundStyle(Color(hex: 0xFFB3C1))
                         }
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: 0x2A1324)))
@@ -927,12 +954,12 @@ struct RegraZeroTestes: View {
     var body: some View {
         HStack(spacing: 8) {
             if alerta {
-                Text("!").font(PV.fonte(12, .bold)).foregroundStyle(.white).frame(width: 20, height: 20)
+                Text("!").fontePainel(12, .bold).foregroundStyle(.white).frame(width: 20, height: 20)
                     .background(Circle().fill(PV.vermelho))
             }
-            Text("0 testes rodados = falha.").font(PV.fonte(12.5, alerta ? .semibold : .regular))
+            Text("0 testes rodados = falha.").fontePainel(12.5, alerta ? .semibold : .regular)
                 .foregroundStyle(alerta ? PV.vermelho : PV.mudo)
-            Text("A prova é reprovada mesmo que o xcodebuild diga sucesso.").font(PV.fonte(12.5))
+            Text("A prova é reprovada mesmo que o xcodebuild diga sucesso.").fontePainel(12.5)
                 .foregroundStyle(alerta ? Color(hex: 0xFFB3C1) : PV.mudo)
         }
         .padding(alerta ? 10 : 0)
