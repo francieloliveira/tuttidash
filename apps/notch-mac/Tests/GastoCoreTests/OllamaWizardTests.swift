@@ -13,32 +13,50 @@ final class OllamaWizardTests: XCTestCase {
     func testLerTagsECarregados() throws {
         let tags = Data(#"{"models":[{"name":"qwen3:8b","size":5200000000},{"name":"sem-tamanho"}]}"#.utf8)
         XCTAssertEqual(OllamaWizard.lerTags(tags), [.init(nome: "qwen3:8b", tamanho: 5_200_000_000)])
-        let ps = Data(#"{"models":[{"name":"gemma4:12b","model":"gemma4:12b","size":9100000000}]}"#.utf8)
-        XCTAssertEqual(OllamaWizard.lerCarregados(ps), [.init(nome: "gemma4:12b", tamanho: 9_100_000_000)])
+        let ps = Data(#"{"models":[{"name":"gemma4:12b","model":"gemma4:12b","size":9100000000,"context_length":32768}]}"#.utf8)
+        XCTAssertEqual(OllamaWizard.lerCarregados(ps), [.init(nome: "gemma4:12b", tamanho: 9_100_000_000, contexto: 32_768)])
         XCTAssertNil(OllamaWizard.lerTags(Data("x".utf8)))
     }
 
-    func testSemEscolhaUsaOSugeridoQuandoBaixado() {
+    func testSemEscolhaUsaOSugeridoQuandoCabe() {
         XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: 12 * gb), .usar("qwen3:8b"))
     }
 
-    func testSemSugeridoUsaOMaiorQueCabeENuncaEmbedding() {
+    func testSemTetoOGemmaEntraQuandoAMemoriaDeixa() {
         let sem = baixados.filter { $0.nome != "qwen3:8b" }
-        XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 12 * gb), .usar("phi3:mini"))
+        XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 12 * gb), .usar("gemma4:12b"))
+        XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "gemma4:12b", disponivel: 12 * gb),
+                       .usar("gemma4:12b"))
+        // Sem memória para o maior, cai no que cabe.
+        XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 5 * gb), .usar("phi3:mini"))
+    }
+
+    func testReaproveitaOModeloDoHermesCarregadoSemMemoriaNova() {
+        let hermes = [OllamaWizard.ModeloBaixado(nome: "gemma4:12b", tamanho: 9_100_000_000, contexto: 32_768)]
+        XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: 1 * gb, carregados: hermes),
+                       .usar("gemma4:12b"))
+        let semContexto = [OllamaWizard.ModeloBaixado(nome: "gemma4:12b", tamanho: 9_100_000_000)]
+        XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: 1 * gb, carregados: semContexto),
+                       .usar("gemma4:12b"))
+    }
+
+    func testCarregadoComContextoCurtoNaoERecarregado() {
+        let curto = [OllamaWizard.ModeloBaixado(nome: "gemma4:12b", tamanho: 8_000_000_000, contexto: 4_096)]
+        XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: 8 * gb, carregados: curto),
+                       .usar("qwen3:8b"), "não recarrega o gemma do Hermes; usa outro que caiba")
+        guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: baixados, escolhido: "gemma4:12b",
+                                                               disponivel: 15 * gb, carregados: curto) else {
+            return XCTFail("escolhido com contexto curto não pode ser recarregado")
+        }
+        XCTAssertTrue(motivo.contains("4096"))
+    }
+
+    func testSoEmbeddingNaoServe() {
         let soEmbedding = [OllamaWizard.ModeloBaixado(nome: "nomic-embed-text:latest", tamanho: 274_000_000)]
-        guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: soEmbedding, escolhido: "", disponivel: nil) else {
+        guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: soEmbedding, escolhido: "", disponivel: 12 * gb) else {
             return XCTFail("embedding não escreve texto")
         }
         XCTAssertTrue(motivo.contains("qwen3:8b"))
-    }
-
-    func testModeloAcimaDoTetoNaoEntraMesmoEscolhido() {
-        guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: baixados, escolhido: "gemma4:12b",
-                                                               disponivel: 15 * gb) else {
-            return XCTFail("12b passa do teto de 6 GB")
-        }
-        XCTAssertTrue(motivo.contains("7,7 GB"))
-        XCTAssertTrue(motivo.contains("6,0 GB"))
     }
 
     func testEscolhidoNaoBaixado() {
@@ -46,28 +64,21 @@ final class OllamaWizardTests: XCTestCase {
                        .nenhum("O modelo llama9:1b não está baixado."))
     }
 
-    func testMemoriaInsuficienteCitaQuemEstaCarregadoENaoDescarrega() {
-        let hermes = [OllamaWizard.ModeloBaixado(nome: "gemma4:12b", tamanho: 9_100_000_000)]
+    func testMemoriaInsuficienteCitaQuemEstaCarregado() {
+        let outro = [OllamaWizard.ModeloBaixado(nome: "gemma4:12b", tamanho: 9_100_000_000, contexto: 2_048)]
         guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: baixados, escolhido: "",
-                                                               disponivel: 6 * gb, carregados: hermes) else {
-            return XCTFail("5,2 + 2 GB não cabem em 6 GB")
+                                                               disponivel: 1 * gb, carregados: outro) else {
+            return XCTFail("nada cabe em 1 GB e o gemma carregado tem contexto curto")
         }
-        XCTAssertTrue(motivo.contains("7,2 GB"))
         XCTAssertTrue(motivo.contains("gemma4:12b"))
         XCTAssertTrue(motivo.contains("Hermes"))
     }
 
-    func testModeloJaCarregadoNaoPedeMemoriaNova() {
-        let ja = [OllamaWizard.ModeloBaixado(nome: "qwen3:8b", tamanho: 6_000_000_000)]
-        XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "qwen3:8b", disponivel: 1 * gb,
-                                             carregados: ja), .usar("qwen3:8b"))
-    }
-
-    func testTetoDaConfig() {
-        XCTAssertEqual(OllamaWizard.teto(config: [:]), OllamaWizard.tetoPadrao)
-        XCTAssertEqual(OllamaWizard.teto(config: ["wizard": ["teto_ollama_gb": 4.5]]), 4_500_000_000)
-        XCTAssertEqual(OllamaWizard.teto(config: ["wizard": ["teto_ollama_gb": -1]]), OllamaWizard.tetoPadrao)
-        XCTAssertEqual(OllamaWizard.teto(config: ["wizard": ["teto_ollama_gb": "x"]]), OllamaWizard.tetoPadrao)
+    func testSemMedirMemoriaNaoCarregaNadaNovo() {
+        guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: nil) else {
+            return XCTFail("sem medida de memória não carrega modelo às cegas")
+        }
+        XCTAssertTrue(motivo.contains("às cegas"))
     }
 
     func testMemoriaDisponivelSomaAsPaginasLiberaveis() {
@@ -87,6 +98,9 @@ final class OllamaWizardTests: XCTestCase {
         let sem = try XCTUnwrap(JV.objeto(OllamaWizard.corpoGerar(modelo: "gemma4:12b", sistema: "s", prompt: "p",
                                                                     descarregar: false)))
         XCTAssertNil(sem["keep_alive"], "não derruba o modelo que outro uso (Hermes) já tinha carregado")
+        let semCtx = try XCTUnwrap(JV.objeto(OllamaWizard.corpoGerar(modelo: "gemma4:12b", sistema: "s", prompt: "p",
+                                                                       descarregar: false, contexto: nil)))
+        XCTAssertNil((semCtx["options"] as? [String: Any])?["num_ctx"], "contexto desconhecido: não força recarga")
     }
 
     func testRespostaSemPensamentoEErroDoServidor() throws {
