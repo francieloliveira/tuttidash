@@ -34,6 +34,10 @@ final class EstadoProjetos: ObservableObject {
     @Published var provaRemota: [String: ProvaRemotaProjeto.Estado] = [:]
     @Published var instalandoProva: String?
     @Published var avisoProva: [String: String] = [:]
+    /// PRD do norte: se o projeto tem norte e se o cadastro aponta para ele, por id do Linear.
+    @Published var norte: [String: NorteProjeto.Estado] = [:]
+    /// Projeto com o wizard do norte aberto.
+    @Published var wizardNorte: ProjetoCadastro?
 
     init(modelo: ModeloAjustes, servico: ServicoLinear = ServicoLinear(), tokens: TokenLinear = TokenLinear()) {
         self.modelo = modelo
@@ -74,6 +78,25 @@ final class EstadoProjetos: ObservableObject {
         erro = nil
         aviso = texto ?? String(localized: "Salvo. As lanes usam isso a partir do próximo ciclo (até 60 s).")
         return true
+    }
+
+    /// Confere o norte de cada projeto gravado, fora da thread da interface.
+    func conferirNorte() async {
+        let lista = projetos
+        let home = modelo.home
+        let achados = await Task.detached {
+            Dictionary(lista.map { ($0.projetoID, NorteProjeto.estado($0, home: home)) }, uniquingKeysWith: { a, _ in a })
+        }.value
+        norte = achados
+    }
+
+    /// O cadastro passa a apontar para o norte: a partir daí ele entra no freio de caminho protegido.
+    func definirNorte(_ projetoID: String) {
+        var lista = projetos
+        guard let j = lista.firstIndex(where: { $0.projetoID == projetoID }) else { return }
+        lista[j].norte = NorteRascunho.caminhoPadrao
+        gravar(lista, aviso: String(localized: "\(lista[j].nome): o norte entrou no freio; nenhuma lane edita \(NorteRascunho.caminhoPadrao)."))
+        Task { await conferirNorte() }
     }
 
     /// Confere a prova remota de cada projeto gravado, fora da thread da interface.
@@ -305,6 +328,12 @@ struct SecaoProjetos: View {
         .task {
             await estado.carregarListas()
             await estado.conferirProvaRemota()
+            await estado.conferirNorte()
+        }
+        .sheet(item: $estado.wizardNorte) { p in
+            WizardNorteSheet(estado: EstadoWizardNorte(projeto: p, aoGravar: { [estado] in
+                estado.definirNorte(p.projetoID)
+            }))
         }
     }
 
@@ -421,6 +450,7 @@ private struct LinhaProjeto: View {
         campoProva
         campoBancada
         campoProvaRemota
+        campoNorte
         DisclosureGroup(String(localized: "Avançado")) {
             TextField(String(localized: "Pasta dos worktrees"), text: $linha.rascunho.worktrees,
                       prompt: Text(p.repo.isEmpty ? String(localized: "vazio = <pasta>-worktrees") : p.worktreesEfetivo))
@@ -473,6 +503,32 @@ private struct LinhaProjeto: View {
                 if let aviso = estado.avisoProva[s.projetoID] {
                     Text(aviso).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// PRD do norte: importar o que o repositório já tem ou criar pelo wizard.
+    @ViewBuilder private var campoNorte: some View {
+        if let s = linha.salvo {
+            let e = estado.norte[s.projetoID]
+            LabeledContent(String(localized: "Norte")) {
+                HStack(spacing: 8) {
+                    Text(e?.rotulo ?? String(localized: "conferindo…"))
+                        .foregroundStyle(e?.ok == true || e == nil ? Color.secondary : .orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    switch e {
+                    case .importavel?:
+                        Button(String(localized: "Usar este norte")) { estado.definirNorte(s.projetoID) }
+                            .help(String(localized: "Não escreve nada no repositório: o cadastro passa a apontar para \(NorteRascunho.caminhoPadrao) e nenhuma lane o edita."))
+                    case .falta?:
+                        Button(String(localized: "Criar norte…")) { estado.wizardNorte = s }
+                            .disabled(s.github.isEmpty)
+                            .help(s.github.isEmpty ? String(localized: "Escolha o repositório do GitHub primeiro.")
+                                  : String(localized: "Rascunha o norte, você revisa e o TuttiDash abre um PR. O merge é seu."))
+                    default:
+                        EmptyView()
+                    }
                 }
             }
         }
