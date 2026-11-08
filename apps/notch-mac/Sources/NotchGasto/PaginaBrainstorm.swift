@@ -621,6 +621,11 @@ struct PaginaBrainstorm: View {
                         .multilineTextAlignment(.leading)
                         .lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if !story.wrappedValue.faltando.isEmpty {
+                        Text("Falta: " + story.wrappedValue.faltando.map(\.rawValue).joined(separator: ", "))
+                            .fontePainel(10, .semibold)
+                            .foregroundStyle(PV.vermelho)
+                    }
                     Spacer(minLength: 0)
                     HStack(spacing: 4) {
                         tag(text: "P\(story.wrappedValue.priority)", destaque: false)
@@ -634,7 +639,8 @@ struct PaginaBrainstorm: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(PV.cartao))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10).stroke(
-                        story.approved.wrappedValue ? PV.verde.opacity(0.55) : PV.cartaoBorda,
+                        !story.wrappedValue.faltando.isEmpty ? PV.vermelho.opacity(0.6)
+                            : (story.approved.wrappedValue ? PV.verde.opacity(0.55) : PV.cartaoBorda),
                         lineWidth: 1)
                 )
             }
@@ -665,13 +671,18 @@ struct PaginaBrainstorm: View {
     // MARK: - Rodapé
 
     private var haMarcadas: Bool { stories.contains(where: \.approved) }
+    /// Card marcado sem objetivo, aceite ou fora de escopo trava o «Aprovar» (decisão do dono).
+    private var marcadasIncompletas: Int { stories.filter { $0.approved && !$0.faltando.isEmpty }.count }
 
     private var footerBar: some View {
         HStack(spacing: 8) {
             Button("Aprovar", action: insertApprovedIntoLinear)
                 .buttonStyle(.borderedProminent)
                 .tint(PV.verde)
-                .disabled(!haMarcadas || isGenerating)
+                .disabled(!haMarcadas || isGenerating || marcadasIncompletas > 0)
+                .help(marcadasIncompletas > 0
+                      ? "\(marcadasIncompletas) card(s) marcado(s) sem objetivo, aceite ou fora de escopo. Abra e complete."
+                      : "Cria os cards marcados no Linear.")
             Button("Remover", action: removerMarcadas)
                 .buttonStyle(.bordered)
                 .foregroundStyle(PV.vermelho)
@@ -681,6 +692,11 @@ struct PaginaBrainstorm: View {
             Button("Desmarcar todas") { for i in stories.indices { stories[i].approved = false } }
                 .buttonStyle(.bordered)
             Spacer(minLength: 8)
+            if marcadasIncompletas > 0 {
+                Text("\(marcadasIncompletas) incompleto(s)")
+                    .fontePainel(11, .semibold)
+                    .foregroundStyle(PV.vermelho)
+            }
             Text(status)
                 .fontePainel(11)
                 .foregroundStyle(PV.mudo)
@@ -724,7 +740,10 @@ struct PaginaBrainstorm: View {
                         return
                     }
                     stories = cards
-                    status = "\(cards.count) histórias com as etiquetas do processo"
+                    let semNorte = repo.map { CardBrainstorm.contexto(repo: $0, norte: Configuracao.resolver().projetoPadrao?.norte ?? "").norte == nil } ?? true
+                    status = semNorte
+                        ? "\(cards.count) histórias. Projeto sem norte: crie em Ajustes › Projetos."
+                        : "\(cards.count) histórias ancoradas no norte"
                     guard geracao == conversaGeracao else { return }
                     messages.append(ChatMessage(
                         isAgent: true,
@@ -762,7 +781,13 @@ struct PaginaBrainstorm: View {
             estimate: g.estimativa,
             esforco: esforco,
             lane: g.lane,
-            approved: false)
+            approved: false,
+            objetivo: g.objetivo,
+            norteServido: g.norteServido,
+            prova: g.prova,
+            foraDeEscopo: g.foraDeEscopo,
+            arquivos: g.arquivos,
+            dependencias: g.dependencias)
     }
 
     private func novaHistoria() {
@@ -1068,7 +1093,8 @@ enum AgenteBrainstorm {
     static func gerarHistorias(ideia: String, etiquetas: [BrainstormCLI.EtiquetaLane],
                                repo: URL?) async throws -> [BrainstormCLI.HistoriaGerada] {
         guard let repo else { throw Falha.semRepo }
-        let pedido = BrainstormCLI.promptHistorias(ideia: ideia, etiquetas: etiquetas)
+        let ctx = CardBrainstorm.contexto(repo: repo, norte: Configuracao.resolver().projetoPadrao?.norte ?? "")
+        let pedido = BrainstormCLI.promptHistorias(ideia: ideia, etiquetas: etiquetas, norte: ctx.norte, mapa: ctx.mapa)
         let preferida = cliPreferido()
         return try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -1415,19 +1441,25 @@ struct UserStory: Identifiable, Hashable {
     var esforco: EsforcoHistoria
     var lane: String
     var approved: Bool = false
+    // Contrato do card (PRD do norte, fase 2).
+    var objetivo: String = ""
+    var norteServido: String = ""
+    var prova: String = ""
+    var foraDeEscopo: [String] = []
+    var arquivos: [String] = []
+    var dependencias: [String] = []
 
-    /// Texto que vai para o Linear (descrição + ACs).
+    /// O que falta para aprovar. Vazio = completo.
+    var faltando: [CardBrainstorm.Falta] {
+        CardBrainstorm.faltando(objetivo: objetivo, aceite: acceptanceCriteria, foraDeEscopo: foraDeEscopo)
+    }
+
+    /// Texto que vai para o Linear: o único que o agente da lane lê.
     var descricaoLinear: String {
-        var partes = [description.trimmingCharacters(in: .whitespacesAndNewlines)]
-        let acs = acceptanceCriteria.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        if !acs.isEmpty {
-            partes.append("")
-            partes.append("## Critérios de aceitação")
-            partes.append(contentsOf: acs.map { "- \($0)" })
-        }
-        partes.append("")
-        partes.append("_Etiquetas do processo: \(esforco.rawValue) · \(lane)_")
-        return partes.joined(separator: "\n")
+        CardBrainstorm.corpo(objetivo: objetivo, norteServido: norteServido, historia: description,
+                             aceite: acceptanceCriteria, prova: prova, foraDeEscopo: foraDeEscopo,
+                             arquivos: arquivos, dependencias: dependencias,
+                             esforco: esforco.rawValue, lane: lane)
     }
 }
 
@@ -1448,6 +1480,12 @@ struct EditStorySheet: View {
     @State private var estimate: Int
     @State private var esforco: EsforcoHistoria
     @State private var lane: String
+    @State private var objetivo: String
+    @State private var norte: String
+    @State private var prova: String
+    @State private var foraText: String
+    @State private var arquivosText: String
+    @State private var dependeText: String
 
     init(story: UserStory, lanes: [String], criando: Bool, onSave: @escaping (UserStory?) -> Void, onRemove: @escaping () -> Void) {
         self.story = story
@@ -1462,6 +1500,36 @@ struct EditStorySheet: View {
         _estimate = State(initialValue: story.estimate)
         _esforco = State(initialValue: story.esforco)
         _lane = State(initialValue: story.lane)
+        _objetivo = State(initialValue: story.objetivo)
+        _norte = State(initialValue: story.norteServido)
+        _prova = State(initialValue: story.prova)
+        _foraText = State(initialValue: story.foraDeEscopo.joined(separator: "\n"))
+        _arquivosText = State(initialValue: story.arquivos.joined(separator: "\n"))
+        _dependeText = State(initialValue: story.dependencias.joined(separator: "\n"))
+    }
+
+    private static func linhas(_ t: String) -> [String] {
+        t.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    private var faltando: [CardBrainstorm.Falta] {
+        CardBrainstorm.faltando(objetivo: objetivo, aceite: Self.linhas(acText), foraDeEscopo: Self.linhas(foraText))
+    }
+
+    /// Rótulo do campo; obrigatório vazio fica em vermelho.
+    private func rotulo(_ texto: String, obrigatorio: CardBrainstorm.Falta? = nil) -> some View {
+        let falta = obrigatorio.map { faltando.contains($0) } ?? false
+        return Text(obrigatorio == nil ? texto : texto + " *")
+            .fontePainel(11, falta ? .semibold : .regular)
+            .foregroundStyle(falta ? PV.vermelho : PV.mudo)
+    }
+
+    private func editor(_ texto: Binding<String>, altura: CGFloat) -> some View {
+        TextEditor(text: texto)
+            .fontePainel(12)
+            .frame(minHeight: altura)
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 6).fill(PV.campo))
     }
 
     var body: some View {
@@ -1472,27 +1540,43 @@ struct EditStorySheet: View {
             TextField("Título", text: $title)
                 .textFieldStyle(.roundedBorder)
 
-            VStack(alignment: .leading) {
-                Text("Descrição")
-                    .fontePainel(11)
-                    .foregroundStyle(PV.mudo)
-                TextEditor(text: $description)
-                    .fontePainel(12)
-                    .frame(minHeight: 80)
-                    .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(PV.campo))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading) {
+                        rotulo("Objetivo (1 a 3 frases: o resultado)", obrigatorio: .objetivo)
+                        editor($objetivo, altura: 40)
+                    }
+                    VStack(alignment: .leading) {
+                        rotulo("Norte servido (trecho do norte que o card move)")
+                        editor($norte, altura: 40)
+                    }
+                    VStack(alignment: .leading) {
+                        rotulo("História (Como … quero … para …)")
+                        editor($description, altura: 50)
+                    }
+                    VStack(alignment: .leading) {
+                        rotulo("Aceite observável (um por linha)", obrigatorio: .aceite)
+                        editor($acText, altura: 50)
+                    }
+                    VStack(alignment: .leading) {
+                        rotulo("Prova (suíte do mapa ou como verificar)")
+                        TextField("", text: $prova).textFieldStyle(.roundedBorder)
+                    }
+                    VStack(alignment: .leading) {
+                        rotulo("Fora de escopo (um por linha)", obrigatorio: .foraDeEscopo)
+                        editor($foraText, altura: 40)
+                    }
+                    VStack(alignment: .leading) {
+                        rotulo("Arquivos / módulos prováveis (um por linha)")
+                        editor($arquivosText, altura: 36)
+                    }
+                    VStack(alignment: .leading) {
+                        rotulo("Depende de (um por linha)")
+                        editor($dependeText, altura: 28)
+                    }
+                }
             }
-
-            VStack(alignment: .leading) {
-                Text("Critérios de aceitação (um por linha)")
-                    .fontePainel(11)
-                    .foregroundStyle(PV.mudo)
-                TextEditor(text: $acText)
-                    .fontePainel(12)
-                    .frame(minHeight: 60)
-                    .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(PV.campo))
-            }
+            .frame(maxHeight: 420)
 
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading) {
@@ -1522,7 +1606,9 @@ struct EditStorySheet: View {
                 Spacer()
             }
 
-            Text("As etiquetas esforço e lane são as mesmas do Linear (grupo esforco + grupo lane).")
+            Text(faltando.isEmpty
+                 ? "As etiquetas esforço e lane são as mesmas do Linear (grupo esforco + grupo lane)."
+                 : "* obrigatório para aprovar: " + faltando.map(\.rawValue).joined(separator: ", ") + ".")
                 .fontePainel(10)
                 .foregroundStyle(PV.apagado)
 
@@ -1541,6 +1627,12 @@ struct EditStorySheet: View {
                     updated.title = title
                     updated.description = description
                     updated.acceptanceCriteria = acs
+                    updated.objetivo = objetivo.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.norteServido = norte.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.prova = prova.trimmingCharacters(in: .whitespacesAndNewlines)
+                    updated.foraDeEscopo = Self.linhas(foraText)
+                    updated.arquivos = Self.linhas(arquivosText)
+                    updated.dependencias = Self.linhas(dependeText)
                     updated.priority = priority
                     updated.estimate = estimate
                     updated.esforco = esforco
@@ -1553,6 +1645,6 @@ struct EditStorySheet: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 480)
+        .frame(minWidth: 560)
     }
 }

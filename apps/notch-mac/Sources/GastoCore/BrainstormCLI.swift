@@ -57,6 +57,11 @@ public enum BrainstormCLI {
     Não invente história sobre gerar cards, etiquetas ou envio ao Linear, a menos que a idéia trate disso.
     Cada história usa um par da lista: a lane é a etiqueta do grupo lane, o esforço é a etiqueta do grupo esforco.
     O dispatcher escolhe o modelo dessa lane por esse esforço. Não invente lane nem esforço.
+    O card é o único texto que o agente da lane lê: diga onde ele começa e onde para.
+    Cada história tem objetivo, aceite observável (verificável por quem não escreveu), a prova \
+    e o que fica fora de escopo, inclusive o que é de outra história desta idéia.
+    Quando houver norte, copie o trecho (§ ou R) que a história serve; história que contraria o norte não entra.
+    Arquivos só os que aparecem no mapa; sem mapa, escreva "a confirmar pelo agente". Não invente caminho.
     Português. Devolva só os blocos HISTORIA:, sem texto antes ou depois.
     """
 
@@ -165,6 +170,12 @@ public enum BrainstormCLI {
         public var estimativa: Int
         public var esforco: String
         public var lane: String
+        public var objetivo: String = ""
+        public var norteServido: String = ""
+        public var prova: String = ""
+        public var foraDeEscopo: [String] = []
+        public var arquivos: [String] = []
+        public var dependencias: [String] = []
     }
 
     public static let niveisEsforco = ["baixo", "medio", "alto"]
@@ -184,12 +195,22 @@ public enum BrainstormCLI {
         return limpas.filter { ligadas.contains($0.nome) }
     }
 
-    public static func promptHistorias(ideia: String, etiquetas: [EtiquetaLane]) -> String {
+    public static func promptHistorias(ideia: String, etiquetas: [EtiquetaLane],
+                                       norte: String? = nil, mapa: String? = nil) -> String {
         let assunto = ideia.trimmingCharacters(in: .whitespacesAndNewlines)
+        let contexto = """
+        Norte do projeto (o que ele é e o que não pode acontecer):
+        \(norte ?? "(o projeto não tem norte; use só a idéia)")
+
+        Mapa do projeto (módulos e prova):
+        \(mapa ?? "(sem mapa; arquivos: a confirmar pelo agente)")
+        """
         let pares = etiquetas.isEmpty
             ? "(nenhuma lane)"
             : etiquetas.map { "- \($0.nome): \($0.esforcos.joined(separator: ", "))" }.joined(separator: "\n")
         return """
+        \(contexto)
+
         Ideia:
         \(assunto)
 
@@ -203,9 +224,18 @@ public enum BrainstormCLI {
 
         HISTORIA:
         titulo: frase curta do pedaço
+        objetivo: 1 a 3 frases sobre o resultado
+        norte: trecho copiado do norte (§ ou R) e por que esta história o move
         descricao: Como … Eu quero … Para que …
-        criterios:
-        - critério
+        aceite:
+        - critério observável
+        prova: suíte do mapa, ou "sem suíte: como verificar"
+        fora:
+        - o que esta história não faz
+        arquivos:
+        - caminho do mapa — por quê
+        depende:
+        - título de outra história desta lista, ou nenhuma
         prioridade: 3
         estimativa: 5
         esforco: medio
@@ -264,9 +294,13 @@ public enum BrainstormCLI {
         let chave = bruto
             .folding(options: .diacriticInsensitive, locale: Locale(identifier: "pt_BR"))
             .lowercased()
-        let conhecidas = ["titulo", "descricao", "criterios", "prioridade", "estimativa", "esforco", "lane"]
-        guard conhecidas.contains(chave) else { return nil }
-        return (chave, valor)
+        let apelidos = ["criterios": "aceite", "criterios de aceitacao": "aceite", "fora de escopo": "fora",
+                        "dependencias": "depende", "norte servido": "norte", "arquivos / modulos": "arquivos"]
+        let normal = apelidos[chave] ?? chave
+        let conhecidas = ["titulo", "descricao", "aceite", "prioridade", "estimativa", "esforco", "lane",
+                          "objetivo", "norte", "prova", "fora", "arquivos", "depende"]
+        guard conhecidas.contains(normal) else { return nil }
+        return (normal, valor)
     }
 
     private static func nivel(_ texto: String) -> String {
@@ -286,6 +320,10 @@ public enum BrainstormCLI {
         var titulo = ""
         var descricao: [String] = []
         var criterios: [String] = []
+        var objetivo: [String] = []
+        var norte: [String] = []
+        var prova = ""
+        var listas: [String: [String]] = ["fora": [], "arquivos": [], "depende": []]
         var prioridade: Int?
         var estimativa: Int?
         var esforco = ""
@@ -299,7 +337,11 @@ public enum BrainstormCLI {
                 switch k {
                 case "titulo": titulo = v
                 case "descricao": if !v.isEmpty { descricao = [v] }
-                case "criterios": if !v.isEmpty { criterios.append(conteudoItem(v)) }
+                case "aceite": if !v.isEmpty { criterios.append(conteudoItem(v)) }
+                case "objetivo": if !v.isEmpty { objetivo = [v] }
+                case "norte": if !v.isEmpty { norte = [v] }
+                case "prova": prova = v
+                case "fora", "arquivos", "depende": if !v.isEmpty { listas[k, default: []].append(conteudoItem(v)) }
                 case "prioridade": prioridade = Int(v.filter(\.isNumber))
                 case "estimativa": estimativa = Int(v.filter(\.isNumber))
                 case "esforco": esforco = nivel(v)
@@ -310,20 +352,38 @@ public enum BrainstormCLI {
             }
             if linha.hasPrefix("- ") || linha.hasPrefix("• ") {
                 let item = conteudoItem(String(linha.dropFirst(2)))
-                if !item.isEmpty { criterios.append(item) }
-                campo = "criterios"
+                // O item vai para a lista do campo atual. Fora de lista (formato antigo, ou
+                // depois de um campo de texto), continua sendo critério de aceite.
+                switch campo {
+                case "fora", "arquivos", "depende":
+                    if !item.isEmpty { listas[campo, default: []].append(item) }
+                case "norte":
+                    norte.append(linha)
+                default:
+                    if !item.isEmpty { criterios.append(item) }
+                    campo = "aceite"
+                }
                 continue
             }
             switch campo {
+            case "objetivo": objetivo.append(linha)
+            case "norte": norte.append(linha)
             case "descricao": descricao.append(linha)
             case "titulo" where titulo.isEmpty: titulo = linha
             case "titulo": titulo += " " + linha
             default: break
             }
         }
-        return encaixar(titulo: titulo, descricao: descricao.joined(separator: "\n"),
-                        criterios: criterios, prioridade: prioridade, estimativa: estimativa,
-                        esforco: esforco, lane: lane, etiquetas: etiquetas, cursor: &cursor)
+        guard var h = encaixar(titulo: titulo, descricao: descricao.joined(separator: "\n"),
+                               criterios: criterios, prioridade: prioridade, estimativa: estimativa,
+                               esforco: esforco, lane: lane, etiquetas: etiquetas, cursor: &cursor) else { return nil }
+        h.objetivo = objetivo.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        h.norteServido = norte.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        h.prova = prova.trimmingCharacters(in: .whitespacesAndNewlines)
+        h.foraDeEscopo = listas["fora"] ?? []
+        h.arquivos = listas["arquivos"] ?? []
+        h.dependencias = (listas["depende"] ?? []).filter { !["nenhuma", "nenhum"].contains($0.lowercased()) }
+        return h
     }
 
     private static func conteudoItem(_ texto: String) -> String {
@@ -455,8 +515,8 @@ public enum BrainstormCLI {
         case .historias: instrucao = sistemaHistorias
         case .norte: instrucao = NorteRascunho.sistema
         }
-        // O norte vira contrato do projeto: vale pensar mais que no chat.
-        let esforco = papel == .norte ? "medium" : "low"
+        // O card e o norte viram contrato: vale pensar mais que no chat.
+        let esforco = (papel == .norte || papel == .historias) ? "medium" : "low"
         switch cli {
         case "claude":
             // `plan` pesquisa o repositório inteiro antes de falar. A conversa lê pouco.
