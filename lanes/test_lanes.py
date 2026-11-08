@@ -2604,6 +2604,33 @@ class ProvaRemotaNoDispatcher(unittest.TestCase):
         self.runs_main = self._run_main("success")
         self.assertEqual(d.finalize(self.st), d.OWNER_LABEL)
 
+    def _registros(self):
+        arq = d.STATE_DIR / d.PROVAS_REMOTAS
+        if not arq.exists():
+            return []
+        return [json.loads(l) for l in arq.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+    def test_desfechos_da_prova_remota_vao_para_o_historico(self):
+        self.gh["statusCheckRollup"] = [self._check("SUCCESS", sha=self.SHA)]
+        d.finalize(self.st)
+        r = self._registros()
+        self.assertEqual([x["estado"] for x in r], ["verde"])
+        self.assertEqual((r[0]["card"], r[0]["lane"], r[0]["sha"], r[0]["pr"]),
+                         ("FRA-611", "claude", self.SHA, self.gh["url"]))
+        self.assertIn("actions/runs/99", r[0]["check"])
+        self.assertIsNotNone(r[0]["inicio"])
+
+    def test_vermelho_e_main_vermelha_registram_uma_vez(self):
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        self.runs_main = self._run_main("failure")
+        d.finalize(self.st)
+        d.finalize(self.st)
+        self.assertEqual([x["estado"] for x in self._registros()], ["main-vermelha"])
+        self.runs_main = []
+        self.st.pop("aguardando_main")
+        d.finalize(self.st)
+        self.assertEqual([x["estado"] for x in self._registros()], ["main-vermelha", "vermelho"])
+
     def test_timeout_chama_o_dono(self):
         self.st["prova_remota_desde"] = time.time() - d.ESPERA_PROVA_REMOTA_S - 5
         self.gh["statusCheckRollup"] = [self._check("", status="PENDING", sha=self.SHA)]

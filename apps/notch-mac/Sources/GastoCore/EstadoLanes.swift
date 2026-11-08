@@ -32,6 +32,9 @@ public struct EstadoLanes: Equatable, Sendable {
         public var provaRemotaURL: String? = nil
         /// Link do check `prova-remota`, quando o GitHub já publicou.
         public var provaRemotaCheck: String? = nil
+        /// Desde quando o PR espera o check (`prova_remota_desde`, epoch).
+        public var provaRemotaDesde: Date? = nil
+        public var provaRemotaSHA: String? = nil
 
         /// Nome do log (o caminho vem do Mac; compara pelo nome).
         public var nomeLog: String {
@@ -101,7 +104,9 @@ public struct EstadoLanes: Equatable, Sendable {
                            modeloFixo: JV.verdadeiro(d["modelo_fixo"]),
                            avisoModelo: JV.texto(d["aviso_modelo"]),
                            provaRemotaURL: JV.texto(d["prova_remota_url"]),
-                           provaRemotaCheck: JV.texto(d["prova_remota_check"]))
+                           provaRemotaCheck: JV.texto(d["prova_remota_check"]),
+                           provaRemotaDesde: JV.numero(d["prova_remota_desde"]).map { Date(timeIntervalSince1970: $0) },
+                           provaRemotaSHA: JV.texto(d["prova_remota_sha"]))
     }
 
     static func lerJSON(_ url: URL) -> Any? {

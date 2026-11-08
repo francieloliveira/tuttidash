@@ -672,9 +672,12 @@ struct PaginaTestes: View {
                         if let carta = provas.first(where: { $0.chave == provaFoco }) ?? provas.first {
                             CartaoProvaV2(carta: carta)
                         }
-                    } else {
+                    } else if (snap?.provasRemotasEmCurso ?? []).isEmpty {
                         Text("Nenhuma prova agora").fontePainel(12.5).foregroundStyle(PV.mudo)
                         RegraZeroTestes(alerta: false)
+                    }
+                    ForEach(snap?.provasRemotasEmCurso ?? [], id: \.card) { r in
+                        LinhaProvaRemota(prova: r, abrir: modelo.abrirCard)
                     }
                 }
                 cartaoPagina("Hoje") {
@@ -686,6 +689,11 @@ struct PaginaTestes: View {
                             Text("\(ind.testesFalhou) falhou").foregroundStyle(Color(hex: 0xF64561))
                             Text("— ignorado").foregroundStyle(PV.mudo).help("Testes ignorados: em breve")
                             Text(Formato.plural(ind.provasHoje, "prova hoje", "provas hoje")).foregroundStyle(PV.mudo)
+                            if ind.remotasVerdes + ind.remotasVermelhas > 0 {
+                                Text("remotas: \(ind.remotasVerdes) ✓ · \(ind.remotasVermelhas) ✗")
+                                    .foregroundStyle(PV.mudo)
+                                    .help("Check prova-remota no GitHub; os testes rodam lá")
+                            }
                         }
                         .fontePainel(12.5)
                     }
@@ -758,14 +766,21 @@ private struct TabelaHistoricoTestes: View {
                         .foregroundStyle(item.lane.isEmpty ? PV.mudo : PV.texto)
                         .lineLimit(1)
                         .frame(width: 90, alignment: .leading)
-                    Text(item.selo)
-                        .fontePainel(12.5, .semibold)
-                        .foregroundStyle(corSelo(item))
-                        .lineLimit(1)
-                        .frame(width: 90, alignment: .leading)
+                    Group {
+                        if let url = item.url.flatMap(URL.init(string:)) {
+                            Link(destination: url) {
+                                Text(item.selo).fontePainel(12.5, .semibold).foregroundStyle(corSelo(item)).underline()
+                            }
+                            .help(item.url ?? "")
+                        } else {
+                            Text(item.selo).fontePainel(12.5, .semibold).foregroundStyle(corSelo(item))
+                        }
+                    }
+                    .lineLimit(1)
+                    .frame(width: 90, alignment: .leading)
                     Text(Formato.relogio(item.segundos))
                         .frame(width: 80, alignment: .trailing)
-                    Text(item.titulo == nil ? "—" : haPainel(Date(), agora: Date()) ?? "")
+                    Text(haPainel(item.quando, agora: Date()) ?? "—")
                         .foregroundStyle(PV.mudo)
                         .lineLimit(1)
                         .frame(width: 110, alignment: .trailing)
@@ -780,6 +795,7 @@ private struct TabelaHistoricoTestes: View {
 
     private func corSelo(_ item: ResumoProvaHistorico) -> Color {
         if item.zeroTestes { return .white }
+        if item.selo == ProvaRemota(card: "", lane: "", estado: .mainVermelha).selo { return PV.ambar }
         if item.falha { return Color(hex: 0xFF8DA3) }
         if item.emCurso { return PV.ambar }
         return PV.verde
@@ -788,6 +804,32 @@ private struct TabelaHistoricoTestes: View {
 
 private extension CartaoProva {
     var chave: String { "\(lane)|\(card)" }
+}
+
+/// Prova remota em curso: PR da lane esperando o check `prova-remota` no GitHub.
+private struct LinhaProvaRemota: View {
+    var prova: ProvaRemota
+    var abrir: (String) -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            HStack(spacing: 10) {
+                Circle().fill(PV.ambar).frame(width: 7, height: 7)
+                Button { abrir(prova.card) } label: {
+                    Text(prova.card).fontePainel(12.5, .semibold).foregroundStyle(PV.azul)
+                }
+                .buttonStyle(.plain)
+                Text(prova.lane).fontePainel(12).foregroundStyle(PV.mudo)
+                Text("prova remota no GitHub · \(Formato.relogio(prova.segundos(agora: ctx.date)))")
+                    .fontePainel(12).foregroundStyle(PV.texto2).lineLimit(1)
+                Spacer(minLength: 8)
+                if let c = prova.check.flatMap(URL.init(string:)) { Link("check", destination: c).fontePainel(12) }
+                if let p = prova.pr.flatMap(URL.init(string:)) { Link("PR", destination: p).fontePainel(12) }
+            }
+            .padding(.horizontal, 12).frame(height: 34)
+            .background(RoundedRectangle(cornerRadius: 8).fill(PV.linha))
+        }
+    }
 }
 
 /// Cartão de uma prova: fases, suítes, falhas, motivo e próxima ação (conteúdo do v1, visual v2).

@@ -4420,6 +4420,27 @@ def motivo_prova_remota(sha: str, head_sha: str, checks, desde: float, agora: fl
     return f"a prova remota não autorizou o SHA {sha}"
 
 
+# Histórico da prova remota para a tela de Testes do app (PRD testes-prova-remota, 08/11/2026).
+PROVAS_REMOTAS = "provas-remotas.jsonl"
+
+
+def registrar_prova_remota(st: dict, estado: str, sha: str = "") -> None:
+    """Uma linha por desfecho (card + SHA + estado). Só acrescenta; erro não atrapalha o fechamento."""
+    sha = sha or str(st.get("prova_remota_sha") or "")
+    chave = f"{sha}|{estado}"
+    if st.get("prova_remota_registrada") == chave:
+        return
+    rec = {"card": st.get("card"), "lane": st.get("lane"), "titulo": st.get("title") or "",
+           "sha": sha, "pr": st.get("prova_remota_url") or "", "check": st.get("prova_remota_check") or "",
+           "inicio": st.get("prova_remota_desde"), "fim": time.time(), "estado": estado}
+    try:
+        with open(STATE_DIR / PROVAS_REMOTAS, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        st["prova_remota_registrada"] = chave
+    except OSError as exc:
+        log(f"lane:{st.get('lane')} {st.get('card')}: não registrei a prova remota ({exc})")
+
+
 # Main vermelha não é culpa do card (causa raiz de 08/11/2026): o `prova-remota` roda a checagem
 # da base, então com a main suja todo PR fica vermelho. O card espera a main, sem `needs:dono`.
 WORKFLOW_DA_MAIN = "testes"
@@ -4449,9 +4470,11 @@ def estado_da_main(wt: Path) -> tuple[str, str, str]:
 def esperar_main(st: dict, url_main: str, sha_main: str) -> None:
     """Card fica esperando a main, sem `needs:dono` e sem rodar a lane de novo.
     Um comentário por SHA da main; o tempo de espera da prova não corre enquanto isso."""
-    st["prova_remota_desde"] = time.time()
     if st.get("aguardando_main") == sha_main:
+        st["prova_remota_desde"] = time.time()
         return
+    registrar_prova_remota(st, "main-vermelha")
+    st["prova_remota_desde"] = time.time()
     st["aguardando_main"] = sha_main or "?"
     log(f"lane:{st['lane']} {st['card']}: main vermelha ({url_main or 'sem link'}); "
         "o card espera a main, sem needs:dono")
@@ -4589,6 +4612,7 @@ def fechar_com_prova_remota(st: dict, wt: Path, res: dict, g: dict) -> Optional[
                 return chamar_dono_prova_remota(st, conflito)
             return None
     if decisao == "dono":
+        registrar_prova_remota(st, "vermelho" if vermelho else "tempo", sha)
         return chamar_dono_prova_remota(st, motivo_prova_remota(sha, head, checks, desde, agora))
     if decisao != "mover":
         raise RuntimeError(f"decisão de prova remota desconhecida: {decisao}")
@@ -4604,6 +4628,7 @@ def fechar_com_prova_remota(st: dict, wt: Path, res: dict, g: dict) -> Optional[
         if check:
             linhas.append(f"Check: {check}")
         linhas += ["", "O card foi para In Review."]
+        registrar_prova_remota(st, "verde", sha)
         linear(MUT_COMMENT, {"id": st["issue_id"], "body": "\n".join(linhas)})
         mudar_estado(st["issue_id"], STATE_IN_REVIEW_ID)
     except Exception as exc:  # noqa: BLE001 — erro ao concluir chama o dono, não vira lane:falhou

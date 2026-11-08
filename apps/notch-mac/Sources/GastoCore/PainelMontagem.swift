@@ -29,7 +29,8 @@ public enum MontadorPainel {
                                       agora: agora, calendario: calendario),
         ]
         let indicadores = Indicadores.calcular(linhas: linhas, execucoes: execucoes, provas: entrada.provas,
-                                               semanaAtual: custos.semana, agora: agora, calendario: calendario)
+                                               semanaAtual: custos.semana, agora: agora, calendario: calendario,
+                                               remotas: entrada.provasRemotas)
         let heartbeatData = entrada.heartbeat.flatMap { Datas.lerLocal($0.at, calendario: calendario) }
         let idade = heartbeatData.map { agora.timeIntervalSince($0) }
         let batimentoMorto = heartbeatData == nil || (idade ?? 0) > Double(LanesPainel.batimentoParadoSegundos)
@@ -51,9 +52,10 @@ public enum MontadorPainel {
             linhas: linhas, testes: textoTestes(quadro.cartas),
             build: textoBuild(dono), custoHoje: textoCusto(custos))
         let laneSugerida = dono?.lane ?? linhas.filter { $0.estado == .rodando }.map(\.lane).only
-        return SnapshotPainel(
+        var snapshot = SnapshotPainel(
             geral: geral, rotuloGeral: geral.rotulo, notch: notch, alertas: alertas, lanes: linhas,
-            provas: quadro.cartas, historico: quadro.historico,
+            provas: quadro.cartas, historico: historicoComRemotas(quadro.historico, remotas: entrada.provasRemotas,
+                                                                 titulos: entrada.titulos, agora: agora),
             lockTexto: dono.map { "\($0.lane) · \($0.card)" } ?? "livre",
             lockSegundos: dono?.segundos, lockLane: dono?.lane, lockCard: dono?.card,
             filaLock: quadro.cartas.compactMap { carta in
@@ -77,6 +79,29 @@ public enum MontadorPainel {
                                                  fechamentos: entrada.fechamentos, lockLane: dono?.lane,
                                                  lockCard: dono?.card, titulos: entrada.titulos),
             esperandoVoce: esperandoVoce(entrada.fechamentos))
+        snapshot.provasRemotasEmCurso = provasRemotasEmCurso(entrada.rodando)
+        return snapshot
+    }
+
+    /// Lanes com PR esperando o check `prova-remota` (o dispatcher grava no `lane-<lane>.json`).
+    static func provasRemotasEmCurso(_ rodando: [EstadoLanes.LaneRodando]) -> [ProvaRemota] {
+        rodando.compactMap { l in
+            guard let pr = l.provaRemotaURL else { return nil }
+            return ProvaRemota(card: l.card, titulo: l.titulo, lane: l.lane, sha: l.provaRemotaSHA ?? "",
+                               pr: pr, check: l.provaRemotaCheck, inicio: l.provaRemotaDesde, estado: .rodando)
+        }
+    }
+
+    /// Histórico da tela Testes: os desfechos remotos (com data, o mais novo primeiro) e depois os locais.
+    static func historicoComRemotas(_ locais: [ResumoProvaHistorico], remotas: [ProvaRemota],
+                                    titulos: [String: String], agora: Date) -> [ResumoProvaHistorico] {
+        let remotos = remotas.sorted { ($0.fim ?? .distantPast) > ($1.fim ?? .distantPast) }.map { r in
+            ResumoProvaHistorico(card: r.card, titulo: r.titulo.flatMap { $0.isEmpty ? nil : $0 } ?? titulos[r.card],
+                                 lane: r.lane, selo: r.selo, segundos: r.segundos(agora: agora),
+                                 zeroTestes: false, falha: r.estado == .vermelho || r.estado == .tempo, emCurso: false,
+                                 quando: r.fim, url: r.link)
+        }
+        return remotos + locais
     }
 
     /// Branch do card em curso e número/início da última execução de cada lane.
