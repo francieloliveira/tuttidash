@@ -95,7 +95,7 @@ log "nenhuma lane rodando"
 TS="$(date +%Y%m%d-%H%M%S)"
 LIXO="$HOME/.Trash/TuttiDash-anterior-$TS.app"
 DONO="$(id -un):$(id -gn)"
-CMD="/usr/bin/python3 '$REPO/tools/integridade-controle.py' gravar '$MANIF' && mv '$APP_DEST' '$LIXO' && /usr/bin/ditto '$NOVO' '$APP_DEST' && chown -R '$DONO' '$APP_DEST'"
+CMD="/usr/bin/python3 '$REPO/tools/integridade-controle.py' gravar '$MANIF' && mv '$APP_DEST' '$LIXO' && /usr/bin/ditto '$NOVO' '$APP_DEST' && /usr/sbin/chown -R '$DONO' '$APP_DEST'"
 log "pedindo a senha de administrador (âncora + troca do app)"
 osascript -e 'tell application "TuttiDash" to quit' >/dev/null 2>&1 || true
 /usr/bin/osascript -e "do shell script \"$CMD\" with administrator privileges"
