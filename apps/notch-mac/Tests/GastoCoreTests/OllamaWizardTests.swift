@@ -7,7 +7,7 @@ final class OllamaWizardTests: XCTestCase {
         [.init(nome: "gemma4:12b", tamanho: 7_700_000_000),
          .init(nome: "phi3:mini", tamanho: 2_200_000_000),
          .init(nome: "nomic-embed-text:latest", tamanho: 274_000_000),
-         .init(nome: "qwen3:8b", tamanho: 5_200_000_000)]
+         .init(nome: "qwen3:8b", tamanho: 5_200_000_000, kvPorToken: 147_456)]
     }
 
     func testLerTagsECarregados() throws {
@@ -24,8 +24,8 @@ final class OllamaWizardTests: XCTestCase {
 
     func testSemTetoOGemmaEntraQuandoAMemoriaDeixa() {
         let sem = baixados.filter { $0.nome != "qwen3:8b" }
-        XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 12 * gb), .usar("gemma4:12b"))
-        XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "gemma4:12b", disponivel: 12 * gb),
+        XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 13 * gb), .usar("gemma4:12b"))
+        XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "gemma4:12b", disponivel: 13 * gb),
                        .usar("gemma4:12b"))
         // Sem memória para o maior, cai no que cabe.
         XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 5 * gb), .usar("phi3:mini"))
@@ -74,6 +74,23 @@ final class OllamaWizardTests: XCTestCase {
         XCTAssertTrue(motivo.contains("não descarrega modelo de outro uso"))
     }
 
+    func testCacheDeContextoPelaArquitetura() throws {
+        let phi3 = Data(#"{"model_info":{"general.architecture":"phi3","phi3.block_count":32,"phi3.attention.head_count":32,"phi3.attention.head_count_kv":32,"phi3.embedding_length":3072}}"#.utf8)
+        let qwen3 = Data(#"{"model_info":{"general.architecture":"qwen3","qwen3.block_count":36,"qwen3.attention.head_count":32,"qwen3.attention.head_count_kv":8,"qwen3.attention.key_length":128,"qwen3.attention.value_length":128,"qwen3.embedding_length":4096}}"#.utf8)
+        let semCabecas = Data(#"{"model_info":{"general.architecture":"gemma4_unified","gemma4_unified.block_count":48}}"#.utf8)
+        XCTAssertEqual(OllamaWizard.kvPorToken(show: phi3), 393_216)
+        XCTAssertEqual(OllamaWizard.kvPorToken(show: qwen3), 147_456)
+        XCTAssertNil(OllamaWizard.kvPorToken(show: semCabecas))
+        // Medido em 08/11: o phi3:mini (2,2 GB) ocupou 5,5 GB com 8k. A estimativa precisa cobrir isso.
+        let p = OllamaWizard.ModeloBaixado(nome: "phi3:mini", tamanho: 2_200_000_000,
+                                           kvPorToken: OllamaWizard.kvPorToken(show: phi3))
+        XCTAssertGreaterThanOrEqual(OllamaWizard.necessidade(p), 5_500_000_000)
+        let q = OllamaWizard.ModeloBaixado(nome: "qwen3:8b", tamanho: 5_200_000_000, kvPorToken: 147_456)
+        XCTAssertEqual(Double(OllamaWizard.necessidade(q)) / 1e9, 7.4, accuracy: 0.05)
+        // Sem arquitetura: metade do tamanho como cache, conservador.
+        XCTAssertEqual(OllamaWizard.necessidade(.init(nome: "x", tamanho: 4 * gb)), 7 * gb)
+    }
+
     func testSemMedirMemoriaNaoCarregaNadaNovo() {
         guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: nil) else {
             return XCTFail("sem medida de memória não carrega modelo às cegas")
@@ -94,6 +111,8 @@ final class OllamaWizardTests: XCTestCase {
         XCTAssertEqual(com["stream"] as? Bool, false)
         XCTAssertEqual(com["think"] as? Bool, false)
         XCTAssertEqual(JV.numero((com["options"] as? [String: Any])?["num_ctx"]), 8_192)
+        XCTAssertEqual(JV.numero((com["options"] as? [String: Any])?["num_predict"]), 2_048, "resposta tem teto")
+        XCTAssertEqual(JV.numero((com["options"] as? [String: Any])?["repeat_penalty"]), 1.15)
         XCTAssertEqual(com["system"] as? String, "s")
         let sem = try XCTUnwrap(JV.objeto(OllamaWizard.corpoGerar(modelo: "gemma4:12b", sistema: "s", prompt: "p",
                                                                     descarregar: false)))
