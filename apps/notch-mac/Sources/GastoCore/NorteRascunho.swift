@@ -284,9 +284,12 @@ public enum NorteRascunho {
         var achou = false
         for linha in texto.components(separatedBy: "\n") {
             let limpa = linha.trimmingCharacters(in: .whitespaces)
-            let marca = semAcento(limpa).uppercased()
-            if marca == "NORTE:" { emPerguntas = false; atual = nil; continue }
-            if marca == "PERGUNTAS:" { emPerguntas = true; atual = nil; continue }
+            // `**PERGUNTAS:**`, `## Perguntas` e `PERGUNTAS` valem como o marcador.
+            let marca = semAcento(limpa)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "#*_ :"))
+                .uppercased()
+            if marca == "NORTE" { emPerguntas = false; atual = nil; continue }
+            if marca == "PERGUNTAS" || marca.hasPrefix("PERGUNTAS AO DONO") { emPerguntas = true; atual = nil; continue }
             if emPerguntas {
                 guard limpa.hasPrefix("- ") || limpa.hasPrefix("• ") else { continue }
                 let p = String(limpa.dropFirst(2)).trimmingCharacters(in: .whitespaces)

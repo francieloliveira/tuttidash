@@ -48,6 +48,10 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     /// Pastas que só o Mac prova (FRA-620). A `prova-remota` no Linux fica vermelha nelas.
     /// O app não edita, mas guarda: sem isto, salvar o cadastro apagava a lista.
     public var pastasDoApp: [String]
+    /// Arquivo de norte do projeto, relativo ao repo (o wizard grava `docs/produto/caminho.md`).
+    /// Entra sempre no freio, por cima do declarado ou do padrão: nenhuma lane edita o norte.
+    /// Vazio = projeto sem norte. Caminho que não serve (absoluto, `~`, `..`) é descartado.
+    public var norte: String
 
     /// Freio padrão quando o projeto não declara o seu: a config dos agentes do projeto
     /// (igual ao `PROTEGIDOS_PADRAO` do `projetos.py`).
@@ -57,7 +61,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
                 repo: String = "", worktrees: String = "", prova: String = "python3 {suite}",
                 provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = [],
                 antesDoPush: String = "", github: String = "", suites: [String] = [],
-                bancada: Bool = false, pastasDoApp: [String] = []) {
+                bancada: Bool = false, pastasDoApp: [String] = [], norte: String = "") {
         self.projetoID = projetoID
         self.nome = nome.isEmpty ? projetoID : nome
         self.ativo = ativo
@@ -73,6 +77,18 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         self.suites = suites
         self.bancada = bancada
         self.pastasDoApp = pastasDoApp
+        self.norte = Self.norteValido(norte)
+    }
+
+    /// Mesma regra do `norte_valido` do `projetos.py`: relativo ao repo, sem `~`, `..`,
+    /// `.`, segmento vazio, barra invertida ou quebra de linha. Fora disso, vazio.
+    public static func norteValido(_ valor: String) -> String {
+        let s = valor.trimmingCharacters(in: .whitespaces)
+        guard !s.isEmpty, !s.contains("\n"), !s.contains("\r"), !s.contains("\\"),
+              !s.hasPrefix("/"), !s.hasPrefix("~"), !s.hasSuffix("/") else { return "" }
+        let partes = s.split(separator: "/", omittingEmptySubsequences: false)
+        guard !partes.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return "" }
+        return s
     }
 
     /// Pasta de worktrees efetiva: a declarada ou `<repo>-worktrees`.
@@ -81,9 +97,11 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         return repo.hasSuffix("-worktrees") ? repo : repo + "-worktrees"
     }
 
-    /// Freio efetivo: o declarado ou a lista padrão.
+    /// Freio efetivo: o declarado ou a lista padrão, mais o norte (que o declarado nunca tira).
     public var protegidosEfetivos: [String] {
-        protegidos.isEmpty ? Self.protegidosPadrao : protegidos
+        var base = protegidos.isEmpty ? Self.protegidosPadrao : protegidos
+        if !norte.isEmpty, !base.contains(norte) { base.append(norte) }
+        return base
     }
 
     /// Verificação de preenchimento, na ordem em que trava o cadastro.
@@ -145,7 +163,8 @@ public enum ProjetosConfig {
                                    suites: ((item["suites"] as? [String]) ?? []).filter { !$0.isEmpty },
                                    bancada: (item["bancada"] as? [String: Any]).flatMap { $0["ativo"] as? NSNumber }
                                        .map { JV.ehBool($0) && $0.boolValue } ?? false,
-                                   pastasDoApp: ((item["prova_remota"] as? [String: Any])?["pastas_do_app"] as? [String]) ?? [])
+                                   pastasDoApp: ((item["prova_remota"] as? [String: Any])?["pastas_do_app"] as? [String]) ?? [],
+                                   norte: (item["norte"] as? String) ?? "")
         }.filter { $0.problema() == nil }
         return saida
     }
@@ -165,6 +184,7 @@ public enum ProjetosConfig {
             if !p.suites.isEmpty { item["suites"] = p.suites }
             if p.bancada { item["bancada"] = ["ativo": true] }
             if !p.pastasDoApp.isEmpty { item["prova_remota"] = ["pastas_do_app": p.pastasDoApp] }
+            if !p.norte.isEmpty { item["norte"] = p.norte }
             return item
         }
     }
