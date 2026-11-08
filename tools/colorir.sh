@@ -3,15 +3,11 @@
 # Uso: ... | colorir.sh [regex-filtro]
 # Sem filtro, passa tudo. Linha a linha (fflush), sem buffer.
 # O filtro vale para o texto depois da data/hora.
-# Na tela: tira prefixo de pessoa ([Theo], [Julia], [Ollie]), encurta o home
+# Na tela: encurta o home
 # e corta linha longa. O arquivo de log não é reescrito.
 COLORIR_FILTRO="${1:-}" COLORIR_HOME="${HOME:-}" exec /usr/bin/awk '
 BEGIN { filtro = ENVIRON["COLORIR_FILTRO"]; home = ENVIRON["COLORIR_HOME"]; E="\033["; R=E "0m" }
 function limpar(s) {
-  gsub(/\[[Tt]heo\][[:space:]]*/, "", s)
-  gsub(/\[[Jj]ulia\][[:space:]]*/, "", s)
-  gsub(/\[[Oo]llie\][[:space:]]*/, "", s)
-  gsub(/^([Tt]heo|[Jj]ulia|[Oo]llie)[[:space:]]+/, "", s)
   if (home != "") gsub(home, "~", s)
   if (length(s) > 220) s = substr(s, 1, 219) "…"
   return s

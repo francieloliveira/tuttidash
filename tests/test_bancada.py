@@ -236,15 +236,26 @@ services:
             b._validar_compose(ruim, Path("/tmp/wt"))
 
 
+COMPOSE_MINIMO = """
+services:
+  broker:
+    image: "eclipse-mosquitto@sha256:d12c8f80dfc65b768bb9acecc7ef182b976f71fb681640b66358e5e0cf94e9e9"
+    volumes:
+      - mosquitto-data:/mosquitto
+volumes:
+  mosquitto-data: {}
+"""
+
+
 class DockerExecutar(Base):
     def _rodar_docker(self, argv, **kw):
         chamadas = []
         kw.setdefault("achar_portas", lambda: ["/dev/cu.usbmodem3101"])
         with mock.patch("sys.stdout", new=io.StringIO()):
-            # copia o POC para o local default esperado por docker (dentro do wt)
-            poc = RAIZ / "tools" / "poc" / "docker" / "compose.yml"
+            # compose mínimo e válido no local padrão (dentro do wt). O POC do FRA-539 mora no
+            # projeto que usa a bancada, não neste repositório.
             (self.wt / "docker").mkdir(parents=True, exist_ok=True)
-            (self.wt / "docker" / "compose.yml").write_text(poc.read_text())
+            (self.wt / "docker" / "compose.yml").write_text(COMPOSE_MINIMO)
             rc = b.executar(argv, self.wt, self.proj, **kw)
         return rc, chamadas
 
