@@ -263,6 +263,10 @@ def principal(entrada=sys.stdin, saida=sys.stdout) -> int:
         except ValueError:
             print(bruto, file=saida, flush=True)
             continue
+        if not isinstance(ev, dict):
+            # Saída em texto (dsh) com uma linha que é JSON escalar ("ok", 3): mostra como texto.
+            print(bruto, file=saida, flush=True)
+            continue
         for linha in formatar(ev, estado, largura()):
             print(linha, file=saida, flush=True)
     return 0

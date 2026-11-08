@@ -2955,3 +2955,16 @@ class MedidaTipadaDoLanepct(unittest.TestCase):
 
 def fila_mod():
     return d.fila
+
+
+class DesfechoComSaidaEmTexto(unittest.TestCase):
+    """FRA-608/FRA-652: o log do dsh é texto; uma linha JSON escalar derrubava o fechamento."""
+
+    def test_linha_json_que_nao_e_objeto_e_ignorada(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(tmp, True))
+        log = tmp / "lane.log"
+        log.write_text('Feito.\n"ok"\n3\n[1, 2]\nnull\n', encoding="utf-8")
+        self.assertIsInstance(d.agent_outcome(str(log)), str)
+        log.write_text('{"type": "result", "subtype": "success", "num_turns": 2}\n"ok"\n', encoding="utf-8")
+        self.assertIn("success", d.agent_outcome(str(log)))

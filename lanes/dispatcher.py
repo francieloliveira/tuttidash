@@ -3013,6 +3013,10 @@ def agent_outcome(log_path: str) -> str:
             ev = json.loads(raw)
         except ValueError:
             continue
+        # Saída em texto (dsh/DeepSeek) pode ter linha que é JSON mas não objeto ("ok", 3).
+        # Era ela que derrubava o fechamento: `'str' object has no attribute 'get'` (FRA-608, FRA-652).
+        if not isinstance(ev, dict):
+            continue
         if ev.get("type") == "result":
             errs = ev.get("errors") or []
             out = f"agente: {ev.get('subtype')}, {ev.get('num_turns')} turnos"
