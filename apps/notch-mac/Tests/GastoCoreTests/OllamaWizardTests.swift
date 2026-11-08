@@ -27,8 +27,10 @@ final class OllamaWizardTests: XCTestCase {
         XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 13 * gb), .usar("gemma4:12b"))
         XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "gemma4:12b", disponivel: 13 * gb),
                        .usar("gemma4:12b"))
-        // Sem memória para o maior, cai no que cabe.
-        XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 5 * gb), .usar("phi3:mini"))
+        // Sem memória para o maior, o phi3:mini não entra: está abaixo do piso de 4 GB.
+        guard case .nenhum = OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 5 * gb) else {
+            return XCTFail("modelo abaixo do piso não é oferecido")
+        }
     }
 
     func testReaproveitaModeloDeOutroAppCarregadoSemMemoriaNova() {
@@ -89,6 +91,25 @@ final class OllamaWizardTests: XCTestCase {
         XCTAssertEqual(Double(OllamaWizard.necessidade(q)) / 1e9, 7.4, accuracy: 0.05)
         // Sem arquitetura: metade do tamanho como cache, conservador.
         XCTAssertEqual(OllamaWizard.necessidade(.init(nome: "x", tamanho: 4 * gb)), 7 * gb)
+    }
+
+    func testPisoDeQuatroGB() {
+        guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: baixados, escolhido: "phi3:mini",
+                                                               disponivel: 15 * gb) else {
+            return XCTFail("escolhido abaixo do piso não serve")
+        }
+        XCTAssertTrue(motivo.contains("2,2 GB"))
+        XCTAssertTrue(motivo.contains("4,0 GB"))
+        let soPequenos = baixados.filter { $0.nome == "phi3:mini" || $0.nome.contains("embed") }
+        guard case .nenhum(let m2) = OllamaWizard.escolher(baixados: soPequenos, escolhido: "", disponivel: 15 * gb) else {
+            return XCTFail("só modelo pequeno: nada é oferecido")
+        }
+        XCTAssertTrue(m2.contains("phi3:mini"))
+        XCTAssertTrue(m2.contains(OllamaWizard.modeloSugerido))
+        // Pequeno já carregado por outro app também não é reaproveitado.
+        let phiCarregado = [OllamaWizard.ModeloBaixado(nome: "phi3:mini", tamanho: 5_500_000_000, contexto: 8_192)]
+        XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: 9 * gb,
+                                             carregados: phiCarregado), .usar("qwen3:8b"))
     }
 
     func testSemMedirMemoriaNaoCarregaNadaNovo() {
