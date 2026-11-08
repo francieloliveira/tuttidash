@@ -2,37 +2,108 @@ import AppKit
 import SwiftUI
 import GastoCore
 
+/// Chat, idéia e cards do Brainstorm. Vive fora da página: trocar de tela não zera.
+/// Só «Limpar tudo» apaga o chat e a idéia. Os cards têm a limpeza deles.
+final class SessaoBrainstorm: ObservableObject {
+    static let textoInicial = "Descreva a ideia. Eu aponto o furo e proponho itens para a caixa de baixo."
+    static let compartilhada = SessaoBrainstorm()
+
+    @Published var messages: [ChatMessage]
+    /// Sobe ao limpar. Respostas que ainda estão no ar não reescrevem o chat nem a idéia.
+    @Published var conversaGeracao = 0
+    @Published var chatInput = ""
+    @Published var ideaSummary = ""
+    @Published var stories: [UserStory] = []
+    @Published var isGenerating = false
+    @Published var status = "Pronto"
+    @Published var projectId = ""
+    @Published var projectName = ""
+    @Published var editingStory: UserStory?
+    /// Perguntas cuja resposta ainda não voltou.
+    @Published var perguntasEmVoo = 0
+    /// O agente de reescrita está compondo a idéia.
+    @Published var reescrevendo = false
+    @Published var precisaLogin = false
+    /// Quantas mensagens do chat já entraram no esboço. O que vier depois acrescenta.
+    @Published var mensagensNaIdeia = 0
+    /// Itens marcados que já foram para o esboço.
+    @Published var itensNaIdeia: Set<String> = []
+
+    private init() {
+        messages = [ChatMessage(isAgent: true, text: Self.textoInicial)]
+        let cfg = Configuracao.resolver()
+        if let p = cfg.projetoPadrao {
+            projectId = p.projetoID
+            projectName = p.nome
+        }
+    }
+}
+
 /// Tela nativa de Brainstorm no painel do TuttiDash.
-/// Fluxo: ideia → histórias com etiquetas do processo (esforço + lane) → Linear.
+/// Fluxo: chat (itens) → idéia reescrita → histórias → Linear.
 struct PaginaBrainstorm: View {
     var modelo: ModeloNotch
+    @ObservedObject private var sessao = SessaoBrainstorm.compartilhada
 
-    @State private var messages: [ChatMessage] = [
-        ChatMessage(isAgent: true, text: "Descreva a ideia. Eu respondo curto: o furo e uma proposta.")
-    ]
-    @State private var chatInput: String = ""
-    @State private var ideaSummary: String = ""
-    @State private var stories: [UserStory] = []
-    @State private var isGenerating = false
-    @State private var status: String = "Pronto"
-    @State private var projectId: String = ""
-    @State private var projectName: String = ""
-    @State private var editingStory: UserStory? = nil
-    @State private var chatAberto = true
-    /// Perguntas cuja resposta ainda não voltou. A pílula mostra esse número.
-    @State private var perguntasEmVoo = 0
-    @State private var precisaLogin = false
+    private static let textoInicial = SessaoBrainstorm.textoInicial
 
-    private let esforcos = EsforcoHistoria.allCases
+    private var messages: [ChatMessage] {
+        get { sessao.messages }
+        nonmutating set { sessao.messages = newValue }
+    }
+    private var conversaGeracao: Int {
+        get { sessao.conversaGeracao }
+        nonmutating set { sessao.conversaGeracao = newValue }
+    }
+    private var chatInput: String {
+        get { sessao.chatInput }
+        nonmutating set { sessao.chatInput = newValue }
+    }
+    private var ideaSummary: String {
+        get { sessao.ideaSummary }
+        nonmutating set { sessao.ideaSummary = newValue }
+    }
+    private var stories: [UserStory] {
+        get { sessao.stories }
+        nonmutating set { sessao.stories = newValue }
+    }
+    private var isGenerating: Bool {
+        get { sessao.isGenerating }
+        nonmutating set { sessao.isGenerating = newValue }
+    }
+    private var status: String {
+        get { sessao.status }
+        nonmutating set { sessao.status = newValue }
+    }
+    private var projectId: String {
+        get { sessao.projectId }
+        nonmutating set { sessao.projectId = newValue }
+    }
+    private var projectName: String {
+        get { sessao.projectName }
+        nonmutating set { sessao.projectName = newValue }
+    }
+    private var editingStory: UserStory? {
+        get { sessao.editingStory }
+        nonmutating set { sessao.editingStory = newValue }
+    }
+    private var perguntasEmVoo: Int {
+        get { sessao.perguntasEmVoo }
+        nonmutating set { sessao.perguntasEmVoo = newValue }
+    }
+    private var reescrevendo: Bool {
+        get { sessao.reescrevendo }
+        nonmutating set { sessao.reescrevendo = newValue }
+    }
+    private var precisaLogin: Bool {
+        get { sessao.precisaLogin }
+        nonmutating set { sessao.precisaLogin = newValue }
+    }
+
     private var lanes: [String] { Agentes.ordemPainelLanes }
 
     init(modelo: ModeloNotch) {
         self.modelo = modelo
-        let cfg = Configuracao.resolver()
-        if let p = cfg.projetoPadrao {
-            _projectId = State(initialValue: p.projetoID)
-            _projectName = State(initialValue: p.nome)
-        }
     }
 
     var body: some View {
@@ -40,8 +111,8 @@ struct PaginaBrainstorm: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     passosFluxo
-                    ideaSection
                     chatSection
+                    ideaSection
                     gerarBar
                     storiesSection
                 }
@@ -54,13 +125,21 @@ struct PaginaBrainstorm: View {
                 footerBar
             }
         }
-        .sheet(item: $editingStory) { story in
-            EditStorySheet(story: story, lanes: lanes) { updated in
-                if let updated, let index = stories.firstIndex(where: { $0.id == updated.id }) {
-                    stories[index] = updated
+        .sheet(item: $sessao.editingStory) { story in
+            let nova = !stories.contains { $0.id == story.id }
+            EditStorySheet(story: story, lanes: lanes, criando: nova, onSave: { updated in
+                if let updated {
+                    if let index = stories.firstIndex(where: { $0.id == updated.id }) {
+                        stories[index] = updated
+                    } else {
+                        stories.insert(updated, at: 0)
+                    }
                 }
                 editingStory = nil
-            }
+            }, onRemove: {
+                removeStory(story.id)
+                editingStory = nil
+            })
         }
     }
 
@@ -87,6 +166,10 @@ struct PaginaBrainstorm: View {
                     .foregroundStyle(PV.mudo)
                     .lineLimit(1)
             }
+            Button("Limpar tudo") { limparConversa() }
+                .buttonStyle(.plain)
+                .font(PV.fonte(12, .semibold))
+                .foregroundStyle(PV.vermelho)
         }
         .padding(.horizontal, 4)
         .padding(.bottom, 2)
@@ -117,45 +200,30 @@ struct PaginaBrainstorm: View {
     private var ideaSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("1 · Ideia")
+                Text("Idéia")
                     .font(PV.fonte(13, .semibold))
                     .foregroundStyle(PV.mudo)
                 Spacer()
-                Text(status)
-                    .font(PV.fonte(10))
-                    .foregroundStyle(PV.apagado)
+                if reescrevendo {
+                    EfeitoThinking()
+                } else {
+                    Text(status)
+                        .font(PV.fonte(10))
+                        .foregroundStyle(PV.apagado)
+                        .lineLimit(1)
+                }
             }
-            Text("Escreva o resultado desejado. O agente só ajuda a refinar — a ideia final é esta caixa.")
+            Text("Gerar idéia no chat reúne a conversa e os itens marcados. Continuar o chat e gerar de novo acrescenta. A caixa continua editável.")
                 .font(PV.fonte(11))
                 .foregroundStyle(PV.mudo)
 
-            TextEditor(text: $ideaSummary)
+            TextEditor(text: $sessao.ideaSummary)
                 .font(PV.fonte(13))
                 .frame(minHeight: 90)
                 .scrollContentBackground(.hidden)
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 8).fill(PV.campo))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(PV.campoBorda, lineWidth: 1))
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(["Explorar riscos", "Quais fluxos principais?", "Simplificar escopo", "Métricas de sucesso"], id: \.self) { q in
-                        Button(q) {
-                            let ideia = ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !ideia.isEmpty else {
-                                status = "Escreva a ideia antes"
-                                return
-                            }
-                            enviar(texto: "\(q)\n\nIdeia: \(ideia)")
-                        }
-                        .font(PV.fonte(10))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
-                        .foregroundStyle(PV.mudo)
-                    }
-                }
-            }
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(PV.cartao))
@@ -167,19 +235,9 @@ struct PaginaBrainstorm: View {
     private var chatSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Button {
-                    comAnimacao { chatAberto.toggle() }
-                } label: {
-                    HStack {
-                        Text("Conversar com o agente")
-                            .font(PV.fonte(13, .semibold))
-                            .foregroundStyle(PV.mudo)
-                        Image(systemName: chatAberto ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(PV.apagado)
-                    }
-                }
-                .buttonStyle(.plain)
+                Text("Chat")
+                    .font(PV.fonte(13, .semibold))
+                    .foregroundStyle(PV.mudo)
                 Spacer(minLength: 8)
                 Button("Entrar no Claude") { AgenteBrainstorm.abrirLogin() }
                     .buttonStyle(.borderedProminent)
@@ -187,45 +245,68 @@ struct PaginaBrainstorm: View {
                     .tint(precisaLogin ? PV.ambar : PV.azul)
             }
 
-            if chatAberto {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(messages) { msg in
-                            HStack {
-                                if msg.isAgent {
-                                    agentBubble(msg.text)
-                                    Spacer(minLength: 24)
-                                } else {
-                                    Spacer(minLength: 24)
-                                    userBubble(msg.text)
-                                }
-                            }
-                        }
-                        if perguntasEmVoo > 0 {
-                            HStack {
-                                PilulaWorking(quantidade: perguntasEmVoo)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(messages) { msg in
+                        HStack {
+                            if msg.isAgent {
+                                agentBubble(msg)
                                 Spacer(minLength: 24)
+                            } else {
+                                Spacer(minLength: 24)
+                                userBubble(msg.text)
                             }
                         }
                     }
-                }
-                .frame(maxHeight: 220)
-
-                HStack(spacing: 8) {
-                    TextField("Pergunte para refinar a ideia…", text: $chatInput)
-                        .textFieldStyle(.plain)
-                        .padding(10)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(PV.campo))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(PV.campoBorda, lineWidth: 1))
-                        .onSubmit { enviar(texto: nil) }
-
-                    Button { enviar(texto: nil) } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(PV.azul)
+                    if perguntasEmVoo > 0 {
+                        HStack {
+                            EfeitoThinking()
+                            Spacer(minLength: 24)
+                        }
                     }
-                    .disabled(perguntasEmVoo > 0 || chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+            }
+            .frame(minHeight: 160, maxHeight: 280)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(["Explorar riscos", "Quais fluxos principais?", "Simplificar escopo", "Métricas de sucesso"], id: \.self) { q in
+                        Button(q) { enviar(texto: q) }
+                            .font(PV.fonte(10))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
+                            .foregroundStyle(PV.mudo)
+                            .disabled(perguntasEmVoo > 0)
+                    }
+                }
+            }
+
+            Button(action: gerarIdeia) {
+                HStack {
+                    if reescrevendo { ProgressView().controlSize(.small) }
+                    Text(reescrevendo ? "Gerando idéia…" : "Gerar idéia")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(PV.azul)
+            .disabled(!podeGerarIdeia)
+
+            HStack(spacing: 8) {
+                TextField("Pergunte ou descreva a ideia…", text: $sessao.chatInput)
+                    .textFieldStyle(.plain)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(PV.campo))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(PV.campoBorda, lineWidth: 1))
+                    .onSubmit { enviar(texto: nil) }
+
+                Button { enviar(texto: nil) } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(PV.azul)
+                }
+                .disabled(perguntasEmVoo > 0 || chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(12)
@@ -233,38 +314,77 @@ struct PaginaBrainstorm: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(PV.cartaoBorda, lineWidth: 1))
     }
 
-    /// Espera do chat, no formato da pílula do Cursor: cápsula escura, borda fina,
-    /// «::», a palavra Trabalhando e quantas perguntas estão no ar. O mesmo corpo do texto.
-    private struct PilulaWorking: View {
-        var quantidade: Int
+    /// Palavra “Thinking” com um brilho que atravessa as letras, como no chat do Cursor.
+    private struct EfeitoThinking: View {
+        private var rotulo: Text {
+            Text("Thinking").font(PV.fonte(14, .medium))
+        }
 
         var body: some View {
-            HStack(spacing: 6) {
-                Text("::")
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { contexto in
+                let ciclo = 1.6
+                let fase = contexto.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: ciclo) / ciclo
+                rotulo
                     .foregroundStyle(PV.apagado)
-                Text("Trabalhando")
-                    .foregroundStyle(PV.texto)
-                Text("\(quantidade)")
-                    .foregroundStyle(PV.mudo)
-                    .monospacedDigit()
+                    .overlay {
+                        GeometryReader { geo in
+                            let largura = geo.size.width
+                            LinearGradient(
+                                colors: [.clear, Color.white.opacity(0.92), .clear],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                            .frame(width: largura * 0.5)
+                            .offset(x: -largura * 0.35 + CGFloat(fase) * largura * 1.45)
+                        }
+                        .mask(rotulo.foregroundStyle(Color.white))
+                    }
             }
-            .font(PV.fonte(12))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(PV.campo))
-            .overlay(Capsule().strokeBorder(PV.campoBorda, lineWidth: 1))
-            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Thinking")
         }
     }
 
-    private func agentBubble(_ text: String) -> some View {
-        Text(text)
-            .font(PV.fonte(12))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 12).fill(PV.interno))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(PV.linhaBorda, lineWidth: 1))
-            .frame(maxWidth: 360, alignment: .leading)
+    private func agentBubble(_ msg: ChatMessage) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(msg.text)
+                .font(PV.fonte(12))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: 420, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 12).fill(PV.interno))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(PV.linhaBorda, lineWidth: 1))
+
+            if !msg.itens.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(msg.itens, id: \.self) { item in
+                        let marcado = msg.itensUsados.contains(item)
+                        Button {
+                            alternarItem(item, mensagem: msg.id)
+                        } label: {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: marcado ? "checkmark" : "plus")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .padding(.top, 2)
+                                Text(item)
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .font(PV.fonte(11))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(marcado ? PV.azulFundo : PV.tag))
+                            .foregroundStyle(marcado ? PV.azul : PV.texto)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func userBubble(_ text: String) -> some View {
@@ -277,39 +397,142 @@ struct PaginaBrainstorm: View {
             .frame(maxWidth: 360, alignment: .trailing)
     }
 
-    /// `texto` pronto (atalho já inclui a ideia). `nil` lê o campo do chat.
+    /// `texto` pronto (atalho). `nil` lê o campo do chat. A idéia vai no prompt, não no balão.
     private func enviar(texto: String?) {
         let ideia = ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         let digitado = (texto ?? chatInput).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !digitado.isEmpty, perguntasEmVoo == 0 else { return }
-        let pedido = texto == nil && !ideia.isEmpty && !digitado.contains(ideia)
-            ? "\(digitado)\n\nIdeia: \(ideia)"
-            : digitado
-        chatAberto = true
-        messages.append(ChatMessage(isAgent: false, text: pedido))
+        messages.append(ChatMessage(isAgent: false, text: digitado))
         chatInput = ""
-        if ideia.isEmpty, pedido.count > 12 { ideaSummary = pedido }
         let historico = messages
         let historias = stories.map { "\($0.title) [\($0.esforco.rawValue)/\($0.lane)]" }
         let repo = AgenteBrainstorm.repoDoProjeto()
+        let geracao = conversaGeracao
         perguntasEmVoo += 1
         Task {
             let resp: String
             do {
                 resp = try await AgenteBrainstorm.responder(
-                    mensagem: pedido, ideia: ideia.isEmpty ? ideaSummary : ideia,
+                    mensagem: digitado, ideia: ideia,
                     historias: historias, historico: historico, repo: repo)
             } catch {
                 resp = error.localizedDescription
             }
             await MainActor.run {
+                guard geracao == conversaGeracao else { return }
                 perguntasEmVoo = max(0, perguntasEmVoo - 1)
                 let semSessao = resp.contains("Claude sem sessão")
                 precisaLogin = semSessao
-                messages.append(ChatMessage(isAgent: true, text: resp))
+                let fala = BrainstormCLI.separarItens(resp)
+                let visivel = fala.texto.isEmpty
+                    ? (fala.itens.isEmpty ? resp : "Marque com + o que entra na idéia.")
+                    : fala.texto
+                messages.append(ChatMessage(isAgent: true, text: visivel, itens: fala.itens))
                 if semSessao { AgenteBrainstorm.abrirLogin() }
             }
         }
+    }
+
+    /// O + marca ou desmarca. A idéia só muda em Gerar idéia.
+    private func alternarItem(_ item: String, mensagem id: UUID) {
+        guard let indice = messages.firstIndex(where: { $0.id == id }) else { return }
+        if messages[indice].itensUsados.contains(item) {
+            messages[indice].itensUsados.remove(item)
+        } else {
+            messages[indice].itensUsados.insert(item)
+        }
+    }
+
+    private var itensSelecionados: [String] {
+        var vistos = Set<String>()
+        var lista: [String] = []
+        for msg in messages {
+            for item in msg.itens where msg.itensUsados.contains(item) && vistos.insert(item).inserted {
+                lista.append(item)
+            }
+        }
+        return lista
+    }
+
+    private var itensNovos: [String] {
+        itensSelecionados.filter { !sessao.itensNaIdeia.contains($0) }
+    }
+
+    private func textoConversa(_ faixa: ArraySlice<ChatMessage>) -> String {
+        faixa.compactMap { msg -> String? in
+            if msg.isAgent, msg.itens.isEmpty, msg.text == Self.textoInicial { return nil }
+            let quem = msg.isAgent ? "Agente" : "Pessoa"
+            return "\(quem): \(msg.text)"
+        }.joined(separator: "\n")
+    }
+
+    private var podeGerarIdeia: Bool {
+        guard !reescrevendo, perguntasEmVoo == 0 else { return false }
+        let inicio = min(sessao.mensagensNaIdeia, messages.count)
+        let nova = textoConversa(messages[inicio...])
+        return !nova.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !itensNovos.isEmpty
+    }
+
+    /// Reúne a conversa nova e os itens marcados num esboço. O que já está na caixa permanece e o resto acrescenta.
+    private func gerarIdeia() {
+        guard podeGerarIdeia else { return }
+        let inicio = min(sessao.mensagensNaIdeia, messages.count)
+        let fim = messages.count
+        let conversa = textoConversa(messages[inicio..<fim])
+        let novos = itensNovos
+        let base = ideaSummary
+        reescrevendo = true
+        let geracao = conversaGeracao
+        let repo = AgenteBrainstorm.repoDoProjeto()
+        Task {
+            let resultado: Result<String, Error>
+            do {
+                resultado = .success(try await AgenteBrainstorm.reescrever(
+                    ideia: base, conversa: conversa, itens: novos, repo: repo))
+            } catch {
+                resultado = .failure(error)
+            }
+            await MainActor.run {
+                guard geracao == conversaGeracao else { return }
+                reescrevendo = false
+                switch resultado {
+                case .success(let texto):
+                    let limpo = texto.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if limpo.isEmpty {
+                        status = "O agente não devolveu a idéia"
+                    } else if ideaSummary == base {
+                        ideaSummary = limpo
+                        sessao.mensagensNaIdeia = max(sessao.mensagensNaIdeia, fim)
+                        sessao.itensNaIdeia.formUnion(novos)
+                        status = base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? "Esboço da idéia"
+                            : "Idéia acrescentada"
+                    } else {
+                        status = "A idéia foi editada durante a geração; mantive o seu texto"
+                    }
+                case .failure(let error):
+                    let resp = error.localizedDescription
+                    let semSessao = resp.contains("Claude sem sessão")
+                    precisaLogin = semSessao
+                    status = resp
+                    if semSessao { AgenteBrainstorm.abrirLogin() }
+                }
+            }
+        }
+    }
+
+    /// Zera o chat e a idéia. Os cards ficam.
+    private func limparConversa() {
+        conversaGeracao += 1
+        messages = [ChatMessage(isAgent: true, text: Self.textoInicial)]
+        chatInput = ""
+        ideaSummary = ""
+        perguntasEmVoo = 0
+        reescrevendo = false
+        precisaLogin = false
+        status = "Pronto"
+        sessao.mensagensNaIdeia = 0
+        sessao.itensNaIdeia = []
     }
 
     // MARK: - Gerar
@@ -318,13 +541,13 @@ struct PaginaBrainstorm: View {
         Button(action: generateStories) {
             HStack {
                 if isGenerating { ProgressView().controlSize(.small) }
-                Text(isGenerating ? "Gerando histórias…" : "2 · Gerar histórias")
+                Text(isGenerating ? "Gerando histórias…" : "Gerar histórias")
             }
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
         .tint(PV.azul)
-        .disabled(ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating)
+        .disabled(ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating || reescrevendo)
         .padding(.horizontal, 4)
     }
 
@@ -341,18 +564,16 @@ struct PaginaBrainstorm: View {
                     .padding(.vertical, 1)
                     .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
                 if !stories.isEmpty {
-                    Text("\(stories.filter(\.approved).count) aprovadas")
+                    Text("\(stories.filter(\.approved).count) marcadas")
                         .font(PV.fonte(10))
                         .foregroundStyle(PV.mudo)
                 }
                 Spacer()
-                if !stories.isEmpty {
-                    Button("Adicionar") { addManualStory() }
-                        .font(PV.fonte(11))
-                }
+                Button("Adicionar") { novaHistoria() }
+                    .font(PV.fonte(11))
             }
 
-            Text("Etiquetas do processo: esforço + lane — as mesmas que o dispatcher lê no Linear.")
+            Text("Cards no quadro. Clique para editar. Esforço e lane são as etiquetas do Linear.")
                 .font(PV.fonte(11))
                 .foregroundStyle(PV.mudo)
 
@@ -361,104 +582,83 @@ struct PaginaBrainstorm: View {
                     Text("Nenhuma história ainda")
                         .font(PV.fonte(13, .semibold))
                         .foregroundStyle(PV.mudo)
-                    Text("Refine a ideia acima e gere, ou carregue um exemplo com etiquetas coerentes.")
+                    Text("Aceite itens no chat ou escreva a idéia, depois gere.")
                         .font(PV.fonte(11))
                         .foregroundStyle(PV.mudo)
                         .multilineTextAlignment(.center)
                     Button {
-                        let exemplo = "Criar tela de Brainstorm para discutir ideias com agente e gerar cards no Linear"
-                        stories = storiesFromIdea(exemplo)
-                        ideaSummary = exemplo
-                        status = "Exemplo com \(stories.count) histórias"
-                        messages.append(ChatMessage(isAgent: true, text: "Exemplo carregado. Revise esforço e lane antes de aprovar."))
+                        ideaSummary = "Criar tela de Brainstorm para discutir ideias com agente e gerar cards no Linear"
+                        generateStories()
                     } label: {
                         Text("Carregar exemplo").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(PV.azul)
+                    .disabled(isGenerating || reescrevendo)
                 }
                 .padding(20)
                 .frame(minHeight: 120)
                 .background(RoundedRectangle(cornerRadius: 8).fill(PV.cartao))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(PV.cartaoBorda, lineWidth: 1))
             } else {
-                ForEach($stories) { $story in
-                    storyCard(story: $story)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                    ForEach($sessao.stories) { $story in
+                        kanbanCard(story: $story)
+                    }
                 }
             }
         }
     }
 
-    private func storyCard(story: Binding<UserStory>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(story.wrappedValue.title)
-                    .font(PV.fonte(13, .semibold))
-                Spacer()
-                Button {
-                    story.approved.wrappedValue.toggle()
-                } label: {
-                    Image(systemName: story.approved.wrappedValue ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(story.approved.wrappedValue ? PV.verde : PV.mudo)
-                        .font(.system(size: 18))
-                }
-                .help(story.approved.wrappedValue ? "Desaprovar" : "Aprovar para o Linear")
-            }
-
-            Text(story.wrappedValue.description)
-                .font(PV.fonte(11))
-                .foregroundStyle(PV.texto2)
-                .lineLimit(3)
-
-            if !story.wrappedValue.acceptanceCriteria.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Critérios de aceitação")
-                        .font(PV.fonte(9))
-                        .foregroundStyle(PV.mudo)
-                    ForEach(story.wrappedValue.acceptanceCriteria.prefix(3), id: \.self) { ac in
-                        Text("• \(ac)")
-                            .font(PV.fonte(10))
-                            .foregroundStyle(PV.texto2)
+    private func kanbanCard(story: Binding<UserStory>) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Button {
+                editingStory = story.wrappedValue
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(story.wrappedValue.title)
+                        .font(PV.fonte(13, .semibold))
+                        .foregroundStyle(PV.texto)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.trailing, 22)
+                    Text(story.wrappedValue.description)
+                        .font(PV.fonte(11))
+                        .foregroundStyle(PV.texto2)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer(minLength: 0)
+                    HStack(spacing: 4) {
+                        tag(text: "P\(story.wrappedValue.priority)", destaque: false)
+                        tag(text: "\(story.wrappedValue.estimate) pts", destaque: false)
+                        tag(text: story.wrappedValue.esforco.rotuloTag, destaque: true)
+                        tag(text: story.wrappedValue.lane, destaque: true)
                     }
                 }
+                .padding(12)
+                .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+                .background(RoundedRectangle(cornerRadius: 10).fill(PV.cartao))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10).stroke(
+                        story.approved.wrappedValue ? PV.verde.opacity(0.55) : PV.cartaoBorda,
+                        lineWidth: 1)
+                )
             }
+            .buttonStyle(.plain)
 
-            HStack(spacing: 4) {
-                tag(text: "P\(story.wrappedValue.priority)", destaque: false)
-                tag(text: "\(story.wrappedValue.estimate) pts", destaque: false)
-                tag(text: story.wrappedValue.esforco.rotuloTag, destaque: true)
-                tag(text: story.wrappedValue.lane, destaque: true)
+            Button {
+                story.approved.wrappedValue.toggle()
+            } label: {
+                Image(systemName: story.approved.wrappedValue ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(story.approved.wrappedValue ? PV.verde : PV.mudo)
+                    .font(.system(size: 16))
+                    .padding(8)
             }
-
-            HStack(spacing: 10) {
-                Picker("Esforço", selection: story.esforco) {
-                    ForEach(esforcos) { e in
-                        Text(e.rotuloTag).tag(e)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 110)
-
-                Picker("Lane", selection: story.lane) {
-                    ForEach(lanes, id: \.self) { nome in
-                        Text(nome).tag(nome)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 140)
-
-                Spacer(minLength: 4)
-                Button("Editar") { editingStory = story.wrappedValue }
-                    .font(PV.fonte(10))
-                Button("Remover") { removeStory(story.id) }
-                    .font(PV.fonte(10))
-                    .foregroundStyle(PV.vermelho)
-            }
+            .buttonStyle(.plain)
+            .help(story.approved.wrappedValue ? "Desmarcar" : "Marcar")
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(PV.cartao))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(
-            story.approved.wrappedValue ? PV.verde.opacity(0.45) : PV.cartaoBorda, lineWidth: 1))
     }
 
     private func tag(text: String, destaque: Bool) -> some View {
@@ -472,23 +672,27 @@ struct PaginaBrainstorm: View {
 
     // MARK: - Rodapé
 
+    private var haMarcadas: Bool { stories.contains(where: \.approved) }
+
     private var footerBar: some View {
-        HStack {
-            Button("Aprovar todas") { for i in stories.indices { stories[i].approved = true } }
+        HStack(spacing: 8) {
+            Button("Aprovar", action: insertApprovedIntoLinear)
+                .buttonStyle(.borderedProminent)
+                .tint(PV.verde)
+                .disabled(!haMarcadas || isGenerating)
+            Button("Remover", action: removerMarcadas)
                 .buttonStyle(.bordered)
-            Button("Desmarcar") { for i in stories.indices { stories[i].approved = false } }
+                .foregroundStyle(PV.vermelho)
+                .disabled(!haMarcadas || isGenerating)
+            Button("Marcar todas") { for i in stories.indices { stories[i].approved = true } }
                 .buttonStyle(.bordered)
-            Spacer()
+            Button("Desmarcar todas") { for i in stories.indices { stories[i].approved = false } }
+                .buttonStyle(.bordered)
+            Spacer(minLength: 8)
             Text(status)
                 .font(PV.fonte(11))
                 .foregroundStyle(PV.mudo)
                 .lineLimit(1)
-            Button(action: insertApprovedIntoLinear) {
-                Text("3 · Enviar aprovadas ao Linear")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(PV.verde)
-            .disabled(stories.filter(\.approved).isEmpty || isGenerating)
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 12)
@@ -500,72 +704,94 @@ struct PaginaBrainstorm: View {
     private func generateStories() {
         let trimmed = ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let etiquetas = Self.etiquetasDoProcesso()
+        guard !etiquetas.isEmpty else {
+            status = "Nenhuma lane com esforço no catálogo"
+            return
+        }
         isGenerating = true
         status = "Gerando…"
+        let geracao = conversaGeracao
+        let repo = AgenteBrainstorm.repoDoProjeto()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-            self.stories = self.storiesFromIdea(trimmed)
-            self.isGenerating = false
-            self.status = "\(self.stories.count) histórias — revise esforço e lane"
-            self.messages.append(ChatMessage(isAgent: true, text: "Histórias prontas. Confira esforço e lane (etiquetas do processo) antes de aprovar."))
-        }
-    }
-
-    private func storiesFromIdea(_ idea: String) -> [UserStory] {
-        let lanePadrao = lanes.first ?? "claude"
-        let geradas: [UserStory] = [
-            UserStory(
-                title: "Interface de chat para refinar a ideia",
-                description: "Como quem planeja\nEu quero conversar com um agente\nPara que a ideia fique clara antes de virar card",
-                acceptanceCriteria: ["Chat opcional colapsável", "Resumo da ideia editável", "Atalhos de refinamento"],
-                priority: 3, estimate: 5,
-                esforco: .medio, lane: lanePadrao),
-            UserStory(
-                title: "Geração de user stories com etiquetas do processo",
-                description: "Como Product Owner\nEu quero histórias com esforço e lane\nPara que o dispatcher consiga assumir o card",
-                acceptanceCriteria: ["Cada história tem esforço baixo|medio|alto", "Cada história tem lane do catálogo", "Sem etiquetas inventadas fora do processo"],
-                priority: 3, estimate: 5,
-                esforco: .medio, lane: lanePadrao),
-            UserStory(
-                title: "Revisão e aprovação antes do Linear",
-                description: "Como usuário\nEu quero editar e aprovar história a história\nPara que só o que foi validado entre na fila",
-                acceptanceCriteria: ["Aprovação explícita (não automática)", "Edição de esforço e lane", "Remover/adicionar histórias"],
-                priority: 2, estimate: 3,
-                esforco: .baixo, lane: lanePadrao),
-            UserStory(
-                title: "Envio ao Linear em Todo com labelIds",
-                description: "Como time\nEu quero criar issues com estado Todo e etiquetas resolvidas\nPara que o card entre no fluxo sem ajuste manual",
-                acceptanceCriteria: ["stateId Todo do cache", "labelIds de esforço + lane", "Descrição inclui critérios de aceitação"],
-                priority: 4, estimate: 5,
-                esforco: .alto, lane: lanePadrao),
-        ]
-        let base = idea.lowercased()
-        if base.contains("brainstorm") || base.contains("ideia") || base.contains("linear") {
-            return geradas
-        }
-        return geradas.enumerated().map { i, story in
-            var s = story
-            if i == 0 {
-                let trecho = idea.trimmingCharacters(in: .whitespacesAndNewlines)
-                s.title = "Implementar: " + String(trecho.prefix(48))
-                s.description = "Como time\nEu quero \(trecho)\nPara que o valor chegue às lanes"
+        Task {
+            let resultado: Result<[BrainstormCLI.HistoriaGerada], Error>
+            do {
+                let lista = try await AgenteBrainstorm.gerarHistorias(ideia: trimmed, etiquetas: etiquetas, repo: repo)
+                resultado = .success(lista)
+            } catch {
+                resultado = .failure(error)
             }
-            return s
+            await MainActor.run {
+                isGenerating = false
+                switch resultado {
+                case .success(let lista):
+                    let cards = lista.compactMap { Self.story(de: $0) }
+                    guard !cards.isEmpty else {
+                        status = "O agente não devolveu histórias da idéia"
+                        return
+                    }
+                    stories = cards
+                    status = "\(cards.count) histórias com as etiquetas do processo"
+                    guard geracao == conversaGeracao else { return }
+                    messages.append(ChatMessage(
+                        isAgent: true,
+                        text: "Histórias da idéia, cada uma com esforço e lane do catálogo. Marque as que seguem."))
+                case .failure(let error):
+                    let resp = error.localizedDescription
+                    let semSessao = resp.contains("Claude sem sessão")
+                    precisaLogin = semSessao
+                    status = resp
+                    if semSessao { AgenteBrainstorm.abrirLogin() }
+                }
+            }
         }
     }
 
-    private func addManualStory() {
-        stories.insert(UserStory(
-            title: "Nova história",
-            description: "Como [usuário]\nEu quero [ação]\nPara que [benefício].",
-            acceptanceCriteria: ["Critério 1"],
-            priority: 2, estimate: 3,
+    /// Lanes do painel que têm modelo para baixo, medio ou alto. Habilitadas, quando houver.
+    private static func etiquetasDoProcesso() -> [BrainstormCLI.EtiquetaLane] {
+        let pares = CatalogoAgentes.carregar().compactMap { agente -> (nome: String, esforcos: [String])? in
+            guard agente.painel else { return nil }
+            let es = BrainstormCLI.niveisEsforco.filter { agente.modelos[$0] != nil }
+            guard !es.isEmpty else { return nil }
+            return (agente.nome, es)
+        }
+        let hab = LanesHabilitadas.ler(stateDir: Configuracao.resolver().stateDir)
+        return BrainstormCLI.etiquetas(lanes: pares, habilitadas: hab)
+    }
+
+    private static func story(de g: BrainstormCLI.HistoriaGerada) -> UserStory? {
+        guard let esforco = EsforcoHistoria(rawValue: g.esforco) else { return nil }
+        return UserStory(
+            title: g.titulo,
+            description: g.descricao,
+            acceptanceCriteria: g.criterios,
+            priority: g.prioridade,
+            estimate: g.estimativa,
+            esforco: esforco,
+            lane: g.lane,
+            approved: false)
+    }
+
+    private func novaHistoria() {
+        editingStory = UserStory(
+            title: "",
+            description: "",
+            acceptanceCriteria: [],
+            priority: 3, estimate: 3,
             esforco: .medio, lane: lanes.first ?? "claude",
-            approved: false), at: 0)
+            approved: false)
     }
 
     private func removeStory(_ id: UUID) {
         stories.removeAll { $0.id == id }
+    }
+
+    private func removerMarcadas() {
+        let antes = stories.count
+        stories.removeAll(where: \.approved)
+        let sairam = antes - stories.count
+        status = sairam == 0 ? "Nenhuma marcada" : "\(sairam) card(s) removidos"
     }
 
     private func insertApprovedIntoLinear() {
@@ -585,6 +811,17 @@ struct PaginaBrainstorm: View {
         status = "Enviando \(approved.count)…"
 
         Task {
+            let timeId: String
+            do {
+                timeId = try await Self.timeDoProjeto(projectId)
+            } catch {
+                await MainActor.run {
+                    isGenerating = false
+                    status = "Falha no envio"
+                    CentralAvisos.compartilhada.erro("Nada foi criado", error.localizedDescription)
+                }
+                return
+            }
             let ids = Self.idsLinear(projetoID: projectId)
             guard let stateTodo = ids.todo, !stateTodo.isEmpty else {
                 await MainActor.run {
@@ -609,8 +846,9 @@ struct PaginaBrainstorm: View {
                     "title": s.title,
                     "description": s.descricaoLinear,
                     "projectId": projectId,
+                    "teamId": timeId,
                     "stateId": stateTodo,
-                    "priority": s.priority,
+                    "priority": min(max(s.priority, 1), 4),
                     "estimate": s.estimate,
                     "labelIds": labelIds,
                 ]
@@ -664,7 +902,24 @@ struct PaginaBrainstorm: View {
         return IdsBrainstorm(todo: todo, esforco: ids.esforco, lanes: ids.lanes)
     }
 
+    /// O `issueCreate` do Linear exige o time. O projeto padrão aponta para ele.
+    private static func timeDoProjeto(_ projetoID: String) async throws -> String {
+        let data = try await pedirProxy(op: "time_do_projeto", variaveis: ["id": projetoID])
+        let nos = (((data["project"] as? [String: Any])?["teams"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
+        let id = (nos.first?["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !id.isEmpty else { throw ErroLinear.resposta("O projeto não tem um time no Linear") }
+        return id
+    }
+
     private static func criarIssue(input: [String: Any]) async throws {
+        let data = try await pedirProxy(op: "criar_issue", variaveis: ["input": input])
+        let criado = data["issueCreate"] as? [String: Any]
+        if criado?["success"] as? Bool == false {
+            throw ErroLinear.resposta("O Linear não criou o card")
+        }
+    }
+
+    private static func pedirProxy(op: String, variaveis: [String: Any]) async throws -> [String: Any] {
         let candidatos: [URL] = [
             ScriptsDoBundle.modulosAssinados(),
             Bundle.main.resourceURL?.appendingPathComponent("controle/gasto_lanes"),
@@ -677,7 +932,7 @@ struct PaginaBrainstorm: View {
             throw ErroLinear.resposta("proxy_linear.py não encontrado no bundle")
         }
 
-        let payload = try JSONSerialization.data(withJSONObject: input)
+        let payload = try JSONSerialization.data(withJSONObject: ["op": op, "variaveis": variaveis])
         guard let payloadTexto = String(data: payload, encoding: .utf8) else {
             throw ErroLinear.resposta("JSON inválido")
         }
@@ -687,7 +942,8 @@ struct PaginaBrainstorm: View {
         sys.path.insert(0, sys.argv[1])
         from proxy_linear import pedir, ErroProxy
         try:
-            data = pedir("criar_issue", {"input": json.loads(sys.argv[2])})
+            pedido = json.loads(sys.argv[2])
+            data = pedir(pedido["op"], pedido.get("variaveis") or {})
             print(json.dumps({"ok": True, "data": data}, ensure_ascii=False))
         except ErroProxy as e:
             print(json.dumps({"ok": False, "erro": str(e)}, ensure_ascii=False))
@@ -711,6 +967,10 @@ struct PaginaBrainstorm: View {
             let msg = (obj?["erro"] as? String) ?? String(data: dados, encoding: .utf8) ?? "falha no proxy"
             throw ErroLinear.resposta(msg)
         }
+        guard let data = obj?["data"] as? [String: Any] else {
+            throw ErroLinear.resposta("resposta do proxy sem data")
+        }
+        return data
     }
 }
 
@@ -745,6 +1005,7 @@ enum AgenteBrainstorm {
     }
 
     /// CLI que já respondeu neste processo, e o id da sessão dele nesse repositório.
+    /// Chat, reescrita e histórias guardam sessões separadas.
     private struct Memoria {
         var repo: String
         var cli: String
@@ -752,7 +1013,9 @@ enum AgenteBrainstorm {
     }
 
     private static let trava = NSLock()
-    private static var memoria: Memoria?
+    private static var memoriaConversa: Memoria?
+    private static var memoriaReescrita: Memoria?
+    private static var memoriaHistorias: Memoria?
     /// Claude sem login, ou o binário recusou o comando. Não entra nas próximas perguntas.
     private static var claudeFora = false
 
@@ -781,7 +1044,47 @@ enum AgenteBrainstorm {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     cont.resume(returning: try responderSync(repo: repo, preferida: preferida,
-                                                              completo: completo, curto: curto))
+                                                              completo: completo, curto: curto,
+                                                              papel: .conversa))
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Agente à parte: só reescreve a idéia. A sessão dele não é a do chat.
+    static func reescrever(ideia: String, conversa: String, itens: [String], repo: URL?) async throws -> String {
+        guard let repo else { throw Falha.semRepo }
+        let pedido = BrainstormCLI.promptReescrita(ideia: ideia, conversa: conversa, itens: itens)
+        let preferida = cliPreferido()
+        return try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let bruto = try responderSync(repo: repo, preferida: preferida,
+                                                   completo: pedido, curto: pedido,
+                                                   papel: .reescrita)
+                    cont.resume(returning: BrainstormCLI.textoReescrito(bruto))
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Agente à parte: quebra a idéia em histórias e só aceita pares lane/esforço do catálogo.
+    static func gerarHistorias(ideia: String, etiquetas: [BrainstormCLI.EtiquetaLane],
+                               repo: URL?) async throws -> [BrainstormCLI.HistoriaGerada] {
+        guard let repo else { throw Falha.semRepo }
+        let pedido = BrainstormCLI.promptHistorias(ideia: ideia, etiquetas: etiquetas)
+        let preferida = cliPreferido()
+        return try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let bruto = try responderSync(repo: repo, preferida: preferida,
+                                                   completo: pedido, curto: pedido,
+                                                   papel: .historias)
+                    cont.resume(returning: BrainstormCLI.historias(de: bruto, etiquetas: etiquetas))
                 } catch {
                     cont.resume(throwing: error)
                 }
@@ -791,8 +1094,9 @@ enum AgenteBrainstorm {
 
     /// Uma resposta, um CLI. O outro só entra se o primeiro não tem sessão ou recusou
     /// o comando. Erro depois de rodar não dispara outro agente.
-    private static func responderSync(repo: URL, preferida: String, completo: String, curto: String) throws -> String {
-        let foto = lerMemoria(repo: repo.path)
+    private static func responderSync(repo: URL, preferida: String, completo: String, curto: String,
+                                      papel: BrainstormCLI.Papel) throws -> String {
+        let foto = lerMemoria(repo: repo.path, papel: papel)
         let ordem = BrainstormCLI.fila(preferida: preferida, escolhida: foto.cli, claudeFora: foto.claudeFora)
         var ultima: Error = Falha.semClaude
         var pediuLogin = false
@@ -808,12 +1112,12 @@ enum AgenteBrainstorm {
             let sessao = foto.cli == cli ? foto.sessao : nil
             do {
                 return try umaVez(cli: cli, bin: bin, repo: repo,
-                                  prompt: sessao == nil ? completo : curto, sessao: sessao)
+                                  prompt: sessao == nil ? completo : curto, sessao: sessao, papel: papel)
             } catch {
                 switch classificar(error, tinhaSessao: sessao != nil) {
                 case .recomecar:
                     do {
-                        return try umaVez(cli: cli, bin: bin, repo: repo, prompt: completo, sessao: nil)
+                        return try umaVez(cli: cli, bin: bin, repo: repo, prompt: completo, sessao: nil, papel: papel)
                     } catch {
                         ultima = error
                         if ehSemLogin(error) {
@@ -842,10 +1146,11 @@ enum AgenteBrainstorm {
         throw pediuLogin ? Falha.semLogin : ultima
     }
 
-    private static func umaVez(cli: String, bin: String, repo: URL, prompt: String, sessao: String?) throws -> String {
-        let saida = try executar(cli: cli, bin: bin, repo: repo, prompt: prompt, sessao: sessao)
+    private static func umaVez(cli: String, bin: String, repo: URL, prompt: String, sessao: String?,
+                               papel: BrainstormCLI.Papel) throws -> String {
+        let saida = try executar(cli: cli, bin: bin, repo: repo, prompt: prompt, sessao: sessao, papel: papel)
         let id = BrainstormCLI.sessaoUtil(saida.sessao) ?? BrainstormCLI.sessaoUtil(sessao)
-        lembrar(repo: repo.path, cli: cli, sessao: id)
+        lembrar(repo: repo.path, cli: cli, sessao: id, papel: papel)
         return saida.texto
     }
 
@@ -903,13 +1208,13 @@ enum AgenteBrainstorm {
     }
 
     private static func executar(cli: String, bin: String, repo: URL, prompt: String,
-                                 sessao: String?) throws -> BrainstormCLI.Saida {
+                                 sessao: String?, papel: BrainstormCLI.Papel) throws -> BrainstormCLI.Saida {
         let saidaCodex = cli == "codex"
             ? FileManager.default.temporaryDirectory.appendingPathComponent("brainstorm-codex-\(UUID().uuidString).txt")
             : nil
         defer { if let saidaCodex { try? FileManager.default.removeItem(at: saidaCodex) } }
         guard let chamada = BrainstormCLI.chamada(cli: cli, prompt: prompt, sessao: sessao,
-                                                   saidaCodex: saidaCodex?.path) else {
+                                                   saidaCodex: saidaCodex?.path, papel: papel) else {
             throw Falha.saida(127, "CLI \(cli) sem modo só leitura no brainstorm")
         }
         let processo = Process()
@@ -995,24 +1300,40 @@ enum AgenteBrainstorm {
         return semSessao(texto) || compacto.contains("\"loggedin\":false")
     }
 
-    private static func lerMemoria(repo: String) -> (cli: String?, sessao: String?, claudeFora: Bool) {
+    private static func lerMemoria(repo: String, papel: BrainstormCLI.Papel) -> (cli: String?, sessao: String?, claudeFora: Bool) {
         trava.lock()
         defer { trava.unlock() }
-        let mesmo = memoria?.repo == repo
-        return (mesmo ? memoria?.cli : nil, mesmo ? memoria?.sessao : nil, claudeFora)
+        let guardada = memoria(papel)
+        let mesmo = guardada?.repo == repo
+        return (mesmo ? guardada?.cli : nil, mesmo ? guardada?.sessao : nil, claudeFora)
     }
 
-    private static func lembrar(repo: String, cli: String, sessao: String?) {
+    private static func lembrar(repo: String, cli: String, sessao: String?, papel: BrainstormCLI.Papel) {
         trava.lock()
         defer { trava.unlock() }
-        memoria = Memoria(repo: repo, cli: cli, sessao: BrainstormCLI.sessaoUtil(sessao))
+        let nova = Memoria(repo: repo, cli: cli, sessao: BrainstormCLI.sessaoUtil(sessao))
+        switch papel {
+        case .conversa: memoriaConversa = nova
+        case .reescrita: memoriaReescrita = nova
+        case .historias: memoriaHistorias = nova
+        }
+    }
+
+    private static func memoria(_ papel: BrainstormCLI.Papel) -> Memoria? {
+        switch papel {
+        case .conversa: return memoriaConversa
+        case .reescrita: return memoriaReescrita
+        case .historias: return memoriaHistorias
+        }
     }
 
     private static func marcarClaudeFora() {
         trava.lock()
         defer { trava.unlock() }
         claudeFora = true
-        if memoria?.cli == "claude" { memoria = nil }
+        if memoriaConversa?.cli == "claude" { memoriaConversa = nil }
+        if memoriaReescrita?.cli == "claude" { memoriaReescrita = nil }
+        if memoriaHistorias?.cli == "claude" { memoriaHistorias = nil }
     }
 
     private static func ehSemLogin(_ erro: Error) -> Bool {
@@ -1049,6 +1370,8 @@ struct ChatMessage: Identifiable {
     let id = UUID()
     let isAgent: Bool
     let text: String
+    var itens: [String] = []
+    var itensUsados: Set<String> = []
 }
 
 /// Esforço do card — mesmos nomes do grupo Linear `esforco` / dispatcher.
@@ -1095,8 +1418,10 @@ struct UserStory: Identifiable, Hashable {
 struct EditStorySheet: View {
     var story: UserStory
     var lanes: [String]
+    var criando: Bool
     /// `nil` = cancelou; valor = salvou.
     var onSave: (UserStory?) -> Void
+    var onRemove: () -> Void
 
     @State private var title: String
     @State private var description: String
@@ -1106,10 +1431,12 @@ struct EditStorySheet: View {
     @State private var esforco: EsforcoHistoria
     @State private var lane: String
 
-    init(story: UserStory, lanes: [String], onSave: @escaping (UserStory?) -> Void) {
+    init(story: UserStory, lanes: [String], criando: Bool, onSave: @escaping (UserStory?) -> Void, onRemove: @escaping () -> Void) {
         self.story = story
         self.lanes = lanes
+        self.criando = criando
         self.onSave = onSave
+        self.onRemove = onRemove
         _title = State(initialValue: story.title)
         _description = State(initialValue: story.description)
         _acText = State(initialValue: story.acceptanceCriteria.joined(separator: "\n"))
@@ -1121,7 +1448,7 @@ struct EditStorySheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Editar história")
+            Text(criando ? "Nova história" : "Editar história")
                 .font(PV.fonte(16, .semibold))
 
             TextField("Título", text: $title)
@@ -1152,7 +1479,7 @@ struct EditStorySheet: View {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading) {
                     Text("Prioridade").font(PV.fonte(11)).foregroundStyle(PV.mudo)
-                    Stepper(value: $priority, in: 1...5) { Text("P\(priority)") }
+                    Stepper(value: $priority, in: 1...4) { Text("P\(priority)") }
                 }
                 VStack(alignment: .leading) {
                     Text("Estimativa").font(PV.fonte(11)).foregroundStyle(PV.mudo)
@@ -1182,6 +1509,10 @@ struct EditStorySheet: View {
                 .foregroundStyle(PV.apagado)
 
             HStack {
+                if !criando {
+                    Button("Remover") { onRemove() }
+                        .foregroundStyle(PV.vermelho)
+                }
                 Button("Cancelar") { onSave(nil) }
                 Spacer()
                 Button("Salvar") {
@@ -1200,6 +1531,7 @@ struct EditStorySheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(PV.azul)
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(20)
