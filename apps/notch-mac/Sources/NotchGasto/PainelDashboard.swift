@@ -42,7 +42,8 @@ struct DashboardPainel: View {
         let k = (largura - 48) / 1300
         return HStack(spacing: 16) {
             kpi(icone: IconeCartao(simbolo: "square.3.layers.3d", cor: PV.teal, fundo: PV.tealFundo, tamanho: 54, tamanhoIcone: 26),
-                rotulo: "Lanes ativas", valor: "\(ind.lanesAtivas) / \(ind.lanesTotal)", espaco: 16) {
+                rotulo: "Lanes ativas", valor: "\(ind.lanesAtivas) / \(ind.lanesTotal)", espaco: 16,
+                larguraMinimaDelta: 195, larguraMinimaAbaixo: 316, larguraMinimaDireita: 295) {
                 // Mock: sem histórico do nº de lanes ativas, a variação não tem número.
                 Text("—").fontePainel(13, .semibold).foregroundStyle(PV.verde).help("Variação: em breve")
             } abaixo: {
@@ -54,7 +55,8 @@ struct DashboardPainel: View {
             .clipped()
 
             kpi(icone: IconeCartao(simbolo: "bolt", cor: PV.azulIcone, fundo: PV.azulFundo, tamanho: 54, tamanhoIcone: 25),
-                rotulo: "Builds hoje", valor: "\(ind.buildsHoje)", espaco: 12) {
+                rotulo: "Builds hoje", valor: "\(ind.buildsHoje)", espaco: 12,
+                larguraMinimaDelta: 185, larguraMinimaDireita: 265) {
                 variacao(ind.buildsHoje - ind.buildsOntem, sobeBom: true)
             } abaixo: { EmptyView() } direita: {
                 Barrinhas(valores: ind.buildsSerie.map(Double.init)) { i, _ in
@@ -67,7 +69,8 @@ struct DashboardPainel: View {
             .clipped()
 
             kpi(icone: IconeCartao(simbolo: "xmark.circle", cor: PV.vermelho, fundo: PV.vermelhoFundo, tamanho: 54, tamanhoIcone: 27),
-                rotulo: "Falhas (24h)", valor: "\(ind.falhas24h)", espaco: 14) {
+                rotulo: "Falhas (24h)", valor: "\(ind.falhas24h)", espaco: 14,
+                larguraMinimaDelta: 195, larguraMinimaDireita: 275) {
                 Text(ind.falhasPct.map { Formato.pct($0) } ?? "—").fontePainel(13, .semibold).foregroundStyle(PV.vermelho)
             } abaixo: { EmptyView() } direita: {
                 Barrinhas(valores: ind.falhasSerie.map(Double.init)) { _, v in v > 0 ? PV.vermelho : Color(hex: 0x3A4868) }
@@ -77,7 +80,8 @@ struct DashboardPainel: View {
             .clipped()
 
             kpi(icone: IconeCartao(simbolo: "cylinder.split.1x2", cor: PV.dourado, fundo: PV.ambarFundo, tamanho: 54, tamanhoIcone: 25),
-                rotulo: "Custo (7 dias)", valor: snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", espaco: 12) {
+                rotulo: "Custo (7 dias)", valor: snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", espaco: 12,
+                larguraMinimaDelta: 235, larguraMinimaDireita: 290) {
                 variacaoCusto
             } abaixo: { EmptyView() } direita: {
                 Barrinhas(valores: (snap?.custos.dias ?? []).map(\.total), cor: { _, _ in PV.verde }, largura: 5)
@@ -90,31 +94,52 @@ struct DashboardPainel: View {
 
     private func kpi<Delta: View, Abaixo: View, Direita: View>(
         icone: IconeCartao, rotulo: String, valor: String, espaco: CGFloat,
-        @ViewBuilder delta: () -> Delta, @ViewBuilder abaixo: () -> Abaixo, @ViewBuilder direita: () -> Direita
+        larguraMinimaDelta: CGFloat = 0,
+        larguraMinimaAbaixo: CGFloat = 0,
+        larguraMinimaDireita: CGFloat = 0,
+        @ViewBuilder delta: @escaping () -> Delta,
+        @ViewBuilder abaixo: @escaping () -> Abaixo,
+        @ViewBuilder direita: @escaping () -> Direita
     ) -> some View {
-        HStack(spacing: 0) {
-            icone.padding(.trailing, 18)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(rotulo).fontePainel(13).foregroundStyle(PV.texto2).fixedSize()
-                HStack(spacing: espaco) {
-                    Text(valor).fontePainel(24, .bold).lineLimit(1).fixedSize()
-                        .contentTransition(.numericText())
-                        .animation(DS.anim(DS.mola), value: valor)
-                    delta().fixedSize()
+        // O espaço que vale é o do cartão, medido abaixo; a janela não entra na conta.
+        // Primeiro saem os detalhes (gráfico), depois a variação e a barra de apoio;
+        // ícone, rótulo, valor e o que estiver na faixa essencial ficam.
+        let pecas = [
+            PecaCard(id: "icone", prioridade: .essencial),
+            PecaCard(id: "texto", prioridade: .essencial),
+            PecaCard(id: "delta", prioridade: .secundaria,
+                     minimo: EspacoCard(largura: Double(larguraMinimaDelta), altura: 0)),
+            PecaCard(id: "abaixo", prioridade: .secundaria,
+                     minimo: EspacoCard(largura: Double(larguraMinimaAbaixo), altura: 0)),
+            PecaCard(id: "direita", prioridade: .detalhe,
+                     minimo: EspacoCard(largura: Double(larguraMinimaDireita), altura: 0)),
+        ]
+        return ComEspacoDoCard { espacoDoCard in
+            let visiveis = Set(DegradacaoCard.visiveis(pecas, em: espacoDoCard))
+            HStack(spacing: 0) {
+                if visiveis.contains("icone") { icone.padding(.trailing, 18) }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rotulo).fontePainel(13).foregroundStyle(PV.texto2).fixedSize()
+                    HStack(spacing: espaco) {
+                        Text(valor).fontePainel(24, .bold).lineLimit(1).fixedSize()
+                            .contentTransition(.numericText())
+                            .animation(DS.anim(DS.mola), value: valor)
+                        if visiveis.contains("delta") { delta().fixedSize() }
+                    }
+                    if visiveis.contains("abaixo") { abaixo() }
                 }
-                abaixo()
+                .layoutPriority(1)
+                Spacer(minLength: 0)
+                if visiveis.contains("direita") { direita() }
             }
-            .layoutPriority(1)
-            Spacer(minLength: 0)
-            direita()
+            .padding(.leading, 16).padding(.trailing, 22)
+            .frame(maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(LinearGradient(colors: [PV.kpiTopo, PV.kpiBase], startPoint: .top, endPoint: .bottom)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.1), PV.kpiBorda], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+            .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
         }
-        .padding(.leading, 16).padding(.trailing, 22)
-        .frame(maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(LinearGradient(colors: [PV.kpiTopo, PV.kpiBase], startPoint: .top, endPoint: .bottom)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.1), PV.kpiBorda], startPoint: .top, endPoint: .bottom), lineWidth: 1))
-        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
     }
 
     private func variacao(_ d: Int, sobeBom: Bool) -> some View {
@@ -570,6 +595,18 @@ struct LinhaLaneDashboard: View {
 
     var body: some View {
         let estado = EstadoPilula(linha.estado)
+        // A linha também degrada pelo espaço dela: a altura chega do cartão e diz
+        // o que cabe. Primeiro saem a segunda linha e a build; lane e estado ficam.
+        let pecas = [
+            PecaCard(id: "principal", prioridade: .essencial),
+            PecaCard(id: "secundaria", prioridade: .secundaria,
+                     minimo: EspacoCard(largura: 0, altura: 46)),
+            PecaCard(id: "build", prioridade: .secundaria,
+                     minimo: EspacoCard(largura: 0, altura: 46)),
+            PecaCard(id: "uso", prioridade: .detalhe,
+                     minimo: EspacoCard(largura: 0, altura: 50)),
+        ]
+        let visiveis = Set(DegradacaoCard.visiveis(pecas, altura: Double(altura)))
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 Button(action: alternar) {
@@ -579,9 +616,11 @@ struct LinhaLaneDashboard: View {
                         Circle().fill(estado.corLane).frame(width: 9, height: 9).padding(.leading, 14)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(linha.lane).fontePainel(13.5, .semibold).lineLimit(1)
-                            Text(secundaria(linha)).fontePainel(11.5).foregroundStyle(PV.mudo).lineLimit(1)
-                                .truncationMode(.middle)
-                                .help(secundaria(linha))
+                            if visiveis.contains("secundaria") {
+                                Text(secundaria(linha)).fontePainel(11.5).foregroundStyle(PV.mudo).lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(secundaria(linha))
+                            }
                         }
                         .frame(width: 104, alignment: .leading)
                         .padding(.leading, 9)
@@ -591,18 +630,20 @@ struct LinhaLaneDashboard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(aberta ? "Recolher \(linha.lane)" : "Expandir \(linha.lane)")
                 PilulaEstado(estado: estado).fixedSize().frame(width: 97, alignment: .leading)
-                VStack(alignment: .leading, spacing: 1) {
-                    if linha.estado == .rodando || linha.estado == .livre {
-                        Text(verbatim: linha.ultimaBuild.map { "build #" + String($0) } ?? "—").fontePainel(12.5)
-                        Text(haPainel(linha.ultimaBuildInicio, agora: agora) ?? "sem build").fontePainel(11.5).foregroundStyle(PV.mudo)
-                    } else {
-                        // Pausada/desligada não está executando build: mostrar a última só confunde.
-                        Text("—").fontePainel(12.5).foregroundStyle(PV.apagado)
+                if visiveis.contains("build") {
+                    VStack(alignment: .leading, spacing: 1) {
+                        if linha.estado == .rodando || linha.estado == .livre {
+                            Text(verbatim: linha.ultimaBuild.map { "build #" + String($0) } ?? "—").fontePainel(12.5)
+                            Text(haPainel(linha.ultimaBuildInicio, agora: agora) ?? "sem build").fontePainel(11.5).foregroundStyle(PV.mudo)
+                        } else {
+                            // Pausada/desligada não está executando build: mostrar a última só confunde.
+                            Text("—").fontePainel(12.5).foregroundStyle(PV.apagado)
+                        }
                     }
+                    .padding(.leading, 10)
                 }
-                .padding(.leading, 10)
                 Spacer(minLength: 4)
-                if mostrarUso, linha.pct != nil {
+                if mostrarUso, linha.pct != nil, visiveis.contains("uso") {
                     BarraUso(pct: linha.pct, altura: 5).frame(width: 92)
                         .help("Uso da conta \(linha.janela ?? "")")
                         .padding(.trailing, 6)
