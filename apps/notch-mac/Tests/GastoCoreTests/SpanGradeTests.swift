@@ -53,6 +53,24 @@ final class SpanGradeTests: XCTestCase {
         XCTAssertNil(span.encaixe(.infinity))
     }
 
+    func testEncaixeDeCadaCardCaiEmCelulaDaPropriaFaixa() {
+        for bloco in BlocoPainel.allCases {
+            let span = bloco.span
+            // Toda célula declarada é um destino válido e o encaixe a devolve igual.
+            for celula in span.faixa {
+                XCTAssertEqual(span.encaixe(Double(celula)), celula, "\(bloco) célula \(celula)")
+                XCTAssertTrue(span.aceita(celula), "\(bloco) célula \(celula)")
+            }
+            // Pedido inteiro fora da faixa encosta no limite, nunca passa dele.
+            XCTAssertEqual(span.encaixe(Double(span.minimo - 1)), span.minimo, "\(bloco)")
+            XCTAssertEqual(span.encaixe(Double(span.maximo + 1)), span.maximo, "\(bloco)")
+            // Entre duas células não fecha, mesmo dentro da faixa.
+            if span.maximo > span.minimo {
+                XCTAssertNil(span.encaixe(Double(span.minimo) + 0.5), "\(bloco)")
+            }
+        }
+    }
+
     func testDeclaracaoInvalidaEhRejeitada() {
         XCTAssertNil(SpanGrade(minimo: 0, maximo: 4))
         XCTAssertNil(SpanGrade(minimo: 5, maximo: 4))
