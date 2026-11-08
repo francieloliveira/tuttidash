@@ -295,8 +295,8 @@ public struct Configuracao: Equatable, Sendable {
         if let b = booleano("uso_contas") { cfg.usoContas = b }
         if let l = arquivo["contas"] as? [[String: Any]] {
             cfg.contas = l.compactMap(ContaUso.init(dict:)).filter(\.ativo)
-            // FRA-528: uma conta com o nome de uma lane (ex.: `opencode-go`, que mede o mesmo
-            // Console do opencode) também habilita a lane, mesmo sem medidor próprio.
+            // FRA-528: uma conta com o nome de uma lane (ex.: `opencode-go`, medida pelo plano Go)
+            // também habilita a lane.
             // `ativo: false` tira a conta da medição e da lane. Sem a chave, continua ligada.
             let nomesLane = Set(Agentes.ordem)
             let tiposLane = l.filter(ContasConfig.entradaAtiva)
@@ -357,7 +357,10 @@ public struct ContaUso: Equatable, Sendable {
         self.arquivoToken = arquivoToken
     }
     public init?(dict d: [String: Any]) {
-        guard let id = d["id"] as? String, !id.isEmpty, let tipo = d["tipo"] as? String, Self.tipos.contains(tipo) else { return nil }
+        // Tipo do catálogo de uso ou nome de agente (ex.: `opencode-go`, medido pelo plano Go),
+        // a mesma regra do cadastro (`ContasConfig.tipoAceito`).
+        guard let id = d["id"] as? String, !id.isEmpty, let tipo = d["tipo"] as? String,
+              ContasConfig.tipoAceito(tipo) else { return nil }
         self.init(id: id, tipo: tipo, rotulo: d["rotulo"] as? String ?? id, nome: d["nome"] as? String,
                   sigla: d["sigla"] as? String, ativo: ContasConfig.ativo(d["ativo"]),
                   githubUsuario: (d["githubUsuario"] as? String)?

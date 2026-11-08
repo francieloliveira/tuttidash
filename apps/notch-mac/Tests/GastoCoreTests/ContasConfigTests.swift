@@ -243,7 +243,7 @@ final class ContasConfigTests: XCTestCase {
     }
 
     func testOpencodeGoInativoNaoHabilitaALane() throws {
-        guard Agentes.ordem.contains("opencode-go"), !ContaUso.tipos.contains("opencode-go") else { return }
+        guard Agentes.ordem.contains("opencode-go") else { return }
         let t = try PastaTemp()
         let m = ModeloAjustes(home: t.url)
         try m.definirContas([
@@ -253,7 +253,8 @@ final class ContasConfigTests: XCTestCase {
         var cfg = Configuracao.resolver(ambiente: [:], home: t.url)
         XCTAssertTrue(cfg.lanesHabilitadas?.contains("opencode") == true)
         XCTAssertTrue(cfg.lanesHabilitadas?.contains("opencode-go") == true)
-        XCTAssertFalse(cfg.contas.contains { $0.tipo == "opencode-go" })
+        // Desde a medição pública, a conta opencode-go também é medida (plano Go, `FonteOpenCodeConsole`).
+        XCTAssertTrue(cfg.contas.contains { $0.tipo == "opencode-go" })
 
         try m.definirContas([
             conta("opencode"),

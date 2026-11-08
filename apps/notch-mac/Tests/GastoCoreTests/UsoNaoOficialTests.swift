@@ -154,3 +154,22 @@ final class UsoNaoOficialTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(ContaUso(dict: ["id": "codex", "tipo": "codex"])).naoOficial)
     }
 }
+
+extension UsoNaoOficialTests {
+    /// A conta `opencode-go` (tipo = nome do agente) entra na medição e usa o medidor do plano Go.
+    func testContaOpenCodeGoEhMedidaPeloPlanoGo() async throws {
+        let conta = try XCTUnwrap(ContaUso(dict: ["id": "opencode-go", "tipo": "opencode-go", "nao_oficial": true]))
+        let temp = try PastaTemp()
+        var c = Configuracao.resolver(ambiente: ["TRANSCENTIA_GASTO_USO_CONTAS": "1"], home: temp.url)
+        c.contas = [conta]
+        let t = TransporteFalso(json: ["opencode.ai": Self.respostaGo])
+        let fonte = FonteOpenCodeConsole()
+        XCTAssertEqual(fonte.tipo, "opencode-go")
+        let usos = await ColetorUso(transporte: t, ler: { _ in Data(#"{"token":"a"}"#.utf8) },
+                                    fontes: [fonte]).coletar(config: c)
+        _ = temp
+        let u = try XCTUnwrap(usos.first)
+        XCTAssertEqual(u.conta, "opencode-go")
+        XCTAssertEqual(u.critica?.pct, 100, "o mês do Go em 100%: \(u.motivo ?? "")")
+    }
+}
