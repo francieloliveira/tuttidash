@@ -2171,6 +2171,20 @@ class LaneParadaEPrompts(unittest.TestCase):
                 self.assertTrue(baixa.strip().startswith("não") or " não " in f" {baixa} ", linha)
 
 
+class PromptNorteEDuvida(unittest.TestCase):
+    """PRD do norte, passo 6: a lane não edita o norte e propõe mudança de card ao dono."""
+
+    def test_prompt_traz_norte_e_os_tres_casos_de_duvida(self):
+        texto = (Path(d.__file__).resolve().parent / "lane-prompt.md").read_text(encoding="utf-8")
+        self.assertIn("docs/produto/caminho.md", texto)
+        self.assertIn("Nunca edite esse arquivo", texto)
+        self.assertIn("PROPOSTA DE NORTE", texto)
+        self.assertIn("marcadores `gerado:`", texto)
+        for caso in ("- Local:", "- Mudança de card:", "- Conflito com o norte:"):
+            self.assertIn(caso, texto)
+        self.assertNotIn("?", texto, "o mesmo texto vai para a opencode, que não pergunta")
+
+
 class ClassificacaoDeEsforco(unittest.TestCase):
     """FRA-516: regra determinística de classificação de esforço."""
 

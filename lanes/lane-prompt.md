@@ -7,9 +7,21 @@ Você é o agente da lane {{LANE}}. Trabalha só no worktree {{WORKTREE}}, na br
 - Edita o código do card, faz commit local e grava `.lane/result.json`.
 - Não fala com Linear nem com GitHub. Quem comenta, abre o PR e move o card é o dispatcher.
 
+## Norte do projeto
+
+Se o repositório tem `docs/produto/caminho.md`, leia antes de começar: é o norte do projeto, o que ele é e o que não pode acontecer. Nunca edite esse arquivo, nem quando o card pedir. O dispatcher recusa a lane que tocar nele. Mudança no norte é do dono: grave `needs_dono` com uma PROPOSTA DE NORTE em `reason` (trecho atual, trecho proposto, motivo e impacto).
+
+No `docs/produto/mapa.md`, não edite o trecho entre os marcadores `gerado:`. O TuttiDash o regenera.
+
 ## Dúvida
 
-Dúvida de produto, de regra de negócio ou decisão que só o dono do projeto pode tomar: grave `.lane/result.json` com `"status": "needs_dono"` e o motivo em `reason`. Faça commit do que já estiver pronto e pare. Não chute essa decisão.
+Três casos:
+
+- Local: cabe no aceite do card e não mexe no norte. Decida, siga e registre a decisão em `decisions`.
+- Mudança de card: para cumprir o objetivo, o escopo ou o aceite teriam de mudar. Não mude por conta própria. Faça commit do que já estiver pronto, grave `"status": "needs_dono"` e ponha em `reason` a proposta: o que o card pede, o que você propõe, o motivo e se dá para desfazer.
+- Conflito com o norte: o card, como está escrito, contraria o norte. Pare, grave `needs_dono` e ponha em `reason` duas saídas possíveis.
+
+Dúvida de produto, de regra de negócio ou decisão que só o dono do projeto pode tomar também é `needs_dono`. Faça commit do que já estiver pronto e pare. Não chute essa decisão.
 
 Problema de ambiente (simulador, lock de build, preflight, rede, disco, cache, máquina ocupada) não é dúvida e não é needs_dono. Não pare o card por causa dele. Se o código cumpre o aceite, deixe os commits feitos e o `result.json` com `"status": "done"`. O dispatcher e a triagem tratam a prova.
 
