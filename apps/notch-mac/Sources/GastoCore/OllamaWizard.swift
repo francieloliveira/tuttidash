@@ -8,8 +8,8 @@ import Darwin
 /// Não há teto por nome nem por tamanho: quem decide é a memória livre do Mac naquele
 /// momento. O teste de 08/11 (`qwen2.5-coder:14b` com 32k de contexto, 15,8 GB) travou
 /// um Mac de 16 GB; aqui o contexto novo é de 8k e o modelo que o wizard carregou sai da
-/// memória assim que responde. Modelo que outro uso já tem carregado (ex.: o `gemma4` do
-/// Hermes) é reaproveitado no mesmo contexto e nunca é descarregado pelo wizard.
+/// memória assim que responde. Modelo que outro app já tem carregado (ex.: um agente
+/// local) é reaproveitado no mesmo contexto e nunca é descarregado pelo wizard.
 public enum OllamaWizard {
     /// Modelo escolhido nos Ajustes. Separado do modelo da triagem do vigia.
     public static let chaveModelo = "wizard.modelo_ollama"
@@ -44,7 +44,7 @@ public enum OllamaWizard {
         }
     }
 
-    /// `GET /api/ps` → modelos carregados agora (por qualquer um: Hermes, vigia, wizard),
+    /// `GET /api/ps` → modelos carregados agora (por qualquer um: outro app, vigia, wizard),
     /// com a memória ocupada (`size`) e o contexto (`context_length`). Corpo ilegível = nil.
     public static func lerCarregados(_ dados: Data) -> [ModeloBaixado]? {
         guard let obj = JV.objeto(dados) else { return nil }
@@ -81,7 +81,7 @@ public enum OllamaWizard {
     /// Qual modelo usar agora, ou por que nenhum. Quem limita é a memória, não o tamanho.
     ///
     /// Sem `escolhido`, nesta ordem:
-    /// 1. um modelo que já está carregado (ex.: o `gemma4` do Hermes) — não custa memória nova;
+    /// 1. um modelo que já está carregado (ex.: por um agente local) — não custa memória nova;
     /// 2. o sugerido, se baixado e couber na memória;
     /// 3. o maior baixado que couber na memória (o maior escreve melhor).
     ///
@@ -102,7 +102,7 @@ public enum OllamaWizard {
                 return .nenhum(String(localized: "Não deu para medir a memória livre; o wizard não carrega o \(m.nome) às cegas."))
             }
             let outros = carregados.map(\.nome)
-            let quem = outros.isEmpty ? "" : String(localized: " Carregado no Ollama agora: \(outros.joined(separator: ", ")) (o wizard não descarrega modelo de outro uso, como o Hermes).")
+            let quem = outros.isEmpty ? "" : String(localized: " Carregado no Ollama agora: \(outros.joined(separator: ", ")) (o wizard não descarrega modelo de outro uso).")
             return .nenhum(String(localized: "Memória livre insuficiente: o \(m.nome) precisa de \(emGB(m.tamanho + folga)) GB e há \(emGB(disponivel)) GB.\(quem) Feche alguns apps ou espere e tente de novo."))
         }
 
@@ -170,7 +170,7 @@ public enum OllamaWizard {
 
     /// Corpo do `POST /api/generate`: sem stream, contexto fixo, sem raciocínio exposto.
     /// `descarregar`: o modelo sai da memória logo depois. Só vale quando foi o wizard que o
-    /// carregou; se outro uso (Hermes, vigia) já o tinha na memória, fica como estava.
+    /// carregou; se outro uso (outro app, vigia) já o tinha na memória, fica como estava.
     /// `contexto`: o `num_ctx` do pedido. nil = não manda (modelo de outro uso, contexto
     /// desconhecido): um `num_ctx` diferente do carregado faz o Ollama recarregar o modelo.
     public static func corpoGerar(modelo: String, sistema: String, prompt: String,

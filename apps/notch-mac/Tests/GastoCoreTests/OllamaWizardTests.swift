@@ -31,7 +31,7 @@ final class OllamaWizardTests: XCTestCase {
         XCTAssertEqual(OllamaWizard.escolher(baixados: sem, escolhido: "", disponivel: 5 * gb), .usar("phi3:mini"))
     }
 
-    func testReaproveitaOModeloDoHermesCarregadoSemMemoriaNova() {
+    func testReaproveitaModeloDeOutroAppCarregadoSemMemoriaNova() {
         let hermes = [OllamaWizard.ModeloBaixado(nome: "gemma4:12b", tamanho: 9_100_000_000, contexto: 32_768)]
         XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: 1 * gb, carregados: hermes),
                        .usar("gemma4:12b"))
@@ -43,7 +43,7 @@ final class OllamaWizardTests: XCTestCase {
     func testCarregadoComContextoCurtoNaoERecarregado() {
         let curto = [OllamaWizard.ModeloBaixado(nome: "gemma4:12b", tamanho: 8_000_000_000, contexto: 4_096)]
         XCTAssertEqual(OllamaWizard.escolher(baixados: baixados, escolhido: "", disponivel: 8 * gb, carregados: curto),
-                       .usar("qwen3:8b"), "não recarrega o gemma do Hermes; usa outro que caiba")
+                       .usar("qwen3:8b"), "não recarrega o modelo de outro app; usa outro que caiba")
         guard case .nenhum(let motivo) = OllamaWizard.escolher(baixados: baixados, escolhido: "gemma4:12b",
                                                                disponivel: 15 * gb, carregados: curto) else {
             return XCTFail("escolhido com contexto curto não pode ser recarregado")
@@ -71,7 +71,7 @@ final class OllamaWizardTests: XCTestCase {
             return XCTFail("nada cabe em 1 GB e o gemma carregado tem contexto curto")
         }
         XCTAssertTrue(motivo.contains("gemma4:12b"))
-        XCTAssertTrue(motivo.contains("Hermes"))
+        XCTAssertTrue(motivo.contains("não descarrega modelo de outro uso"))
     }
 
     func testSemMedirMemoriaNaoCarregaNadaNovo() {
@@ -97,7 +97,7 @@ final class OllamaWizardTests: XCTestCase {
         XCTAssertEqual(com["system"] as? String, "s")
         let sem = try XCTUnwrap(JV.objeto(OllamaWizard.corpoGerar(modelo: "gemma4:12b", sistema: "s", prompt: "p",
                                                                     descarregar: false)))
-        XCTAssertNil(sem["keep_alive"], "não derruba o modelo que outro uso (Hermes) já tinha carregado")
+        XCTAssertNil(sem["keep_alive"], "não derruba o modelo que outro uso já tinha carregado")
         let semCtx = try XCTUnwrap(JV.objeto(OllamaWizard.corpoGerar(modelo: "gemma4:12b", sistema: "s", prompt: "p",
                                                                        descarregar: false, contexto: nil)))
         XCTAssertNil((semCtx["options"] as? [String: Any])?["num_ctx"], "contexto desconhecido: não força recarga")
