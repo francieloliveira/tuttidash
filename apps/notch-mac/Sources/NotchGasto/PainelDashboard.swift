@@ -613,7 +613,8 @@ struct LinhaLaneDashboard: View {
                     HStack(spacing: 0) {
                         Image(systemName: aberta ? "chevron.down" : "chevron.right")
                             .font(.system(size: 11, weight: .bold)).foregroundStyle(PV.icone).frame(width: 14)
-                        Circle().fill(estado.corLane).frame(width: 9, height: 9).padding(.leading, 14)
+                        PontoLane(cor: estado.corLane, piscando: linha.estado == .rodando)
+                            .padding(.leading, 14)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(linha.lane).fontePainel(13.5, .semibold).lineLimit(1)
                             if visiveis.contains("secundaria") {
@@ -901,6 +902,36 @@ struct ItemMenuEstilo: ButtonStyle {
                 .background(RoundedRectangle(cornerRadius: 6)
                     .fill(Color.white.opacity(configuration.isPressed ? 0.1 : (hover ? 0.05 : 0))))
                 .onHover { hover = $0 }
+        }
+    }
+}
+
+
+/// Ícone da lane na lista do dashboard. Lane rodando pisca (além da barra de progresso);
+/// com «reduzir movimento» ligado no macOS, fica acesa e parada.
+private struct PontoLane: View {
+    var cor: Color
+    var piscando: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduzirMovimento
+    @State private var apagado = false
+
+    var body: some View {
+        Circle().fill(cor)
+            .frame(width: 9, height: 9)
+            .shadow(color: piscando ? cor.opacity(apagado ? 0 : 0.9) : .clear, radius: 4)
+            .opacity(piscando && apagado ? 0.25 : 1)
+            .onAppear { ajustar() }
+            .onChange(of: piscando) { _, _ in ajustar() }
+            .onChange(of: reduzirMovimento) { _, _ in ajustar() }
+            .accessibilityLabel(piscando ? "rodando" : "")
+    }
+
+    private func ajustar() {
+        if piscando && !reduzirMovimento {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { apagado = true }
+        } else {
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) { apagado = false }
         }
     }
 }
