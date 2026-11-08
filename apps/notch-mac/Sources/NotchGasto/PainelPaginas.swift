@@ -683,10 +683,11 @@ struct PaginaTestes: View {
                 cartaoPagina("Hoje") {
                     let ind = snap?.indicadores ?? .vazio
                     HStack(spacing: 18) {
-                        Rosca(passou: ind.testesPassou, falhou: ind.testesFalhou).frame(width: 120, height: 120)
+                        Rosca(passou: ind.provasOk, falhou: ind.provasFalha).frame(width: 120, height: 120)
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("\(ind.testesPassou) passou").foregroundStyle(Color(hex: 0x19E58C))
-                            Text("\(ind.testesFalhou) falhou").foregroundStyle(Color(hex: 0xF64561))
+                            Text("\(ind.provasOk) passou").foregroundStyle(Color(hex: 0x19E58C))
+                                .help("Provas de hoje com veredito ok (local e GitHub)")
+                            Text("\(ind.provasFalha) falhou").foregroundStyle(Color(hex: 0xF64561))
                             Text("— ignorado").foregroundStyle(PV.mudo).help("Testes ignorados: em breve")
                             Text(Formato.plural(ind.provasHoje, "prova hoje", "provas hoje")).foregroundStyle(PV.mudo)
                             if ind.remotasVerdes + ind.remotasVermelhas > 0 {

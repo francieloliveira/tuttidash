@@ -164,6 +164,11 @@ public struct IndicadoresPainel: Equatable, Sendable {
     /// Provas remotas (GitHub) que terminaram hoje.
     public var remotasVerdes: Int = 0
     public var remotasVermelhas: Int = 0
+    /// Provas de hoje com veredito, local e remota juntas: é o que o anel do dashboard e da
+    /// tela Testes mostra. A prova remota não traz suítes (o detalhe fica no check do GitHub).
+    public var provasOk: Int = 0
+    public var provasFalha: Int = 0
+    public var provasComVeredito: Int { provasOk + provasFalha }
 
     public static let vazio = IndicadoresPainel(
         lanesAtivas: 0, lanesTotal: 0, buildsHoje: 0, buildsOntem: 0, buildsSerie: Array(repeating: 0, count: 12),
@@ -246,7 +251,7 @@ public enum Indicadores {
             variacao = (semanaAtual - anterior) / anterior * 100
         }
 
-        var passou = 0, falhou = 0, provasHoje = 0
+        var passou = 0, falhou = 0, provasHoje = 0, provasOk = 0, provasFalha = 0
         var vistas: Set<String> = []
         for bruta in provas {
             guard let pedido = bruta.pedidoEm, calendario.isDate(pedido, inSameDayAs: agora) else { continue }
@@ -257,14 +262,16 @@ public enum Indicadores {
             let carta = Provas.carta(bruta, agora: agora, seguraLock: false, posicao: nil, espera: nil)
             passou += carta.suites.filter { $0.estado == .ok }.count
             falhou += carta.suites.filter { $0.estado == .falha }.count
+            if carta.emCurso { continue }
+            if carta.falha || carta.zeroTestes { provasFalha += 1 } else if bruta.saida != nil { provasOk += 1 }
         }
 
         var remotasVerdes = 0, remotasVermelhas = 0
         for r in remotas {
             guard let fim = r.fim, calendario.isDate(fim, inSameDayAs: agora) else { continue }
             switch r.estado {
-            case .verde: remotasVerdes += 1
-            case .vermelho, .tempo: remotasVermelhas += 1
+            case .verde: remotasVerdes += 1; provasOk += 1
+            case .vermelho, .tempo: remotasVermelhas += 1; provasFalha += 1
             case .mainVermelha, .rodando: continue
             }
             provasHoje += 1
@@ -276,7 +283,8 @@ public enum Indicadores {
             buildsSerie: serieBuilds, falhas24h: falhas24, execucoes24h: exec24, falhasSerie: serieFalhas,
             semanaAnterior: anterior, variacaoSemanaPct: variacao,
             testesPassou: passou, testesFalhou: falhou, provasHoje: provasHoje,
-            remotasVerdes: remotasVerdes, remotasVermelhas: remotasVermelhas)
+            remotasVerdes: remotasVerdes, remotasVermelhas: remotasVermelhas,
+            provasOk: provasOk, provasFalha: provasFalha)
     }
 
     /// Execuções que começaram hoje, a mais nova primeiro (até `limite`).

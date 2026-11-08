@@ -339,21 +339,21 @@ struct DashboardPainel: View {
     }
 
     private var cartaoTestes: some View {
-        let total = ind.testesHoje
+        let total = ind.provasComVeredito
         return CartaoPV {
             VStack(alignment: .leading, spacing: 0) {
                 CabecalhoCartao(icone: IconeCartao(simbolo: "flask", tamanhoIcone: 18),
-                                titulo: "Testes", subtitulo: "Suítes das provas de hoje") {
+                                titulo: "Testes", subtitulo: "Provas de hoje (local e GitHub)") {
                     BotaoVer(texto: "Ver todos") { ir(.testes) }
                 }
                 HStack(spacing: 22) {
-                    Rosca(passou: ind.testesPassou, falhou: ind.testesFalhou)
+                    Rosca(passou: ind.provasOk, falhou: ind.provasFalha)
                         .frame(width: 142, height: 142)
                     VStack(alignment: .leading, spacing: 20) {
-                        legenda(cor: Color(hex: 0x19E58C), texto: Formato.plural(ind.testesPassou, "suíte ok", "suítes ok"),
-                                pct: pct(ind.testesPassou, total))
-                        legenda(cor: Color(hex: 0xF64561), texto: Formato.plural(ind.testesFalhou, "suíte falhou", "suítes falharam"),
-                                pct: pct(ind.testesFalhou, total))
+                        legenda(cor: Color(hex: 0x19E58C), texto: Formato.plural(ind.provasOk, "prova ok", "provas ok"),
+                                pct: pct(ind.provasOk, total))
+                        legenda(cor: Color(hex: 0xF64561), texto: Formato.plural(ind.provasFalha, "prova falhou", "provas falharam"),
+                                pct: pct(ind.provasFalha, total))
                         // Mock: o parser da prova ainda não lê testes pulados.
                         legenda(cor: Color(hex: 0x8DA6D0), texto: "— ignoradas", pct: "—")
                             .help("Testes ignorados: em breve")
@@ -801,7 +801,7 @@ struct Rosca: View {
             }
             VStack(spacing: 2) {
                 Text("\(passou + falhou)").fontePainel(26, .semibold)
-                Text("suítes hoje").fontePainel(12.5).foregroundStyle(PV.texto2)
+                Text(passou + falhou == 1 ? "prova hoje" : "provas hoje").fontePainel(12.5).foregroundStyle(PV.texto2)
             }
         }
     }

@@ -63,3 +63,21 @@ final class ProvaRemotaPainelTests: XCTestCase {
         XCTAssertEqual(em.first?.check, "https://github.com/o/r/actions/runs/2")
     }
 }
+
+extension ProvaRemotaPainelTests {
+    /// O anel do dashboard e da tela Testes conta provas com veredito, local e remota.
+    func testAnelContaProvasLocaisERemotas() {
+        let agora = Date()
+        let remotas = [
+            ProvaRemota(card: "A", lane: "x", fim: agora, estado: .verde),
+            ProvaRemota(card: "B", lane: "x", fim: agora, estado: .verde),
+            ProvaRemota(card: "C", lane: "x", fim: agora, estado: .tempo),
+            ProvaRemota(card: "D", lane: "x", fim: agora, estado: .mainVermelha),
+        ]
+        let ind = Indicadores.calcular(linhas: [], execucoes: [], provas: [], semanaAtual: nil, agora: agora,
+                                       calendario: Datas.calendarioISO, remotas: remotas)
+        XCTAssertEqual(ind.provasOk, 2)
+        XCTAssertEqual(ind.provasFalha, 1, "main vermelha não conta como falha do card")
+        XCTAssertEqual(ind.provasComVeredito, 3)
+    }
+}

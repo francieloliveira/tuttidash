@@ -682,6 +682,8 @@ final class HistoricoProvasTests: XCTestCase {
         XCTAssertEqual(ind.provasHoje, 1)
         XCTAssertEqual(ind.testesPassou, 1, "uma classe Swift é uma suíte")
         XCTAssertEqual(ind.testesFalhou, 0)
+        XCTAssertEqual(ind.provasOk, 1, "a prova local verde conta no anel")
+        XCTAssertEqual(ind.provasFalha, 0)
         XCTAssertEqual(MontadorPainel.montar(entrada: entrada, execucoes: [], agora: agora,
                                              calendario: calendarioFixo()).historico.first?.selo, "ok")
     }
