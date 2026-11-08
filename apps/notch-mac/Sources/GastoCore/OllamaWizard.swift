@@ -19,6 +19,10 @@ public enum OllamaWizard {
     public static let gb: Int64 = 1_000_000_000
     /// O que o sistema e os apps abertos precisam além do modelo e do cache de contexto.
     public static let margem: Int64 = 1 * gb
+    /// Mínimo de tamanho em disco (decisão do dono, 08/11): abaixo disso (classe ~3B, como o
+    /// `phi3:mini`) o rascunho saiu ruim na medição — inventou restrições, não fez perguntas
+    /// e entrou em laço. Não há teto: quem limita o máximo é a memória livre.
+    public static let pisoTamanho: Int64 = 4 * gb
     /// Contexto quando o wizard carrega o modelo. A leitura do repo + o prompt cabem em ≈5k tokens.
     public static let numCtx = 8_192
     /// Tokens da resposta. O norte com cinco seções e as perguntas fica bem abaixo disso.
@@ -118,7 +122,11 @@ public enum OllamaWizard {
     /// novo sem saber a memória é o que travou o Mac em 08/11.
     public static func escolher(baixados: [ModeloBaixado], escolhido: String, disponivel: Int64?,
                                 carregados: [ModeloBaixado] = []) -> Escolha {
-        let textuais = baixados.filter { geraTexto($0.nome) && $0.tamanho > 0 }
+        let deTexto = baixados.filter { geraTexto($0.nome) && $0.tamanho > 0 }
+        let textuais = deTexto.filter { $0.tamanho >= pisoTamanho }
+        func pequeno(_ m: ModeloBaixado) -> Escolha {
+            .nenhum(String(localized: "O \(m.nome) tem \(emGB(m.tamanho)) GB, abaixo do mínimo de \(emGB(pisoTamanho)) GB: modelo desse porte escreve um norte fraco. Baixe o \(modeloSugerido)."))
+        }
         func carregado(_ nome: String) -> ModeloBaixado? {
             carregados.first { OllamaLocal.mesmoModelo($0.nome, nome) }
         }
@@ -137,9 +145,10 @@ public enum OllamaWizard {
 
         let e = escolhido.trimmingCharacters(in: .whitespacesAndNewlines)
         if !e.isEmpty {
-            guard let m = textuais.first(where: { OllamaLocal.mesmoModelo($0.nome, e) }) else {
+            guard let m = deTexto.first(where: { OllamaLocal.mesmoModelo($0.nome, e) }) else {
                 return .nenhum(String(localized: "O modelo \(e) não está baixado."))
             }
+            if m.tamanho < pisoTamanho { return pequeno(m) }
             if let c = carregado(m.nome) {
                 // Número sem separador de milhar: o texto localizado faria «4.096».
                 let tem = String(c.contexto ?? 0), precisa = String(numCtx)
@@ -161,6 +170,7 @@ public enum OllamaWizard {
             return .usar(maior.nome)
         }
         guard let menor = livres.min(by: { $0.tamanho < $1.tamanho }) else {
+            if let maiorPequeno = deTexto.max(by: { $0.tamanho < $1.tamanho }) { return pequeno(maiorPequeno) }
             return .nenhum(String(localized: "Nenhum modelo de texto baixado. Baixe o \(modeloSugerido)."))
         }
         return semMemoria(menor)
