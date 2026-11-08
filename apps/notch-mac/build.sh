@@ -87,6 +87,7 @@ install -m 644 "$REPO/bots/caixa_leitura.py" "$CTRL/bots/caixa_leitura.py"
 install -m 755 "$REPO/bots/git-leitura" "$CTRL/bots/git-leitura"
 install -m 755 "$REPO/tools/bots-chave" "$CTRL/tools/bots-chave"
 install -m 755 "$REPO/tools/instalar-prova-remota" "$CTRL/tools/instalar-prova-remota"
+install -m 755 "$REPO/tools/instalar-norte" "$CTRL/tools/instalar-norte"
 mkdir -p "$CTRL/tools/prova-remota-linux"
 install -m 644 "$REPO/tools/prova-remota-linux/prova-remota.yml" "$CTRL/tools/prova-remota-linux/prova-remota.yml"
 install -m 755 "$REPO/tools/prova-remota-linux/prova-remota.sh" "$CTRL/tools/prova-remota-linux/prova-remota.sh"
@@ -98,7 +99,7 @@ echo "==> módulos Python (controle/gasto_lanes, FRA-615)"
 # Uma cópia só: dispatcher, vigia, janela e ListaModelos leem esta pasta.
 # gasto_privado.py é do build pessoal; sem o arquivo a instalação pública segue.
 mkdir -p "$CTRL/gasto_lanes"
-for mod in catalogo.py projetos.py privacidade.py linear_ids.py fila.py config.py proxy_linear.py revisao_ia.py acp.py politica_acp.py; do
+for mod in catalogo.py projetos.py privacidade.py linear_ids.py fila.py config.py proxy_linear.py revisao_ia.py acp.py politica_acp.py mapa.py; do
   install -m 644 "$REPO/gasto_lanes/$mod" "$CTRL/gasto_lanes/$mod"
 done
 PRIVADO_PY="$REPO/apps/notch-mac/Privado/python/gasto_privado.py"

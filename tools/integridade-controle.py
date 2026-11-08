@@ -47,6 +47,7 @@ COPIAS = (
     ("bots/git-leitura", "bots/git-leitura", 0o755),
     ("tools/bots-chave", "tools/bots-chave", 0o755),
     ("tools/instalar-prova-remota", "tools/instalar-prova-remota", 0o755),
+    ("tools/instalar-norte", "tools/instalar-norte", 0o755),
     ("tools/prova-remota-linux/prova-remota.yml", "tools/prova-remota-linux/prova-remota.yml", 0o644),
     ("tools/prova-remota-linux/prova-remota.sh", "tools/prova-remota-linux/prova-remota.sh", 0o755),
     ("tools/prova-remota-linux/prova_remota.py", "tools/prova-remota-linux/prova_remota.py", 0o644),
@@ -62,6 +63,7 @@ COPIAS = (
     ("gasto_lanes/revisao_ia.py", "gasto_lanes/revisao_ia.py", 0o644),
     ("gasto_lanes/acp.py", "gasto_lanes/acp.py", 0o644),
     ("gasto_lanes/politica_acp.py", "gasto_lanes/politica_acp.py", 0o644),
+    ("gasto_lanes/mapa.py", "gasto_lanes/mapa.py", 0o644),
 )
 PRIVADO = (
     "apps/notch-mac/Privado/python/gasto_privado.py",
