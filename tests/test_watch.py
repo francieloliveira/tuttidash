@@ -944,7 +944,8 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         self.comentarios = []
         nomes = ["_cfg", "agent_paused", "local_call", "opencode_call", "run_agent", "lane_log_tail",
                  "comment", "remove_label", "add_label", "prepend_description", "prompt", "known_errors",
-                 "PANEL_LOG", "ANALISES_LOG", "SHADOW_NEEDS_LOG", "run_revisor", "privacidade_ok", "LOG_FILE"]
+                 "PANEL_LOG", "ANALISES_LOG", "SHADOW_NEEDS_LOG", "run_revisor", "privacidade_ok", "LOG_FILE",
+                 "ollama_modelos", "OLLAMA_AVISO_FILE"]
         antes = {n: getattr(watch, n) for n in nomes}
         self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
         watch._cfg = lambda k, p: self.cfg.get(k, p)
@@ -957,6 +958,8 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         watch.prompt = lambda nome: "{card} {title} {log_tail}"
         watch.known_errors = lambda: ""
         watch.privacidade_ok = lambda a, m: (True, "")
+        watch.ollama_modelos = lambda timeout=3: ["qwen2.5-coder:7b", "gemma4:12b"]
+        watch.OLLAMA_AVISO_FILE = self.tmp / "ollama-aviso.json"
         watch.PANEL_LOG = self.tmp / "painel.log"
         watch.ANALISES_LOG = self.tmp / "analises.jsonl"
         watch.SHADOW_NEEDS_LOG = self.tmp / "sombra.jsonl"
@@ -999,6 +1002,28 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         self.assertEqual((sombra["principal_por"], sombra["principal"]), ("ollama/qwen2.5-coder:7b", "remover_needs"))
         self.assertEqual((sombra["sombra_etapa"], sombra["sombra"], sombra["igual"]), ("opencode", "manter", False))
         self.assertIn("análise feita por ollama", self.painel())
+
+    def test_needs_ollama_sem_servidor_ou_modelo_pula_com_um_aviso(self):
+        avisos = []
+        antes_log = watch.log
+        self.addCleanup(lambda: setattr(watch, "log", antes_log))
+        watch.log = lambda m: avisos.append(m)
+        watch.ollama_modelos = lambda timeout=3: None
+        for _ in range(3):
+            with self.assertRaises(watch.Pular):
+                watch.needs_ollama("p")
+        self.assertEqual(len([a for a in avisos if a.startswith("ollama:")]), 1, "um aviso só, não um por card")
+        watch.ollama_modelos = lambda timeout=3: ["gemma4:12b"]
+        self.cfg["watch.modelo_needs_ollama"] = "qwen2.5-coder:14b"
+        with self.assertRaises(watch.Pular):
+            watch.needs_ollama("p")
+        self.assertTrue(any("qwen2.5-coder:14b não baixado" in a for a in avisos))
+        self.cfg["watch.modelo_needs_ollama"] = ""
+        watch.local_call = lambda p, modelo=None: f"[Triagem] x\nDECISAO: manter ({modelo})"
+        self.assertEqual(watch.needs_ollama("p")[1], "ollama/gemma4:12b", "vazio usa o primeiro baixado")
+        self.cfg["watch.modelo_needs_ollama"] = "gemma4"
+        watch.ollama_modelos = lambda timeout=3: ["gemma4:latest"]
+        self.assertEqual(watch.needs_ollama("p")[1], "ollama/gemma4", "gemma4 = gemma4:latest")
 
     def test_needs_ollama_fora_do_formato_cai_no_opencode(self):
         watch.local_call = lambda p, modelo=None: "acho que manter"

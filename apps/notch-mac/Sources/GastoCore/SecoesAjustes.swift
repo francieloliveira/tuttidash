@@ -12,13 +12,14 @@ public enum IdSecaoAjustes: String, CaseIterable, Identifiable, Sendable {
 /// Blocos prontos (telas próprias que já existiam) que entram num grupo.
 public enum BlocoAjustes: Sendable, Equatable {
     case lanesHabilitadas, modeloLanes, projetos, contas, quemCuida, agentesSegundoPlano,
-         jobsAgendados, linear, linearLeitura, manifestos, ferramentas, revisaoAtual
+         jobsAgendados, linear, linearLeitura, manifestos, ferramentas, revisaoAtual, ollama
 
     /// Chaves do config que o bloco edita com controle próprio (contam como alcançáveis).
     /// Só `quemCuida` tem chave. O botão de restaurar não apaga bloco: continua nos campos.
     public var chaves: [String] {
         switch self {
         case .quemCuida: return [ModoForcado.chave]
+        case .ollama: return [OllamaLocal.chaveModelo]
         case .lanesHabilitadas, .modeloLanes, .projetos, .contas, .agentesSegundoPlano,
              .jobsAgendados, .linear, .linearLeitura, .manifestos, .ferramentas, .revisaoAtual:
             return []
@@ -40,6 +41,7 @@ public enum BlocoAjustes: Sendable, Equatable {
         case .manifestos: return String(localized: "Ferramentas (agents.d)")
         case .ferramentas: return String(localized: "Ferramentas e logins")
         case .revisaoAtual: return String(localized: "Modelo e esforço da lane revisora")
+        case .ollama: return String(localized: "Modelo local (Ollama)")
         }
     }
 }
@@ -191,6 +193,9 @@ extension CatalogoAjustes {
                 GrupoAjustes(String(localized: "Modelo e esforço da lane revisora"),
                              ajuda: String(localized: "Lidos da lane selecionada. Não é preciso configurar à mão."),
                              blocos: [.revisaoAtual]),
+                GrupoAjustes(String(localized: "Modelo local (Ollama)"),
+                             ajuda: String(localized: "O vigia usa este modelo primeiro na conferência da etiqueta do dono. Roda no seu Mac, sem custo. Sem o Ollama ou sem o modelo, ele passa para o próximo da ordem."),
+                             blocos: [.ollama]),
             ]),
             SecaoAjustes(id: .automacao, nome: String(localized: "Automação"), simbolo: "bolt.horizontal.circle",
                          subtitulo: String(localized: "Quem cuida das lanes e os agentes que rodam sozinhos"), grupos: [

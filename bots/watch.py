@@ -1572,11 +1572,55 @@ def handle_stops(ci: dict, label: str, st: dict, diary: list[str]) -> bool:
 # ---------- 4. etiqueta do dono ----------
 SHADOW_NEEDS_LOG = HOME / 'Library' / 'Logs' / 'TranscentIA' / 'shadow-needs.jsonl'
 OLLAMA_URL = 'http://localhost:11434/api/generate'
-OLLAMA_SHADOW_MODEL = 'qwen2.5-coder:7b'
+OLLAMA_TAGS_URL = 'http://localhost:11434/api/tags'
+# Aviso do Ollama (servidor parado, sem modelo, modelo não baixado): uma linha a cada 6 h,
+# não uma por card. O vigia roda um processo por ciclo, por isso a marca fica em arquivo.
+OLLAMA_AVISO_FILE = STATE_DIR / "ollama-aviso.json"
+OLLAMA_AVISO_S = 6 * 3600
+
+
+def ollama_modelos(timeout: float = 3) -> list[str] | None:
+    """Modelos baixados no Ollama local; None = servidor fora do ar ou Ollama ausente."""
+    try:
+        with urllib.request.urlopen(OLLAMA_TAGS_URL, timeout=timeout) as resp:
+            dados = json.loads(resp.read())
+    except Exception:  # noqa: BLE001
+        return None
+    return [str(m.get('name') or '') for m in (dados.get('models') or []) if m.get('name')]
+
+
+def _mesmo_modelo(a: str, b: str) -> bool:
+    """`gemma4` e `gemma4:latest` são o mesmo modelo para o Ollama."""
+    def n(x: str) -> str:
+        return x if ':' in x else x + ':latest'
+    return n(a.strip()) == n(b.strip())
+
+
+def modelo_ollama(instalados: list[str]) -> str:
+    """O modelo dos Ajustes (`watch.modelo_needs_ollama`); vazio = o primeiro baixado."""
+    escolhido = str(_cfg("watch.modelo_needs_ollama", "") or "").strip()
+    return escolhido or (instalados[0] if instalados else "")
+
+
+def avisar_ollama(msg: str) -> None:
+    try:
+        marcas = json.loads(OLLAMA_AVISO_FILE.read_text())
+    except (OSError, ValueError):
+        marcas = {}
+    agora = time.time()
+    if agora - float(marcas.get(msg, 0) or 0) < OLLAMA_AVISO_S:
+        return
+    marcas = {k: v for k, v in marcas.items() if agora - float(v or 0) < OLLAMA_AVISO_S}
+    marcas[msg] = agora
+    try:
+        OLLAMA_AVISO_FILE.write_text(json.dumps(marcas))
+    except OSError:
+        pass
+    log(f"ollama: {msg} (Ajustes › Revisão › Modelo local)")
 
 
 def local_call(p: str, modelo: str | None = None) -> str:
-    body = json.dumps({'model': modelo or OLLAMA_SHADOW_MODEL, 'prompt': p, 'stream': False,
+    body = json.dumps({'model': modelo, 'prompt': p, 'stream': False,
                        'options': {'temperature': 0.1, 'num_ctx': 8192}}).encode()
     req = urllib.request.Request(OLLAMA_URL, data=body, headers={'Content-Type': 'application/json'})
     with urllib.request.urlopen(req, timeout=300) as resp:
@@ -1764,7 +1808,17 @@ def modelo_opencode_por_peso(ci: dict) -> str:
 
 # --- etiqueta do dono: Ollama -> opencode -> Claude
 def needs_ollama(p: str) -> tuple[str, str]:
-    modelo = str(_cfg("watch.modelo_needs_ollama", OLLAMA_SHADOW_MODEL) or OLLAMA_SHADOW_MODEL)
+    instalados = ollama_modelos()
+    if instalados is None:
+        avisar_ollama("Ollama parado ou não instalado; a triagem segue sem ele")
+        raise Pular("Ollama fora do ar")
+    modelo = modelo_ollama(instalados)
+    if not modelo:
+        avisar_ollama("nenhum modelo baixado no Ollama; a triagem segue sem ele")
+        raise Pular("Ollama sem modelo")
+    if not any(_mesmo_modelo(modelo, m) for m in instalados):
+        avisar_ollama(f"modelo {modelo} não baixado; baixe nos Ajustes")
+        raise Pular(f"modelo {modelo} não baixado")
     return formato_triagem(local_call(p, modelo), {"remover_needs", "manter"}), "ollama/" + modelo
 
 
