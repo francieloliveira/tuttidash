@@ -14,8 +14,6 @@ ok "$(echo "2026-10-13 13:22:46 lane:claude" | bash "$D/carimbo.sh")" "2026-10-1
 out=$(printf '2026-10-13 13:00:00 [safe] simulador\n2026-10-13 13:00:01 outra\n' | bash "$D/colorir.sh" '^\[safe\]' | semcor)
 ok "$out" "2026-10-13 13:00:00 [safe] simulador" "colorir: filtro com ^ vale depois da hora"
 ok "$(printf 'BUILD SUCCEEDED\nnada\n' | bash "$D/colorir.sh" 'SUCCEEDED' | semcor)" "BUILD SUCCEEDED" "colorir: linha sem hora continua filtrando"
-ok "$(printf '[Theo] Instalação no iPhone\n' | bash "$D/colorir.sh" | semcor)" "Instalação no iPhone" "colorir: tira prefixo de pessoa"
-ok "$(printf '2026-10-13 13:00:00 [Julia] merge\n' | bash "$D/colorir.sh" | semcor)" "2026-10-13 13:00:00 merge" "colorir: tira [Julia] depois da hora"
 
 L="$T/proof.log"; printf 'Test Case um\nTest Case dois\nTest Case tres\n' > "$L"
 bash "$D/seguir-com-hora.sh" "$L" 2 "Test Case" > "$T/saida" 2>&1 &

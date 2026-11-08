@@ -79,6 +79,8 @@ final class EstadoCaixa: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
 
     func decidir(_ decisao: CaixaDono.Decisao, item: ItemCaixa) {
+        // Um envio por card: o segundo clique enquanto o primeiro está no ar repetia as mutações.
+        guard !enviando.contains(item.card) else { return }
         let conta = { () -> Bool in if case .responder(_, liberar: false) = decisao { return false }; return true }()
         // FRA-601: o identifier da tela vai ao Linear. Os ids de etiqueta saem da config e do
         // cache do vigia, não do caixa-dono.json. O token é o mesmo item do FRA-568.
