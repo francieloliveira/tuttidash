@@ -157,6 +157,40 @@ final class NorteRascunhoTests: XCTestCase {
         XCTAssertEqual(r.corpos[4], "- lane: fila\n- **Git Hooks**: comandos.")
     }
 
+    func testPerguntasComSugestao() throws {
+        let bruto = """
+        NORTE:
+        ## 1. Objetivo
+        Um app.
+        PERGUNTAS:
+        - Leitura não oficial fica ligada por padrão?
+          sugestão: Não; desligada, opt-in por conta (fonte: docs/gasto.md).
+        - O que vence: entregar ou respeitar o orçamento?
+          **Sugestão:** palpite: o orçamento.
+        - Pergunta sem sugestão?
+        """
+        let r = try XCTUnwrap(NorteRascunho.ler(bruto))
+        XCTAssertEqual(r.perguntas.count, 3)
+        XCTAssertEqual(r.sugestoes, ["Não; desligada, opt-in por conta (fonte: docs/gasto.md).",
+                                     "palpite: o orçamento.", ""])
+    }
+
+    func testLeituraTrazReadmeDeSubpasta() throws {
+        try escrever("lanes/README.md", "Freios por card: 3 tentativas.")
+        try escrever("apps/mac/README.md", "App de barra de menus.")
+        try escrever("tests/README.md", "não entra")
+        XCTAssertEqual(NorteRascunho.leiaMesDasSubpastas(repo), ["apps/mac/README.md", "lanes/README.md"])
+        let t = NorteRascunho.lerRepositorio(repo)
+        XCTAssertTrue(t.contains("### lanes/README.md\nFreios por card: 3 tentativas."))
+    }
+
+    func testSistemaSoPerguntaDecisaoEPedeSugestao() {
+        XCTAssertTrue(NorteRascunho.sistema.contains("Pergunte só o que é decisão do dono"))
+        XCTAssertTrue(NorteRascunho.sistema.contains("Fato sobre como o código funciona não é pergunta"))
+        XCTAssertTrue(NorteRascunho.sistema.contains("palpite:"))
+        XCTAssertTrue(NorteRascunho.prompt(nome: "x", leitura: "", respostas: "").contains("sugestão:"))
+    }
+
     func testRespostaSemSecaoNenhumaENil() {
         XCTAssertNil(NorteRascunho.ler("Não consegui ler o repositório."))
         XCTAssertNil(NorteRascunho.ler(""))
