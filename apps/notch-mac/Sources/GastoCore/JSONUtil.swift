@@ -15,6 +15,14 @@ public enum JV {
         return d.isFinite ? d : nil
     }
 
+    /// Número que pode vir como texto (ex.: micro-cents `"1200000000"`, saldo `"2.51"`).
+    /// Texto que não é número decimal finito fica nil; bool nunca conta.
+    public static func numeroOuTexto(_ v: Any?) -> Double? {
+        if let d = numero(v) { return d }
+        guard let t = texto(v), let d = Double(t), d.isFinite else { return nil }
+        return d
+    }
+
     public static func inteiro(_ v: Any?) -> Int? {
         guard let d = numero(v), abs(d) < 9.0e15 else { return nil }
         return Int(d)   // trunca como int() do Python

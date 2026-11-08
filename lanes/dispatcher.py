@@ -1892,14 +1892,24 @@ def kill_lane_tree(session: str) -> None:
 
 # --- Escolha da lane pela medida (FRA-269) -----------------------------------
 def parse_lanepct(text: str) -> dict:
-    """`conta<TAB>pct<TAB>janela<TAB>reset` -> {conta: (pct|None, janela)}."""
+    """`conta<TAB>pct<TAB>janela<TAB>reset[<TAB>codigo<TAB>saldo]` ->
+    {conta: (pct|None, janela)} ou, com o motivo tipado, (pct|None, janela, codigo, saldo|None)."""
     out = {}
     for line in text.splitlines():
         parts = line.split("\t")
         if len(parts) < 3:
             continue
         conta, pct, janela = parts[0].strip(), parts[1].strip(), parts[2].strip()
-        out[conta] = (int(pct) if pct.isdigit() else None, janela)
+        valor = int(pct) if pct.isdigit() else None
+        codigo = parts[4].strip() if len(parts) > 4 else ""
+        if codigo:
+            try:
+                saldo = float(parts[5]) if len(parts) > 5 and parts[5].strip() else None
+            except ValueError:
+                saldo = None
+            out[conta] = (valor, janela, codigo, saldo)
+        else:
+            out[conta] = (valor, janela)
     return out
 
 
@@ -1928,7 +1938,8 @@ def pick_lane(measures: dict, candidates, spend: Optional[dict] = None) -> tuple
     folga total; lane com erro de leitura fica fora — ver `pct_para_ordem`."""
     ok = {l: pct for l in candidates
           if (pct := pct_para_ordem(measures.get(l))) is not None}
-    shown = " · ".join(f"{l} {measures[l][0]}% ({measures[l][1]})" if l in ok
+    shown = " · ".join((f"{l} {measures[l][0]}% ({measures[l][1]})" if measures[l][0] is not None
+                        else f"{l} sem janela ({measures[l][1]})") if l in ok
                        else f"{l} sem medida ({measures.get(l, (None, 'ausente'))[1]})"
                        for l in sorted(candidates))
     if ok:
@@ -3149,11 +3160,14 @@ SEM_JANELA = "sem dado"
 def pct_para_ordem(medida) -> Optional[float]:
     """O % que a lane tem agora, para ordenar. None = não é candidata.
 
-    Três casos, e a distinção é o que segura o auto-pick:
-      - pct conhecido                       → o número;
-      - sem janela e `janela == sem dado`   → 0.0 (conta respondeu, sem teto: folga total);
-      - sem pct com algum motivo em `janela`→ None (leitura falhou: fora, como sempre).
-    Sem o caso do meio, uma lane com o Console fora do ar ficava esperando folga
+    Casos, e a distinção é o que segura o auto-pick:
+      - pct conhecido                                   → o número;
+      - código sem janela (`fila.SEM_LIMITE`)           → 0.0 (sem teto: folga total);
+      - código `saldo` com saldo ≥ piso do esforço baixo → `fila.PCT_ORDEM_SALDO` (paga por uso:
+        atrás das cotas incluídas com folga; o piso por esforço fica no `headroom_block`);
+      - sem código e `janela == sem dado`               → 0.0 (formato antigo);
+      - sem pct com outro motivo                        → None (leitura falhou: fora).
+    Sem os casos sem pct, uma lane com o Console fora do ar ficava esperando folga
     que ninguém ia medir (FRA-470).
     """
     if medida is None:
@@ -3161,12 +3175,23 @@ def pct_para_ordem(medida) -> Optional[float]:
     pct, janela = medida[0], (medida[1] if len(medida) > 1 else "")
     if pct is not None:
         return float(pct)
+    codigo = fila.codigo_medida(medida)
+    if codigo in fila.SEM_LIMITE:
+        return 0.0
+    if codigo == fila.CODIGO_SALDO:
+        return fila.PCT_ORDEM_SALDO if fila.folga_sem_pct(medida, "baixo") else None
     return 0.0 if janela == SEM_JANELA else None
 
 
 def headroom_block(lane: str, effort: str, measures: dict) -> Optional[str]:
     """Motivo para segurar o card (conta sem folga para o esforço), ou None."""
     m = measures.get(lane)
+    if m and m[0] is None and fila.codigo_medida(m) == fila.CODIGO_SALDO:
+        if not fila.folga_sem_pct(m, effort):
+            saldo = fila.saldo_medida(m)
+            return (f"saldo US$ {saldo if saldo is not None else 0:.2f}; card `{effort}` "
+                    f"só entra com US$ {fila.piso_saldo(effort):.2f} ou mais")
+        return None
     if not m or m[0] is None:
         return None  # sem medida não segura: esse caso já tem a etiqueta do dono na atribuição
     cap = headroom_pct(effort, m[1])

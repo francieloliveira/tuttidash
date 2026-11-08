@@ -28,15 +28,17 @@ public struct TransporteURLSession: TransporteHTTP {
     }
 }
 
-/// Como montar a leitura de uso de um tipo de conta (FRA-565).
+/// Como montar a leitura de uso de um tipo de conta.
 ///
-/// O TuttiDash traz só leituras oficiais ou locais: `copilot` (API de cobrança do GitHub, com o
-/// token que a pessoa cola) e `opencode_sessao` (o banco local do OpenCode, sem rede). Outras
-/// fontes entram por `FontesUso.registrar`, de um módulo à parte que não faz parte deste
-/// repositório. Cada fonte só lê: nunca renova nem regrava credencial de outra ferramenta.
+/// Todas as leituras são públicas e usam as credenciais de quem roda o app, lidas na hora,
+/// nunca guardadas no código nem na config. As oficiais ou locais (`copilot`, `opencode_sessao`)
+/// valem sempre. As não oficiais (endpoint não documentado, com o login da ferramenta) só rodam
+/// na conta com `"nao_oficial": true`. Cada fonte só lê: nunca renova nem regrava credencial.
 public protocol FonteUso: Sendable {
     /// Tipo de conta que esta fonte mede (o `tipo` de `contas` na config).
     var tipo: String { get }
+    /// true = endpoint não documentado: a conta precisa ligar `nao_oficial`.
+    var naoOficial: Bool { get }
     /// Campos de Ajustes que esta fonte usa (por exemplo, o caminho de uma credencial).
     var camposAjuste: [CampoAjuste] { get }
     func alvo(_ ctx: ContextoUso) -> AlvoUso
@@ -44,6 +46,7 @@ public protocol FonteUso: Sendable {
 
 public extension FonteUso {
     var camposAjuste: [CampoAjuste] { [] }
+    var naoOficial: Bool { false }
 }
 
 /// O que uma fonte recebe para montar a leitura.
@@ -123,8 +126,10 @@ public enum FontesUso {
     private static let trava = NSLock()
     nonisolated(unsafe) private static var registradas: [FonteUso] = []
 
-    /// Só leituras oficiais ou locais.
-    public static var publicas: [FonteUso] { [FonteOpenCodeSessao(), FonteCopilot()] }
+    /// Todas as fontes do app. As não oficiais ficam desligadas até a conta ligar `nao_oficial`.
+    public static var publicas: [FonteUso] {
+        [FonteOpenCodeSessao(), FonteCopilot(), FonteOpenCodeZen()] + FontesNaoOficiais.fontes()
+    }
 
     /// Acrescenta fontes; uma do mesmo `tipo` substitui a anterior.
     public static func registrar(_ novas: [FonteUso]) {
@@ -137,6 +142,21 @@ public enum FontesUso {
         trava.lock(); defer { trava.unlock() }
         let tipos = Set(registradas.map(\.tipo))
         return publicas.filter { !tipos.contains($0.tipo) } + registradas
+    }
+}
+
+/// `opencode`: modelos free do OpenCode Zen. Não há janela de limite nem medidor: o motivo
+/// tipado `sem_limite_incluido` deixa a fila andar, e o 429 do servidor é tratado na lane.
+/// O plano Go (com janelas) é a conta `opencode-go`. Sem rede.
+public struct FonteOpenCodeZen: FonteUso {
+    public let tipo = "opencode"
+    public init() {}
+    public func alvo(_ ctx: ContextoUso) -> AlvoUso {
+        AlvoUso(conta: tipo, rotulo: "OpenCode (free)", fonte: "OpenCode Zen · modelos free, sem medidor",
+                url: nil, vencido: .semLimiteIncluido,
+                cabecalhos: { _ in [:] },
+                token: { .failure(.semLimiteIncluido) },
+                lerResposta: { _ in .failure(.semLimiteIncluido) })
     }
 }
 
@@ -239,6 +259,14 @@ public actor ColetorUso {
             guard let fonte = porTipo[c.tipo] else { return nil }
             var a = fonte.alvo(ctx)
             a.tipo = c.tipo; a.conta = c.id; a.rotulo = c.rotulo; a.nome = c.nome; a.sigla = c.sigla
+            if fonte.naoOficial && !c.naoOficial {
+                // Sem rede e sem ler credencial: a conta não pediu a leitura não oficial.
+                a.lerLocal = nil
+                a.preparar = nil
+                a.montarPedido = nil
+                a.token = { .failure(.naoOficialDesligado) }
+                return a
+            }
             if c.tipo == "copilot" {
                 let usuario = c.githubUsuario
                 let cota = c.cotaPremiumMes
@@ -260,12 +288,23 @@ public actor ColetorUso {
 
     private func coletarUma(_ alvo: AlvoUso, agora: Date) async -> UsoConta {
         func semDado(_ erro: ErroUso) -> UsoConta {
+            if let saldo = erro.saldoUSD {
+                // Conta de saldo: leitura boa, sem janela. Vale como dado de agora.
+                var uso = UsoConta(conta: alvo.conta, rotulo: alvo.rotulo, fonte: alvo.fonte,
+                                   motivo: erro.mensagem, atualizadoEm: agora)
+                uso.codigo = erro.codigo
+                uso.saldoUSD = saldo
+                ultimo[alvo.conta] = uso
+                return uso
+            }
             // um valor bom recente continua valendo: mostra o número com a idade dele
             if var antigo = ultimo[alvo.conta], antigo.temDado {
                 antigo.motivo = erro.mensagem
+                antigo.codigo = erro.codigo
                 return antigo
             }
-            let uso = UsoConta(conta: alvo.conta, rotulo: alvo.rotulo, fonte: alvo.fonte, motivo: erro.mensagem)
+            var uso = UsoConta(conta: alvo.conta, rotulo: alvo.rotulo, fonte: alvo.fonte, motivo: erro.mensagem)
+            uso.codigo = erro.codigo
             // guarda o motivo: no freio seguinte a tela não troca a causa por um 429 inventado
             ultimo[alvo.conta] = uso
             return uso

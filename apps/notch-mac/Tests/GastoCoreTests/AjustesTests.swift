@@ -21,11 +21,10 @@ final class AjustesTests: XCTestCase {
         for k in ["opencode_db", "copilot_token"] {
             XCTAssertTrue(chaves.contains(k), k)
         }
-        // Sem fonte registrada de fora, nenhum campo de credencial de login (FRA-565).
-        if FontesUso.todas.count == FontesUso.publicas.count {
-            for k in ["claude_cred", "claude_keychain", "grok_auth", "cursor_db", "codex_auth", "gemini_auth", "opencode_auth"] {
-                XCTAssertFalse(chaves.contains(k), k)
-            }
+        // As leituras não oficiais são públicas (ligadas conta a conta): os caminhos das credenciais aparecem.
+        for k in ["claude_cred", "claude_keychain", "grok_auth", "cursor_db", "codex_auth", "gemini_auth",
+                  "opencode_auth", "deepseek_cred"] {
+            XCTAssertTrue(chaves.contains(k), k)
         }
     }
 

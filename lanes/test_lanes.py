@@ -2868,3 +2868,43 @@ class ModoBancada(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MedidaTipadaDoLanepct(unittest.TestCase):
+    """5ª e 6ª colunas do lanepct: motivo tipado e saldo (PRD medição pública)."""
+
+    SAIDA = ("claude\t3\t5 h\t2026-11-08T08:19:59Z\n"
+             "opencode\t?\tplano sem limite incluído\t-\tsem_limite_incluido\t\n"
+             "deepseek\t?\tsaldo US$ 2.51\t-\tsaldo\t2.5101\n"
+             "gemini\t?\ttoken local vencido\t-\ttoken_vencido\t\n"
+             "velho\t?\tsem dado\t-\n")
+
+    def test_parse(self):
+        m = d.parse_lanepct(self.SAIDA)
+        self.assertEqual(m["claude"], (3, "5 h"))
+        self.assertEqual(m["opencode"], (None, "plano sem limite incluído", "sem_limite_incluido", None))
+        self.assertEqual(m["deepseek"], (None, "saldo US$ 2.51", "saldo", 2.5101))
+        self.assertEqual(m["velho"], (None, "sem dado"))
+
+    def test_ordem(self):
+        m = d.parse_lanepct(self.SAIDA)
+        self.assertEqual(d.pct_para_ordem(m["opencode"]), 0.0)
+        self.assertEqual(d.pct_para_ordem(m["deepseek"]), fila_mod().PCT_ORDEM_SALDO)
+        self.assertIsNone(d.pct_para_ordem(m["gemini"]))
+        self.assertEqual(d.pct_para_ordem(m["velho"]), 0.0)
+        self.assertIsNone(d.pct_para_ordem((None, "s", "saldo", 0.1)), "saldo abaixo do menor piso não é candidata")
+
+    def test_headroom_do_saldo(self):
+        m = {"deepseek": (None, "saldo US$ 1.50", "saldo", 1.5)}
+        self.assertIsNone(d.headroom_block("deepseek", "medio", m))
+        self.assertIn("saldo US$ 1.50", d.headroom_block("deepseek", "alto", m))
+
+    def test_pick_lane_prefere_cota_incluida_ao_saldo(self):
+        m = d.parse_lanepct(self.SAIDA)
+        lane, shown = d.pick_lane(m, ["claude", "deepseek"])
+        self.assertEqual(lane, "claude")
+        self.assertIn("deepseek sem janela (saldo US$ 2.51)", shown)
+
+
+def fila_mod():
+    return d.fila

@@ -289,8 +289,11 @@ final class LimitesUsoTests: XCTestCase {
         return (cfg, temp)
     }
 
-    func testFontesPublicasSaoSoAsOficiaisOuLocais() {
-        XCTAssertEqual(Set(FontesUso.publicas.map(\.tipo)), ["copilot", "opencode_sessao"])
+    func testFontesPublicasMarcamAsNaoOficiais() {
+        let porTipo = Dictionary(uniqueKeysWithValues: FontesUso.publicas.map { ($0.tipo, $0.naoOficial) })
+        XCTAssertEqual(Set(porTipo.keys), ["copilot", "opencode_sessao", "opencode", "claude", "grok", "cursor",
+                                           "codex", "opencode-go", "deepseek", "gemini"])
+        XCTAssertEqual(Set(porTipo.filter { !$0.value }.keys), ["copilot", "opencode_sessao", "opencode"])
     }
 
     func testColetorUsaAFonteDoTipoDaConta() async throws {

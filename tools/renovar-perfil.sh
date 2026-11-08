@@ -2,14 +2,14 @@
 # Renova o provisioning profile de macOS do TuttiDash (app.tuttidash.mac) com o login do Xcode.
 # O profile libera keychain-access-groups (FRA-607). Conta Apple gratuita: vence em 7 dias, e
 # com ele vencido o macOS não deixa o app abrir.
-# Uso: tools/renovar-perfil.sh              gera e grava apps/notch-mac/Privado/TuttiDash.provisionprofile
+# Uso: tools/renovar-perfil.sh              gera e grava apps/notch-mac/.local/TuttiDash.provisionprofile
 #      tools/renovar-perfil.sh --instalar   também roda o build.sh e troca /Applications/TuttiDash.app
 # Precisa: Xcode com a conta da equipe logada (Settings › Accounts) e xcodegen (brew install xcodegen).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 APP_DIR="$ROOT/apps/notch-mac"
-DESTINO="$APP_DIR/Privado/TuttiDash.provisionprofile"
+DESTINO="$APP_DIR/.local/TuttiDash.provisionprofile"
 EQUIPE="3QA76CY27W"
 ID="app.tuttidash.mac"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister

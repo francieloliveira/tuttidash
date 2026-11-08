@@ -28,13 +28,15 @@ class RenovarPerfil(unittest.TestCase):
         self.assertIn("-allowProvisioningDeviceRegistration", self.texto)
         self.assertIn('-destination "platform=macOS', self.texto)
 
-    def test_grava_so_profile_de_macos_do_app_no_privado(self):
-        # O build.sh lê este caminho; o Privado/ fica fora do git.
-        self.assertIn("Privado/TuttiDash.provisionprofile", self.texto)
+    def test_grava_so_profile_de_macos_do_app_no_local(self):
+        # O build.sh lê este caminho; a .local/ fica fora do git.
+        self.assertIn(".local/TuttiDash.provisionprofile", self.texto)
         self.assertIn('install -m 600 "$PERFIL" "$DESTINO"', self.texto)
         self.assertIn('"OSX"', self.texto)
         self.assertIn("Entitlements.com", self.texto)
-        self.assertIn("Privado/", (RAIZ / ".gitignore").read_text(encoding="utf-8"))
+        ignorados = (RAIZ / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("apps/notch-mac/.local/", ignorados)
+        self.assertIn("apps/notch-mac/.env", ignorados)
 
     def test_app_temporario_sai_do_launchservices(self):
         # O app temporário tem o bundle id do TuttiDash: sem isto, `open` pode achá-lo.

@@ -329,6 +329,8 @@ public struct ContaUso: Equatable, Sendable {
     public var cotaPremiumMes: Int?
     /// Caminho opcional do arquivo com o token. O token em si não entra aqui.
     public var arquivoToken: String
+    /// Liga a leitura não oficial desta conta (`"nao_oficial": true`). Padrão: desligada.
+    public var naoOficial: Bool = false
     public static let tipos = Agentes.tiposConta
     /// Contas ligadas quando o arquivo ainda não tem a chave `contas`.
     /// Agente com `optIn` (gemini, copilot) fica de fora até a pessoa adicionar em Ajustes › Contas.
@@ -363,12 +365,14 @@ public struct ContaUso: Equatable, Sendable {
                   cotaPremiumMes: ContasConfig.cota(d["cotaPremiumMes"]),
                   arquivoToken: (d["arquivoToken"] as? String)?
                       .trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        self.naoOficial = (d["nao_oficial"] as? Bool) ?? false
     }
     /// `ativo` só é gravado quando é false, para o arquivo antigo continuar igual.
     /// Segredo nunca entra: token fica no Keychain ou no arquivo apontado.
     public var dict: [String: Any] {
         var item: [String: Any] = ["id": id, "tipo": tipo, "rotulo": rotulo, "nome": nome, "sigla": sigla]
         if !ativo { item["ativo"] = false }
+        if naoOficial { item["nao_oficial"] = true }
         if tipo == "copilot" {
             if !githubUsuario.isEmpty { item["githubUsuario"] = githubUsuario }
             if let cotaPremiumMes { item["cotaPremiumMes"] = cotaPremiumMes }
