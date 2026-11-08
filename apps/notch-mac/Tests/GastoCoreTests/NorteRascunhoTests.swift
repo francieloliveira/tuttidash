@@ -151,6 +151,12 @@ final class NorteRascunhoTests: XCTestCase {
         }
     }
 
+    func testLinhaRepetidaEmLacoEntraUmaVez() throws {
+        let laco = Array(repeating: "- **Git Hooks**: comandos.", count: 12).joined(separator: "\n")
+        let r = try XCTUnwrap(NorteRascunho.ler("## 5. Glossário\n- lane: fila\n" + laco))
+        XCTAssertEqual(r.corpos[4], "- lane: fila\n- **Git Hooks**: comandos.")
+    }
+
     func testRespostaSemSecaoNenhumaENil() {
         XCTAssertNil(NorteRascunho.ler("Não consegui ler o repositório."))
         XCTAssertNil(NorteRascunho.ler(""))

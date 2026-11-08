@@ -17,20 +17,26 @@ public enum OllamaWizard {
     public static let modeloSugerido = "qwen3:8b"
     /// O Ollama informa tamanhos em bytes decimais (5,2 GB = 5,2 × 10⁹).
     public static let gb: Int64 = 1_000_000_000
-    /// Contexto de 8k + o que o sistema e os apps abertos precisam além do modelo.
-    public static let folga: Int64 = 2 * gb
+    /// O que o sistema e os apps abertos precisam além do modelo e do cache de contexto.
+    public static let margem: Int64 = 1 * gb
     /// Contexto quando o wizard carrega o modelo. A leitura do repo + o prompt cabem em ≈5k tokens.
     public static let numCtx = 8_192
+    /// Tokens da resposta. O norte com cinco seções e as perguntas fica bem abaixo disso.
+    public static let maxResposta = 2_048
 
     public struct ModeloBaixado: Equatable, Sendable {
         public var nome: String
         public var tamanho: Int64
         /// Só em `/api/ps`: o contexto com que o modelo está carregado. nil = o servidor não disse.
         public var contexto: Int?
-        public init(nome: String, tamanho: Int64, contexto: Int? = nil) {
+        /// Bytes do cache de contexto (K+V, todas as camadas) por token, do `/api/show`.
+        /// nil = arquitetura desconhecida: a estimativa usa metade do tamanho do modelo.
+        public var kvPorToken: Int64?
+        public init(nome: String, tamanho: Int64, contexto: Int? = nil, kvPorToken: Int64? = nil) {
             self.nome = nome
             self.tamanho = tamanho
             self.contexto = contexto
+            self.kvPorToken = kvPorToken
         }
     }
 
@@ -54,6 +60,29 @@ public enum OllamaWizard {
             return ModeloBaixado(nome: nome, tamanho: Int64(JV.numero(item["size"]) ?? 0),
                                  contexto: JV.numero(item["context_length"]).map { Int($0) })
         }
+    }
+
+    /// `POST /api/show` → bytes do cache K+V por token (f16), somando todas as camadas.
+    ///
+    /// Medido em 08/11: o `phi3:mini` tem 2,2 GB em disco e ocupou 5,5 GB com 8k de contexto
+    /// (32 camadas × 32 cabeças KV × (96+96) × 2 B ≈ 3,2 GB de cache). A folga fixa de 2 GB
+    /// subestimava; o `qwen3:8b` (8 cabeças KV) gasta ≈1,2 GB no mesmo contexto.
+    public static func kvPorToken(show dados: Data) -> Int64? {
+        guard let obj = JV.objeto(dados), let info = obj["model_info"] as? [String: Any],
+              let arq = JV.texto(info["general.architecture"]) else { return nil }
+        func n(_ chave: String) -> Double? { JV.numero(info["\(arq).\(chave)"]) }
+        guard let camadas = n("block_count"), let cabecas = n("attention.head_count"), cabecas > 0 else { return nil }
+        let kv = n("attention.head_count_kv") ?? cabecas
+        let chave = n("attention.key_length") ?? (n("embedding_length").map { $0 / cabecas } ?? 0)
+        let valor = n("attention.value_length") ?? chave
+        guard camadas > 0, kv > 0, chave > 0 else { return nil }
+        return Int64(camadas * kv * (chave + valor) * 2)
+    }
+
+    /// Memória que o modelo pede para rodar o rascunho: pesos + cache de 8k + margem do sistema.
+    public static func necessidade(_ m: ModeloBaixado) -> Int64 {
+        let cache = m.kvPorToken.map { $0 * Int64(numCtx) } ?? m.tamanho / 2
+        return m.tamanho + cache + margem
     }
 
     /// Modelo de embedding não escreve texto: nunca entra no rascunho.
@@ -95,7 +124,7 @@ public enum OllamaWizard {
         }
         func cabe(_ m: ModeloBaixado) -> Bool {
             guard let disponivel else { return false }
-            return m.tamanho + folga <= disponivel
+            return necessidade(m) <= disponivel
         }
         func semMemoria(_ m: ModeloBaixado) -> Escolha {
             guard let disponivel else {
@@ -103,7 +132,7 @@ public enum OllamaWizard {
             }
             let outros = carregados.map(\.nome)
             let quem = outros.isEmpty ? "" : String(localized: " Carregado no Ollama agora: \(outros.joined(separator: ", ")) (o wizard não descarrega modelo de outro uso).")
-            return .nenhum(String(localized: "Memória livre insuficiente: o \(m.nome) precisa de \(emGB(m.tamanho + folga)) GB e há \(emGB(disponivel)) GB.\(quem) Feche alguns apps ou espere e tente de novo."))
+            return .nenhum(String(localized: "Memória livre insuficiente: o \(m.nome) precisa de \(emGB(necessidade(m))) GB e há \(emGB(disponivel)) GB.\(quem) Feche alguns apps ou espere e tente de novo."))
         }
 
         let e = escolhido.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -175,7 +204,10 @@ public enum OllamaWizard {
     /// desconhecido): um `num_ctx` diferente do carregado faz o Ollama recarregar o modelo.
     public static func corpoGerar(modelo: String, sistema: String, prompt: String,
                                   descarregar: Bool, contexto: Int? = numCtx) throws -> Data {
-        var opcoes: [String: Any] = ["temperature": 0.3]
+        // Teto da resposta: o rascunho cabe em ≈1k tokens. Sem isto, modelo pequeno segue
+        // escrevendo até encher o contexto (08/11: phi3:mini passou de 5 min sem parar).
+        // repeat_penalty: o phi3:mini entrou em laço no glossário (a mesma linha dezenas de vezes).
+        var opcoes: [String: Any] = ["temperature": 0.3, "num_predict": maxResposta, "repeat_penalty": 1.15]
         if let contexto { opcoes["num_ctx"] = contexto }
         var corpo: [String: Any] = [
             "model": modelo,
@@ -211,9 +243,20 @@ public enum OllamaWizard {
         await consultar("api/ps", timeout: timeout).flatMap(lerCarregados)
     }
 
-    /// Modelos baixados com tamanho; nil = servidor fora do ar.
+    /// Modelos baixados com tamanho e, para os de texto, o cache por token; nil = servidor fora do ar.
     public static func baixados(timeout: TimeInterval = 3) async -> [ModeloBaixado]? {
-        await consultar("api/tags", timeout: timeout).flatMap(lerTags)
+        guard var lista = await consultar("api/tags", timeout: timeout).flatMap(lerTags) else { return nil }
+        for i in lista.indices where geraTexto(lista[i].nome) {
+            var req = URLRequest(url: OllamaLocal.base.appendingPathComponent("api/show"), timeoutInterval: timeout)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: ["model": lista[i].nome])
+            if let (dados, resp) = try? await URLSession.shared.data(for: req),
+               (resp as? HTTPURLResponse)?.statusCode == 200 {
+                lista[i].kvPorToken = kvPorToken(show: dados)
+            }
+        }
+        return lista
     }
 
     static func consultar(_ caminho: String, timeout: TimeInterval) async -> Data? {

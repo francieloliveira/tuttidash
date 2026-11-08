@@ -301,7 +301,12 @@ public enum NorteRascunho {
                 if atual != nil { achou = true }
                 continue
             }
-            if let i = atual { corpos[i].append(linha) }
+            if let i = atual {
+                // Modelo pequeno repete a mesma linha em laço: linha igual à anterior não entra.
+                let ultima = corpos[i].last?.trimmingCharacters(in: .whitespaces)
+                if !limpa.isEmpty, ultima == limpa { continue }
+                corpos[i].append(linha)
+            }
         }
         guard achou else { return nil }
         let finais = corpos.map { linhas -> String in
