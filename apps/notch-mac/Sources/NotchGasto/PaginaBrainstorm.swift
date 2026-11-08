@@ -1308,6 +1308,7 @@ enum AgenteBrainstorm {
         case .conversa: memoriaConversa = nova
         case .reescrita: memoriaReescrita = nova
         case .historias: memoriaHistorias = nova
+        case .norte: break  // o norte não retoma sessão
         }
     }
 
@@ -1316,6 +1317,7 @@ enum AgenteBrainstorm {
         case .conversa: return memoriaConversa
         case .reescrita: return memoriaReescrita
         case .historias: return memoriaHistorias
+        case .norte: return nil
         }
     }
 
