@@ -46,6 +46,10 @@ public struct UsoConta: Equatable, Sendable {
     public var fonte: String
     public var janelas: [JanelaUso]
     public var motivo: String?
+    /// Código estável do motivo (`ErroUso.codigo`), para quem decide a fila sem casar texto.
+    public var codigo: String?
+    /// Saldo pré-pago em US$, quando a conta não tem janela e sim saldo (`ErroUso.apenasSaldo`).
+    public var saldoUSD: Double?
     public var atualizadoEm: Date?
     /// claude, grok ou cursor (como foi medido).
     public var tipo: String = ""
@@ -116,6 +120,11 @@ public enum ErroUso: Error, Equatable, Sendable {
     case copilotSemRelatorio
     /// Copilot: havia itens, mas nenhum com quantidade de requisições.
     case semQuantidadeCopilot
+    /// Leitura não oficial (endpoint não documentado, com o login da ferramenta) desligada na conta.
+    /// Liga com `"nao_oficial": true` na entrada da conta em `contas`.
+    case naoOficialDesligado
+    /// A conta não tem janela de limite: tem saldo pré-pago, em US$. Não é falha de leitura.
+    case apenasSaldo(Double)
 
     public var mensagem: String {
         switch self {
@@ -165,6 +174,43 @@ public enum ErroUso: Error, Equatable, Sendable {
             return "usuário do GitHub sem relatório pessoal"
         case .semQuantidadeCopilot:
             return "relatório sem quantidade de requisições premium"
+        case .naoOficialDesligado:
+            return "leitura não oficial desligada (ligue \"nao_oficial\" na conta)"
+        case .apenasSaldo(let usd):
+            return String(format: "saldo US$ %.2f", usd)
         }
+    }
+
+    /// Código estável do motivo, impresso pelo lanepct. O dispatcher decide a fila por ele,
+    /// nunca pelo texto: `sem_janelas`, `sem_limite_incluido` e `cota_compartilhada` têm folga;
+    /// `saldo` tem folga acima do piso do esforço; qualquer outro é falha de leitura.
+    public var codigo: String {
+        switch self {
+        case .semCredencial: return "sem_credencial"
+        case .credencialIlegivel: return "credencial_ilegivel"
+        case .tokenExpirado: return "token_vencido"
+        case .naoAutorizado, .tokenCopilotRecusado: return "token_recusado"
+        case .limitado: return "limitado"
+        case .http: return "http"
+        case .rede: return "rede"
+        case .respostaIlegivel: return "resposta_ilegivel"
+        case .semJanelas: return "sem_janelas"
+        case .desligado: return "desligado"
+        case .semLimiteIncluido: return "sem_limite_incluido"
+        case .cotaCompartilhada: return "cota_compartilhada"
+        case .motivo, .motivoEsperar: return "motivo"
+        case .naoOficialDesligado: return "nao_oficial_desligado"
+        case .apenasSaldo: return "saldo"
+        case .semUsuarioCopilot, .usuarioCopilotInvalido, .semCotaInformada, .semTokenCopilot,
+             .licencaOrganizacao, .respostaOrganizacao, .relatorioOutroMes, .copilotSemRelatorio,
+             .semQuantidadeCopilot:
+            return "copilot"
+        }
+    }
+
+    /// Saldo em US$ quando o motivo é `apenasSaldo`.
+    public var saldoUSD: Double? {
+        if case .apenasSaldo(let usd) = self { return usd }
+        return nil
     }
 }

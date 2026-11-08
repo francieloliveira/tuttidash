@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Gera build/TuttiDash.app (release). Assina com SIGN_IDENTITY (variável de ambiente, ou a linha
-# SIGN_IDENTITY=... em Privado/assinatura.env, fora do repositório). A identidade que o lançador
+# SIGN_IDENTITY=... em apps/notch-mac/.env, que nunca vai para o git; ver .env.example). A identidade que o lançador
 # aceita é Apple Development da equipe 3QA76CY27W (designated requirement, não o hash do CodeDirectory).
 # Sem identidade, o build fica ad-hoc e o tuttidash-agente aborta na hora de executar.
 # Uso: ./build.sh            compila e empacota
@@ -20,8 +20,7 @@ if [[ "${1:-}" == "--testes" ]]; then
 fi
 
 echo "==> swift build -c release"
-# Sem cache de manifesto: o Package.swift decide se Privado/GastoPrivado entra,
-# e o cache antigo continuaria dizendo "sem privado" depois de restaurar a pasta.
+# Sem cache de manifesto: um cache antigo ainda pode trazer o alvo GastoPrivado de antes.
 swift build -c release --manifest-cache none --product "$EXEC"
 BIN_DIR="$(swift build -c release --manifest-cache none --show-bin-path)"
 
@@ -118,9 +117,16 @@ xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "
 # FRA-524: o app é só em pt-BR. Com o en.lproj no bundle, um Mac em inglês misturava os dois idiomas.
 rm -rf "$APP/Contents/Resources/en.lproj"
 
-if [[ -z "${SIGN_IDENTITY:-}" && -f "$HERE/Privado/assinatura.env" ]]; then
-  SIGN_IDENTITY="$(sed -n 's/^SIGN_IDENTITY=//p' "$HERE/Privado/assinatura.env" | head -1)"
-fi
+# Dados pessoais do build: .env (atual) ou Privado/assinatura.env (antigo, só na transição).
+for ENV_LOCAL in "$HERE/.env" "$HERE/Privado/assinatura.env"; do
+  if [[ ! -f "$ENV_LOCAL" ]]; then continue; fi
+  if [[ -z "${SIGN_IDENTITY:-}" ]]; then
+    SIGN_IDENTITY="$(sed -n 's/^SIGN_IDENTITY=//p' "$ENV_LOCAL" | head -1)"
+  fi
+  if [[ -z "${PROVISION_PROFILE:-}" ]]; then
+    PROVISION_PROFILE="$(sed -n 's/^PROVISION_PROFILE=//p' "$ENV_LOCAL" | head -1)"
+  fi
+done
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 if [[ "$SIGN_IDENTITY" != "-" ]] && security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_IDENTITY"; then
   echo "==> codesign com $SIGN_IDENTITY (hardened runtime)"
@@ -138,10 +144,12 @@ fi
 codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
   ${DR_ARGS[@]+"${DR_ARGS[@]}"} --identifier app.tuttidash.agente "$APP/Contents/MacOS/tuttidash-agente"
 # keychain-access-groups (FRA-607) é restrito: sem provisioning profile embutido o macOS
-# mata o app no lançamento (spawn failed, POSIX 162). O profile fica fora do repositório,
-# em Privado/TuttiDash.provisionprofile. Sem ele, assina sem entitlements: o Cofre já
-# grava sem o access group quando o entitlement falta (errSecMissingEntitlement).
-PERFIL="$HERE/Privado/TuttiDash.provisionprofile"
+# mata o app no lançamento (spawn failed, POSIX 162). O profile fica fora do repositório:
+# PROVISION_PROFILE (.env) ou .local/TuttiDash.provisionprofile (Privado/ antigo na transição).
+# Sem ele, assina sem entitlements: o Cofre já grava sem o access group (errSecMissingEntitlement).
+PERFIL="${PROVISION_PROFILE:-$HERE/.local/TuttiDash.provisionprofile}"
+PERFIL="${PERFIL/#\~/$HOME}"
+[[ -f "$PERFIL" || -n "${PROVISION_PROFILE:-}" ]] || PERFIL="$HERE/Privado/TuttiDash.provisionprofile"
 ENT_ARGS=()
 if [[ "$SIGN_IDENTITY" != "-" && -f "$PERFIL" ]]; then
   PREFIXO="$(security cms -D -i "$PERFIL" | plutil -extract ApplicationIdentifierPrefix.0 raw -)"
@@ -150,7 +158,7 @@ if [[ "$SIGN_IDENTITY" != "-" && -f "$PERFIL" ]]; then
   ENT_ARGS=(--entitlements "$OUT/TuttiDash.entitlements")
   echo "==> entitlements com o profile de $PREFIXO (keychain-access-groups)"
 else
-  echo "AVISO: sem Privado/TuttiDash.provisionprofile; assina sem keychain-access-groups (o Cofre grava sem o access group)"
+  echo "AVISO: sem .local/TuttiDash.provisionprofile (ou PROVISION_PROFILE no .env); assina sem keychain-access-groups (o Cofre grava sem o access group)"
 fi
 codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
   ${DR_ARGS[@]+"${DR_ARGS[@]}"} ${ENT_ARGS[@]+"${ENT_ARGS[@]}"} "$APP"

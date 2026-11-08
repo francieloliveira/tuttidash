@@ -1,12 +1,9 @@
 import AppKit
-#if canImport(GastoPrivado)
-import GastoPrivado
-#endif
+import GastoCore
 
-// Build pessoal: liga as leituras de uso de fora (antes do AppDelegate criar o coletor).
-#if canImport(GastoPrivado)
-GastoPrivado.registrar()
-#endif
+// Listas de modelos pelo login (não oficial): só das contas com `nao_oficial`. As leituras de uso
+// já estão no GastoCore e respeitam a mesma chave, conta a conta.
+FontesNaoOficiais.registrarListas(config: Configuracao.resolver())
 
 // Arranca sem ícone no Dock (LSUIElement no Info.plist e .accessory aqui,
 // inclusive no `swift run`). Com o painel aberto, JanelaPainel passa a .regular (FRA-553).

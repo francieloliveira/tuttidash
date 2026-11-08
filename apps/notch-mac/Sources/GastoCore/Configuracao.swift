@@ -295,8 +295,8 @@ public struct Configuracao: Equatable, Sendable {
         if let b = booleano("uso_contas") { cfg.usoContas = b }
         if let l = arquivo["contas"] as? [[String: Any]] {
             cfg.contas = l.compactMap(ContaUso.init(dict:)).filter(\.ativo)
-            // FRA-528: uma conta com o nome de uma lane (ex.: `opencode-go`, que mede o mesmo
-            // Console do opencode) também habilita a lane, mesmo sem medidor próprio.
+            // FRA-528: uma conta com o nome de uma lane (ex.: `opencode-go`, medida pelo plano Go)
+            // também habilita a lane.
             // `ativo: false` tira a conta da medição e da lane. Sem a chave, continua ligada.
             let nomesLane = Set(Agentes.ordem)
             let tiposLane = l.filter(ContasConfig.entradaAtiva)
@@ -329,6 +329,8 @@ public struct ContaUso: Equatable, Sendable {
     public var cotaPremiumMes: Int?
     /// Caminho opcional do arquivo com o token. O token em si não entra aqui.
     public var arquivoToken: String
+    /// Liga a leitura não oficial desta conta (`"nao_oficial": true`). Padrão: desligada.
+    public var naoOficial: Bool = false
     public static let tipos = Agentes.tiposConta
     /// Contas ligadas quando o arquivo ainda não tem a chave `contas`.
     /// Agente com `optIn` (gemini, copilot) fica de fora até a pessoa adicionar em Ajustes › Contas.
@@ -355,7 +357,10 @@ public struct ContaUso: Equatable, Sendable {
         self.arquivoToken = arquivoToken
     }
     public init?(dict d: [String: Any]) {
-        guard let id = d["id"] as? String, !id.isEmpty, let tipo = d["tipo"] as? String, Self.tipos.contains(tipo) else { return nil }
+        // Tipo do catálogo de uso ou nome de agente (ex.: `opencode-go`, medido pelo plano Go),
+        // a mesma regra do cadastro (`ContasConfig.tipoAceito`).
+        guard let id = d["id"] as? String, !id.isEmpty, let tipo = d["tipo"] as? String,
+              ContasConfig.tipoAceito(tipo) else { return nil }
         self.init(id: id, tipo: tipo, rotulo: d["rotulo"] as? String ?? id, nome: d["nome"] as? String,
                   sigla: d["sigla"] as? String, ativo: ContasConfig.ativo(d["ativo"]),
                   githubUsuario: (d["githubUsuario"] as? String)?
@@ -363,12 +368,14 @@ public struct ContaUso: Equatable, Sendable {
                   cotaPremiumMes: ContasConfig.cota(d["cotaPremiumMes"]),
                   arquivoToken: (d["arquivoToken"] as? String)?
                       .trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        self.naoOficial = (d["nao_oficial"] as? Bool) ?? false
     }
     /// `ativo` só é gravado quando é false, para o arquivo antigo continuar igual.
     /// Segredo nunca entra: token fica no Keychain ou no arquivo apontado.
     public var dict: [String: Any] {
         var item: [String: Any] = ["id": id, "tipo": tipo, "rotulo": rotulo, "nome": nome, "sigla": sigla]
         if !ativo { item["ativo"] = false }
+        if naoOficial { item["nao_oficial"] = true }
         if tipo == "copilot" {
             if !githubUsuario.isEmpty { item["githubUsuario"] = githubUsuario }
             if let cotaPremiumMes { item["cotaPremiumMes"] = cotaPremiumMes }

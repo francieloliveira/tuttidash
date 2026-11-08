@@ -11,6 +11,15 @@ import time
 from typing import Callable, Optional
 
 HEADROOM_PCT = {"baixo": 90, "medio": 80, "alto": 60}
+# Medida sem % que ainda tem folga: o motivo tipado do lanepct (5ª coluna) diz que a conta
+# não tem janela de limite. Qualquer outro motivo sem % é falha de leitura e fecha a fila.
+SEM_LIMITE = frozenset({"sem_janelas", "sem_limite_incluido", "cota_compartilhada"})
+# Conta pré-paga (ex.: DeepSeek): sem janela, com saldo em US$ na 6ª coluna.
+CODIGO_SALDO = "saldo"
+# Saldo mínimo para o esforço entrar. Ajustável em `cota.piso_saldo_usd` na config.
+PISO_SALDO_USD = {"baixo": 0.5, "medio": 1.0, "alto": 2.0}
+# Lugar de uma conta de saldo na ordem por %: paga por uso, fica atrás das cotas incluídas com folga.
+PCT_ORDEM_SALDO = 50.0
 HEADROOM_PCT_LONGA = {"baixo": 95, "medio": 90, "alto": 85}
 JANELA_LONGA_RE = re.compile(r"\d+\s*dias?\b|semana|m[êe]s\b|mensal", re.I)
 EFFORT_EN = {"baixo": "low", "medio": "medium", "alto": "high"}
@@ -39,11 +48,77 @@ def cap_esforco(effort: str, janela: str) -> int:
     return tabela.get(effort, tabela["medio"])
 
 
-def cota_ok(lane: str, effort: str, medidas: dict) -> bool:
+def codigo_medida(medida) -> str:
+    """Motivo tipado da medida (5ª coluna do lanepct). Formato antigo, de 2 campos, = ""."""
+    if not medida or len(medida) < 3 or not medida[2]:
+        return ""
+    return str(medida[2])
+
+
+def saldo_medida(medida) -> Optional[float]:
+    """Saldo em US$ da medida (6ª coluna do lanepct), ou None."""
+    if not medida or len(medida) < 4 or medida[3] in (None, ""):
+        return None
+    try:
+        v = float(medida[3])
+    except (TypeError, ValueError):
+        return None
+    return v if v == v and v not in (float("inf"), float("-inf")) else None
+
+
+_pisos_cache: dict = {"at": 0.0, "v": None}
+
+
+def _obter_config(chave: str):
+    try:
+        import config as _config  # gasto_lanes no sys.path (dispatcher/vigia instalados)
+    except ImportError:
+        from gasto_lanes import config as _config  # type: ignore
+    return _config.obter(chave)
+
+
+def pisos_saldo() -> dict:
+    """Pisos de saldo por esforço: padrão + `cota.piso_saldo_usd` da config (lido a cada minuto)."""
+    agora = time.time()
+    if _pisos_cache["v"] is not None and agora - _pisos_cache["at"] < 60:
+        return _pisos_cache["v"]
+    pisos = dict(PISO_SALDO_USD)
+    try:
+        extra = _obter_config("cota.piso_saldo_usd") or {}
+    except Exception:  # noqa: BLE001 - config ilegível não derruba a fila
+        extra = {}
+    if isinstance(extra, dict):
+        for k, v in extra.items():
+            if k in pisos and isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+                pisos[k] = float(v)
+    _pisos_cache.update(at=agora, v=pisos)
+    return pisos
+
+
+def piso_saldo(effort: str, pisos: Optional[dict] = None) -> float:
+    tabela = pisos if pisos is not None else pisos_saldo()
+    return tabela.get(effort, tabela.get("medio", PISO_SALDO_USD["medio"]))
+
+
+def folga_sem_pct(medida, effort: str, pisos: Optional[dict] = None) -> bool:
+    """Medida sem %: só tem folga se o motivo tipado diz que não há janela, ou se o saldo
+    cobre o piso do esforço. Formato antigo (sem código) e falha de leitura: sem folga."""
+    codigo = codigo_medida(medida)
+    if codigo in SEM_LIMITE:
+        return True
+    if codigo == CODIGO_SALDO:
+        saldo = saldo_medida(medida)
+        return saldo is not None and saldo >= piso_saldo(effort, pisos)
+    return False
+
+
+def cota_ok(lane: str, effort: str, medidas: dict, pisos: Optional[dict] = None) -> bool:
     """Há folga de cota para este esforço nesta lane?"""
     medida = medidas.get(lane)
-    if not medida or medida[0] is None:
+    if not medida:
         return False
+    if medida[0] is None:
+        return folga_sem_pct(medida, effort, pisos)
     try:
         pct = float(medida[0])
     except (TypeError, ValueError):

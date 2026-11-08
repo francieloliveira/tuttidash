@@ -91,3 +91,50 @@ class FilaCompartilhadaTest(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class CotaSemPctTipada(unittest.TestCase):
+    """Medida sem %: o motivo tipado (5ª coluna do lanepct) decide; o texto nunca."""
+
+    PISOS = {"baixo": 0.5, "medio": 1.0, "alto": 2.0}
+
+    def test_sem_limite_tem_folga_em_qualquer_esforco(self):
+        for codigo in ("sem_janelas", "sem_limite_incluido", "cota_compartilhada"):
+            for effort in ("baixo", "medio", "alto"):
+                with self.subTest(codigo=codigo, effort=effort):
+                    self.assertTrue(fila.cota_ok("x", effort, {"x": (None, "qualquer", codigo, None)}, self.PISOS))
+
+    def test_falha_de_leitura_continua_fechada(self):
+        for codigo in ("token_vencido", "token_recusado", "rede", "http", "limitado", "resposta_ilegivel",
+                       "sem_credencial", "nao_oficial_desligado", "motivo", ""):
+            with self.subTest(codigo=codigo):
+                self.assertFalse(fila.cota_ok("x", "baixo", {"x": (None, "falhou", codigo, None)}, self.PISOS))
+
+    def test_formato_antigo_sem_codigo_fecha(self):
+        self.assertFalse(fila.cota_ok("x", "baixo", {"x": (None, "servidor não informou nenhuma janela de limite")}))
+        self.assertFalse(fila.cota_ok("x", "baixo", {}))
+
+    def test_saldo_respeita_o_piso_do_esforco(self):
+        m = {"deepseek": (None, "saldo US$ 1.50", "saldo", 1.5)}
+        self.assertTrue(fila.cota_ok("deepseek", "baixo", m, self.PISOS))
+        self.assertTrue(fila.cota_ok("deepseek", "medio", m, self.PISOS))
+        self.assertFalse(fila.cota_ok("deepseek", "alto", m, self.PISOS))
+        self.assertFalse(fila.cota_ok("deepseek", "baixo", {"deepseek": (None, "s", "saldo", None)}, self.PISOS))
+        self.assertFalse(fila.cota_ok("deepseek", "baixo", {"deepseek": (None, "s", "saldo", "abc")}, self.PISOS))
+
+    def test_medida_numerica_nao_muda(self):
+        self.assertTrue(fila.cota_ok("c", "alto", {"c": (10, "5 h", "", None)}, self.PISOS))
+        self.assertFalse(fila.cota_ok("c", "alto", {"c": (70, "5 h")}, self.PISOS))
+
+    def test_piso_vem_da_config(self):
+        import unittest.mock as mock
+        fila._pisos_cache.update(at=0.0, v=None)
+        try:
+            with mock.patch.object(fila, "_obter_config", return_value={"alto": 5, "baixo": "x", "medio": True}):
+                pisos = fila.pisos_saldo()
+            self.assertEqual(pisos, {"baixo": 0.5, "medio": 1.0, "alto": 5.0})
+            fila._pisos_cache.update(at=0.0, v=None)
+            with mock.patch.object(fila, "_obter_config", side_effect=OSError("ilegível")):
+                self.assertEqual(fila.pisos_saldo(), fila.PISO_SALDO_USD)
+        finally:
+            fila._pisos_cache.update(at=0.0, v=None)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Confere, antes de publicar, que os arquivos versionados não levam dado pessoal nem leitura
-# não oficial (FRA-565). Olha só o que o git versiona (git ls-files), menos este script.
+# Confere, antes de publicar, que os arquivos versionados não levam dado pessoal, e que leitura
+# não oficial só existe no módulo dela (GastoCore/NaoOficial, desligado por conta). Olha só o que o git versiona (git ls-files), menos este script.
 #   tools/checar-publicacao.sh          sai 0 sem achados, 1 com achados
 # Com o gitleaks instalado (brew install gitleaks), roda também a busca de segredos no histórico.
 set -uo pipefail
@@ -38,8 +38,12 @@ r=$(grep -nIoE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "$
 # 4. Identidade de assinatura (40 hex maiúsculos)
 buscar "hash de certificado" '\b[0-9A-F]{40}\b'
 
-# 5. Endpoints e credenciais de login fora das APIs oficiais
-buscar "endpoint ou credencial não oficial" 'api/oauth/usage|oauth-2025-04-20|cli-chat-proxy\.grok|api2\.cursor\.sh|wham/usage|chatgpt\.com/backend-api|opencode\.ai/console|cloudcode-pa\.googleapis|retrieveUserQuota|loadCodeAssist|Claude Code-credentials|\.credentials\.json|oauth_creds\.json|state\.vscdb'
+# 5. Endpoints e credenciais de login fora das APIs oficiais: só no módulo das leituras não oficiais
+#    (desligadas por conta, `nao_oficial`), nos testes dele e na documentação. Em outro lugar, achado.
+NAO_OFICIAL='api/oauth/usage|oauth-2025-04-20|cli-chat-proxy\.grok|api2\.cursor\.sh|wham/usage|chatgpt\.com/backend-api|opencode\.ai/console|cloudcode-pa\.googleapis|retrieveUserQuota|loadCodeAssist|Claude Code-credentials|\.credentials\.json|oauth_creds\.json|state\.vscdb|platform\.deepseek\.com|\.credentials\.yaml|x-dsh-auth-token'
+PERMITIDOS='^apps/notch-mac/Sources/GastoCore/NaoOficial/|^apps/notch-mac/Tests/GastoCoreTests/UsoNaoOficialTests\.swift:|^apps/notch-mac/README\.md:'
+r=$(grep -nIE -- "$NAO_OFICIAL" "${arquivos[@]}" 2>/dev/null | grep -vE "$PERMITIDOS")
+[[ -n "$r" ]] && avisar "endpoint ou credencial não oficial fora de GastoCore/NaoOficial" "$r"
 
 # 6. Segredos óbvios
 buscar "possível segredo" '(sk-ant-|sk-proj-|ghp_[A-Za-z0-9]{20}|github_pat_|lin_api_[A-Za-z0-9]{10}|xai-[A-Za-z0-9]{20}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY)'

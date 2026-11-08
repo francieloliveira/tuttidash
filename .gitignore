@@ -10,7 +10,10 @@ config.json
 !config.example.json
 .build/
 
-# Build pessoal: leituras de uso fora das APIs oficiais (repositório privado à parte, FRA-565)
+# Dados pessoais do build (assinatura e provisioning profile): nunca vão para o git.
+# Modelo em apps/notch-mac/.env.example. Privado/ é o local antigo, ignorado até sumir das máquinas.
+apps/notch-mac/.env
+apps/notch-mac/.local/
 apps/notch-mac/Privado/
 
 # estado efêmero da lane (result.json e prova); não é código

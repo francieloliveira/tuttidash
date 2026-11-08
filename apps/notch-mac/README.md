@@ -111,6 +111,7 @@ O TuttiDash aberto lê só fontes oficiais ou locais:
 |---|---|---|
 | copilot (GitHub Copilot, opt-in) | `GET https://api.github.com/users/{username}/settings/billing/premium_request/usage?year=&month=` (API de billing do GitHub) | token no Keychain do app (`app.tuttidash.mac`, conta `copilot`) ou arquivo apontado em Ajustes |
 | opencode_sessao (OpenCode) | banco local `~/.local/share/opencode/opencode.db` (`session_v2`), sem rede | nenhuma |
+| opencode (modelos free do Zen) | sem medidor: o motivo tipado `sem_limite_incluido` deixa a fila andar; o 429 é tratado na lane | nenhuma |
 
 - **copilot** é opt-in: não entra na lista padrão de contas. Com a conta adicionada, usuário
   do GitHub, cota mensal (requisições) e token, o app lê o relatório pessoal oficial de
@@ -122,11 +123,36 @@ O TuttiDash aberto lê só fontes oficiais ou locais:
 - **opencode_sessao** mostra o contexto usado pela sessão mais recente do OpenCode, lido do
   banco local aberto só para leitura.
 
-As outras lanes (Claude Code, Codex, DeepSeek Harness, Grok, Gemini…) não têm API oficial de cota
-da assinatura, então o TuttiDash aberto não mostra o limite delas. Para quem quiser medir de outro
-jeito, o GastoCore tem um registro de fontes: um módulo à parte implementa `FonteUso` e chama
-`FontesUso.registrar(_:)` no início do app (`Sources/NotchGasto/main.swift`). O `Package.swift`
-inclui `Privado/Sources/GastoPrivado` quando essa pasta existe; ela é ignorada pelo git.
+### Leituras não oficiais (desligadas por padrão)
+
+As outras contas não têm API oficial de cota da assinatura. O GastoCore traz leituras pelos
+mesmos endpoints que as próprias ferramentas usam, com o login que cada uma guardou na máquina
+de quem roda o app (`Sources/GastoCore/NaoOficial/`). São endpoints **não documentados**: podem
+mudar sem aviso, e usá-los pode não estar coberto pelos termos de cada serviço. Por isso cada
+conta liga a sua, na entrada dela em `contas` do `config.json`:
+
+```json
+{"id": "deepseek", "tipo": "deepseek", "rotulo": "DeepSeek", "nao_oficial": true}
+```
+
+Sem a chave, a conta fica "leitura não oficial desligada", sem ler credencial nem chamar a rede.
+Nenhum token fica no código ou na config: a leitura é feita na hora, só leitura, e nada é
+renovado ou regravado.
+
+| Tipo | Leitura | Credencial |
+|---|---|---|
+| claude | `api.anthropic.com/api/oauth/usage` | `~/.claude/.credentials.json` ou Keychain do Claude Code |
+| codex | `chatgpt.com/backend-api/wham/usage` | `~/.codex/auth.json` |
+| grok | `cli-chat-proxy.grok.com/v1/billing` | `~/.grok/auth.json` |
+| cursor (Grok Bot) | `api2.cursor.sh` · `GetSandUsageStatus` | `state.vscdb` do Cursor |
+| gemini | `cloudcode-pa.googleapis.com` · `retrieveUserQuota` | `~/.gemini/oauth_creds.json` |
+| opencode-go | `opencode.ai/console/api/go/status` (janelas 5 h, semana, mês) | `opencode.db` (login do Console) |
+| deepseek | `platform.deepseek.com/api/v0/users/get_user_summary`: saldo em US$ (recarga + bônus), sem janela | `~/.dsh/.credentials.yaml` (DeepSeek Harness) |
+
+O `lanepct` imprime, para conta sem janela, o motivo tipado e o saldo (`conta ? motivo - codigo saldo`).
+A fila do dispatcher e do vigia decide por esse código: `sem_janelas`, `sem_limite_incluido` e
+`cota_compartilhada` têm folga; `saldo` tem folga acima do piso do esforço (`cota.piso_saldo_usd`,
+padrão baixo US$ 0,50, médio US$ 1, alto US$ 2); qualquer outro motivo sem % fecha a fila.
 
 A lane **deepseek** roda `dsh --profile headless` com a conta do app DeepSeek Harness. O `dsh`
 imprime a resposta final em texto puro, sem o stream JSON das outras lanes, então o custo dela
@@ -164,13 +190,15 @@ Para rodar sem empacotar: `swift run NotchGasto`.
 
 Para fixar o app em `/Applications`: `cp -R "build/TuttiDash.app" /Applications/`.
 
-O token do Linear fica na keychain protegida do app (FRA-607) só quando o build encontra
-`Privado/TuttiDash.provisionprofile` (fora do git). Sem o arquivo, o app assina sem
+Dados pessoais do build ficam em `apps/notch-mac/.env` (modelo em `.env.example`) e em
+`apps/notch-mac/.local/`, os dois ignorados pelo git. O token do Linear fica na keychain protegida
+do app (FRA-607) só quando o build encontra `.local/TuttiDash.provisionprofile` (ou o caminho em
+`PROVISION_PROFILE`). Sem o arquivo, o app assina sem
 `keychain-access-groups` e funciona do mesmo jeito. Para gerar ou renovar o profile com a
 conta logada no Xcode (Settings › Accounts) e o `xcodegen`, na raiz do repositório:
 
 ```bash
-tools/renovar-perfil.sh              # grava o profile em Privado/
+tools/renovar-perfil.sh              # grava o profile em .local/
 tools/renovar-perfil.sh --instalar   # também roda o build.sh e troca /Applications/TuttiDash.app
 ```
 
