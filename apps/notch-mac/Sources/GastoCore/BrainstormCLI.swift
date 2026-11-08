@@ -432,6 +432,8 @@ public enum BrainstormCLI {
         case conversa
         case reescrita
         case historias
+        /// Rascunho do norte no wizard: uma chamada, sem ferramenta e sem sessão retomada.
+        case norte
     }
 
     /// Id que pode ir no argv. Fora do formato, a chamada começa sessão nova.
@@ -444,13 +446,17 @@ public enum BrainstormCLI {
     /// `sessao` inválida é ignorada: o id vai parar no argv.
     public static func chamada(cli: String, prompt: String, sessao: String?, saidaCodex: String?,
                                papel: Papel = .conversa) -> Chamada? {
-        let id = sessaoUtil(sessao)
+        // O norte é uma chamada só: o rascunho não continua conversa nenhuma.
+        let id = papel == .norte ? nil : sessaoUtil(sessao)
         let instrucao: String
         switch papel {
         case .conversa: instrucao = sistema
         case .reescrita: instrucao = sistemaReescrita
         case .historias: instrucao = sistemaHistorias
+        case .norte: instrucao = NorteRascunho.sistema
         }
+        // O norte vira contrato do projeto: vale pensar mais que no chat.
+        let esforco = papel == .norte ? "medium" : "low"
         switch cli {
         case "claude":
             // `plan` pesquisa o repositório inteiro antes de falar. A conversa lê pouco.
@@ -463,7 +469,7 @@ public enum BrainstormCLI {
             case .conversa:
                 turnos = id == nil ? "3" : "2"
                 ferramentas = "Read,Grep,Glob"
-            case .reescrita, .historias:
+            case .reescrita, .historias, .norte:
                 turnos = "1"
                 ferramentas = ""
             }
@@ -473,7 +479,7 @@ public enum BrainstormCLI {
                      "--tools", ferramentas,
                      "--max-turns", turnos,
                      "--model", "sonnet",
-                     "--effort", "low"]
+                     "--effort", esforco]
             if id == nil { args += ["--append-system-prompt", instrucao] }
             return Chamada(argumentos: args, stdin: prompt, retomando: id != nil)
         case "opencode":
@@ -487,7 +493,7 @@ public enum BrainstormCLI {
             let turnos: String
             switch papel {
             case .conversa: turnos = "4"
-            case .reescrita, .historias: turnos = "1"
+            case .reescrita, .historias, .norte: turnos = "1"
             }
             var args = ["--tools", "read_file,grep,list_dir", "--disable-web-search",
                         "--max-turns", turnos, "-m", "grok-4.7-build-fast"]
@@ -499,7 +505,7 @@ public enum BrainstormCLI {
             guard let saidaCodex else { return nil }
             return Chamada(
                 argumentos: ["exec", "--sandbox", "read-only", "--skip-git-repo-check", "--color", "never",
-                             "--output-last-message", saidaCodex, "-c", "model_reasoning_effort=low", "-"],
+                             "--output-last-message", saidaCodex, "-c", "model_reasoning_effort=\(esforco)", "-"],
                 stdin: instrucao + "\n\n" + prompt,
                 retomando: false)
         default:
