@@ -235,5 +235,53 @@ class ResumoParaLog(Base):
         self.assertIn("TuttiDash", r)
 
 
+class Norte(Base):
+    """O norte do projeto entra sempre no freio de caminho protegido."""
+
+    NORTE = "docs/produto/caminho.md"
+
+    def test_sem_norte_freio_inalterado(self):
+        p = P.ler_registro([self.config(lista=[{"id": NOTCH, "repo": "~/x"}])])[0]
+        self.assertEqual(p.norte, "")
+        self.assertEqual(p.protegidos, [".claude/*", ".mcp.json"])
+
+    def test_norte_soma_ao_padrao(self):
+        p = P.ler_registro([self.config(lista=[{"id": NOTCH, "repo": "~/x", "norte": self.NORTE}])])[0]
+        self.assertEqual(p.norte, self.NORTE)
+        self.assertEqual(p.protegidos, [".claude/*", ".mcp.json", self.NORTE])
+
+    def test_norte_soma_ao_declarado_sem_trazer_o_padrao(self):
+        """O declarado continua substituindo o padrão; o norte vem por cima."""
+        p = P.ler_registro([self.config(lista=[
+            {"id": NOTCH, "repo": "~/x", "norte": self.NORTE, "protegidos": ["build/*"]}])])[0]
+        self.assertEqual(p.protegidos, ["build/*", self.NORTE])
+
+    def test_norte_ja_declarado_nao_duplica(self):
+        p = P.ler_registro([self.config(lista=[
+            {"id": NOTCH, "repo": "~/x", "norte": self.NORTE, "protegidos": [self.NORTE]}])])[0]
+        self.assertEqual(p.protegidos, [self.NORTE])
+
+    def test_copia_nao_duplica_o_norte(self):
+        p = P.Projeto(id="x", repo="~/x", norte=self.NORTE)
+        self.assertEqual(p.copia().protegidos, p.protegidos)
+        self.assertEqual(p.copia(), p)
+
+    def test_norte_invalido_e_ignorado(self):
+        for ruim in ["/etc/passwd", "~/caminho.md", "../fora.md", "docs/../x.md", "docs/",
+                     "docs//x.md", "./x.md", "a\nb.md", "a\\b.md", 42, None, ""]:
+            with self.subTest(ruim=ruim):
+                p = P.Projeto(id="x", repo="~/x", norte=ruim)
+                self.assertEqual(p.norte, "")
+                self.assertEqual(p.protegidos, [".claude/*", ".mcp.json"])
+
+    def test_dispatcher_recusa_lane_que_toca_o_norte(self):
+        """O freio do dispatcher compara com fnmatch: o caminho exato do norte casa."""
+        import fnmatch
+        p = P.Projeto(id="x", repo="~/x", norte=self.NORTE)
+        tocados = ["docs/produto/caminho.md", "docs/produto/mapa.md"]
+        presos = [c for c in tocados if any(fnmatch.fnmatch(c, g) for g in p.protegidos)]
+        self.assertEqual(presos, [self.NORTE])
+
+
 if __name__ == "__main__":
     unittest.main()

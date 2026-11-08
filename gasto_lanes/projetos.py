@@ -21,7 +21,8 @@ Formato (lista de objetos):
        "suites": ["tests.test_parser"],
        "protegidos": ["docs/contratos/*", "scripts/release.sh"],
        "copiar_para_worktree": ["AGENTS.md"],
-       "antes_do_push": "bash tools/checar-publicacao.sh"}
+       "antes_do_push": "bash tools/checar-publicacao.sh",
+       "norte": "docs/produto/caminho.md"}
     ]
 
 Regras:
@@ -52,6 +53,10 @@ Regras:
     é enviado e o card fica com `lane:falhou`. Vazio = sem conferência.
   - `prova_remota`: `{"pastas_do_app": ["App/", "App.xcodeproj/"]}` diz ao
     `tools/instalar-prova-remota` quais pastas só o Mac prova (FRA-620).
+  - `norte`: caminho, relativo ao repo, do arquivo de norte do projeto (o wizard grava
+    `docs/produto/caminho.md`). Entra sempre no freio de caminho protegido, somado aos
+    `protegidos` (ou ao padrão): nenhuma lane edita o norte; mudança é do dono.
+    Absoluto, com `~`, `..` ou quebra de linha é ignorado. Vazio = projeto sem norte.
   - `bancada`: `{"ativo": true}` libera o modo bancada (FRA-618) neste projeto. Só vale
     junto com a etiqueta `lane:bancada` no card e a lane `claude`. Desligado por padrão.
 
@@ -95,12 +100,13 @@ class Projeto:
 
     __slots__ = ("id", "nome", "ativo", "padrao", "repo", "github", "worktrees",
                  "prova", "prova_tentativas", "suites", "protegidos", "copiar_para_worktree", "antes_do_push",
-                 "bancada", "pastas_do_app")
+                 "bancada", "pastas_do_app", "norte")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
                  repo: str = "", worktrees: str = "", github: str = "", prova: str = "python3 {suite}",
                  prova_tentativas: int = 1, suites=None, protegidos=None, copiar_para_worktree=None,
-                 antes_do_push: str = "", bancada: bool = False, pastas_do_app=None):
+                 antes_do_push: str = "", bancada: bool = False, pastas_do_app=None,
+                 norte=""):
         self.id = id
         self.nome = nome or id
         self.ativo = ativo
@@ -112,7 +118,12 @@ class Projeto:
         self.prova = prova or "python3 {suite}"
         self.prova_tentativas = max(1, int(prova_tentativas or 1))
         self.suites = [str(s) for s in (suites or []) if str(s).strip()]
+        # O norte entra no freio por cima do declarado (ou do padrão): o declarado
+        # continua substituindo o padrão, mas nunca tira o norte.
+        self.norte = norte_valido(norte)
         self.protegidos = list(protegidos) if protegidos else list(PROTEGIDOS_PADRAO)
+        if self.norte and self.norte not in self.protegidos:
+            self.protegidos.append(self.norte)
         self.copiar_para_worktree = [str(c) for c in (copiar_para_worktree or []) if str(c).strip()]
         self.antes_do_push = str(antes_do_push or "").strip()
         # FRA-618: o modo bancada só liga com isto no cadastro (que a lane não escreve),
@@ -139,6 +150,25 @@ class Projeto:
 
     def copia(self) -> "Projeto":
         return Projeto(**{s: getattr(self, s) for s in Projeto.__slots__})
+
+
+def norte_valido(valor) -> str:
+    """Caminho do norte relativo ao repo, ou vazio quando não serve.
+
+    Absoluto, com `~`, com `..`, com quebra de linha ou só pasta (termina em `/`)
+    é recusado: o freio compara caminhos relativos ao repo, e um norte fora dele
+    não protegeria nada."""
+    if not isinstance(valor, str):
+        return ""
+    s = valor.strip()
+    if not s or "\n" in s or "\r" in s or "\\" in s:
+        return ""
+    if s.startswith(("/", "~")) or s.endswith("/"):
+        return ""
+    partes = s.split("/")
+    if any(p in ("", ".", "..") for p in partes):
+        return ""
+    return s
 
 
 def normalizar_github(valor) -> str:
@@ -191,7 +221,8 @@ def _do_registro(bruto: dict) -> list:
             copiar_para_worktree=copiar if isinstance(copiar, list) else None,
             antes_do_push=str(item.get("antes_do_push") or ""),
             bancada=_bancada_ativa(item.get("bancada")),
-            pastas_do_app=_pastas_do_app(item.get("prova_remota"))))
+            pastas_do_app=_pastas_do_app(item.get("prova_remota")),
+            norte=item.get("norte")))
     return saida
 
 
@@ -411,4 +442,5 @@ if __name__ == "__main__":  # conferência à mão: python3 -m gasto_lanes.proje
         print(f"  worktrees {p.worktrees}")
         print(f"  prova     {p.prova} (tentativas={p.prova_tentativas})")
         print(f"  suites    {p.suites or ['TranscentIATests']}")
+        print(f"  norte     {p.norte or '(sem norte)'}")
     print("padrão:", padrao().id)
