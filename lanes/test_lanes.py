@@ -2483,6 +2483,12 @@ class ProvaRemotaNoDispatcher(unittest.TestCase):
             return ""
         if args[:3] == ["gh", "pr", "merge"]:
             raise AssertionError("não mergeia")
+        if args[:3] == ["gh", "run", "list"] and getattr(self, "runs_main", None) is not None:
+            return json.dumps(self.runs_main)
+        if args[:3] == ["git", "-c", "core.hooksPath=/dev/null"] and args[3] in ("fetch", "merge"):
+            if args[3] == "merge" and args[4:5] != ["--abort"] and getattr(self, "conflito", False):
+                raise RuntimeError("CONFLICT (content): Merge conflict in a.py")
+            return ""
         raise AssertionError(args)
 
     def _linear(self, query, variables):
@@ -2556,6 +2562,47 @@ class ProvaRemotaNoDispatcher(unittest.TestCase):
         self.assertEqual(self.labels, [d.OWNER_LABEL])
         self.assertIn("vermelho", self.comentarios[0])
         self.assertIn(self.gh["url"], self.comentarios[0])
+
+    def _run_main(self, conclusao):
+        return [{"status": "completed", "conclusion": conclusao, "headSha": "c" * 40,
+                 "url": "https://github.com/francieloliveira/tuttidash/actions/runs/7"}]
+
+    def test_vermelho_com_a_main_vermelha_espera_sem_dono(self):
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        self.runs_main = self._run_main("failure")
+        self.assertIsNone(d.finalize(self.st))
+        self.assertEqual(self.labels, [], "a culpa não é do card: nada de needs:dono")
+        self.assertIn("aguardando a main", self.comentarios[-1])
+        self.assertIn("actions/runs/7", self.comentarios[-1])
+        self.assertEqual(self.st["aguardando_main"], "c" * 40)
+        n = len(self.comentarios)
+        self.assertIsNone(d.finalize(self.st))
+        self.assertEqual(len(self.comentarios), n, "um comentário por SHA da main, não por ciclo")
+
+    def test_main_verde_de_novo_traz_a_main_e_prova_de_novo(self):
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        self.st["aguardando_main"] = "c" * 40
+        self.runs_main = self._run_main("success")
+        self.assertIsNone(d.finalize(self.st))
+        self.assertEqual(self.labels, [])
+        merges = [c for c in self.chamadas if c[3:5] == ["merge", "--no-edit"]]
+        self.assertEqual(len(merges), 1)
+        self.assertNotIn("aguardando_main", self.st)
+        self.assertIn("voltou ao verde", self.comentarios[-1])
+
+    def test_main_verde_com_conflito_chama_o_dono(self):
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        self.st["aguardando_main"] = "c" * 40
+        self.runs_main = self._run_main("success")
+        self.conflito = True
+        self.assertEqual(d.finalize(self.st), d.OWNER_LABEL)
+        self.assertIn(["git", "-c", "core.hooksPath=/dev/null", "merge", "--abort"], self.chamadas)
+        self.assertIn("conflito", self.comentarios[-1])
+
+    def test_vermelho_com_a_main_verde_e_sem_espera_e_do_card(self):
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        self.runs_main = self._run_main("success")
+        self.assertEqual(d.finalize(self.st), d.OWNER_LABEL)
 
     def test_timeout_chama_o_dono(self):
         self.st["prova_remota_desde"] = time.time() - d.ESPERA_PROVA_REMOTA_S - 5
@@ -2908,3 +2955,16 @@ class MedidaTipadaDoLanepct(unittest.TestCase):
 
 def fila_mod():
     return d.fila
+
+
+class DesfechoComSaidaEmTexto(unittest.TestCase):
+    """FRA-608/FRA-652: o log do dsh é texto; uma linha JSON escalar derrubava o fechamento."""
+
+    def test_linha_json_que_nao_e_objeto_e_ignorada(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(tmp, True))
+        log = tmp / "lane.log"
+        log.write_text('Feito.\n"ok"\n3\n[1, 2]\nnull\n', encoding="utf-8")
+        self.assertIsInstance(d.agent_outcome(str(log)), str)
+        log.write_text('{"type": "result", "subtype": "success", "num_turns": 2}\n"ok"\n', encoding="utf-8")
+        self.assertIn("success", d.agent_outcome(str(log)))

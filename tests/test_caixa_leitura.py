@@ -200,34 +200,39 @@ class PublicacaoTest(unittest.TestCase):
         def executar(argv, cwd, timeout=120, inp=None, escritas=None):
             return subprocess.CompletedProcess(argv, 0, stdout=f"[Revisor] REVISOR: AJUSTES\n{self.token}\n", stderr="")
 
-        original = watch.caixa.executar
-        watch.caixa.executar = executar
-        self.addCleanup(lambda: setattr(watch.caixa, "executar", original))
+        original = watch.caixa.executar_com_rede
+        watch.caixa.executar_com_rede = executar
+        self.addCleanup(lambda: setattr(watch.caixa, "executar_com_rede", original))
         with self.assertRaises(caixa.SegredoDetectado):
             watch.run_revisor("claude", "prompt", self.repo, "revisor-teste", {})
         logs = list(watch.RUN_LOG_DIR.glob("revisor-teste-*.md"))
         self.assertTrue(logs)
         self.assertNotIn(self.token, logs[-1].read_text(encoding="utf-8"))
 
-    def test_grok_e_codex_entram_na_caixa(self):
+    def test_grok_e_codex_rodam_fora_da_caixa_com_as_travas_do_cli(self):
+        """08/11/2026: revisor de nuvem precisa de rede e do login da home, que a caixa nega.
+        Roda com `executar_com_rede`; as travas de leitura vêm do manifesto."""
         vistos = []
 
-        def executar(argv, cwd, timeout=120, inp=None, escritas=None):
+        def com_rede(argv, cwd, timeout=120, inp=None):
             vistos.append(argv[0])
             texto = "[Revisor] REVISOR: AJUSTES\nok\n"
-            for pasta in escritas or []:
-                arq = Path(pasta) / "saida.md"
-                if arq.is_file():
-                    arq.write_text(texto, encoding="utf-8")
+            if "--output-last-message" in argv:
+                Path(argv[argv.index("--output-last-message") + 1]).write_text(texto, encoding="utf-8")
             return subprocess.CompletedProcess(argv, 0, stdout=texto, stderr="")
+
+        def na_caixa(*args, **kwargs):
+            raise AssertionError("revisor de nuvem não roda na caixa sem rede")
 
         def sh(*args, **kwargs):
             raise AssertionError("o revisor não pode chamar o sh direto")
 
-        original = watch.caixa.executar
-        watch.caixa.executar = executar
+        originais = (watch.caixa.executar, watch.caixa.executar_com_rede)
+        watch.caixa.executar = na_caixa
+        watch.caixa.executar_com_rede = com_rede
         watch.sh = sh
-        self.addCleanup(lambda: setattr(watch.caixa, "executar", original))
+        self.addCleanup(lambda: (setattr(watch.caixa, "executar", originais[0]),
+                                 setattr(watch.caixa, "executar_com_rede", originais[1])))
         for agente in ("grok", "codex"):
             texto = watch.run_revisor(agente, "prompt", self.repo, f"t-{agente}", {})
             self.assertIn("REVISOR: AJUSTES", texto)

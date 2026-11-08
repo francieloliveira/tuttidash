@@ -343,7 +343,9 @@ def _revisao(r) -> dict | None:
             "modelos": tuple(r.get("modelos") or ()),
             "modelo_padrao": r.get("modelo_padrao") or "",
             "esforcos": tuple(r.get("esforcos") or ()),
-            "esforco_padrao": r.get("esforco_padrao") or ""}
+            "esforco_padrao": r.get("esforco_padrao") or "",
+            # Revisor que roda sem rede (modelo local): fica na caixa de leitura do vigia.
+            "local": r.get("local") is True}
 
 
 def revisores() -> tuple:

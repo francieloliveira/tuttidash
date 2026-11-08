@@ -3013,6 +3013,10 @@ def agent_outcome(log_path: str) -> str:
             ev = json.loads(raw)
         except ValueError:
             continue
+        # Saída em texto (dsh/DeepSeek) pode ter linha que é JSON mas não objeto ("ok", 3).
+        # Era ela que derrubava o fechamento: `'str' object has no attribute 'get'` (FRA-608, FRA-652).
+        if not isinstance(ev, dict):
+            continue
         if ev.get("type") == "result":
             errs = ev.get("errors") or []
             out = f"agente: {ev.get('subtype')}, {ev.get('num_turns')} turnos"
@@ -4416,6 +4420,68 @@ def motivo_prova_remota(sha: str, head_sha: str, checks, desde: float, agora: fl
     return f"a prova remota não autorizou o SHA {sha}"
 
 
+# Main vermelha não é culpa do card (causa raiz de 08/11/2026): o `prova-remota` roda a checagem
+# da base, então com a main suja todo PR fica vermelho. O card espera a main, sem `needs:dono`.
+WORKFLOW_DA_MAIN = "testes"
+
+
+def estado_da_main(wt: Path) -> tuple[str, str, str]:
+    """(`verde` | `vermelha` | ``, url, sha) do último run concluído do workflow da main.
+    Erro de consulta ou nada concluído = `` (desconhecido: vale o comportamento de antes)."""
+    try:
+        raw = sh([GH, "run", "list", "--branch", "main", "--workflow", WORKFLOW_DA_MAIN,
+                  "--event", "push", "--limit", "5", "--json", "status,conclusion,url,headSha"],
+                 cwd=wt, timeout=60)
+        runs = json.loads(raw or "[]")
+    except Exception:  # noqa: BLE001 - sem saber, não muda nada
+        return "", "", ""
+    for r in runs if isinstance(runs, list) else []:
+        if not isinstance(r, dict) or str(r.get("status") or "").lower() != "completed":
+            continue
+        conclusao = str(r.get("conclusion") or "").lower()
+        if conclusao in ("cancelled", "skipped", "neutral", ""):
+            continue
+        estado = "verde" if conclusao == "success" else "vermelha"
+        return estado, str(r.get("url") or ""), str(r.get("headSha") or "")
+    return "", "", ""
+
+
+def esperar_main(st: dict, url_main: str, sha_main: str) -> None:
+    """Card fica esperando a main, sem `needs:dono` e sem rodar a lane de novo.
+    Um comentário por SHA da main; o tempo de espera da prova não corre enquanto isso."""
+    st["prova_remota_desde"] = time.time()
+    if st.get("aguardando_main") == sha_main:
+        return
+    st["aguardando_main"] = sha_main or "?"
+    log(f"lane:{st['lane']} {st['card']}: main vermelha ({url_main or 'sem link'}); "
+        "o card espera a main, sem needs:dono")
+    linhas = [f"⏸️ **lane:{st['lane']}** aguardando a main: o check `{NOME_CHECK_REMOTO}` ficou "
+              f"vermelho, mas a main também está vermelha no `{WORKFLOW_DA_MAIN}`. "
+              "A falha não é deste card.", ""]
+    if url_main:
+        linhas.append(f"Main: {url_main}")
+    linhas.append("Quando a main voltar a ficar verde, a branch recebe a main e a prova roda de novo sozinha.")
+    linear(MUT_COMMENT, {"id": st["issue_id"], "body": "\n".join(linhas)})
+
+
+def retomar_depois_da_main(st: dict, wt: Path) -> str:
+    """Main voltou ao verde: traz a main para a branch (merge, sem rebase) e deixa o
+    próximo ciclo enviar. Vazio = feito; senão o motivo (conflito vira pedido ao dono)."""
+    sh(argv_git(["git", "fetch", "-q", "origin", "main"]), cwd=wt, timeout=180)
+    try:
+        sh(argv_git(["git", "merge", "--no-edit", "-q", "origin/main"]), cwd=wt, timeout=180)
+    except RuntimeError as exc:
+        sh(argv_git(["git", "merge", "--abort"]), cwd=wt, check=False)
+        return f"a main voltou ao verde, mas não entra na branch sem conflito ({str(exc)[:160]})"
+    st.pop("aguardando_main", None)
+    st["prova_remota_desde"] = time.time()
+    linear(MUT_COMMENT, {"id": st["issue_id"], "body":
+        f"▶️ **lane:{st['lane']}** a main voltou ao verde: a branch recebeu a main e a prova "
+        f"`{NOME_CHECK_REMOTO}` roda de novo."})
+    log(f"lane:{st['lane']} {st['card']}: main verde de novo; branch atualizada, prova de novo")
+    return ""
+
+
 def chamar_dono_prova_remota(st: dict, motivo: str) -> str:
     """Timeout ou erro: etiqueta do dono. O card não vai para In Review."""
     aplicar_label(st["issue_id"], LABEL_DONO_ID, OWNER_LABEL)
@@ -4511,6 +4577,17 @@ def fechar_com_prova_remota(st: dict, wt: Path, res: dict, g: dict) -> Optional[
                                    limite_s=ESPERA_PROVA_REMOTA_S)
     if decisao == "esperar":
         return None
+    vermelho = any(veredito_item(i) == "vermelho" for i in checks_que_contam(sha, head, checks))
+    if decisao == "dono" and vermelho:
+        main, url_main, sha_main = estado_da_main(wt)
+        if main == "vermelha":
+            esperar_main(st, url_main, sha_main)
+            return None
+        if main == "verde" and st.get("aguardando_main"):
+            conflito = retomar_depois_da_main(st, wt)
+            if conflito:
+                return chamar_dono_prova_remota(st, conflito)
+            return None
     if decisao == "dono":
         return chamar_dono_prova_remota(st, motivo_prova_remota(sha, head, checks, desde, agora))
     if decisao != "mover":
