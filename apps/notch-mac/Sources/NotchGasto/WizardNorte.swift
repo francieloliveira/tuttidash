@@ -31,6 +31,9 @@ final class EstadoWizardNorte: ObservableObject {
     @Published var markdown = ""
     @Published var perguntas: [String] = []
     @Published var respostas: [String] = []
+    /// Sugestão do agente para cada pergunta. Enquanto a resposta for igual a ela, a tela marca
+    /// «sugestão do agente»; vale como resposta se o dono não mudar, e some se ele apagar.
+    @Published var sugestoes: [String] = []
     @Published var erro: String?
     @Published var motor: Motor?
     // Ollama
@@ -56,7 +59,8 @@ final class EstadoWizardNorte: ObservableObject {
     private func aplicar(_ r: NorteRascunho.Rascunho) {
         markdown = r.markdown(nome: projeto.nome)
         perguntas = r.perguntas
-        respostas = Array(repeating: "", count: r.perguntas.count)
+        sugestoes = r.perguntas.indices.map { r.sugestoes.indices.contains($0) ? r.sugestoes[$0] : "" }
+        respostas = sugestoes
         fase = .revisao
     }
 
@@ -322,16 +326,24 @@ struct WizardNorteSheet: View {
             if !estado.perguntas.isEmpty {
                 Text(String(localized: "Perguntas do agente")).font(.callout.weight(.medium))
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(estado.perguntas.indices, id: \.self) { i in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(estado.perguntas[i]).font(.caption)
-                                TextField(String(localized: "Sua resposta"), text: $estado.respostas[i])
+                                TextField(String(localized: "Sua resposta"), text: $estado.respostas[i], axis: .vertical)
                                     .textFieldStyle(.roundedBorder)
+                                    .lineLimit(1...3)
+                                if estado.sugestoes.indices.contains(i), !estado.sugestoes[i].isEmpty,
+                                   estado.respostas[i] == estado.sugestoes[i] {
+                                    let palpite = estado.sugestoes[i].lowercased().hasPrefix("palpite:")
+                                    Text(palpite ? String(localized: "Palpite do agente, sem base no repositório: confirme, edite ou apague.")
+                                                 : String(localized: "Sugestão do agente: vale como sua resposta se você não mudar."))
+                                        .font(.caption2).foregroundStyle(palpite ? Color.orange : Color.secondary)
+                                }
                             }
                         }
                     }
-                }.frame(maxHeight: 140)
+                }.frame(maxHeight: 180)
             }
             HStack {
                 if estado.motor != nil, !estado.perguntas.isEmpty {

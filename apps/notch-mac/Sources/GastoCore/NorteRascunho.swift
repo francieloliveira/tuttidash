@@ -64,6 +64,15 @@ public enum NorteRascunho {
         if !projetosXcode.isEmpty {
             partes.append(bloco("Projetos Xcode", projetosXcode.joined(separator: "\n"), teto: 500))
         }
+        // READMEs das subpastas (ex.: lanes/README.md): é onde ficam as regras de funcionamento
+        // que tiram do dono as perguntas sobre fatos e embasam as sugestões.
+        var orcamentoLeiaMe = 4_000
+        for relativo in leiaMesDasSubpastas(repo) {
+            guard orcamentoLeiaMe > 300 else { break }
+            let parte = bloco(relativo, ler(repo.appendingPathComponent(relativo)), teto: min(1_500, orcamentoLeiaMe))
+            orcamentoLeiaMe -= parte.count
+            partes.append(parte)
+        }
         let testes = pastasDeTeste(repo)
         if !testes.isEmpty {
             partes.append(bloco("Testes", testes, teto: 1_500))
@@ -146,6 +155,21 @@ public enum NorteRascunho {
         return achados
     }
 
+    /// `README.md` de subpastas até 2 níveis, em ordem (o da raiz já entra à parte).
+    static func leiaMesDasSubpastas(_ repo: URL) -> [String] {
+        var achados: [String] = []
+        for nome in listar(repo) where !nome.hasPrefix(".") && !ehPastaDeTeste(nome) {
+            let n1 = repo.appendingPathComponent(nome)
+            guard ehPasta(n1) else { continue }
+            if primeiroArquivo(n1, ["README.md"]) != nil { achados.append("\(nome)/README.md") }
+            for filho in listar(n1) where !filho.hasPrefix(".") && !ehPastaDeTeste(filho) {
+                let n2 = n1.appendingPathComponent(filho)
+                if ehPasta(n2), primeiroArquivo(n2, ["README.md"]) != nil { achados.append("\(nome)/\(filho)/README.md") }
+            }
+        }
+        return achados
+    }
+
     static func ehPastaDeTeste(_ nome: String) -> Bool {
         let n = nome.lowercased()
         return ["test", "tests", "__tests__", "spec", "specs"].contains(n) || nome.hasSuffix("Tests")
@@ -194,6 +218,11 @@ public enum NorteRascunho {
     O norte diz o que o projeto é e o que não pode acontecer. Não é lista de tarefas nem de arquivos.
     Não invente. Objetivo, restrição ou desempate que o material não mostra fica como \
     "\(aDefinir)" e vira uma pergunta ao dono.
+    Pergunte só o que é decisão do dono (o que o projeto quer, o que nunca pode acontecer, \
+    o que vence quando duas metas brigam). Fato sobre como o código funciona não é pergunta: \
+    se o material mostra, escreva no norte; se não mostra e não é regra, deixe de fora.
+    Cada pergunta leva uma sugestão de resposta, a mais provável pelo material, citando o \
+    arquivo de onde veio. Sem base no material, a sugestão começa com "palpite:".
     Português. Devolva só os blocos NORTE: e PERGUNTAS:, sem texto antes ou depois.
     """
 
@@ -223,6 +252,7 @@ public enum NorteRascunho {
         - termo: significado
         PERGUNTAS:
         - pergunta curta ao dono sobre cada "\(aDefinir)" (no máximo 5)
+          sugestão: resposta provável (fonte: arquivo) ou "palpite: …"
         """
     }
 
@@ -232,6 +262,8 @@ public enum NorteRascunho {
         /// Corpo de cada seção, na ordem de `NorteRascunho.secoes`.
         public var corpos: [String]
         public var perguntas: [String]
+        /// Sugestão do agente para cada pergunta, na mesma ordem ("" quando não veio).
+        public var sugestoes: [String] = []
 
         /// Seções que o agente deixou para o dono.
         public var pendentes: [String] {
@@ -278,6 +310,7 @@ public enum NorteRascunho {
             .joined(separator: "\n")
         var corpos = Array(repeating: [String](), count: secoes.count)
         var perguntas: [String] = []
+        var sugestoes: [String] = []
         var vistas = Set<String>()
         var atual: Int?
         var emPerguntas = false
@@ -291,9 +324,19 @@ public enum NorteRascunho {
             if marca == "NORTE" { emPerguntas = false; atual = nil; continue }
             if marca == "PERGUNTAS" || marca.hasPrefix("PERGUNTAS AO DONO") { emPerguntas = true; atual = nil; continue }
             if emPerguntas {
-                guard limpa.hasPrefix("- ") || limpa.hasPrefix("• ") else { continue }
-                let p = String(limpa.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                if !p.isEmpty, perguntas.count < 5, vistas.insert(p).inserted { perguntas.append(p) }
+                var item = limpa
+                if item.hasPrefix("- ") || item.hasPrefix("• ") { item = String(item.dropFirst(2)) }
+                item = item.trimmingCharacters(in: .whitespaces)
+                if let sug = sugestao(item) {
+                    // A sugestão vale para a última pergunta aceita, se ela ainda não tiver uma.
+                    if !perguntas.isEmpty, sugestoes[perguntas.count - 1].isEmpty { sugestoes[perguntas.count - 1] = sug }
+                    continue
+                }
+                guard limpa.hasPrefix("- ") || limpa.hasPrefix("• "), !item.isEmpty else { continue }
+                if perguntas.count < 5, vistas.insert(item).inserted {
+                    perguntas.append(item)
+                    sugestoes.append("")
+                }
                 continue
             }
             if limpa.hasPrefix("#") {
@@ -313,6 +356,17 @@ public enum NorteRascunho {
             let t = linhas.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             return t.isEmpty ? aDefinir : t
         }
-        return Rascunho(corpos: finais, perguntas: perguntas)
+        return Rascunho(corpos: finais, perguntas: perguntas, sugestoes: sugestoes)
+    }
+
+    /// Texto depois de `sugestão:` (com ou sem acento, com ou sem negrito); nil se a linha não é sugestão.
+    static func sugestao(_ linha: String) -> String? {
+        let semMarca = linha.trimmingCharacters(in: CharacterSet(charactersIn: "*_ "))
+        let baixo = semAcento(semMarca).lowercased()
+        guard baixo.hasPrefix("sugestao") else { return nil }
+        guard let doisPontos = semMarca.firstIndex(of: ":") else { return nil }
+        let resto = semMarca[semMarca.index(after: doisPontos)...]
+            .trimmingCharacters(in: CharacterSet(charactersIn: "*_ ").union(.whitespaces))
+        return resto.isEmpty ? nil : resto
     }
 }
