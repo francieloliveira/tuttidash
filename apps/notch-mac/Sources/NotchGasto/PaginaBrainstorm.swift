@@ -586,15 +586,6 @@ struct PaginaBrainstorm: View {
                         .font(PV.fonte(11))
                         .foregroundStyle(PV.mudo)
                         .multilineTextAlignment(.center)
-                    Button {
-                        ideaSummary = "Criar tela de Brainstorm para discutir ideias com agente e gerar cards no Linear"
-                        generateStories()
-                    } label: {
-                        Text("Carregar exemplo").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(PV.azul)
-                    .disabled(isGenerating || reescrevendo)
                 }
                 .padding(20)
                 .frame(minHeight: 120)
