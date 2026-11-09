@@ -113,9 +113,18 @@ final class CardBrainstormTests: XCTestCase {
         try "# Norte\n\n## §1 Objetivo\n\nUm app.\n\n## §5 Glossário\n\n- x: y\n"
             .write(to: repo.appendingPathComponent("docs/produto/caminho.md"), atomically: true, encoding: .utf8)
         try "# Mapa\n- `a/`\n".write(to: repo.appendingPathComponent("docs/produto/mapa.md"), atomically: true, encoding: .utf8)
-        let c = CardBrainstorm.contexto(repo: repo, norte: "docs/produto/caminho.md")
+        let semGit: (String, [String]) -> Subprocesso.Resultado = { _, _ in Subprocesso.Resultado(codigo: 128, saida: Data()) }
+        let c = CardBrainstorm.contexto(repo: repo, norte: "docs/produto/caminho.md", git: semGit)
         XCTAssertEqual(c.norte, "# Norte\n\n## §1 Objetivo\n\nUm app.")
         XCTAssertEqual(c.mapa, "# Mapa\n- `a/`")
+        // Da origin/main quando o git tem: vale mais que o disco (que pode estar atrasado).
+        let daMain = CardBrainstorm.contexto(repo: repo, norte: "docs/produto/caminho.md", git: { _, args in
+            let pedido = args.last ?? ""
+            let texto = pedido.hasSuffix("caminho.md") ? "## §1 Objetivo\nDa main." : "# Mapa da main"
+            return Subprocesso.Resultado(codigo: 0, saida: Data(texto.utf8))
+        })
+        XCTAssertEqual(daMain.norte, "## §1 Objetivo\nDa main.")
+        XCTAssertEqual(daMain.mapa, "# Mapa da main")
         let semNada = CardBrainstorm.contexto(repo: repo.appendingPathComponent("vazio"), norte: "")
         XCTAssertNil(semNada.norte)
         XCTAssertNil(semNada.mapa)

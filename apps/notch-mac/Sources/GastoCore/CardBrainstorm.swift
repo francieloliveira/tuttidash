@@ -66,12 +66,22 @@ public enum CardBrainstorm {
 
     /// §1–§4 do norte (o glossário fica de fora) e o mapa, lidos do repositório do projeto,
     /// cada um com teto. nil quando o arquivo não existe ou o caminho não serve.
-    public static func contexto(repo: URL, norte: String) -> (norte: String?, mapa: String?) {
+    /// Lê da `origin/main` (o que as lanes recebem); sem git ou sem o arquivo lá, lê do disco.
+    public static func contexto(repo: URL, norte: String,
+                                git: (String, [String]) -> Subprocesso.Resultado = { Subprocesso.rodar($0, $1) })
+        -> (norte: String?, mapa: String?) {
         func ler(_ rel: String, teto: Int) -> String? {
             guard !rel.isEmpty, !rel.contains(".."), !rel.hasPrefix("/") else { return nil }
+            let daMain = git("/usr/bin/git", ["-C", repo.path, "show", "origin/main:\(rel)"])
             let url = repo.appendingPathComponent(rel)
-            if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true { return nil }
-            guard let t = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+            let t: String
+            if daMain.codigo == 0, !daMain.texto.isEmpty {
+                t = daMain.texto
+            } else {
+                if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true { return nil }
+                guard let disco = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                t = disco
+            }
             let limpo = t.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !limpo.isEmpty else { return nil }
             return NorteRascunho.cortar(limpo, teto: teto)
