@@ -780,11 +780,22 @@ class LanesAtivasTest(unittest.TestCase):
         self.enabled = self.tmpdir / "enabled"
         self._lanes_dir_antigo = watch.LANES_DIR
         watch.LANES_DIR = self.tmpdir
+        # As instâncias ligadas vêm da config real do Mac; sem isolar, uma instância ligada
+        # na máquina entrava no resultado e os testes falhavam só em quem usa instâncias.
+        self._instancias_antigas = watch.catalogo.instancias_ligadas
+        watch.catalogo.instancias_ligadas = lambda arquivos=None: set()
 
     def tearDown(self):
         import shutil
         watch.LANES_DIR = self._lanes_dir_antigo
+        watch.catalogo.instancias_ligadas = self._instancias_antigas
         shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_instancia_ligada_soma_ao_enabled_se_for_executavel(self):
+        self._escreve_enabled("claude\n")
+        executavel = next(n for n in watch.IMPLEMENTED_LANES if n != "claude")
+        watch.catalogo.instancias_ligadas = lambda arquivos=None: {executavel, "nao-existe"}
+        self.assertEqual(watch.lanes_ativas(), {"claude", executavel})
 
     def _escreve_enabled(self, lanes: str):
         self.enabled.write_text(lanes)
