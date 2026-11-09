@@ -35,7 +35,8 @@ Verifique, nesta ordem:
 4. regras do projeto citadas no card e privacidade (o que sai do aparelho precisa estar declarado e consentido);
 5. caminhos protegidos ({protected}) — tocar em um deles é bloqueante. A lista é a do
    projeto em que a lane trabalha, no cadastro `projetos` da config do TuttiDash;
-6. testes: a prova do dispatcher ou o PR trazem evidência?
+6. testes: o PR traz teste que cobre o aceite? Rodar a suíte e compilar é da prova-remota, que o merge já
+   exige verde no mesmo SHA: não peça log de prova nem devolva AJUSTES por isso.
 Se o estado de merge for DIRTY, o PR está em conflito com a main: isso é bloqueante (rebase necessário), mas revise o conteúdo mesmo assim.
 O código foi escrito pela lane {lane}; você é o revisor {revisor}.{same_model}
 
@@ -47,7 +48,10 @@ O head dessa linha é o SHA completo de 40 caracteres hexadecimais mostrado acim
 > Revisão automática por evento (vigia dos bots).
 
 Cite arquivo:linha do material em cada achado; uma revisão que não cita nenhum arquivo do material não vale.
-Se o material não bastar para julgar, diga o que faltou e devolva AJUSTES; não invente o que não está nele.
+O material traz só o que o PR muda. Tipo, função ou arquivo de fora dele que o código usa existe na main e
+compila (a prova-remota garante): não devolva AJUSTES só por não ver a definição. Devolva AJUSTES quando o que
+está no material tiver bloqueante ou bug, ou quando o aceite do card depender de algo que o PR deveria trazer e
+não traz. Não invente o que não está no material; se algo ficou sem conferir, diga numa linha em «Riscos».
 Depois: prova (testes citados), achados ordenados (bloqueante, bug, risco, SOLID, erro conhecido E#, melhoria) com
 arquivo:linha e correção, e "Próximo passo:" numa linha. APROVADO só se não houver bloqueante nem bug.
 Seja direto, sem enchimento. Ao citar card, ponha uma descrição curta ao lado (ex.: «ABC-12 (renomear botão)»).
