@@ -51,6 +51,14 @@ final class NorteProjetoTests: XCTestCase {
         XCTAssertNotNil(NorteProjeto.problema(r.markdown(nome: "App")))
     }
 
+    func testSecoesPendentesDizQuaisFaltam() {
+        var r = NorteProjeto.esqueleto
+        r.corpos = ["Um app.", "- R1: x", NorteRascunho.aDefinir, NorteRascunho.aDefinir, NorteRascunho.aDefinir]
+        XCTAssertEqual(NorteProjeto.secoesPendentes(r.markdown(nome: "App")), ["§3 Desempate", "§4 O que nunca se faz"])
+        r.corpos[2] = "1. y"; r.corpos[3] = "- z"
+        XCTAssertEqual(NorteProjeto.secoesPendentes(r.markdown(nome: "App")), [], "glossário a definir não conta")
+    }
+
     func testComandoInstalarSoComScriptDoBundleEIdSeguro() {
         XCTAssertNil(NorteProjeto.comandoInstalar(projetoID: "-x", arquivoNorte: pasta))
         XCTAssertNil(NorteProjeto.comandoInstalar(projetoID: "", arquivoNorte: pasta))

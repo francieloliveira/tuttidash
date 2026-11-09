@@ -72,6 +72,22 @@ public enum NorteProjeto {
         return nil
     }
 
+    /// Seções §1–§4 que ainda têm a marca de pendência, como «§3 Desempate».
+    public static func secoesPendentes(_ markdown: String) -> [String] {
+        var pendentes: [String] = []
+        var atual: String?
+        for linha in markdown.components(separatedBy: "\n") {
+            let l = linha.trimmingCharacters(in: .whitespaces)
+            if l.hasPrefix("## §") {
+                let titulo = String(l.dropFirst(3))
+                atual = titulo.hasPrefix("§5") ? nil : titulo
+                continue
+            }
+            if let a = atual, l.contains(NorteRascunho.aDefinir), !pendentes.contains(a) { pendentes.append(a) }
+        }
+        return pendentes
+    }
+
     /// Comando que grava o norte no projeto e abre o PR. O instalador fica no bundle assinado.
     public static func comandoInstalar(projetoID: String, arquivoNorte: URL, bundle: Bundle = .main) -> [String]? {
         guard let script = ScriptsDoBundle.url("tools/instalar-norte", bundle: bundle),
