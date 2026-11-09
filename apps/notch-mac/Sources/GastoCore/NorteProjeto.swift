@@ -32,8 +32,11 @@ public enum NorteProjeto {
     }
 
     /// Confere o arquivo na `origin/main` da pasta (sem rede: vale o último fetch).
+    /// `buscar`: faz `git fetch origin main` antes de olhar. Sem isso, um PR do norte mergeado
+    /// no GitHub continua «aguardando o merge» até alguém buscar (08/11, PR #97).
     public static func estado(_ projeto: ProjetoCadastro,
                               home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                              buscar: Bool = false,
                               git: (String, [String]) -> Subprocesso.Resultado = { Subprocesso.rodar($0, $1) })
         -> Estado {
         let limpo = projeto.repo.trimmingCharacters(in: .whitespaces)
@@ -42,6 +45,10 @@ public enum NorteProjeto {
         guard FileManager.default.fileExists(atPath: pasta + "/.git") else {
             return .desconhecido(String(localized: "a pasta não é um repositório git"))
         }
+        if buscar {
+            // Falha de rede não muda nada: vale o último fetch.
+            _ = git("/usr/bin/git", ["-C", pasta, "-c", "credential.interactive=never", "fetch", "-q", "origin", "main"])
+        }
         let caminho = projeto.norte.isEmpty ? NorteRascunho.caminhoPadrao : projeto.norte
         let naMain = git("/usr/bin/git", ["-C", pasta, "cat-file", "-e", "origin/main:\(caminho)"]).codigo == 0
         switch (projeto.norte.isEmpty, naMain) {
@@ -49,6 +56,22 @@ public enum NorteProjeto {
         case (true, true): return .importavel
         case (false, false): return .aguardandoMerge
         case (true, false): return .falta
+        }
+    }
+
+    /// Aviso para o Brainstorm quando os cards vão sair sem o norte. nil = norte ativo.
+    /// Não trava nada: o dono continua trabalhando e sabe por quê o card não cita o norte.
+    public static func avisoBrainstorm(_ e: Estado) -> String? {
+        switch e {
+        case .ativo: return nil
+        case .aguardandoMerge:
+            return String(localized: "O norte ainda não está na main (PR aguardando merge). Os cards saem sem ele até o merge.")
+        case .importavel:
+            return String(localized: "O repositório tem norte, mas o cadastro não aponta para ele: Ajustes › Projetos › Usar este norte.")
+        case .falta:
+            return String(localized: "Projeto sem norte: os cards saem sem ele. Crie em Ajustes › Projetos.")
+        case .semPasta, .desconhecido:
+            return nil
         }
     }
 

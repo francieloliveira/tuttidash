@@ -29,6 +29,27 @@ final class NorteProjetoTests: XCTestCase {
         XCTAssertEqual(estado(norte: "", naMain: false), .falta)
     }
 
+    func testBuscarFazFetchAntesDeConferir() {
+        var chamadas: [[String]] = []
+        let p = ProjetoCadastro(projetoID: pid, repo: pasta.path, norte: "docs/produto/caminho.md")
+        _ = NorteProjeto.estado(p, buscar: true, git: { _, args in
+            chamadas.append(args)
+            return Subprocesso.Resultado(codigo: 0, saida: Data())
+        })
+        XCTAssertTrue(chamadas.first?.contains("fetch") == true, "busca a main antes de olhar")
+        XCTAssertTrue(chamadas.last?.contains("cat-file") == true)
+        chamadas = []
+        _ = NorteProjeto.estado(p, git: { _, args in chamadas.append(args); return Subprocesso.Resultado(codigo: 0, saida: Data()) })
+        XCTAssertFalse(chamadas.contains { $0.contains("fetch") })
+    }
+
+    func testAvisoDoBrainstormSoQuandoOsCardsSaemSemNorte() {
+        XCTAssertNil(NorteProjeto.avisoBrainstorm(.ativo))
+        XCTAssertNotNil(NorteProjeto.avisoBrainstorm(.aguardandoMerge))
+        XCTAssertNotNil(NorteProjeto.avisoBrainstorm(.falta))
+        XCTAssertNotNil(NorteProjeto.avisoBrainstorm(.importavel))
+    }
+
     func testSemPastaOuSemGit() {
         XCTAssertEqual(NorteProjeto.estado(ProjetoCadastro(projetoID: pid, repo: "")), .semPasta)
         let fora = ProjetoCadastro(projetoID: pid, repo: "/caminho/que/nao/existe")
