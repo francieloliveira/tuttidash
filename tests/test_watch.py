@@ -241,6 +241,67 @@ class MelhoriasDe21Out(unittest.TestCase):
         self.assertEqual(watch.limpar_saida("\x1b[0m> plan\n[Revisor] REVISOR: APROVADO\nok"), "[Revisor] REVISOR: APROVADO\nok")
 
 
+
+class ManterMapaTest(unittest.TestCase):
+    """PRD do norte: o vigia mantém a parte gerada do mapa, sem pressa e sem tocar o norte."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / ".git").mkdir()
+        self.chamadas = []
+        self.antes = (watch.sh, watch.projeto, watch.panel, watch.instalador_norte)
+        script = self.tmp / "instalar-norte"
+        script.write_text("#")
+        self.blob = "blob"
+        self.saida = "nada mudou: o mapa já está em dia"
+
+        def falso_sh(args, cwd=None, timeout=120, inp=None, check=True):
+            self.chamadas.append(args)
+            if args[:2] == ["git", "cat-file"]:
+                return self.blob
+            if args and args[0] == "/usr/bin/python3":
+                return self.saida
+            return ""
+
+        self.paineis = []
+        watch.sh = falso_sh
+        watch.projeto = lambda: watch.projetos.Projeto(id="p1", repo=str(self.tmp))
+        watch.panel = self.paineis.append
+        watch.instalador_norte = lambda: script
+
+    def tearDown(self):
+        import shutil
+        watch.sh, watch.projeto, watch.panel, watch.instalador_norte = self.antes
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_respeita_o_intervalo(self):
+        st = {}
+        watch.manter_mapa(st, [], agora=1e9)
+        n = len(self.chamadas)
+        watch.manter_mapa(st, [], agora=1e9 + watch.MAPA_A_CADA_S - 1)
+        self.assertEqual(len(self.chamadas), n, "dentro do intervalo não faz nada")
+        watch.manter_mapa(st, [], agora=1e9 + watch.MAPA_A_CADA_S + 1)
+        self.assertGreater(len(self.chamadas), n)
+
+    def test_sem_mapa_na_main_nao_chama_o_instalador(self):
+        self.blob = ""
+        watch.manter_mapa({}, [], agora=1e9)
+        self.assertFalse(any(a and a[0] == "/usr/bin/python3" for a in self.chamadas))
+
+    def test_chama_so_o_mapa_e_avisa_quando_abre_pr(self):
+        diario = []
+        self.saida = "https://github.com/dono/repo/pull/7"
+        watch.manter_mapa({}, diario, agora=1e9)
+        cmd = next(a for a in self.chamadas if a and a[0] == "/usr/bin/python3")
+        self.assertEqual(cmd[2:], ["p1", "--mapa", "--pr"], "nunca --norte: o norte é do dono")
+        self.assertEqual(len(self.paineis), 1)
+        self.assertEqual(diario, ["mapa: https://github.com/dono/repo/pull/7"])
+
+    def test_em_dia_nao_avisa(self):
+        watch.manter_mapa({}, [], agora=1e9)
+        self.assertEqual(self.paineis, [])
+
+
 if __name__ == "__main__":
     unittest.main()
 
