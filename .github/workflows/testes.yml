@@ -27,7 +27,9 @@ jobs:
         run: swift test
 
   vigia-py39:
-    runs-on: ubuntu-latest
+    # O ubuntu-latest passou a 26.04, que não tem Python 3.9 no setup-python (09/11/2026).
+    # O vigia roda no 3.9 do Mac: fixa a imagem que ainda tem essa versão.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
