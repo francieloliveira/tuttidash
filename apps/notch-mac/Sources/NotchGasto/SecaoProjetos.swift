@@ -521,6 +521,12 @@ private struct LinhaProjeto: View {
                     case .importavel?:
                         Button(String(localized: "Usar este norte")) { estado.definirNorte(s.projetoID) }
                             .help(String(localized: "Não escreve nada no repositório: o cadastro passa a apontar para \(NorteRascunho.caminhoPadrao) e nenhuma lane o edita."))
+                    case .aguardandoMerge?:
+                        // O PR do norte pode ter sido fechado sem merge: refazer reabre o wizard,
+                        // e o instalador reaproveita a branch e abre um PR novo.
+                        Button(String(localized: "Refazer…")) { estado.wizardNorte = s }
+                            .disabled(s.github.isEmpty)
+                            .help(String(localized: "Se o PR do norte foi fechado ou você quer mudar o texto, refaça. Abre um PR novo (ou atualiza o aberto)."))
                     case .falta?:
                         Button(String(localized: "Criar norte…")) { estado.wizardNorte = s }
                             .disabled(s.github.isEmpty)

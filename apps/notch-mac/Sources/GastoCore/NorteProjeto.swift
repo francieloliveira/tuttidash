@@ -21,7 +21,7 @@ public enum NorteProjeto {
             switch self {
             case .ativo: return String(localized: "ativo: nenhuma lane edita o norte")
             case .importavel: return String(localized: "o repositório já tem norte; falta apontar o cadastro para ele")
-            case .aguardandoMerge: return String(localized: "aguardando o merge do PR do norte")
+            case .aguardandoMerge: return String(localized: "aguardando o merge do PR do norte (fechou o PR? use Refazer)")
             case .falta: return String(localized: "sem norte: os cards não têm a que se ancorar")
             case .semPasta: return String(localized: "escolha a pasta do projeto")
             case .desconhecido(let m): return String(localized: "não deu para conferir (\(m))")
