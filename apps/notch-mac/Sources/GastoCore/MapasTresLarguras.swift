@@ -31,14 +31,20 @@ public struct MapaLargura: Equatable, Sendable {
     public let spans: [BlocoPainel: Int]
     /// Só a tela larga lê a escolha gravada por pessoa (FRA-653).
     public let usaTamanhosGravados: Bool
+    /// Prioridade fixa dos blocos nesta largura. Menor vem primeiro; vazio
+    /// significa que a largura preserva a ordem recebida. Só o celular declara
+    /// prioridade (FRA-654): a preferência de desktop não reordena a pilha.
+    public let prioridades: [BlocoPainel: Int]
 
     public init(tela: ClasseTelaDashboard, colunas: Int, ocultos: Set<BlocoPainel>,
-                spans: [BlocoPainel: Int], usaTamanhosGravados: Bool) {
+                spans: [BlocoPainel: Int], usaTamanhosGravados: Bool,
+                prioridades: [BlocoPainel: Int] = [:]) {
         self.tela = tela
         self.colunas = colunas
         self.ocultos = ocultos
         self.spans = spans
         self.usaTamanhosGravados = usaTamanhosGravados
+        self.prioridades = prioridades
     }
 
     /// Declaração de um mapa do app. Grade sem coluna ou span fora dela é erro de
@@ -46,9 +52,11 @@ public struct MapaLargura: Equatable, Sendable {
     /// forçaria o layout a comprimir um bloco ou a vazar da grade.
     static func declarado(tela: ClasseTelaDashboard, colunas: Int,
                           ocultos: Set<BlocoPainel>, spans: [BlocoPainel: Int],
-                          usaTamanhosGravados: Bool) -> MapaLargura {
+                          usaTamanhosGravados: Bool,
+                          prioridades: [BlocoPainel: Int] = [:]) -> MapaLargura {
         let mapa = MapaLargura(tela: tela, colunas: colunas, ocultos: ocultos,
-                               spans: spans, usaTamanhosGravados: usaTamanhosGravados)
+                               spans: spans, usaTamanhosGravados: usaTamanhosGravados,
+                               prioridades: prioridades)
         guard mapa.colunas >= 1,
               mapa.spans.allSatisfy({ $0.value >= 1 && $0.value <= mapa.colunas })
         else {
@@ -65,6 +73,24 @@ public struct MapaLargura: Equatable, Sendable {
     /// da montagem das fileiras, nunca da declaração.
     public func papel(_ bloco: BlocoPainel) -> PapelBlocoMapa {
         oculto(bloco) ? .some : .permanece
+    }
+
+    /// Prioridade do bloco nesta largura. Bloco sem prioridade declarada fica
+    /// depois dos que têm; a ordem recebida desempata (FRA-654).
+    public func prioridade(_ bloco: BlocoPainel) -> Int { prioridades[bloco] ?? Int.max }
+
+    /// Blocos na ordem desta largura. Sem prioridade declarada, devolve a ordem
+    /// recebida. O desempate usa a posição original, então a ordenação é estável.
+    public func ordem(_ blocos: [BlocoPainel]) -> [BlocoPainel] {
+        guard !prioridades.isEmpty else { return blocos }
+        return blocos.enumerated().sorted { esquerda, direita in
+            let prioridadeEsquerda = prioridade(esquerda.element)
+            let prioridadeDireita = prioridade(direita.element)
+            if prioridadeEsquerda != prioridadeDireita {
+                return prioridadeEsquerda < prioridadeDireita
+            }
+            return esquerda.offset < direita.offset
+        }.map { $0.element }
     }
 
     /// Span do bloco nesta largura, em células. Na tela larga é a escolha gravada
@@ -138,12 +164,15 @@ public enum MapasTresLarguras {
                 .dispatcher: 2, .entregas: 2, .custos: 6, .log: 6],
         usaTamanhosGravados: false)
 
-    /// Celular: pilha de uma coluna, na ordem recebida. Log e custos somem: são
-    /// blocos de tela larga — o log é auxiliar e a tabela de custos pede largura.
-    /// Os demais empilham um embaixo do outro.
+    /// Celular: pilha de uma coluna, com prioridade fixa própria. Log e custos
+    /// somem: são blocos de tela larga — o log é auxiliar e a tabela de custos
+    /// pede largura. Os demais aparecem sempre na mesma ordem, qualquer que seja
+    /// a ordem recebida ou o tamanho gravado no desktop (FRA-654).
     public static let celular = MapaLargura.declarado(
         tela: .celular, colunas: colunasCelular, ocultos: [.log, .custos],
-        spans: [:], usaTamanhosGravados: false)
+        spans: [:], usaTamanhosGravados: false,
+        prioridades: [.alertas: 0, .lanes: 1, .testes: 2, .builds: 3,
+                      .dispatcher: 4, .entregas: 5, .custos: 6, .log: 7])
 
     /// O mapa da largura.
     public static func mapa(em tela: ClasseTelaDashboard) -> MapaLargura {
@@ -154,7 +183,9 @@ public enum MapasTresLarguras {
         }
     }
 
-    /// Aplica o mapa da largura aos blocos, na ordem recebida.
+    /// Aplica o mapa da largura aos blocos. No celular, a ordem recebida é
+    /// trocada pela prioridade fixa do mapa; tablet e tela larga preservam a
+    /// ordem recebida (FRA-654).
     ///
     /// O bloco que some não ganha quadro nenhum: não ocupa célula nem empurra
     /// fileira. O bloco que não cabe na fileira empilha: desce com o span
@@ -175,7 +206,7 @@ public enum MapasTresLarguras {
         var quadros: [QuadroMapaLargura] = []
         var fileira = 0
         var coluna = 0
-        for bloco in blocos {
+        for bloco in mapa.ordem(blocos) {
             guard !mapa.oculto(bloco) else { continue }
             let span = mapa.span(bloco, tamanhos: tamanhos)
             if coluna > 0, coluna + span > mapa.colunas {
