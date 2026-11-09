@@ -2991,6 +2991,45 @@ def avisar_worktrees_fora(st: dict, diary: list[str], agora: float | None = None
         del avisados[velho]
 
 
+# Mapa do projeto (PRD do norte): a parte gerada do docs/produto/mapa.md acompanha a árvore.
+MAPA_A_CADA_S = _cfg("watch.mapa_a_cada_h", 6) * 3600
+MAPA_CAMINHO = "docs/produto/mapa.md"
+
+
+def instalador_norte() -> Path:
+    """`tools/instalar-norte` ao lado desta cópia (bundle assinado ou repositório)."""
+    return Path(__file__).resolve().parent.parent / "tools" / "instalar-norte"
+
+
+def manter_mapa(st: dict, diary: list[str], agora: float | None = None) -> None:
+    """No máximo a cada `watch.mapa_a_cada_h` horas, e só em projeto que já adotou o mapa
+    (o arquivo está na origin/main): `instalar-norte --mapa --pr`. Em dia, não abre nada;
+    a árvore mudou, abre (ou atualiza) um PR só com a parte gerada, que segue o fluxo normal
+    de prova e revisão. Nunca toca o norte nem a parte escrita do mapa."""
+    agora = time.time() if agora is None else agora
+    if agora - float(st.get("mapa_em", 0) or 0) < MAPA_A_CADA_S:
+        return
+    st["mapa_em"] = agora
+    p = projeto()
+    repo = Path(str(p.repo))
+    if not p.id or not str(p.repo) or not (repo / ".git").exists():
+        return
+    sh(["git", "fetch", "-q", "origin", "main"], cwd=repo, timeout=60, check=False)
+    if sh(["git", "cat-file", "-t", f"origin/main:{MAPA_CAMINHO}"], cwd=repo, check=False).strip() != "blob":
+        return  # projeto sem mapa: o wizard do norte é quem cria
+    script = instalador_norte()
+    if not script.is_file():
+        log(f"mapa: {script} não existe; nada feito")
+        return
+    saida = sh(["/usr/bin/python3", str(script), p.id, "--mapa", "--pr"], cwd=repo, timeout=300, check=False).strip()
+    linha = saida.splitlines()[0] if saida else ""
+    if "github.com" in linha or linha.startswith("PR atualizado"):
+        panel(f"mapa do projeto mudou: {linha}")
+        diary.append(f"mapa: {linha}")
+    elif linha.startswith("erro"):
+        log(f"mapa: {linha}")
+
+
 def step(name: str, fn, *args) -> None:
     try:
         fn(*args)
@@ -3062,6 +3101,7 @@ def main() -> int:
         atuais = project_issues()  # uma leitura para a caixa do dono e para a fila
         step("caixa do dono", caixa_do_ciclo, atuais, st, diary)
         step("worktrees", avisar_worktrees_fora, st, diary)
+        step("mapa", manter_mapa, st, diary)
         step("fila", keep_lanes_busy, atuais, st, diary)
     except Exception as exc:  # noqa: BLE001
         log(f"tick falhou: {exc}")
