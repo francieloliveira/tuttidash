@@ -4,16 +4,17 @@ Vários agentes de código trabalhando em paralelo num backlog do Linear, acompa
 
 ![Painel do TuttiDash com dados de exemplo](docs/imagens/painel.png)
 
-O TuttiDash é o conjunto de ferramentas locais que a TranscentIA usa para tocar um projeto do Linear
+O TuttiDash é um conjunto de ferramentas locais para tocar um projeto do Linear
 com agentes de código em **lanes** paralelas: um card, um worktree do git e um agente por lane de cada
-vez. Ele é compartilhado como está, como exemplo que funciona. Foi feito para o Mac e o jeito de
-trabalhar de um desenvolvedor, e isso aparece. [Read in English](README.md).
+vez. Qualquer projeto com um projeto no Linear e um repositório no GitHub pode ser cadastrado. Ele é
+compartilhado como está, como exemplo que funciona, e nasceu no Mac e no jeito de trabalhar de um
+desenvolvedor, o que ainda aparece. [Read in English](README.md).
 
 ## O que tem aqui
 
 | Parte | Onde | O que faz |
 |---|---|---|
-| Dispatcher | `lanes/dispatcher.py` | A cada 60 s pega um card pronto do projeto no Linear, cria o worktree e roda o agente sem interface no tmux (Claude Code, Codex, OpenCode, DeepSeek Harness, Grok CLI…). Faz o push e abre o PR em rascunho. O card só vai para *In Review* quando o check remoto `prova-remota` está verde no SHA completo. Prova local e comentário DONE não autorizam essa passagem. Timeout ou erro chama o dono. O agente não fala com o Linear nem com o GitHub. |
+| Dispatcher | `lanes/dispatcher.py` | A cada 60 s pega um card pronto do projeto no Linear, cria o worktree e roda o agente sem interface no tmux (Claude Code, Codex, OpenCode, DeepSeek Harness, Grok CLI…). Faz o push e abre o PR em rascunho. O card só vai para *In Review* quando o check remoto `prova-remota` está verde no SHA completo. Prova local e comentário DONE não autorizam essa passagem. Timeout ou erro marca o card com `lane:parada` ou `lane:falhou`; o vigia faz a triagem e devolve o card à fila, e a terceira parada pelo mesmo motivo chama o dono. Card que estourou o freio (tentativas, gasto ou tempo) fica fora da fila. O agente não fala com o Linear nem com o GitHub. |
 | Vigia | `bots/watch.py` | Faz o merge quando a prova remota está verde e o `[Revisor]` aprovou o head (e o check `revisao-ia`, quando a `main` do projeto tem esse workflow), faz a triagem das lanes paradas ou com falha e chama o dono (etiqueta `needs:dono`) quando a revisão acha segredo ou a mesma falha pede uma pessoa. A revisão de IA roda no GitHub Actions, não neste processo. |
 | App do notch | `apps/notch-mac` | App SwiftUI/AppKit no notch e na barra de menus: lanes, builds, testes, entregas, custo tirado dos logs das lanes, limites de conta quando há fonte oficial, e os Ajustes. |
 | CLI `gasto` | `gasto.py`, `gasto_lanes/` | Ledger de custo a partir dos logs das lanes, por dia, semana, card e lane. Veja [docs/gasto.md](docs/gasto.md). |
