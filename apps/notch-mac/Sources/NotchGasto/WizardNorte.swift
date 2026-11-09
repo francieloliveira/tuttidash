@@ -56,6 +56,15 @@ final class EstadoWizardNorte: ObservableObject {
 
     var problemaDoTexto: String? { NorteProjeto.problema(markdown) }
 
+    /// Por que o «Abrir PR» está travado, dizendo quais seções ainda estão a definir.
+    var motivoTravado: String? {
+        if projeto.github.isEmpty { return String(localized: "Falta o repositório do GitHub no cadastro do projeto.") }
+        guard problemaDoTexto != nil else { return nil }
+        let pendentes = NorteProjeto.secoesPendentes(markdown)
+        if pendentes.isEmpty { return problemaDoTexto }
+        return String(localized: "Ainda \(NorteRascunho.aDefinir): \(pendentes.joined(separator: ", ")). Escreva no texto ou refaça com as respostas.")
+    }
+
     private func aplicar(_ r: NorteRascunho.Rascunho) {
         markdown = r.markdown(nome: projeto.nome)
         perguntas = r.perguntas
@@ -321,7 +330,7 @@ struct WizardNorteSheet: View {
                 .font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $estado.markdown)
                 .font(.system(.callout, design: .monospaced))
-                .frame(minHeight: 220)
+                .frame(minHeight: 200)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
             if !estado.perguntas.isEmpty {
                 Text(String(localized: "Perguntas do agente")).font(.callout.weight(.medium))
@@ -330,9 +339,15 @@ struct WizardNorteSheet: View {
                         ForEach(estado.perguntas.indices, id: \.self) { i in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(estado.perguntas[i]).font(.caption)
-                                TextField(String(localized: "Sua resposta"), text: $estado.respostas[i], axis: .vertical)
-                                    .textFieldStyle(.roundedBorder)
-                                    .lineLimit(1...3)
+                                // TextEditor quebra a linha; o TextField vertical no macOS rolava
+                                // na horizontal e cortava a sugestão.
+                                TextEditor(text: $estado.respostas[i])
+                                    .font(.callout)
+                                    .scrollContentBackground(.hidden)
+                                    .padding(4)
+                                    .frame(minHeight: 44, maxHeight: 76)
+                                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
                                 if estado.sugestoes.indices.contains(i), !estado.sugestoes[i].isEmpty,
                                    estado.respostas[i] == estado.sugestoes[i] {
                                     let palpite = estado.sugestoes[i].lowercased().hasPrefix("palpite:")
@@ -343,7 +358,7 @@ struct WizardNorteSheet: View {
                             }
                         }
                     }
-                }.frame(maxHeight: 180)
+                }.frame(maxHeight: 240)
             }
             HStack {
                 if estado.motor != nil, !estado.perguntas.isEmpty {
@@ -354,6 +369,12 @@ struct WizardNorteSheet: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(estado.problemaDoTexto != nil || estado.projeto.github.isEmpty)
                     .help(estado.problemaDoTexto ?? String(localized: "Grava o norte, o mapa e a referência no AGENTS.md/CLAUDE.md numa branch e abre o PR. O merge é seu."))
+            }
+            // O motivo do botão travado fica à vista, não só na dica do mouse.
+            if let motivo = estado.motivoTravado {
+                Text(motivo).font(.caption).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
