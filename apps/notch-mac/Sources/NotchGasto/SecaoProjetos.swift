@@ -38,6 +38,7 @@ final class EstadoProjetos: ObservableObject {
     @Published var norte: [String: NorteProjeto.Estado] = [:]
     /// Projeto com o wizard do norte aberto.
     @Published var wizardNorte: ProjetoCadastro?
+    @Published var conferindoNorte = false
 
     init(modelo: ModeloAjustes, servico: ServicoLinear = ServicoLinear(), tokens: TokenLinear = TokenLinear()) {
         self.modelo = modelo
@@ -81,11 +82,13 @@ final class EstadoProjetos: ObservableObject {
     }
 
     /// Confere o norte de cada projeto gravado, fora da thread da interface.
-    func conferirNorte() async {
+    func conferirNorte(buscar: Bool = true) async {
         let lista = projetos
         let home = modelo.home
+        conferindoNorte = true
+        defer { conferindoNorte = false }
         let achados = await Task.detached {
-            Dictionary(lista.map { ($0.projetoID, NorteProjeto.estado($0, home: home)) }, uniquingKeysWith: { a, _ in a })
+            Dictionary(lista.map { ($0.projetoID, NorteProjeto.estado($0, home: home, buscar: buscar)) }, uniquingKeysWith: { a, _ in a })
         }.value
         norte = achados
     }
@@ -96,7 +99,7 @@ final class EstadoProjetos: ObservableObject {
         guard let j = lista.firstIndex(where: { $0.projetoID == projetoID }) else { return }
         lista[j].norte = NorteRascunho.caminhoPadrao
         gravar(lista, aviso: String(localized: "\(lista[j].nome): o norte entrou no freio; nenhuma lane edita \(NorteRascunho.caminhoPadrao)."))
-        Task { await conferirNorte() }
+        Task { await conferirNorte(buscar: false) }
     }
 
     /// Confere a prova remota de cada projeto gravado, fora da thread da interface.
@@ -522,6 +525,12 @@ private struct LinhaProjeto: View {
                         Button(String(localized: "Usar este norte")) { estado.definirNorte(s.projetoID) }
                             .help(String(localized: "Não escreve nada no repositório: o cadastro passa a apontar para \(NorteRascunho.caminhoPadrao) e nenhuma lane o edita."))
                     case .aguardandoMerge?:
+                        if estado.conferindoNorte {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button(String(localized: "Conferir agora")) { Task { await estado.conferirNorte() } }
+                                .help(String(localized: "Busca a main no GitHub e confere se o PR do norte já entrou."))
+                        }
                         // O PR do norte pode ter sido fechado sem merge: refazer reabre o wizard,
                         // e o instalador reaproveita a branch e abre um PR novo.
                         Button(String(localized: "Refazer…")) { estado.wizardNorte = s }

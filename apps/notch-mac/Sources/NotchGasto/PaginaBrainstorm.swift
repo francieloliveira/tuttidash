@@ -24,6 +24,8 @@ final class SessaoBrainstorm: ObservableObject {
     /// O agente de reescrita está compondo a idéia.
     @Published var reescrevendo = false
     @Published var precisaLogin = false
+    /// Por que os cards vão sair sem o norte (nil = norte ativo). Não trava a tela.
+    @Published var avisoNorte: String?
     /// Quantas mensagens do chat já entraram no esboço. O que vier depois acrescenta.
     @Published var mensagensNaIdeia = 0
     /// Itens marcados que já foram para o esboço.
@@ -110,6 +112,12 @@ struct PaginaBrainstorm: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    if let aviso = sessao.avisoNorte {
+                        Label(aviso, systemImage: "exclamationmark.triangle")
+                            .fontePainel(11.5)
+                            .foregroundStyle(TemaPainel.amarelo)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     passosFluxo
                     chatSection
                     ideaSection
@@ -124,6 +132,12 @@ struct PaginaBrainstorm: View {
             if !stories.isEmpty {
                 footerBar
             }
+        }
+        .task {
+            // Confere o norte do projeto padrão ao abrir (busca a main); não trava a tela.
+            guard let p = Configuracao.resolver().projetoPadrao else { sessao.avisoNorte = nil; return }
+            let e = await Task.detached { NorteProjeto.estado(p, buscar: true) }.value
+            sessao.avisoNorte = NorteProjeto.avisoBrainstorm(e)
         }
         .sheet(item: $sessao.editingStory) { story in
             let nova = !stories.contains { $0.id == story.id }
