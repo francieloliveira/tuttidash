@@ -223,6 +223,9 @@ public enum NorteRascunho {
     se o material mostra, escreva no norte; se não mostra e não é regra, deixe de fora.
     Cada pergunta leva uma sugestão de resposta, a mais provável pelo material, citando o \
     arquivo de onde veio. Sem base no material, a sugestão começa com "palpite:".
+    Nas seções 2 a 5, um item por linha (no Desempate, numerado em ordem de prioridade). \
+    Cada item termina com "(fonte: arquivo)" ou começa com "palpite:". O dono marca item por item.
+    Cada pergunta começa com a seção que ela resolve, por exemplo "[§2]".
     Português. Devolva só os blocos NORTE: e PERGUNTAS:, sem texto antes ou depois.
     """
 
@@ -241,17 +244,18 @@ public enum NorteRascunho {
 
         NORTE:
         ## 1. Objetivo
-        1 a 3 frases: para quem é e que resultado entrega.
+        1 a 3 frases: para quem é e que resultado entrega (fonte: arquivo)
         ## 2. Restrições inegociáveis
-        - R1: regra que nenhuma tarefa pode violar
+        - regra que nenhuma tarefa pode violar (fonte: arquivo)
+        - palpite: regra provável sem base no material
         ## 3. Desempate
-        1. o que vence quando duas metas brigam
+        1. o que vence quando duas metas brigam (fonte: arquivo)
         ## 4. O que nunca se faz
-        - ação proibida
+        - ação proibida (fonte: arquivo)
         ## 5. Glossário
         - termo: significado
         PERGUNTAS:
-        - pergunta curta ao dono sobre cada "\(aDefinir)" (no máximo 5)
+        - [§2] pergunta curta ao dono sobre cada "\(aDefinir)" (no máximo 5)
           sugestão: resposta provável (fonte: arquivo) ou "palpite: …"
         """
     }
