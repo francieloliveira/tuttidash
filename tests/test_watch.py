@@ -125,6 +125,13 @@ class WatchTests(unittest.TestCase):
 class MelhoriasDe21Out(unittest.TestCase):
     """Causa estável, needs por evento e revisor (21/10/2026)."""
 
+    def setUp(self):
+        # A escolha entre revisores é testada com todos elegíveis; quem pode revisar
+        # (`"material": true`, FRA-656) tem teste próprio em RevisaoCentralTest.
+        antes = watch.le_material
+        self.addCleanup(setattr, watch, "le_material", antes)
+        watch.le_material = lambda a: True
+
     def test_causa_vence_o_texto_do_motivo(self):
         a = watch.stop_reason(card(["⛔ **lane:claude** terminou: a prova do dispatcher falhou (A, B, código 0).\n\n"
                                     "- causa: `prova-vermelha`\n… remover a label `lane:falhou`."]), "lane:falhou")[1]
@@ -300,6 +307,200 @@ class ManterMapaTest(unittest.TestCase):
     def test_em_dia_nao_avisa(self):
         watch.manter_mapa({}, [], agora=1e9)
         self.assertEqual(self.paineis, [])
+
+
+def _git(repo, *args):
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+
+
+class RevisaoCentralTest(unittest.TestCase):
+    """FRA-656: uma função central monta o material da head; todo revisor recebe o mesmo
+    material e prompt, sem disco nem shell; o vigia confere a resposta antes de valer."""
+
+    def setUp(self):
+        self.repo = Path(tempfile.mkdtemp(prefix="rev-central-"))
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(self.repo)]))
+        _git(self.repo, "init", "-q", "-b", "main")
+        _git(self.repo, "config", "user.email", "t@t")
+        _git(self.repo, "config", "user.name", "t")
+        (self.repo / "a.txt").write_text("um\n")
+        (self.repo / "c.txt").write_text("vai sair\n")
+        _git(self.repo, "add", ".")
+        _git(self.repo, "commit", "-q", "-m", "base")
+        _git(self.repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+        _git(self.repo, "checkout", "-q", "-b", "card")
+        (self.repo / "a.txt").write_text("um\ndois\n")
+        (self.repo / "b.py").write_text("print('novo')\n")
+        (self.repo / "img.bin").write_bytes(b"\x00\x01\x02\xff" * 10)
+        _git(self.repo, "rm", "-q", "c.txt")
+        _git(self.repo, "add", ".")
+        _git(self.repo, "commit", "-q", "-m", "card")
+        self.sha = _git(self.repo, "rev-parse", "HEAD")
+        # O disco de trabalho diverge da head: o material não pode ler daqui.
+        (self.repo / "b.py").write_text("print('NAO-COMMITADO')\n")
+
+    def test_material_sai_do_objeto_da_head_e_nao_do_disco(self):
+        m = watch.montar_material(self.repo, self.sha)
+        self.assertEqual(m["sha"], self.sha)
+        self.assertEqual(sorted(m["arquivos"]), ["a.txt", "b.py", "c.txt", "img.bin"])
+        self.assertEqual(sorted(m["incluidos"]), ["a.txt", "b.py"], "apagado e binário não entram inteiros")
+        self.assertIn("+dois", m["texto"])
+        self.assertIn("print('novo')", m["texto"])
+        self.assertNotIn("NAO-COMMITADO", m["texto"])
+        self.assertFalse(m["parcial"])
+        self.assertEqual(m, watch.montar_material(self.repo, self.sha), "mesmo SHA, mesmo material e hash")
+
+    def test_sha_curto_ou_inexistente_e_recusado(self):
+        with self.assertRaises(RuntimeError):
+            watch.montar_material(self.repo, self.sha[:7])
+        with self.assertRaises(RuntimeError):
+            watch.montar_material(self.repo, "f" * 40)
+
+    def test_diff_acima_do_teto_e_parcial_e_arquivo_grande_fica_so_com_diff(self):
+        m = watch.montar_material(self.repo, self.sha, teto_diff=10)
+        self.assertTrue(m["parcial"])
+        self.assertEqual(m["incluidos"], [])
+        m = watch.montar_material(self.repo, self.sha, teto_total=len(watch.montar_material(self.repo, self.sha)["texto"]) // 4)
+        self.assertFalse(m["parcial"])
+        self.assertTrue(m["fora"])
+        self.assertIn("só o diff", m["texto"])
+
+    def material(self):
+        return {"sha": self.sha, "arquivos": ["apps/x/Pilha.swift", "b.py"], "fora": [], "hash": "h"}
+
+    def test_resposta_so_vale_com_sha_leitura_e_arquivo_citado(self):
+        m = self.material()
+        boa = f"[Revisor] REVISOR: APROVADO · head `{self.sha}`\n\nOk em `apps/x/Pilha.swift:12`."
+        self.assertEqual(watch.motivo_sem_leitura(boa, m), "")
+        self.assertEqual(watch.motivo_sem_leitura(boa.replace(self.sha, self.sha[:7]), m),
+                         "veredito sem o SHA completo da head")
+        self.assertEqual(watch.motivo_sem_leitura(
+            f"[Revisor] REVISOR: AJUSTES · head `{self.sha}`\n\no diff de b.py não foi lido.", m),
+            "a resposta diz que não leu o código")
+        self.assertEqual(watch.motivo_sem_leitura(
+            f"[Revisor] REVISOR: AJUSTES · head `{self.sha}`\n\nferramenta de shell/git ausente nesta sessão", m),
+            "a resposta diz que não leu o código")
+        self.assertEqual(watch.motivo_sem_leitura(f"[Revisor] REVISOR: APROVADO · head `{self.sha}`\n\nTudo certo.", m),
+                         "a resposta não cita nenhum arquivo do material")
+        self.assertEqual(watch.motivo_sem_leitura("texto sem tag", m), "", "formato inválido é outro caminho")
+        self.assertEqual(watch.motivo_sem_leitura(boa, None), "")
+
+    def test_revisar_recusa_resposta_sem_leitura_e_passa_ao_proximo(self):
+        nomes = ("ordem_revisao", "run_revisor", "panel", "log", "agent_paused")
+        antes = {n: getattr(watch, n) for n in nomes}
+        self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
+        respostas = {"grok": f"[Revisor] REVISOR: APROVADO · head `{self.sha}`\n\nsem o fonte, aprovo.",
+                     "claude": f"[Revisor] REVISOR: AJUSTES · head `{self.sha}`\n\nbug em b.py:1"}
+        linhas = []
+        watch.ordem_revisao = lambda r, c, s=False: ["grok", "claude"]
+        watch.run_revisor = lambda a, texto, tag, conf, esforco=None: respostas[a]
+        watch.panel = linhas.append
+        watch.log = lambda m: None
+        watch.agent_paused = lambda: False
+        texto, quem = watch.revisar("p", "t", "grok", {}, material=self.material())
+        self.assertEqual(quem, "claude")
+        self.assertIn("grok", linhas[0])
+        respostas["claude"] = respostas["grok"]
+        with self.assertRaises(RuntimeError):
+            watch.revisar("p", "t", "grok", {}, material=self.material())
+
+    def test_so_revisa_quem_declara_material_no_manifesto(self):
+        conf = watch.conf_revisor()
+        elegiveis = [a for a in watch.revisores_catalogo() if watch.le_material(a)]
+        self.assertEqual(elegiveis, ["claude"], "os outros voltam só com chamada sem disco verificada")
+        for autor in ("claude", "grok", "deepseek", "opencode"):
+            rev, _ = watch.escolher_revisor(autor, conf, {}, lambda c: "/bin/" + c)
+            self.assertEqual(rev, "claude")
+            self.assertEqual(watch.ordem_revisao(rev, conf, instalado=lambda c: True), ["claude"])
+
+    def test_run_revisor_roda_em_pasta_vazia_sem_ferramenta(self):
+        nomes = ("manifesto_revisao", "comando_revisao", "_log_saida_agente", "log")
+        antes = {n: getattr(watch, n) for n in nomes}
+        antes_rede = watch.caixa.executar_com_rede
+        self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
+        self.addCleanup(setattr, watch.caixa, "executar_com_rede", antes_rede)
+        visto = {}
+
+        def comando(agente, conf, ctx, esforco=None):
+            visto["settings"] = json.loads(Path(ctx["settings"]).read_text())
+            return ["claude", "-p"], ctx["prompt"]
+
+        def com_rede(argv, cwd, timeout=120, inp=None):
+            visto["cwd"] = Path(cwd)
+            visto["conteudo"] = list(Path(cwd).iterdir())
+            return types.SimpleNamespace(returncode=0, stdout="[Revisor] REVISOR: AJUSTES", stderr="")
+
+        watch.manifesto_revisao = lambda a: {"saida": "stdout"}
+        watch.comando_revisao = comando
+        watch._log_saida_agente = lambda *a: None
+        watch.log = lambda *a: None
+        watch.caixa.executar_com_rede = com_rede
+        watch.run_revisor("claude", "p", "t", {})
+        self.assertEqual(visto["conteudo"], [], "o agente roda numa pasta vazia")
+        self.assertNotEqual(visto["cwd"].resolve(), self.repo.resolve())
+        self.assertEqual(visto["settings"]["permissions"]["allow"], [])
+        for ferramenta in ("Bash", "Read", "Glob", "Grep"):
+            self.assertIn(ferramenta, visto["settings"]["permissions"]["deny"])
+
+    def test_prompt_do_revisor_vem_do_bundle_e_leva_o_material(self):
+        antes = watch.PROMPTS_DIR
+        self.addCleanup(setattr, watch, "PROMPTS_DIR", antes)
+        watch.PROMPTS_DIR = Path(tempfile.mkdtemp())  # cópia de ~/.transcentia ausente ou adulterada
+        texto = watch.prompt("revisor")
+        self.assertIn("{material}", texto)
+        self.assertNotIn("git-leitura", texto)
+        self.assertIn(("bots/prompts/revisor.md", "bots/prompts/revisor.md", 0o644), _copias_do_controle())
+
+    def test_parcial_nao_chama_revisor_e_chama_o_dono(self):
+        nomes = ("sh", "card_of", "issue", "montar_material", "revisar", "panel", "comment")
+        antes = {n: getattr(watch, n) for n in nomes}
+        self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
+        chamou, linhas, comentarios = [], [], []
+        watch.sh = lambda *a, **k: ""
+        watch.card_of = lambda t, b: "FRA-1"
+        watch.issue = lambda c: {"id": "i1", "description": "", "comments": {"nodes": []}}
+        watch.montar_material = lambda rdir, sha: {"sha": sha, "parcial": True, "arquivos": ["x"], "fora": ["x"]}
+        watch.revisar = lambda *a, **k: chamou.append(a)
+        watch.panel = linhas.append
+        watch.comment = lambda i, b: comentarios.append(b)
+        st = {"reviewed": {}}
+        pr = {"number": 7, "headRefOid": self.sha, "headRefName": "card", "title": "FRA-1 x"}
+        watch.review_pr("app", {"dir": self.repo, "slug": "o/r"}, pr, st, [])
+        self.assertEqual(chamou, [])
+        self.assertEqual(st["reviewed"][self.sha], "parcial")
+        self.assertIn("não aprova", linhas[0])
+        self.assertTrue(comentarios[0].startswith("[Gestor]"))
+        self.assertFalse(watch.revisao_pode_tentar(st, self.sha), "parcial não é revisado de novo a cada ciclo")
+
+    def test_garantir_revisao_respeita_o_portao_e_marca_o_erro(self):
+        nomes = ("publicar_revisoes_remotas", "_cfg", "open_prs", "review_pr", "eh_mudanca_somente_documentacao", "log")
+        antes = {n: getattr(watch, n) for n in nomes}
+        self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
+        chamadas = []
+        watch.publicar_revisoes_remotas = lambda *a: None
+        watch._cfg = lambda k, p: p
+        watch.open_prs = lambda repo: [{"number": 1, "headRefOid": "h1"}, {"number": 2, "headRefOid": "h2"},
+                                       {"number": 3, "headRefOid": "h3"}]
+        watch.eh_mudanca_somente_documentacao = lambda pr: False
+        watch.log = lambda m: None
+
+        def review(tag, repo, pr, st, diary):
+            chamadas.append(pr["number"])
+            raise RuntimeError("nenhum revisor respondeu")
+        watch.review_pr = review
+        st = {"reviewed": {"h1": "segredo", "h2": "erro 11-09 09:00"}, "erros_revisao": {"h2": watch.time.time()}}
+        watch.garantir_revisao({"dir": "."}, st, [])
+        self.assertEqual(chamadas, [3], "segredo e erro recente esperam; só o head novo revisa")
+        self.assertTrue(st["reviewed"]["h3"].startswith("erro "))
+        self.assertIn("h3", st["erros_revisao"])
+
+
+def _copias_do_controle():
+    spec = importlib.util.spec_from_file_location(
+        "integridade_controle", Path(__file__).resolve().parents[1] / "tools" / "integridade-controle.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.COPIAS
 
 
 if __name__ == "__main__":
@@ -985,6 +1186,8 @@ class PrivacidadeDoRevisor(unittest.TestCase):
     def test_revisor_do_opencode_some_se_o_modelo_nao_e_seguro(self):
         antigo = watch.privacidade_ok
         self.addCleanup(setattr, watch, "privacidade_ok", antigo)
+        self.addCleanup(setattr, watch, "le_material", watch.le_material)
+        watch.le_material = lambda a: True
         sim = lambda _c: "/bin/x"
         c = conf_padrao()
         c.update(reserva="opencode")
@@ -1018,7 +1221,7 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         nomes = ["_cfg", "agent_paused", "local_call", "opencode_call", "run_agent", "lane_log_tail",
                  "comment", "remove_label", "add_label", "prepend_description", "prompt", "known_errors",
                  "PANEL_LOG", "ANALISES_LOG", "SHADOW_NEEDS_LOG", "run_revisor", "privacidade_ok", "LOG_FILE",
-                 "ollama_modelos", "OLLAMA_AVISO_FILE"]
+                 "ollama_modelos", "OLLAMA_AVISO_FILE", "le_material"]
         antes = {n: getattr(watch, n) for n in nomes}
         self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
         watch._cfg = lambda k, p: self.cfg.get(k, p)
@@ -1162,6 +1365,7 @@ class VigiaLocalPrimeiro(unittest.TestCase):
 
     # ---- revisão
     def test_ordem_da_revisao_fallback_padrao_e_o_opencode(self):
+        watch.le_material = lambda a: True  # a ordem com todos elegíveis; a elegibilidade é do FRA-656
         conf = watch.conf_revisor()
         ordem = watch.ordem_revisao("opencode-go", conf, instalado=lambda c: True)
         self.assertEqual(ordem[:2], ["opencode-go", "opencode"])
@@ -1171,9 +1375,10 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         self.assertEqual(watch.ordem_revisao("opencode", conf, so_sozinho=True, instalado=lambda c: True)[-1], "claude")
 
     def test_revisao_cai_no_reserva_e_pula_claude_no_limite(self):
+        watch.le_material = lambda a: True
         tentou = []
 
-        def rev(a, texto, cwd, tag, conf, esforco=None):
+        def rev(a, texto, tag, conf, esforco=None):
             tentou.append(a)
             if a == "opencode":
                 return "[Revisor] ok"
@@ -1183,13 +1388,13 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         antes = watch.shutil.which
         self.addCleanup(setattr, watch.shutil, "which", antes)
         watch.shutil.which = lambda c, path=None: "/bin/" + c
-        self.assertEqual(watch.revisar("x", self.tmp, "t", "opencode-go", conf), ("[Revisor] ok", "opencode"))
+        self.assertEqual(watch.revisar("x", "t", "opencode-go", conf), ("[Revisor] ok", "opencode"))
         self.assertEqual(tentou, ["opencode-go", "opencode"])
         tentou.clear()
         watch.run_revisor = lambda a, *r: tentou.append(a) or (_ for _ in ()).throw(RuntimeError("caiu"))
         watch.agent_paused = lambda: True
         with self.assertRaises(RuntimeError):
-            watch.revisar("x", self.tmp, "t", "opencode-go", conf)
+            watch.revisar("x", "t", "opencode-go", conf)
         self.assertNotIn("claude", tentou)
 
 
@@ -1253,7 +1458,9 @@ branch refs/heads/fra-9
         deny = watch.READ_ONLY_SETTINGS["permissions"]["deny"]
         self.assertIn("Bash(git worktree:*)", deny)
         self.assertIn("Bash(git clone:*)", deny)
-        self.assertIn("Não crie worktree", watch.prompt("revisor"))
+        # FRA-656: na revisão nem há shell (REVISAO_SETTINGS nega o Bash inteiro).
+        self.assertIn("Bash", watch.REVISAO_SETTINGS["permissions"]["deny"])
+        self.assertIn("não crie worktree", watch.prompt("revisor"))
 
 
 class SegundaOpiniaoGuardadaTest(unittest.TestCase):
@@ -1266,7 +1473,7 @@ class SegundaOpiniaoGuardadaTest(unittest.TestCase):
     def setUp(self):
         nomes = ("sh", "card_of", "issue", "conf_revisor", "escolher_revisor", "revisar", "papel",
                  "quem_confirma", "save_state", "registrar_veredito", "panel", "prompt", "comment",
-                 "agent_paused", "LIMIT_FILE")
+                 "agent_paused", "LIMIT_FILE", "montar_material")
         velhos = {n: getattr(watch, n) for n in nomes}
         self.addCleanup(lambda: [setattr(watch, n, f) for n, f in velhos.items()])
         self.chamadas, self.linhas = [], []
@@ -1282,11 +1489,13 @@ class SegundaOpiniaoGuardadaTest(unittest.TestCase):
         watch.prompt = lambda nome: "{number}{repo_slug}{title}{branch}{sha}{sha7}{merge_state}{card}{card_desc}" \
                                     "{card_comments}{stat}{protected}{lane}{known_errors}{same_model}"
         watch.comment = lambda *a: None
+        watch.montar_material = lambda rdir, sha: {"sha": sha, "texto": "", "arquivos": [], "incluidos": [],
+                                                   "fora": [], "parcial": False, "hash": "h"}
         watch.LIMIT_FILE = Path(tempfile.mkdtemp()) / "limite-agente"  # nunca o arquivo real do Mac
         self.st = {"reviewed": {}}
 
     def revisar_falso(self, respostas):
-        def revisar(texto, cwd, tag, revisor, conf, so_sozinho=False, esforco=None):
+        def revisar(texto, tag, revisor, conf, so_sozinho=False, esforco=None, material=None):
             self.chamadas.append((revisor, so_sozinho))
             r = respostas.pop(0)
             if isinstance(r, Exception):
@@ -1807,10 +2016,10 @@ class RevisorForaDaCaixa(unittest.TestCase):
 
     def test_revisor_de_nuvem_roda_fora_da_caixa(self):
         self.w.manifesto_revisao = lambda a: {"saida": "stdout"}
-        self.w.run_revisor("grok", "p", self.tmp, "t", {})
+        self.w.run_revisor("grok", "p", "t", {})
         self.assertEqual(self.chamadas, ["rede"])
 
     def test_revisor_local_continua_na_caixa(self):
         self.w.manifesto_revisao = lambda a: {"saida": "stdout", "local": True}
-        self.w.run_revisor("local", "p", self.tmp, "t", {})
+        self.w.run_revisor("local", "p", "t", {})
         self.assertEqual(self.chamadas, ["caixa"])
