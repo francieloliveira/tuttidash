@@ -4,17 +4,17 @@ Run several AI coding agents in parallel on a Linear backlog, and keep an eye on
 
 ![TuttiDash panel with example data](docs/imagens/painel.png)
 
-TuttiDash is the set of local tools that TranscentIA uses to work
-through a Linear project with coding agents in parallel **lanes**: one card, one git worktree and one
-agent per lane at a time. It is shared as-is, as a working example. It was built for one developer's
-Mac and workflow, and it shows. **The app UI and most of the docs are in Brazilian Portuguese.**
+TuttiDash is a set of local tools for working through a Linear project with coding agents in
+parallel **lanes**: one card, one git worktree and one
+agent per lane at a time. Any project with a Linear project and a GitHub repository can be registered. It is shared as-is,
+as a working example, and it was built on one developer's Mac and workflow, which still shows. **The app UI and most of the docs are in Brazilian Portuguese.**
 [Leia em português](README.pt-BR.md).
 
 ## What's inside
 
 | Part | Where | What it does |
 |---|---|---|
-| Dispatcher | `lanes/dispatcher.py` | Every 60 s it takes a ready card from the Linear project, creates a worktree and runs the agent headless in tmux (Claude Code, Codex, OpenCode, DeepSeek Harness, Grok CLI…). It pushes and opens a draft PR. The card moves to *In Review* only after the remote check `prova-remota` is green on the full head SHA. A local proof or a DONE comment is not authority. Timeout or error calls the owner. The agent itself never talks to Linear or GitHub. |
+| Dispatcher | `lanes/dispatcher.py` | Every 60 s it takes a ready card from the Linear project, creates a worktree and runs the agent headless in tmux (Claude Code, Codex, OpenCode, DeepSeek Harness, Grok CLI…). It pushes and opens a draft PR. The card moves to *In Review* only after the remote check `prova-remota` is green on the full head SHA. A local proof or a DONE comment is not authority. A timeout or an error marks the card `lane:parada` or `lane:falhou`; the watcher triages it and puts it back in the queue, and the third stop for the same reason calls the owner. A card past its per-card brake (attempts, spend or time) stays out of the queue. The agent itself never talks to Linear or GitHub. |
 | Watcher | `bots/watch.py` | Merges when the remote proof is green and the `[Revisor]` approved the head (plus the `revisao-ia` check, when the project's `main` has that workflow), triages stopped or failed lanes and calls the owner (`needs:dono`) when a review secret or a repeated failure needs a person. The AI review runs on GitHub Actions, not in this process. |
 | Notch app | `apps/notch-mac` | SwiftUI/AppKit app in the notch and menu bar: lanes, builds, tests, deliveries, cost from the lane logs, account limits where an official source exists, and the settings. |
 | `gasto` CLI | `gasto.py`, `gasto_lanes/` | Cost ledger built from the lane logs, by day, week, card and lane. See [docs/gasto.md](docs/gasto.md). |
