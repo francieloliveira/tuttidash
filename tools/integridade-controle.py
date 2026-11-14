@@ -45,6 +45,7 @@ COPIAS = (
     ("bots/watch.py", "bots/watch.py", 0o755),
     ("bots/caixa_leitura.py", "bots/caixa_leitura.py", 0o644),
     ("bots/git-leitura", "bots/git-leitura", 0o755),
+    ("bots/prompts/revisor.md", "bots/prompts/revisor.md", 0o644),
     ("tools/bots-chave", "tools/bots-chave", 0o755),
     ("tools/instalar-prova-remota", "tools/instalar-prova-remota", 0o755),
     ("tools/instalar-norte", "tools/instalar-norte", 0o755),

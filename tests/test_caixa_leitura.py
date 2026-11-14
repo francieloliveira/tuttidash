@@ -122,8 +122,10 @@ class AllowlistTest(unittest.TestCase):
         self.assertIn("Bash(git show:*)", deny)
         self.assertIn("Bash(git worktree:*)", deny)
         self.assertEqual(watch.READ_ONLY_SETTINGS["sandbox"]["network"]["allowedDomains"], [])
-        self.assertIn("Não crie worktree", watch.prompt("revisor"))
-        self.assertIn("git-leitura", watch.prompt("revisor"))
+        # FRA-656: o revisor não lê o repo; o material vem no prompt e não há git-leitura nele.
+        self.assertIn("não crie worktree", watch.prompt("revisor"))
+        self.assertNotIn("git-leitura", watch.prompt("revisor"))
+        self.assertIn("{material}", watch.prompt("revisor"))
 
 
 class PublicacaoTest(unittest.TestCase):
@@ -139,7 +141,8 @@ class PublicacaoTest(unittest.TestCase):
         self.hosts.write_text(f"oauth_token: {self.token}\n", encoding="utf-8")
         self.comentarios, self.etiquetas, self.corpos = [], [], []
         nomes = ("sh", "card_of", "issue", "escolher_revisor", "revisar", "papel",
-                 "protected", "known_errors", "comment", "add_label", "registrar_veredito", "panel")
+                 "protected", "known_errors", "comment", "add_label", "registrar_veredito", "panel",
+                 "montar_material")
         self.velhos = {n: getattr(watch, n) for n in nomes}
         self.addCleanup(lambda: [setattr(watch, n, f) for n, f in self.velhos.items()])
 
@@ -157,6 +160,8 @@ class PublicacaoTest(unittest.TestCase):
             "comments": {"nodes": []}, "labels": {"nodes": []},
         }
         watch.escolher_revisor = lambda *a, **k: ("claude", "")
+        watch.montar_material = lambda rdir, sha: {"sha": sha, "texto": "", "arquivos": [], "incluidos": [],
+                                                   "fora": [], "parcial": False, "hash": "h"}
         watch.papel = lambda agente, conf: "sozinho"
         watch.protected = lambda: ()
         watch.known_errors = lambda: ""
@@ -172,9 +177,9 @@ class PublicacaoTest(unittest.TestCase):
         return "\n".join(self.corpos + self.comentarios)
 
     def test_injecao_de_hosts_nao_publica_o_arquivo(self):
-        def revisar(texto, cwd, tag, revisor, conf, so_sozinho=False, esforco=None):
+        def revisar(texto, tag, revisor, conf, so_sozinho=False, esforco=None, material=None):
             self.assertIn("hosts.yml", texto)
-            proc = caixa.executar(["cat", str(self.hosts)], cwd, timeout=30)
+            proc = caixa.executar(["cat", str(self.hosts)], self.repo, timeout=30)
             self.assertNotIn(self.token, (proc.stdout or "") + (proc.stderr or ""))
             return "[Revisor] REVISOR: AJUSTES\nnão li arquivo fora do repo", revisor
 
@@ -184,7 +189,7 @@ class PublicacaoTest(unittest.TestCase):
         self.assertTrue(self.corpos, "a revisão sem segredo ainda publica")
 
     def test_saida_com_segredo_chama_o_dono_e_nao_publica(self):
-        def revisar(texto, cwd, tag, revisor, conf, so_sozinho=False, esforco=None):
+        def revisar(texto, tag, revisor, conf, so_sozinho=False, esforco=None, material=None):
             return f"[Revisor] REVISOR: AJUSTES\n{self.token}", revisor
 
         watch.revisar = revisar
@@ -204,7 +209,7 @@ class PublicacaoTest(unittest.TestCase):
         watch.caixa.executar_com_rede = executar
         self.addCleanup(lambda: setattr(watch.caixa, "executar_com_rede", original))
         with self.assertRaises(caixa.SegredoDetectado):
-            watch.run_revisor("claude", "prompt", self.repo, "revisor-teste", {})
+            watch.run_revisor("claude", "prompt", "revisor-teste", {})
         logs = list(watch.RUN_LOG_DIR.glob("revisor-teste-*.md"))
         self.assertTrue(logs)
         self.assertNotIn(self.token, logs[-1].read_text(encoding="utf-8"))
@@ -234,7 +239,7 @@ class PublicacaoTest(unittest.TestCase):
         self.addCleanup(lambda: (setattr(watch.caixa, "executar", originais[0]),
                                  setattr(watch.caixa, "executar_com_rede", originais[1])))
         for agente in ("grok", "codex"):
-            texto = watch.run_revisor(agente, "prompt", self.repo, f"t-{agente}", {})
+            texto = watch.run_revisor(agente, "prompt", f"t-{agente}", {})
             self.assertIn("REVISOR: AJUSTES", texto)
         self.assertEqual(vistos, ["grok", "codex"])
 

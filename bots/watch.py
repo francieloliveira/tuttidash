@@ -706,9 +706,30 @@ READ_ONLY_SETTINGS = {
     },
 }
 
+# FRA-656: na revisão o agente não lê disco nem roda comando. O material (diff e arquivos da
+# head) vem inteiro no prompt, montado pelo vigia. Deny sem padrão bloqueia a ferramenta toda.
+REVISAO_SETTINGS = {
+    "permissions": {
+        "defaultMode": "dontAsk",
+        "allow": [],
+        "deny": ["Bash", "Read", "Glob", "Grep", "LS", "Edit", "MultiEdit", "Write", "NotebookEdit",
+                 "NotebookRead", "WebFetch", "WebSearch", "Task", "TodoWrite"],
+    },
+    "sandbox": READ_ONLY_SETTINGS["sandbox"],
+}
+
+
+# FRA-656: o prompt do revisor vai no bundle assinado, ao lado deste arquivo (R9 do norte).
+# Os outros prompts ainda vêm de ~/.transcentia/bots/prompts.
+PROMPTS_BUNDLE = Path(__file__).resolve().parent / "prompts"
+PROMPTS_ASSINADOS = ("revisor",)
+
 
 def prompt(name: str) -> str:
-    """Prompts versionados em tuttidash/bots/prompts, instalados em ~/.transcentia/bots/prompts."""
+    """Prompts versionados em tuttidash/bots/prompts. O do revisor sai do bundle (ou do
+    checkout, em dev e teste); os demais, da cópia instalada em ~/.transcentia/bots/prompts."""
+    if name in PROMPTS_ASSINADOS:
+        return (PROMPTS_BUNDLE / f"{name}.md").read_text()
     return (PROMPTS_DIR / f"{name}.md").read_text()
 
 
@@ -1183,8 +1204,11 @@ def garantir_revisao(repo: dict, st: dict, diary: list[str]) -> None:
         head = pr.get("headRefOid") or ""
         if not head:
             continue
-        v = st.get("reviewed", {}).get(head)
-        if v in ("APROVADO", "AJUSTES"):
+        # FRA-656: o mesmo portão do R3. Antes só APROVADO/AJUSTES paravam aqui: segredo,
+        # formato inválido e parcial eram revisados de novo a cada ciclo, e o erro não esperava
+        # REVIEW_RETRY_S.
+        st.setdefault("reviewed", {})
+        if not revisao_pode_tentar(st, head):
             continue
 
         docs_only = eh_mudanca_somente_documentacao(pr)
@@ -1198,6 +1222,8 @@ def garantir_revisao(repo: dict, st: dict, diary: list[str]) -> None:
             review_pr(tag, repo, pr, st, diary)
             log(f"revisao fallback local usada para PR #{pr.get('number')}" + (" (docs-only)" if docs_only else ""))
         except Exception as exc:  # noqa: BLE001
+            st["reviewed"][head] = f"erro {datetime.now():%m-%d %H:%M}"
+            st.setdefault("erros_revisao", {})[head] = time.time()
             log(f"revisao fallback local falhou PR #{pr.get('number')}: {exc}")
 
 
@@ -2571,7 +2597,7 @@ def escolher_revisor(autor: str, conf: dict | None = None, medidas: dict | None 
     primeiro que aprova sozinho) com a observação "mesmo fornecedor"."""
     conf = conf or conf_revisor()
     instalado = instalado or cli_instalado
-    nomes = [a for a in revisores_catalogo() if instalado(AGENTES.get(a, {}).get("cli") or a)
+    nomes = [a for a in revisores_catalogo() if le_material(a) and instalado(AGENTES.get(a, {}).get("cli") or a)
              and privacidade_ok(a, str((conf.get(a) or {}).get("modelo") or ""))[0]]
     if so_sozinho:
         nomes = [a for a in nomes if papel(a, conf) == "sozinho"]
@@ -2653,19 +2679,122 @@ def limpar_saida(out: str) -> str:
     return normalizar_tag((out[i:] if i >= 0 else out).strip(), TAG_REVISOR)
 
 
-def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
+# ---------- material da revisão (FRA-656) ----------
+# Uma função central monta o que todo revisor lê, a partir do objeto git da head. O agente
+# não busca código: não tem ferramenta de disco nem de shell na revisão (REVISAO_SETTINGS e
+# `"material": true` no manifesto). Muda só a chamada de cada CLI.
+MATERIAL_TETO_DIFF = 60_000
+MATERIAL_TETO_TOTAL = 120_000
+_GIT_MATERIAL = ["git", "-c", "core.quotepath=off", "-c", "core.pager=cat", "-c", "diff.external="]
+SEM_LEITURA_RE = re.compile(
+    r"n[ãa]o (foi|foram) lid[oa]s?|n[ãa]o (li|consegui ler|tive acesso|tenho acesso)\b"
+    r"|sem (o )?acesso ao (diff|c[óo]digo|fonte)|n[ãa]o est[ãa]o no checkout"
+    r"|n[ãa]o est[áa] entre as ferramentas|ferramenta de (shell|git|terminal)[^.\n]{0,20}ausente",
+    re.I)
+
+
+def montar_material(rdir: Path, sha: str, base: str = "origin/main",
+                    teto_diff: int = MATERIAL_TETO_DIFF, teto_total: int = MATERIAL_TETO_TOTAL) -> dict:
+    """O que todo revisor lê, montado do objeto git da head. Nada vem de pasta de lane.
+
+    O diff `base...sha` e, de cada arquivo alterado (menos apagado e binário), o conteúdo
+    no `sha`. Diff maior que o teto deixa o material `parcial`: o vigia não revisa e chama
+    o dono. Arquivo inteiro que não cabe no teto total fica só com o diff (vai em `fora`)."""
+    if not re.fullmatch(r"[0-9a-f]{40}", sha or ""):
+        raise RuntimeError(f"head sem SHA completo: {sha!r}")
+    sh(_GIT_MATERIAL + ["cat-file", "-e", f"{sha}^{{commit}}"], cwd=rdir)
+    faixa = f"{base}...{sha}"
+    diff = sh(_GIT_MATERIAL + ["diff", "--no-color", "--no-ext-diff", "--no-textconv", faixa], cwd=rdir)
+    partes = sh(_GIT_MATERIAL + ["diff", "--name-status", "--no-renames", "-z", faixa], cwd=rdir).split("\0")
+    arquivos: list[str] = []
+    apagados: set[str] = set()
+    for i in range(0, len(partes) - 1, 2):
+        estado, caminho = partes[i].strip(), partes[i + 1]
+        if caminho:
+            arquivos.append(caminho)
+            if estado.startswith("D"):
+                apagados.add(caminho)
+    binarios = set()
+    for linha in sh(_GIT_MATERIAL + ["diff", "--numstat", "--no-renames", "-z", faixa], cwd=rdir).split("\0"):
+        cols = linha.split("\t")
+        if len(cols) == 3 and cols[0] == "-" and cols[1] == "-":
+            binarios.add(cols[2])
+    parcial = len(diff) > teto_diff
+    if parcial:
+        diff = diff[:teto_diff]
+    blocos = [f"### Diff `{faixa}`" + (" (CORTADO no teto)" if parcial else ""),
+              "```diff", diff.rstrip("\n"), "```"]
+    total = len(diff)
+    incluidos: list[str] = []
+    fora: list[str] = []
+    for caminho in arquivos:
+        if caminho in apagados or caminho in binarios:
+            continue
+        if parcial:
+            fora.append(caminho)
+            continue
+        conteudo = sh(_GIT_MATERIAL + ["show", f"{sha}:{caminho}"], cwd=rdir)
+        if total + len(conteudo) > teto_total:
+            fora.append(caminho)
+            continue
+        total += len(conteudo)
+        incluidos.append(caminho)
+        blocos += ["", f"### Arquivo `{caminho}` na head", f"----- início de {caminho} -----",
+                   conteudo.rstrip("\n"), f"----- fim de {caminho} -----"]
+    if fora:
+        blocos += ["", "### Arquivos sem o conteúdo inteiro (só o diff acima)"] + [f"- `{c}`" for c in fora]
+    texto = "\n".join(blocos)
+    return {"sha": sha, "base": base, "texto": texto, "arquivos": arquivos, "incluidos": incluidos,
+            "fora": fora, "parcial": parcial,
+            "hash": hashlib.sha256(texto.encode("utf-8", "replace")).hexdigest()[:16]}
+
+
+def _cita(texto: str, caminho: str) -> bool:
+    if caminho in texto:
+        return True
+    nome = caminho.rsplit("/", 1)[-1]
+    return len(nome) >= 5 and "." in nome and nome in texto
+
+
+def motivo_sem_leitura(texto: str, material: dict | None) -> str:
+    """Por que a resposta não vale como veredito; "" quando vale.
+
+    Vale só com o SHA completo da head na 1ª linha, sem dizer que não leu o código e citando
+    ao menos um arquivo do material. Fora do formato `[Revisor]` não é tratado aqui: o
+    caminho de formato inválido do `review_pr` já cuida."""
+    if material is None or not (texto or "").startswith(TAG_REVISOR):
+        return ""
+    if material["sha"] not in texto.splitlines()[0]:
+        return "veredito sem o SHA completo da head"
+    if SEM_LEITURA_RE.search(texto):
+        return "a resposta diz que não leu o código"
+    if material["arquivos"] and not any(_cita(texto, c) for c in material["arquivos"]):
+        return "a resposta não cita nenhum arquivo do material"
+    return ""
+
+
+def le_material(agente: str) -> bool:
+    """Só revisa quem o manifesto declara `"material": true`: o comando de revisão desse CLI
+    não dá ferramenta de disco nem de shell, e ele revisa só o material do prompt (FRA-656).
+    Sem a declaração o agente fica fora da revisão — recusar vence adivinhar."""
+    return bool((manifesto_revisao(agente) or {}).get("material"))
+
+
+def run_revisor(agente: str, texto: str, tag: str, conf: dict,
                 esforco: str | None = None) -> str:
-    """Revisão com as travas de leitura do CLI (manifesto): Grok `read_file,grep,list_dir`,
-    Codex `--sandbox read-only`, Claude `--settings` só leitura, OpenCode `--agent plan`.
-    Os revisores de nuvem rodam fora da caixa sem rede (precisam de rede e do login da home);
-    só o que é local (`"local": true` no bloco `revisao` do manifesto) roda dentro dela."""
+    """Chama o CLI do revisor com o prompt já montado (material incluso). O agente roda numa
+    pasta vazia e temporária, sem ferramenta (REVISAO_SETTINGS no Claude; os outros só entram
+    com `"material": true` no manifesto). Os de nuvem rodam fora da caixa sem rede (precisam
+    de rede e do login da home); só o local (`"local": true`) roda dentro dela."""
     RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
     m = manifesto_revisao(agente) or {}
     scratch = Path(tempfile.mkdtemp(prefix="revisor-"))
     settings = scratch / "settings.json"
     saida = scratch / "saida.md"
     mcp = scratch / "mcp.json"
-    settings.write_text(json.dumps(READ_ONLY_SETTINGS), encoding="utf-8")
+    vazio = scratch / "vazio"
+    vazio.mkdir()
+    settings.write_text(json.dumps(REVISAO_SETTINGS), encoding="utf-8")
     saida.write_text("", encoding="utf-8")
     mcp.write_text('{"mcpServers":{}}', encoding="utf-8")
     argv, entrada = comando_revisao(agente, conf, {"prompt": texto, "saida": str(saida),
@@ -2675,9 +2804,9 @@ def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
     out = ""
     try:
         if m.get("local"):
-            proc = caixa.executar(argv, cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada, escritas=[scratch])
+            proc = caixa.executar(argv, vazio, timeout=CLAUDE_TIMEOUT_S, inp=entrada, escritas=[scratch])
         else:
-            proc = caixa.executar_com_rede(argv, cwd, timeout=CLAUDE_TIMEOUT_S, inp=entrada)
+            proc = caixa.executar_com_rede(argv, vazio, timeout=CLAUDE_TIMEOUT_S, inp=entrada)
         out = proc.stdout or ""
         err = proc.stderr or ""
         if m.get("saida") == "arquivo":
@@ -2720,7 +2849,7 @@ def ordem_revisao(revisor: str, conf: dict, so_sozinho: bool = False, instalado=
             out.append(a)
     if revisor not in out:
         out.insert(0, revisor)
-    validos = set(revisores_catalogo())
+    validos = {a for a in revisores_catalogo() if le_material(a)}
     out = [a for a in out if a in validos and instalado(AGENTES.get(a, {}).get("cli") or a)
            and privacidade_ok(a, str((conf.get(a) or {}).get("modelo") or ""))[0]]
     if so_sozinho:
@@ -2728,21 +2857,29 @@ def ordem_revisao(revisor: str, conf: dict, so_sozinho: bool = False, instalado=
     return out
 
 
-def revisar(texto: str, cwd: Path, tag: str, revisor: str, conf: dict, so_sozinho: bool = False,
-            esforco: str | None = None) -> tuple[str, str]:
-    """Roda a revisão na ordem de `ordem_revisao`; Claude no limite é pulado. (texto, quem revisou)."""
+def revisar(texto: str, tag: str, revisor: str, conf: dict, so_sozinho: bool = False,
+            esforco: str | None = None, material: dict | None = None) -> tuple[str, str]:
+    """Roda a revisão na ordem de `ordem_revisao`; Claude no limite é pulado. (texto, quem revisou).
+    Com `material`, a resposta que não prova leitura (`motivo_sem_leitura`) não conta: passa ao
+    próximo, e o motivo vai para o painel."""
     erros: list[str] = []
     for a in ordem_revisao(revisor, conf, so_sozinho):
         if a == "claude" and agent_paused():
             erros.append("claude: conta no limite")
             continue
         try:
-            out = run_revisor(a, texto, cwd, tag, conf, esforco=esforco)
+            out = run_revisor(a, texto, tag, conf, esforco=esforco)
         except caixa.SegredoDetectado:
             raise
         except Exception as exc:  # noqa: BLE001
             log(f"{tag}: revisor {a} falhou ({str(exc)[:160]}); tento o próximo")
             erros.append(f"{a}: {str(exc)[:80]}")
+            continue
+        motivo = motivo_sem_leitura(out, material)
+        if motivo:
+            log(f"{tag}: resposta de {a} recusada ({motivo}); tento o próximo")
+            panel(f"{tag}: resposta de {a} não vale como revisão ({motivo})")
+            erros.append(f"{a}: {motivo}")
             continue
         if a != revisor:
             panel(f"{tag}: revisão feita por {a} (o escolhido, {revisor}, não respondeu)")
@@ -2820,13 +2957,37 @@ def avisar_pr_sem_card(pr: dict, st: dict, agora: float | None = None) -> None:
         panel(f"PR #{pr['number']} sem card está sem APROVADO há {horas} h; revise ou mergeie à mão")
 
 
+def descrever_material(material: dict) -> str:
+    """Rodapé do [Revisor]: o que foi lido, para a aprovação ficar presa ao material."""
+    sem = f", {len(material['fora'])} só pelo diff" if material["fora"] else ""
+    return f"material `{material['hash']}` ({len(material['arquivos'])} arquivos{sem})"
+
+
+def avisar_material_parcial(pr: dict, ci: dict | None, st: dict, diary: list[str]) -> None:
+    """Diff maior que o teto: nenhum revisor lê o PR inteiro, então ninguém aprova. Para o
+    head e chama o dono uma vez (FRA-656)."""
+    head = pr["headRefOid"]
+    st["reviewed"][head] = "parcial"
+    msg = (f"PR #{pr['number']} head {head[:7]}: diff maior que {MATERIAL_TETO_DIFF // 1000} mil caracteres; "
+           "a revisão automática não lê o PR inteiro e não aprova. Divida o PR ou revise à mão")
+    panel(msg)
+    diary.append(f"Revisor · {msg}")
+    if ci:
+        comment(ci["id"], f"[Gestor] ⚠️ {msg}.")
+
+
 def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> bool | None:
     """Revisa o head do PR. False = não rodou IA (esperando quem confirma)."""
     rdir = repo["dir"]
     sh(["git", "fetch", "--quiet", "origin"], cwd=rdir, timeout=180)
     card = card_of(pr["title"], pr["headRefName"])
     ci = issue(card) if card else None
-    stat = sh(["git", "diff", "--stat", f"origin/main...origin/{pr['headRefName']}"], cwd=rdir)[-4000:]
+    stat = sh(["git", "diff", "--stat", f"origin/main...{pr['headRefOid']}"], cwd=rdir)[-4000:]
+    head = pr["headRefOid"]
+    material = montar_material(rdir, head)
+    if material["parcial"]:
+        avisar_material_parcial(pr, ci, st, diary)
+        return
     lane = lane_of(ci)
     conf = conf_revisor()
     esforco = esforco_do_card(ci) if ci else "medio"
@@ -2840,12 +3001,11 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
             sha=pr["headRefOid"], sha7=pr["headRefOid"], merge_state=pr.get("mergeStateStatus"),
             card=card or "(nenhum no título/branch)", card_desc=(ci or {}).get("description", "")[:6000] or "(sem card)",
             card_comments=fmt_comments(ci), stat=stat, protected=", ".join(protected()), lane=lane,
-            known_errors=known_errors(),
+            known_errors=known_errors(), material=material["texto"], revisor=rev,
             same_model=(" O revisor é do mesmo fornecedor da lane que escreveu o PR: diga no topo que é "
                         "pré-review (mesmo fornecedor).") if mesmo else "",
         )
     tag = f"revisor-{key}-{pr['number']}"
-    head = pr["headRefOid"]
     guardadas = st.setdefault("segundas_opinioes", {})
     if papel(revisor, conf) == "segunda_opiniao" and not quem_confirma(lane, conf):
         # Ninguém pode confirmar agora (Claude sem cota): nem chama a segunda opinião, que seria jogada fora.
@@ -2856,7 +3016,7 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         text, revisor = TAG_REVISOR + " REVISOR: APROVADO", guardadas[head]["revisor"]
     else:
         try:
-            text, revisor = revisar(montar(revisor), rdir, tag, revisor, conf, esforco=esforco)
+            text, revisor = revisar(montar(revisor), tag, revisor, conf, esforco=esforco, material=material)
         except caixa.SegredoDetectado:
             chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
             st["reviewed"][head] = "segredo"
@@ -2877,8 +3037,8 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         primeiro = revisor
         conf_rev, obs2 = escolher_revisor(lane, conf, so_sozinho=True)
         try:
-            text, revisor = revisar(montar(conf_rev), rdir, tag + "-confirma", conf_rev, conf, so_sozinho=True,
-                                    esforco=esforco)
+            text, revisor = revisar(montar(conf_rev), tag + "-confirma", conf_rev, conf, so_sozinho=True,
+                                    esforco=esforco, material=material)
         except caixa.SegredoDetectado:
             chamar_dono_segredo(ci, diary, f"PR #{pr['number']} head {head[:7]}")
             st["reviewed"][head] = "segredo"
@@ -2905,6 +3065,7 @@ def review_pr(key: str, repo: dict, pr: dict, st: dict, diary: list[str]) -> boo
         return
     if papel(revisor, conf) == "segunda_opiniao":
         extra = "segunda opinião" + (f"; {extra}" if extra else "")
+    extra = (f"{extra} · " if extra else "") + descrever_material(material)
     text = text + rodape_revisor(revisor, conf, extra)
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
         fh.write(text)

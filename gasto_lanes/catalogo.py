@@ -72,7 +72,7 @@ EMBUTIDOS_JSON = """\
   "medio": {"id": "opus", "flags": ["--model", "opus", "--effort", "high"]},
   "alto": {"id": "opus", "flags": ["--model", "opus", "--effort", "xhigh"]}
   },
-"revisao": {"papel": "sozinho", "auto": true, "comando": ["claude", "-p", "--output-format", "text", "--permission-mode", "default", "--settings", "{settings}", "--strict-mcp-config", "--mcp-config", "{mcp}", "--max-budget-usd", "{teto}", "{flags}"], "flag_modelo": ["--model", "{modelo}"], "flag_esforco": ["--effort", "{esforco}"], "entrada": "stdin", "saida": "stdout", "modelos": ["haiku", "sonnet", "opus"], "modelo_padrao": "opus", "esforcos": ["low", "medium", "high", "xhigh"], "esforco_padrao": "high"},
+"revisao": {"papel": "sozinho", "auto": true, "comando": ["claude", "-p", "--output-format", "text", "--permission-mode", "default", "--settings", "{settings}", "--strict-mcp-config", "--mcp-config", "{mcp}", "--max-budget-usd", "{teto}", "{flags}"], "flag_modelo": ["--model", "{modelo}"], "flag_esforco": ["--effort", "{esforco}"], "entrada": "stdin", "saida": "stdout", "modelos": ["haiku", "sonnet", "opus"], "modelo_padrao": "opus", "esforcos": ["low", "medium", "high", "xhigh"], "esforco_padrao": "high", "material": true},
 "instalar": {"comando": "curl -fsSL https://claude.ai/install.sh | bash", "entrar": "claude", "dica_entrar": "Na primeira vez o Claude Code abre o navegador para você entrar. Depois digite /exit.", "docs": "https://code.claude.com/docs/en/setup"},
 "uso": {
   "tipo": "claude",
@@ -345,7 +345,10 @@ def _revisao(r) -> dict | None:
             "esforcos": tuple(r.get("esforcos") or ()),
             "esforco_padrao": r.get("esforco_padrao") or "",
             # Revisor que roda sem rede (modelo local): fica na caixa de leitura do vigia.
-            "local": r.get("local") is True}
+            "local": r.get("local") is True,
+            # FRA-656: a chamada de revisão deste CLI não dá disco nem shell; o agente lê só o
+            # material do prompt. Sem isto o vigia não usa o agente para revisar.
+            "material": r.get("material") is True}
 
 
 def revisores() -> tuple:

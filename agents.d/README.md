@@ -130,5 +130,25 @@ Sem o bloco, não revisa (ex.: cursor, sem CLI sem tela). Quem roda é o `bots/w
 | `papel` | `sozinho` (aprova e bloqueia) ou `segunda_opiniao` (só bloqueia; aprovação é confirmada por um `sozinho`) |
 | `auto` | entra na reserva automática. `false` = só se escolhido à mão (ex.: modelo free que treina com os dados) |
 | `modelos`, `modelo_padrao`, `esforcos`, `esforco_padrao` | opções que a tela de Ajustes mostra |
+| `material` | `true` = a chamada de revisão deste CLI **não dá disco nem shell** ao agente, e ele revisa só o material do prompt. Sem `true`, o vigia não usa o agente para revisar |
+
+### Como a revisão funciona (FRA-656)
+
+Uma função central faz a revisão. É igual para todos os agentes:
+
+1. **Material.** O vigia monta o material com `montar_material`, a partir do objeto git da head: o diff `origin/main...<sha>` e o conteúdo, na head, dos arquivos alterados. Nada vem de pasta de lane nem do disco de trabalho. Diff com mais de 60 mil caracteres é parcial: o vigia não revisa e chama o dono.
+2. **Prompt.** O prompt é um só (`bots/prompts/revisor.md`, que vai no bundle assinado) e já traz o material.
+3. **Chamada.** O agente roda numa pasta vazia e temporária. É o único passo que muda por agente: o manifesto diz como chamar o CLI. O Claude usa `REVISAO_SETTINGS`, sem nenhuma ferramenta.
+4. **Conferência.** A resposta só vale se:
+   - trouxer o SHA completo da head;
+   - não disser que não leu o código;
+   - citar ao menos um arquivo do material.
+
+   Se não valer, passa ao próximo da ordem e o motivo vai para o painel.
+
+Um agente só ganha `material: true` depois de uma sonda manual provar duas coisas: que a chamada dele não lê o disco e que ele responde com base no material. A sonda de 09/11 aprovou só o Claude:
+- o Grok lia fora do repositório;
+- o OpenCode respondia com dados de outro projeto, porque o `opencode run` usa o serviço em segundo plano, que está em outro projeto;
+- o Codex e o OpenCode-go estavam sem cota e não puderam ser testados.
 
 A resposta passa por `limpar_saida` (tira cor de terminal e o que vem antes de `[Revisor]`).
