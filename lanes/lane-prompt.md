@@ -31,7 +31,7 @@ Não rode o build e não rode a suíte de testes. Não chame o comando de prova 
 
 No `result.json`, o campo `tests` lista as suítes que o dispatcher deve rodar. Exemplo: `["MinhaSuiteTests"]`.
 
-O card só segue quando a prova do dispatcher imprimir, em cada suíte, a linha `Executed N tests, with 0 failures` com N maior que zero. Você não escreve essa linha e não afirma que a prova passou. Você entrega o código, os commits e o `result.json`.
+O card só segue quando a prova do dispatcher provar, em cada suíte, uma das duas formas: a linha `Executed N tests, with 0 failures` com N maior que zero (XCTest) ou as linhas `Ran N tests` seguidas de `OK` (unittest). Você não escreve essa linha nem afirma que a prova passou. Você entrega o código, os commits e o `result.json`.
 
 ## result.json
 

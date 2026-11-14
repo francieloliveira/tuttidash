@@ -845,7 +845,7 @@ INSTR_RE = re.compile(r"^INSTRU[ÇC][ÃA]O:\s*(.+)$", re.M | re.I)
 
 def stop_note(ci: dict, text: str, count: int, reason: str) -> str | None:
     """Contramedida FRA-326 (11/10): a instrução da triagem ficava só no comentário e a lane só lê a
-    descrição, então parou 3x pelo mesmo E1. Devolve o bloco para o topo da descrição, ou None se
+    descrição: a parada repetia pela mesma instrução. Devolve o bloco para o topo da descrição, ou None se
     não há instrução ou ela já está lá."""
     m = INSTR_RE.search(text)
     if not m:
