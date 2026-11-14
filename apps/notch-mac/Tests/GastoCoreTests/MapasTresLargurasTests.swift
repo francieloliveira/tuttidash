@@ -204,6 +204,63 @@ final class MapasTresLargurasTests: XCTestCase {
         XCTAssertEqual(quadros.map(\.bloco), embaralhados)
     }
 
+    // MARK: Prioridade fixa do celular (FRA-654)
+
+    func testCelularUsaAPrioridadeFixaQualquerQueSejaAOrdemDeEntrada() {
+        let embaralhados: [BlocoPainel] = [
+            .custos, .builds, .log, .alertas, .entregas, .lanes, .dispatcher, .testes,
+        ]
+        let quadros = MapasTresLarguras.molduras(embaralhados, em: .celular)
+
+        XCTAssertEqual(quadros.map(\.bloco), visiveisCelular)
+        XCTAssertEqual(quadros.map(\.fileira), [0, 1, 2, 3, 4, 5])
+        XCTAssertEqual(quadros.map(\.span), [1, 1, 1, 1, 1, 1])
+        XCTAssertFalse(quadros.contains { $0.bloco == .log || $0.bloco == .custos })
+    }
+
+    func testCelularDeclaraPrioridadeUnicaParaOsBlocosVisiveis() {
+        let celular = MapasTresLarguras.celular
+        let prioridades = visiveisCelular.map { celular.prioridade($0) }
+        XCTAssertEqual(prioridades, Array(0..<visiveisCelular.count))
+        XCTAssertEqual(Set(prioridades).count, visiveisCelular.count)
+    }
+
+    func testCelularMantemAOrdemRecebidaNoEmpateDePrioridade() {
+        let mapa = MapaLargura.declarado(
+            tela: .celular, colunas: 1, ocultos: [], spans: [:],
+            usaTamanhosGravados: false,
+            prioridades: [.alertas: 1, .lanes: 1, .testes: 1])
+        let empatados: [BlocoPainel] = [.testes, .alertas, .lanes]
+
+        XCTAssertEqual(MapasTresLarguras.molduras(empatados, mapa: mapa).map(\.bloco),
+                       empatados)
+    }
+
+    func testCelularNaoMudaComTamanhosGravadosDiferentes() {
+        let semEscolha = MapasTresLarguras.molduras(todos, em: .celular)
+
+        var escolhidos = TamanhosCards()
+        escolhidos.escolher(12, para: .alertas)
+        escolhidos.escolher(1, para: .lanes)
+        escolhidos.escolher(12, para: .testes)
+        escolhidos.escolher(1, para: .builds)
+        escolhidos.escolher(12, para: .dispatcher)
+        escolhidos.escolher(1, para: .entregas)
+        let comEscolha = MapasTresLarguras.molduras(Array(todos.reversed()), em: .celular,
+                                                    tamanhos: escolhidos)
+
+        XCTAssertEqual(comEscolha, semEscolha)
+    }
+
+    func testTabletETelaLargaContinuamNaOrdemRecebida() {
+        let embaralhados: [BlocoPainel] = [.custos, .lanes, .alertas]
+
+        XCTAssertEqual(MapasTresLarguras.molduras(embaralhados, em: .tablet).map(\.bloco),
+                       embaralhados)
+        XCTAssertEqual(MapasTresLarguras.molduras(embaralhados, em: .telaLarga).map(\.bloco),
+                       embaralhados)
+    }
+
     func testSemBlocosNaoHaQuadros() {
         XCTAssertTrue(MapasTresLarguras.molduras([], em: .telaLarga).isEmpty)
         XCTAssertTrue(MapasTresLarguras.molduras([], em: .tablet).isEmpty)
