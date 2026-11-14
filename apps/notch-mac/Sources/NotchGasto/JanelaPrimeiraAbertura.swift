@@ -17,6 +17,7 @@ final class JanelaPrimeiraAbertura {
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
         w.setContentSize(NSSize(width: 620, height: 520))
+        w.appearance = NSAppearance(named: .darkAqua)
         w.center()
         janela = w
         NSApp.activate(ignoringOtherApps: true)
@@ -38,8 +39,34 @@ struct TelaPrimeiraAbertura: View {
 
     var body: some View {
         ComEscalaTexto {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(titulos[passo]).font(.title2.bold())
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 11) {
+                MarcaAurora(tamanho: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: "TuttiDash")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Aurora.texto)
+                    Text(String(localized: "Configuração inicial"))
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(Aurora.mudo)
+                }
+                Spacer(minLength: 8)
+                Text(String(localized: "Passo \(passo + 1) de \(titulos.count)"))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Aurora.mudo)
+            }
+            HStack(spacing: 5) {
+                ForEach(0..<titulos.count, id: \.self) { i in
+                    Capsule()
+                        .fill(i <= passo ? AnyShapeStyle(Aurora.gradienteBotao)
+                                         : AnyShapeStyle(Color.white.opacity(0.09)))
+                        .frame(height: 3)
+                }
+            }
+            Text(titulos[passo])
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(Aurora.texto)
             Group {
                 switch passo {
                 case 0: boasVindas
@@ -54,20 +81,31 @@ struct TelaPrimeiraAbertura: View {
                         .foregroundStyle(.secondary)
                     SecaoAgendas(estado: EstadoAgendas(modelo: modelo)) }.formStyle(.grouped)
                 default: Text(String(localized: "Tudo certo. Você pode mudar qualquer escolha depois na engrenagem do painel."))
+                    .foregroundStyle(Aurora.texto2)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            if let erro { Text(erro).font(.caption).foregroundStyle(.red) }
-            HStack {
-                if passo > 0 { Button(String(localized: "Voltar")) { passo -= 1 } }
+            if let erro { Text(erro).font(.caption).foregroundStyle(Aurora.vermelho) }
+            HStack(spacing: 8) {
+                if passo > 0 {
+                    Button(String(localized: "Voltar")) { passo -= 1 }
+                        .buttonStyle(EstiloBotaoSecundario(compacto: true))
+                }
                 Spacer()
-                if (2...4).contains(passo) { Button(String(localized: "Pular")) { passo += 1 } }
+                if (2...4).contains(passo) {
+                    Button(String(localized: "Pular")) { passo += 1 }
+                        .buttonStyle(EstiloBotaoSecundario(compacto: true))
+                }
                 Button(passo == titulos.count - 1 ? String(localized: "Concluir") : String(localized: "Continuar")) { avancar() }
+                    .buttonStyle(EstiloBotaoPrincipal(compacto: true))
                     .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
+        .padding(22)
         .frame(minWidth: 600, minHeight: 500)
+        .background(FundoAurora())
+        .environment(\.colorScheme, .dark)
+        .foregroundStyle(Aurora.texto)
         }
     }
 

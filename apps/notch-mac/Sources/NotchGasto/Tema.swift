@@ -11,9 +11,9 @@ enum Tema {
             (d.nome, (Color(hex: d.corBase), Color(hex: d.corGradiente), Color(hex: d.corClaro)))
         }, uniquingKeysWith: { a, _ in a })
 
-    static let ok = Color(hex: 0x32D74B)
-    static let warn = Color(hex: 0xFFD23F)
-    static let bad = Color(hex: 0xFF453A)
+    static let ok = Aurora.verde
+    static let warn = Aurora.ambar
+    static let bad = Aurora.vermelho
 
     static let t1 = Color.white.opacity(0.96)
     static let t2 = Color.white.opacity(0.62)
@@ -75,17 +75,18 @@ enum Tema {
     }
 }
 
-/// Cores do primeiro protótipo do painel (FRA-412).
+/// Cores do primeiro protótipo do painel (FRA-412). Apontam para Aurora:
+/// notch, pílula da barra e mensagens usam a mesma paleta do painel.
 enum TemaPainel {
-    static let ciano = Color(hex: 0x3DE8FF)
-    static let violeta = Color(hex: 0x9B7BFF)
-    static let verde = Color(hex: 0x3DFFA8)
-    static let vermelho = Color(hex: 0xFF4D6D)
-    static let amarelo = Color(hex: 0xFFC857)
-    static let texto = Color(hex: 0xE6F0FF)
-    static let mudo = Color(hex: 0x7F93B5)
-    static let fundo = Color(hex: 0x05070F)
-    static let apagado = Color(hex: 0x3A425A)
+    static let ciano = Aurora.ciano
+    static let violeta = Aurora.violeta
+    static let verde = Aurora.verde
+    static let vermelho = Aurora.vermelho
+    static let amarelo = Aurora.ambar
+    static let texto = Aurora.texto
+    static let mudo = Aurora.mudo
+    static let fundo = Aurora.base
+    static let apagado = Aurora.apagado
 
     /// Cor da lane no painel v1: o campo `corPainel` do manifesto em `agents.d/`.
     /// Lane sem cor no manifesto cai na cor da lane (`Tema.cor`).
@@ -143,6 +144,6 @@ extension Color {
 
 extension Font {
     static func sf(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight)
+        .system(size: size, weight: weight, design: .rounded)
     }
 }

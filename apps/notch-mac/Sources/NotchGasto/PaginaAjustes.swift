@@ -280,7 +280,9 @@ struct ResultadosBusca: View {
 
     var body: some View {
         let r = CatalogoAjustes.buscar(termo)
-        let secoes = Dictionary(uniqueKeysWithValues: CatalogoAjustes.secoes().map { ($0.id, $0.nome) })
+        // uniquingKeysWith: duas seções com o mesmo id (catálogo futuro) não derrubam a tela.
+        let secoes = Dictionary(CatalogoAjustes.secoes().map { ($0.id, $0.nome) },
+                                uniquingKeysWith: { a, _ in a })
         Form {
             if r.isEmpty {
                 Section {

@@ -12,6 +12,7 @@ struct DashboardPainel: View {
     @State private var alertasFechados: [String]?
     @State private var verAlertas = false
     @State private var expandida: String?
+    @Environment(\.fatorTexto) private var fator
 
     private var snap: SnapshotPainel? { modelo.snapshot }
     private var ind: IndicadoresPainel { snap?.indicadores ?? .vazio }
@@ -23,15 +24,19 @@ struct DashboardPainel: View {
             .frame(width: largura, alignment: .topLeading)
     }
 
+    /// As seções têm altura fixa em 1×; o ⌘+ escala o texto, então a altura cresce junto
+    /// (senão o texto grande é cortado pelo `clipped` dos cartões).
+    private var escala: CGFloat { max(fator, 1) }
+
     private func conteudo(largura: CGFloat) -> some View {
         TimelineView(.periodic(from: .now, by: 30)) { ctx in
             VStack(spacing: 0) {
-                kpis(largura).frame(height: 88).padding(.top, 10)
+                kpis(largura).frame(height: 82 * escala).padding(.top, 14)
                 if alertasFechados == nil || alertasFechados != alertas {
-                    faixaAlertas.frame(height: 44).padding(.top, 13)
+                    faixaAlertas.frame(height: 42 * escala).padding(.top, 12)
                 }
-                meio(largura, agora: ctx.date).frame(height: 430).padding(.top, 14)
-                custos(largura, agora: ctx.date).frame(height: 228).padding(.top, 13)
+                meio(largura, agora: ctx.date).frame(height: 430 * escala).padding(.top, 12)
+                custos(largura, agora: ctx.date).frame(height: 228 * escala).padding(.top, 12)
             }
         }
     }
@@ -41,7 +46,7 @@ struct DashboardPainel: View {
     private func kpis(_ largura: CGFloat) -> some View {
         let k = (largura - 48) / 1300
         return HStack(spacing: 16) {
-            kpi(icone: IconeCartao(simbolo: "square.3.layers.3d", cor: PV.teal, fundo: PV.tealFundo, tamanho: 54, tamanhoIcone: 26),
+            kpi(icone: IconeCartao(simbolo: "square.3.layers.3d", cor: PV.teal, fundo: PV.tealFundo, tamanho: 46, tamanhoIcone: 21),
                 rotulo: "Lanes ativas", valor: "\(ind.lanesAtivas) / \(ind.lanesTotal)", espaco: 16,
                 larguraMinimaDelta: 195, larguraMinimaAbaixo: 316, larguraMinimaDireita: 295) {
                 // Mock: sem histórico do nº de lanes ativas, a variação não tem número.
@@ -54,7 +59,7 @@ struct DashboardPainel: View {
             .frame(width: 316 * k)
             .clipped()
 
-            kpi(icone: IconeCartao(simbolo: "bolt", cor: PV.azulIcone, fundo: PV.azulFundo, tamanho: 54, tamanhoIcone: 25),
+            kpi(icone: IconeCartao(simbolo: "bolt", cor: PV.azulIcone, fundo: PV.azulFundo, tamanho: 46, tamanhoIcone: 21),
                 rotulo: "Builds hoje", valor: "\(ind.buildsHoje)", espaco: 12,
                 larguraMinimaDelta: 185, larguraMinimaDireita: 265) {
                 variacao(ind.buildsHoje - ind.buildsOntem, sobeBom: true)
@@ -68,7 +73,7 @@ struct DashboardPainel: View {
             .frame(width: 296 * k)
             .clipped()
 
-            kpi(icone: IconeCartao(simbolo: "xmark.circle", cor: PV.vermelho, fundo: PV.vermelhoFundo, tamanho: 54, tamanhoIcone: 27),
+            kpi(icone: IconeCartao(simbolo: "xmark.circle", cor: PV.vermelho, fundo: PV.vermelhoFundo, tamanho: 46, tamanhoIcone: 22),
                 rotulo: "Falhas (24h)", valor: "\(ind.falhas24h)", espaco: 14,
                 larguraMinimaDelta: 195, larguraMinimaDireita: 275) {
                 Text(ind.falhasPct.map { Formato.pct($0) } ?? "—").fontePainel(13, .semibold).foregroundStyle(PV.vermelho)
@@ -79,7 +84,7 @@ struct DashboardPainel: View {
             .frame(width: 336 * k)
             .clipped()
 
-            kpi(icone: IconeCartao(simbolo: "cylinder.split.1x2", cor: PV.dourado, fundo: PV.ambarFundo, tamanho: 54, tamanhoIcone: 25),
+            kpi(icone: IconeCartao(simbolo: "cylinder.split.1x2", cor: PV.dourado, fundo: PV.ambarFundo, tamanho: 46, tamanhoIcone: 21),
                 rotulo: "Custo (7 dias)", valor: snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", espaco: 12,
                 larguraMinimaDelta: 235, larguraMinimaDireita: 290) {
                 variacaoCusto
@@ -117,11 +122,22 @@ struct DashboardPainel: View {
         return ComEspacoDoCard { espacoDoCard in
             let visiveis = Set(DegradacaoCard.visiveis(pecas, em: espacoDoCard))
             HStack(spacing: 0) {
-                if visiveis.contains("icone") { icone.padding(.trailing, 18) }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(rotulo).fontePainel(13).foregroundStyle(PV.texto2).fixedSize()
-                    HStack(spacing: espaco) {
-                        Text(valor).fontePainel(24, .bold).lineLimit(1).fixedSize()
+                if visiveis.contains("icone") { icone.padding(.trailing, 14) }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(rotulo.uppercased())
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .tracking(0.7)
+                        .foregroundStyle(Aurora.mudo)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    HStack(alignment: .firstTextBaseline, spacing: espaco) {
+                        Text(valor)
+                            .font(.system(size: 25, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Aurora.texto)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .fixedSize()
                             .contentTransition(.numericText())
                             .animation(DS.anim(DS.mola), value: valor)
                         if visiveis.contains("delta") { delta().fixedSize() }
@@ -132,13 +148,9 @@ struct DashboardPainel: View {
                 Spacer(minLength: 0)
                 if visiveis.contains("direita") { direita() }
             }
-            .padding(.leading, 16).padding(.trailing, 22)
+            .padding(.leading, 15).padding(.trailing, 18)
             .frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(LinearGradient(colors: [PV.kpiTopo, PV.kpiBase], startPoint: .top, endPoint: .bottom)))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.1), PV.kpiBorda], startPoint: .top, endPoint: .bottom), lineWidth: 1))
-            .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+            .vidroAurora(raio: 16)
         }
     }
 
@@ -153,8 +165,13 @@ struct DashboardPainel: View {
     private var variacaoCusto: some View {
         Group {
             if let v = ind.variacaoSemanaPct {
-                Text(v >= 0 ? "↑ \(Formato.pct(abs(v)))" : "↓ \(Formato.pct(abs(v)))")
-                    .foregroundStyle(v > 0 ? PV.vermelho : PV.verde)
+                if abs(v) < 0.5 {
+                    // Sem variação não é «subiu 0%»: o traço neutro diz a mesma coisa sem alarme.
+                    Text("= 0%").foregroundStyle(PV.mudo)
+                } else {
+                    Text(v > 0 ? "↑ \(Formato.pct(abs(v)))" : "↓ \(Formato.pct(abs(v)))")
+                        .foregroundStyle(v > 0 ? PV.vermelho : PV.verde)
+                }
             } else {
                 Text("—").foregroundStyle(PV.mudo)
             }
@@ -167,18 +184,27 @@ struct DashboardPainel: View {
 
     private var faixaAlertas: some View {
         let vazio = alertas.isEmpty
-        return HStack(spacing: 10) {
-            Image(systemName: vazio ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 17)).foregroundStyle(vazio ? PV.verde : Color(hex: 0xF5A524))
-            Text("ALERTAS").fontePainel(12.5, .bold).tracking(0.2)
-                .foregroundStyle(vazio ? PV.mudo : Color(hex: 0xFF5A6E)).padding(.trailing, 11)
+        return HStack(spacing: 11) {
+            Image(systemName: vazio ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(vazio ? Aurora.verde : Aurora.ambar)
+            Text("ALERTAS")
+                .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                .tracking(0.9)
+                .foregroundStyle(vazio ? Aurora.mudo : Aurora.vermelho)
+                .padding(.trailing, 8)
             if vazio {
-                Text("Nenhum alerta agora").fontePainel(12.5).foregroundStyle(PV.texto)
+                Text("Nenhum alerta agora")
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(Aurora.texto2)
             } else {
-                HStack(spacing: 14) {
+                HStack(spacing: 12) {
                     ForEach(Array(alertas.enumerated()), id: \.offset) { i, a in
-                        if i > 0 { Text("•").foregroundStyle(PV.vermelho) }
-                        Text(a.hasSuffix(".") ? String(a.dropLast()) : a).fontePainel(12.5).lineLimit(1)
+                        if i > 0 { Circle().fill(Aurora.vermelho.opacity(0.7)).frame(width: 3, height: 3) }
+                        Text(a.hasSuffix(".") ? String(a.dropLast()) : a)
+                            .font(.system(size: 12.5, design: .rounded))
+                            .foregroundStyle(Aurora.texto2)
+                            .lineLimit(1)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -187,58 +213,72 @@ struct DashboardPainel: View {
             Spacer(minLength: 8)
             if !vazio {
                 Button { verAlertas.toggle() } label: {
-                    HStack(spacing: 8) {
-                        Text("Ver detalhes").underline()
-                        Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold))
+                    HStack(spacing: 6) {
+                        Text("Ver detalhes")
+                        Image(systemName: "arrow.right").font(.system(size: 10, weight: .semibold))
                     }
-                    .fontePainel(12.5).foregroundStyle(PV.azul)
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Aurora.azul)
+                    .padding(.horizontal, 11)
+                    .frame(height: 26)
+                    .background(Capsule().fill(Aurora.azul.opacity(0.10)))
+                    .overlay(Capsule().strokeBorder(Aurora.azul.opacity(0.28), lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Pressionavel())
                 .popover(isPresented: $verAlertas, arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        RotuloSecao(titulo: "Alertas", icone: "exclamationmark.triangle.fill", cor: Aurora.vermelho)
                         ForEach(Array(alertas.enumerated()), id: \.offset) { _, a in
                             HStack(alignment: .top, spacing: 8) {
-                                Circle().fill(PV.vermelho).frame(width: 6, height: 6).padding(.top, 5)
-                                Text(a).fontePainel(12.5).fixedSize(horizontal: false, vertical: true)
+                                Circle().fill(Aurora.vermelho).frame(width: 5, height: 5).padding(.top, 5)
+                                Text(a)
+                                    .font(.system(size: 12.5, design: .rounded))
+                                    .foregroundStyle(Aurora.texto2)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     }
                     .padding(14).frame(width: 380, alignment: .leading)
                 }
                 Button { alertasFechados = alertas } label: {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color(hex: 0x7F8EA8))
-                        .frame(width: 44, height: 40).contentShape(Rectangle())
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Aurora.mudo)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.white.opacity(0.05)))
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 14)
+                .buttonStyle(Pressionavel())
+                .padding(.leading, 4)
                 .help("Esconder até a lista de alertas mudar")
+                .accessibilityLabel("Esconder alertas")
             }
         }
         .padding(.leading, 16).padding(.trailing, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(
-            vazio ? AnyShapeStyle(PV.cartao)
-                  : AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x2A1324), Color(hex: 0x1C1121), Color(hex: 0x1A1222)],
-                                                 startPoint: .leading, endPoint: .trailing))))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(vazio ? PV.cartaoBorda : Color(hex: 0x873D4E), lineWidth: 1))
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(vazio ? Color.white.opacity(0.035) : Aurora.vermelho.opacity(0.09))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(vazio ? Color.white.opacity(0.07) : Aurora.vermelho.opacity(0.28), lineWidth: 1))
     }
 
     // MARK: Linha do meio
 
     private func meio(_ largura: CGFloat, agora: Date) -> some View {
         let m = (largura - 26) / 1322
-        return HStack(alignment: .top, spacing: 13) {
+        return HStack(alignment: .top, spacing: 14) {
             cartaoLanes(agora: agora).frame(width: 474 * m).clipped()
             VStack(spacing: 12) {
-                cartaoBuilds(agora: agora).frame(height: 164)
-                cartaoTestes.frame(height: 254)
+                cartaoBuilds(agora: agora).frame(height: 164 * escala)
+                cartaoTestes.frame(height: 254 * escala)
             }
             .frame(width: 409 * m)
             .clipped()
             VStack(spacing: 12) {
-                cartaoDispatcher.frame(height: 224)
-                cartaoEntregas(agora: agora).frame(height: 194)
+                cartaoDispatcher.frame(height: 224 * escala)
+                cartaoEntregas(agora: agora).frame(height: 194 * escala)
             }
             .frame(width: 439 * m)
             .clipped()
@@ -287,39 +327,52 @@ struct DashboardPainel: View {
                 CabecalhoCartao(icone: IconeCartao(simbolo: "cube", tamanhoIcone: 19), titulo: "Builds", subtitulo: "Lock de build e fila") {
                     BotaoVer(texto: "Ver fila") { ir(.builds) }
                 }
-                HStack(alignment: .top, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Lock de build").fontePainel(12.5)
-                        HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 8).fill(livre ? PV.verdeFundo : PV.ambarFundo)
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        RotuloSecao(titulo: "Lock de build")
+                        HStack(spacing: 11) {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill((livre ? Aurora.verde : Aurora.ambar).opacity(0.14))
                                 .frame(width: 34, height: 34)
                                 .overlay(Image(systemName: livre ? "lock.open.fill" : "lock.fill")
-                                    .font(.system(size: 16)).foregroundStyle(livre ? Color(hex: 0x12E3B0) : PV.ambar))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(livre ? "Livre" : "Ocupado").fontePainel(15, .semibold)
-                                    .foregroundStyle(livre ? PV.verdeClaro : PV.ambar)
-                                Text(livre ? "sem lock" : textoLock).fontePainel(12).foregroundStyle(PV.mudo).lineLimit(1)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(livre ? Aurora.verde : Aurora.ambar))
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder((livre ? Aurora.verde : Aurora.ambar).opacity(0.24), lineWidth: 1))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(livre ? "Livre" : "Ocupado")
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(livre ? Aurora.verde : Aurora.ambar)
+                                Text(livre ? "sem lock" : textoLock)
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Aurora.mudo)
+                                    .lineLimit(1)
                             }
                         }
                     }
                     .padding(10)
-                    .frame(width: 167, alignment: .leading)
+                    .frame(width: 172, alignment: .leading)
                     .frame(maxHeight: .infinity, alignment: .topLeading)
                     .linhaPV(borda: false)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Fila (\(fila.count))").fontePainel(12.5).foregroundStyle(PV.texto2)
+                        RotuloSecao(titulo: "Fila (\(fila.count))")
                         if fila.isEmpty {
-                            Text("vazia").fontePainel(12.5).foregroundStyle(PV.mudo)
+                            Text("fila vazia")
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundStyle(Aurora.mudo)
                         }
                         ForEach(Array(fila.prefix(2).enumerated()), id: \.offset) { _, carta in
-                            HStack(spacing: 10) {
+                            HStack(spacing: 9) {
                                 // Mock: item da fila ainda não é execução, então não tem `#N`.
-                                Text("#—").fontePainel(12.5).foregroundStyle(PV.mudo).help("O número sai quando a build começa")
-                                Text(carta.lane.isEmpty ? carta.card : carta.lane).fontePainel(12.5).lineLimit(1)
+                                Text("#—")
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .foregroundStyle(Aurora.apagado)
+                                    .help("O número sai quando a build começa")
+                                Text(carta.lane.isEmpty ? carta.card : carta.lane)
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .lineLimit(1)
                                 Spacer(minLength: 4)
-                                Text("aguardando").fontePainel(10).foregroundStyle(PV.mudo)
-                                    .padding(.horizontal, 7).padding(.vertical, 3)
-                                    .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
+                                EtiquetaAurora(texto: "aguardando", cor: Aurora.ambar)
                             }
                         }
                     }
@@ -348,14 +401,14 @@ struct DashboardPainel: View {
                 }
                 HStack(spacing: 22) {
                     Rosca(passou: ind.provasOk, falhou: ind.provasFalha)
-                        .frame(width: 142, height: 142)
+                        .frame(width: 142 * escala, height: 142 * escala)
                     VStack(alignment: .leading, spacing: 20) {
-                        legenda(cor: Color(hex: 0x19E58C), texto: Formato.plural(ind.provasOk, "prova ok", "provas ok"),
+                        legenda(cor: Aurora.verde, texto: Formato.plural(ind.provasOk, "prova ok", "provas ok"),
                                 pct: pct(ind.provasOk, total))
-                        legenda(cor: Color(hex: 0xF64561), texto: Formato.plural(ind.provasFalha, "prova falhou", "provas falharam"),
+                        legenda(cor: Aurora.vermelho, texto: Formato.plural(ind.provasFalha, "prova falhou", "provas falharam"),
                                 pct: pct(ind.provasFalha, total))
                         // Mock: o parser da prova ainda não lê testes pulados.
-                        legenda(cor: Color(hex: 0x8DA6D0), texto: "— ignoradas", pct: "—")
+                        legenda(cor: Aurora.azul, texto: "— ignoradas", pct: "—")
                             .help("Testes ignorados: em breve")
                     }
                     .padding(.vertical, 10.5).padding(.horizontal, 14)
@@ -381,11 +434,20 @@ struct DashboardPainel: View {
     }
 
     private func legenda(cor: Color, texto: String, pct: String) -> some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(cor).frame(width: 11, height: 11)
-            Text(texto).fontePainel(12.5)
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(cor)
+                .frame(width: 9, height: 9)
+                .shadow(color: cor.opacity(0.6), radius: 3)
+            Text(texto)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(Aurora.texto2)
+                .lineLimit(1)
             Spacer(minLength: 4)
-            Text(pct).fontePainel(12.5)
+            Text(pct)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Aurora.texto)
         }
     }
 
@@ -395,14 +457,9 @@ struct DashboardPainel: View {
         let (rotulo, cor): (String, Color) = pausa ? ("Pausado", PV.ambar) : (vivo ? ("Operacional", PV.verde) : ("Parado", PV.vermelho))
         return CartaoPV {
             VStack(alignment: .leading, spacing: 0) {
-                CabecalhoCartao(icone: IconeCartao(simbolo: "gearshape", tamanhoIcone: 19),
+                CabecalhoCartao(icone: IconeCartao(simbolo: "gearshape", tamanhoIcone: 18),
                                 titulo: "Dispatcher", subtitulo: "Estado do sistema") {
-                    HStack(spacing: 7) {
-                        Circle().fill(cor).frame(width: 8, height: 8)
-                        Text(rotulo).fontePainel(12, .medium).foregroundStyle(cor == PV.verde ? Color(hex: 0x35E08A) : cor)
-                    }
-                    .padding(.horizontal, 12).frame(height: 28)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(cor.opacity(0.18)))
+                    PilulaAurora(titulo: rotulo, cor: cor, compacta: true)
                 }
                 VStack(spacing: 10.3) {
                     parDispatcher(vivo ? PV.verde : PV.vermelho, "Batimento", batimento)
@@ -434,13 +491,20 @@ struct DashboardPainel: View {
     }
 
     private func parDispatcher(_ cor: Color, _ nome: String, _ valor: String) -> some View {
-        HStack(spacing: 12) {
-            Circle().fill(cor).frame(width: 8, height: 8)
-            Text(nome).foregroundStyle(PV.texto2)
+        HStack(spacing: 10) {
+            Circle().fill(cor)
+                .frame(width: 6, height: 6)
+                .shadow(color: cor.opacity(0.7), radius: 3)
+            Text(nome)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(Aurora.mudo)
             Spacer(minLength: 8)
-            Text(valor).lineLimit(1).truncationMode(.middle)
+            Text(valor)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(Aurora.texto2)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .fontePainel(12.5)
     }
 
     private func cartaoEntregas(agora: Date) -> some View {
@@ -452,23 +516,42 @@ struct DashboardPainel: View {
                     BotaoVer(texto: "Ver todos") { ir(.entregas) }
                 }
                 if entregas.isEmpty {
-                    Text("Nenhum card fechado neste registro").fontePainel(12.5).foregroundStyle(PV.mudo)
-                        .padding(.top, 14).padding(.leading, 10)
+                    HStack(spacing: 8) {
+                        Image(systemName: "shippingbox")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Aurora.apagado)
+                        Text("Nenhum card fechado neste registro")
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(Aurora.mudo)
+                    }
+                    .padding(.top, 14).padding(.leading, 8)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(entregas.prefix(5).enumerated()), id: \.offset) { _, e in
                             HStack(spacing: 0) {
-                                Circle().fill(PV.verde).frame(width: 8, height: 8).padding(.trailing, 16)
-                                Text(e.card).fontePainel(12.5, .bold).frame(width: 78, alignment: .leading)
-                                Text("\(e.lane) • \(e.pr ?? e.quando)").fontePainel(12).foregroundStyle(PV.mudo).lineLimit(1)
+                                Circle().fill(Aurora.verde)
+                                    .frame(width: 6, height: 6)
+                                    .shadow(color: Aurora.verde.opacity(0.7), radius: 3)
+                                    .padding(.trailing, 16)
+                                Text(e.card)
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Aurora.texto)
+                                    .frame(width: 78, alignment: .leading)
+                                Text("\(e.lane) • \(e.pr ?? e.quando)")
+                                    .font(.system(size: 11.5, design: .rounded))
+                                    .foregroundStyle(Aurora.mudo)
+                                    .lineLimit(1)
                                 Spacer(minLength: 6)
-                                Text(haPainel(e.quandoData, agora: agora) ?? "").fontePainel(12).foregroundStyle(PV.mudo)
+                                Text(haPainel(e.quandoData, agora: agora) ?? "")
+                                    .font(.system(size: 11.5, design: .rounded))
+                                    .foregroundStyle(Aurora.apagado)
                             }
                             .frame(height: 25.5)
                         }
                     }
                     .background(alignment: .leading) {
-                        Rectangle().fill(Color(hex: 0x1E8F52)).frame(width: 2).padding(.vertical, 10).padding(.leading, 3)
+                        Capsule().fill(Aurora.verde.opacity(0.35))
+                            .frame(width: 2).padding(.vertical, 10).padding(.leading, 2)
                     }
                     .padding(.top, 8).padding(.leading, 10)
                 }
@@ -496,8 +579,9 @@ struct DashboardPainel: View {
                         .frame(width: 413 * c)
                         .clipped()
                         .frame(maxHeight: .infinity, alignment: .top)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(PV.interno))
-                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(PV.cartaoBorda, lineWidth: 1))
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PV.interno))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
                     painelTop(p?.top ?? [], agora: agora).frame(maxWidth: .infinity)
                 }
             }
@@ -516,16 +600,21 @@ struct DashboardPainel: View {
     private func painelGastoLane(_ p: CustosPeriodo?) -> some View {
         let lanes = p?.porLane ?? []
         let maximo = lanes.compactMap(\.custoUSD).max() ?? 0
-        let apertado = lanes.count > 6
+        // Com mais de 5 lanes o painel começava a cortar a última linha (`deepseek`).
+        let apertado = lanes.count > 5
         return VStack(alignment: .leading, spacing: apertado ? 3 : 8) {
-            Text("Gasto por lane (\(periodo.complemento))").fontePainel(13, .medium)
+            RotuloSecao(titulo: "Gasto por lane (\(periodo.complemento))")
             ForEach(Array(lanes.enumerated()), id: \.offset) { i, l in
                 HStack(spacing: 0) {
-                    Text(l.lane).fontePainel(12.5).frame(width: 87, alignment: .leading)
+                    Text(l.lane)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(Aurora.texto2)
+                        .lineLimit(1)
+                        .frame(width: 87, alignment: .leading)
                     BarraPV(fracao: maximo > 0 ? (l.custoUSD ?? 0) / maximo : 0, cor: PV.barrasLane[i % PV.barrasLane.count])
                     Text(l.custoUSD.map { moeda.texto($0) } ?? (l.desconhecidas > 0 ? "—" : "sem gasto"))
-                        .fontePainel(12.5, l.custoUSD == nil ? .regular : .semibold)
-                        .foregroundStyle(l.custoUSD == nil ? PV.mudo : PV.texto)
+                        .font(.system(size: 11.5, weight: l.custoUSD == nil ? .regular : .semibold, design: .rounded))
+                        .foregroundStyle(l.custoUSD == nil ? Aurora.mudo : Aurora.texto)
                         .lineLimit(1)
                         .fixedSize()
                         .frame(width: 66, alignment: .leading)
@@ -536,38 +625,52 @@ struct DashboardPainel: View {
         }
         .padding(.top, 12).padding(.leading, 13).padding(.trailing, 12).padding(.bottom, 8)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(PV.interno))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(PV.cartaoBorda, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PV.interno))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
     }
 
     private func painelTop(_ top: [CardCaro], agora: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Builds mais caros (top 5)").fontePainel(12.5, .medium)
+                RotuloSecao(titulo: "Builds mais caros (top 5)")
                 Spacer()
                 BotaoVer(texto: "Ver todos", pequeno: true) { ir(.custos) }
             }
-            .padding(.bottom, 2)
+            .padding(.bottom, 4)
             if top.isEmpty {
-                Text("Sem gasto conhecido neste período").fontePainel(12).foregroundStyle(PV.mudo).padding(.top, 6)
+                Text("Sem gasto conhecido neste período")
+                    .font(.system(size: 11.5, design: .rounded))
+                    .foregroundStyle(Aurora.mudo)
+                    .padding(.top, 6)
             }
             ForEach(Array(top.prefix(5).enumerated()), id: \.offset) { i, card in
                 HStack(spacing: 0) {
-                    Circle().fill(i == 0 ? Color(hex: 0xC9A56A) : Color(hex: 0x2A3A52)).frame(width: 17, height: 17)
-                        .overlay(Text("\(i + 1)").fontePainel(10, .bold)
-                            .foregroundStyle(i == 0 ? Color(hex: 0x1A1206) : Color(hex: 0xD5DEEA)))
+                    Circle()
+                        .fill(i == 0 ? Aurora.ambar : Color.white.opacity(0.07))
+                        .frame(width: 17, height: 17)
+                        .overlay(Text("\(i + 1)")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(i == 0 ? Aurora.tinta : Aurora.texto2))
                     Button { modelo.abrirCard(card.card) } label: {
-                        Text(card.card).fontePainel(12, .semibold).foregroundStyle(PV.azul)
+                        Text(card.card)
+                            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Aurora.azul)
                     }
                     .buttonStyle(.plain)
                     .frame(width: 76, alignment: .leading).padding(.leading, 12)
                     Text("\(card.lane) • \(Formato.plural(card.tentativas, "tentativa", "tentativas"))")
-                        .fontePainel(12).foregroundStyle(PV.mudo).lineLimit(1)
+                        .font(.system(size: 11.5, design: .rounded))
+                        .foregroundStyle(Aurora.mudo)
+                        .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(card.custoUSD.map { moeda.texto($0) } ?? "sem custo")
-                        .fontePainel(13.5, .semibold).foregroundStyle(card.custoUSD == nil ? PV.mudo : PV.vermelho)
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(card.custoUSD == nil ? Aurora.mudo : Aurora.vermelho)
                         .frame(width: 84, alignment: .leading)
-                    Text(haPainel(card.ultimoInicio, agora: agora) ?? "").fontePainel(12).foregroundStyle(PV.mudo)
+                    Text(haPainel(card.ultimoInicio, agora: agora) ?? "")
+                        .font(.system(size: 11.5, design: .rounded))
+                        .foregroundStyle(Aurora.apagado)
                         .frame(width: 62, alignment: .trailing)
                 }
                 .frame(height: 24.2)
@@ -575,8 +678,9 @@ struct DashboardPainel: View {
         }
         .padding(.top, 8).padding(.horizontal, 12).padding(.bottom, 4)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(PV.interno))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(PV.cartaoBorda, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PV.interno))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
     }
 }
 
@@ -696,7 +800,7 @@ struct DetalheLane: View {
             }
             if let aviso = linha.avisoModelo, aviso != "modelo fixo" {
                 Text(aviso).fontePainel(11.5, .semibold)
-                    .foregroundStyle(Color(hex: 0xFF8DA3))
+                    .foregroundStyle(Aurora.rosa)
                     .lineLimit(2)
             }
             Text(linha.estado == .desligada ? "desligada" : linha.descricao).fontePainel(12).lineLimit(2)
@@ -727,7 +831,10 @@ struct DetalheLane: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(PV.cartao))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color.black.opacity(0.18)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.05), lineWidth: 1))
     }
 }
 
@@ -744,7 +851,8 @@ struct MenuLane: View {
                 ForEach(0..<3, id: \.self) { _ in Circle().fill(PV.icone).frame(width: 3.6, height: 3.6) }
             }
             .frame(width: 32, height: 40)
-            .background(RoundedRectangle(cornerRadius: 6).fill(aberto ? Color(hex: 0x13233B) : Color.clear))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(aberto ? Color.white.opacity(0.10) : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -754,7 +862,7 @@ struct MenuLane: View {
                 if linha.estado == .desligada {
                     item("Ativar lane", cor: PV.texto) { modelo.ativarLane(linha.lane) }
                 } else {
-                    item("Desativar lane", cor: Color(hex: 0xFF8DA3)) { modelo.desativarLane(linha.lane) }
+                    item("Desativar lane", cor: Aurora.rosa) { modelo.desativarLane(linha.lane) }
                 }
                 if let card = linha.card {
                     item("Abrir \(card) no Linear", cor: PV.texto) { modelo.abrirCard(card) }
@@ -790,19 +898,32 @@ struct Rosca: View {
         let total = Double(passou + falhou)
         let fPassou = total > 0 ? Double(passou) / total : 0
         ZStack {
-            Circle().fill(Color(hex: 0x071321))
-            Circle().stroke(Color(hex: 0x17253B), lineWidth: 15).padding(7.5)
+            Circle().stroke(Color.white.opacity(0.06), lineWidth: 13)
             if total > 0 {
-                Circle().trim(from: 0, to: fPassou)
-                    .stroke(Color(hex: 0x19E58C), style: StrokeStyle(lineWidth: 15, lineCap: .butt))
-                    .rotationEffect(.degrees(-90)).padding(7.5)
-                Circle().trim(from: fPassou, to: 1)
-                    .stroke(Color(hex: 0xF64561), style: StrokeStyle(lineWidth: 15, lineCap: .butt))
-                    .rotationEffect(.degrees(-90)).padding(7.5)
+                // Arco de comprimento zero com ponta arredondada vira um ponto colorido no topo
+                // (verde com 0 aprovadas, vermelho com 0 falhas). Só desenha o que tem valor.
+                if passou > 0 {
+                    Circle().trim(from: 0, to: fPassou)
+                        .stroke(Aurora.verde, style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                        .rotationEffect(.degrees(-90)).padding(7)
+                        .shadow(color: Aurora.verde.opacity(0.35), radius: 6)
+                }
+                if falhou > 0 {
+                    Circle().trim(from: fPassou, to: 1)
+                        .stroke(Aurora.vermelho, style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                        .rotationEffect(.degrees(-90)).padding(7)
+                        .shadow(color: Aurora.vermelho.opacity(0.30), radius: 6)
+                }
             }
-            VStack(spacing: 2) {
-                Text("\(passou + falhou)").fontePainel(26, .semibold)
-                Text(passou + falhou == 1 ? "prova hoje" : "provas hoje").fontePainel(12.5).foregroundStyle(PV.texto2)
+            VStack(spacing: 1) {
+                Text("\(passou + falhou)")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Aurora.texto)
+                Text(passou + falhou == 1 ? "PROVA HOJE" : "PROVAS HOJE")
+                    .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(Aurora.mudo)
             }
         }
     }
@@ -819,11 +940,13 @@ struct GraficoGasto: View {
         let passo = GraficoGasto.passo(valores.max() ?? 0)
         let topo = passo * 3
         VStack(alignment: .leading, spacing: 4) {
-            Text(titulo).fontePainel(12.5, .medium)
+            RotuloSecao(titulo: titulo)
             HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach([3, 2, 1, 0], id: \.self) { i in
-                        Text("\(moeda.rotulo) \(GraficoGasto.marca(passo * Double(i)))").fontePainel(11).foregroundStyle(PV.texto2)
+                        Text("\(moeda.rotulo) \(GraficoGasto.marca(passo * Double(i)))")
+                            .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(Aurora.apagado)
                         if i > 0 { Spacer(minLength: 0) }
                     }
                 }
@@ -853,7 +976,10 @@ struct GraficoGasto: View {
                     }
                     HStack(spacing: 0) {
                         ForEach(Array(barras.enumerated()), id: \.offset) { _, b in
-                            Text(b.rotulo).fontePainel(11).foregroundStyle(PV.texto2).frame(maxWidth: .infinity)
+                            Text(b.rotulo)
+                                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                                .foregroundStyle(Aurora.apagado)
+                                .frame(maxWidth: .infinity)
                         }
                     }
                 }
@@ -868,12 +994,12 @@ struct GraficoGasto: View {
 
     private func cor(_ i: Int, _ b: GastoDiaPainel) -> LinearGradient {
         if b.ehHoje {
-            return LinearGradient(colors: [Color(hex: 0x2CEBF7), Color(hex: 0x20B5E6)], startPoint: .top, endPoint: .bottom)
+            return LinearGradient(colors: [Aurora.acento, Aurora.ciano], startPoint: .top, endPoint: .bottom)
         }
         if i >= barras.count - 4 {
-            return LinearGradient(colors: [Color(hex: 0x4C90FA), Color(hex: 0x3570E0)], startPoint: .top, endPoint: .bottom)
+            return LinearGradient(colors: [Aurora.azul, Aurora.azulForte], startPoint: .top, endPoint: .bottom)
         }
-        return LinearGradient(colors: [Color(hex: 0x3570E0)], startPoint: .top, endPoint: .bottom)
+        return LinearGradient(colors: [Aurora.azulForte.opacity(0.7)], startPoint: .top, endPoint: .bottom)
     }
 
     /// Valor da marca do eixo: inteiro sem casa; passo 2,5 mostra «2,5» e «7,5» (antes truncava para 2 e 7).
