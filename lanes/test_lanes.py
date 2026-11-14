@@ -1508,7 +1508,8 @@ def _lane_dir(caso: unittest.TestCase) -> Path:
 
 
 class ProvaE22(unittest.TestCase):
-    """(a) A prova só vale com `Executed N tests, with 0 failures`, N>0, em cada suíte."""
+    """(a) A prova só vale com `Executed N tests, with 0 failures` (XCTest) ou `Ran N tests` + `OK`
+    (unittest), N>0, em cada suíte."""
 
     def wt(self, *linhas) -> Path:
         tmp = _lane_dir(self)
@@ -2164,6 +2165,7 @@ class LaneParadaEPrompts(unittest.TestCase):
         self.assertIn("Problema de ambiente", texto)
         self.assertIn("Não rode o build", texto)
         self.assertIn("Executed N tests, with 0 failures", texto)
+        self.assertIn("Ran N tests", texto)
         self.assertIn("Quem roda a prova é o dispatcher", texto)
         for linha in texto.splitlines():
             baixa = linha.lower()
