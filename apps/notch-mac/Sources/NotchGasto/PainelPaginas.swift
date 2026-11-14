@@ -37,6 +37,42 @@ private func stat(_ nome: String, _ valor: String, cor: Color = PV.verde) -> som
     .linhaPV(borda: false)
 }
 
+/// Estado vazio de uma lista. Quando há busca ativa, diz o termo e oferece limpar —
+/// antes a tela dizia «sem leitura» mesmo tendo dados, só escondidos pelo filtro.
+struct ListaVazia: View {
+    var mensagem: String
+    var busca: BuscaPainel
+    var icone: String = "line.3.horizontal.decrease.circle"
+
+    private var termo: String { busca.texto.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        if termo.isEmpty {
+            Text(mensagem)
+                .font(.system(size: 12, design: .rounded))
+                .foregroundStyle(Aurora.mudo)
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Aurora.apagado)
+                Text("Nada corresponde a “\(termo)”.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(Aurora.mudo)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Button { busca.texto = "" } label: {
+                    Text("Limpar busca")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Aurora.acento)
+                }
+                .buttonStyle(.plain)
+                .help("Mostrar todos os itens de novo")
+            }
+        }
+    }
+}
+
 // MARK: - Lanes
 
 struct PaginaLanes: View {
@@ -63,10 +99,38 @@ struct PaginaLanes: View {
                     } else if modelo.snapshot == nil {
                         VStack(spacing: 6) { ForEach(0..<4, id: \.self) { _ in Esqueleto(altura: 51) } }
                     } else {
-                        Text("Sem leitura das lanes").fontePainel(12.5).foregroundStyle(PV.mudo)
+                        ListaVazia(mensagem: "Sem leitura das lanes", busca: busca)
                     }
                 }
                 VStack(spacing: 12) {
+                    cartaoPagina("Resumo das lanes", direita: {
+                        Text("conta e estado").fontePainel(11.5).foregroundStyle(PV.mudo)
+                    }) {
+                        let linhas = modelo.snapshot?.lanes ?? []
+                        HStack(spacing: 8) {
+                            stat("Rodando", "\(linhas.filter { $0.estado == .rodando }.count)", cor: Aurora.verde)
+                            stat("Livres", "\(linhas.filter { $0.estado == .livre }.count)", cor: Aurora.azul)
+                            stat("Esperando", "\(linhas.filter { $0.estado == .esperando || $0.estado == .semFolga }.count)",
+                                 cor: Aurora.ambar)
+                            stat("Desligadas", "\(linhas.filter { $0.estado == .desligada }.count)", cor: Aurora.mudo)
+                        }
+                        if let maior = linhas.compactMap({ l in l.pct.map { (lane: l.lane, pct: $0) } })
+                            .max(by: { $0.pct < $1.pct }) {
+                            HStack(spacing: 10) {
+                                Text("Maior uso").fontePainel(12).foregroundStyle(PV.mudo)
+                                Text(maior.lane).fontePainel(12.5, .semibold)
+                                BarraPV(fracao: min(max(maior.pct / 100, 0), 1),
+                                        cor: maior.pct >= Uso.pctAtencao ? PV.vermelho : PV.azulIcone,
+                                        altura: 6, trilho: PV.trilho)
+                                Text(Formato.pct(maior.pct))
+                                    .fontePainel(12.5, .semibold)
+                                    .monospacedDigit()
+                                    .foregroundStyle(maior.pct >= Uso.pctAtencao ? PV.vermelho : PV.texto)
+                                    .frame(width: 46, alignment: .trailing)
+                            }
+                            .padding(.top, 10)
+                        }
+                    }
                     cartaoPagina("Parou · retomar", direita: {
                         Text("últimos 7 dias").fontePainel(11.5).foregroundStyle(PV.mudo)
                     }) {
@@ -84,7 +148,7 @@ struct PaginaLanes: View {
                                         }
                                         Text("\(r.rotulo) · \(haPainel(r.inicio, agora: ctx.date) ?? "")")
                                             .fontePainel(11.5)
-                                            .foregroundStyle(r.rotulo == "lane:falhou" ? Color(hex: 0xFF8DA3) : PV.ambar)
+                                            .foregroundStyle(r.rotulo == "lane:falhou" ? Aurora.rosa : PV.ambar)
                                         if let m = r.motivo {
                                             Text(m).fontePainel(11).foregroundStyle(PV.mudo).lineLimit(1)
                                         }
@@ -97,7 +161,7 @@ struct PaginaLanes: View {
                                 .linhaPV(borda: false)
                             }
                             Text("retomar copia o comando para a área de transferência.")
-                                .fontePainel(11.5).foregroundStyle(Color(hex: 0x8FA0BA))
+                                .fontePainel(11.5).foregroundStyle(Aurora.mudo)
                         }
                     }
                     cartaoPagina("Ferramentas") {
@@ -178,7 +242,7 @@ struct PaginaBuilds: View {
                         let builds = FiltroBusca(busca.texto).filtrar(snap?.buildsHoje ?? []) { b in
                             [b.card, b.titulo, b.lane] }
                         if builds.isEmpty {
-                            Text("Nenhuma build hoje").fontePainel(12.5).foregroundStyle(PV.mudo)
+                            ListaVazia(mensagem: "Nenhuma build hoje", busca: busca)
                         } else {
                             HStack(spacing: 0) {
                                 RotuloColuna(texto: "Build").frame(width: 80, alignment: .leading)
@@ -303,7 +367,7 @@ struct PaginaEntregas: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
             let entregas = FiltroBusca(busca.texto).filtrar(modelo.snapshot?.entregas ?? []) { e in
-                [e.card, e.titulo, e.lane] }
+                [e.card, e.titulo, e.lane, e.pr] }
             let resumo = ResumoEntregas.contar(entregas, agora: ctx.date)
             let fatia = ListaPaginada.cortar(entregas, numero: pagina, vazio: "0 entregas")
             VStack(spacing: 13) {
@@ -325,7 +389,7 @@ struct PaginaEntregas: View {
                 }
                 cartaoPagina("Entregas") {
                     if fatia.total == 0 {
-                        Text("Nenhum card fechado neste registro").fontePainel(12.5).foregroundStyle(PV.mudo)
+                        ListaVazia(mensagem: "Nenhum card fechado neste registro", busca: busca)
                     } else {
                         HStack(spacing: 10) {
                             Text("Total: \(Formato.plural(fatia.total, "card", "cards"))")
@@ -340,6 +404,8 @@ struct PaginaEntregas: View {
             }
             .padding(.top, 10)
         }
+        // Página 1 quando o filtro muda: sem isto, limpar a busca voltava para a página antiga.
+        .onChange(of: busca.texto) { _, _ in pagina = 1 }
     }
 
     private func controles(_ fatia: ListaPaginada<EntregaPainel>) -> some View {
@@ -500,7 +566,7 @@ struct PaginaCustos: View {
                     switch aba {
                     case .todos:
                         if fatia.total == 0 {
-                            Text("Nenhum build neste período").fontePainel(12.5).foregroundStyle(PV.mudo)
+                            ListaVazia(mensagem: "Nenhum build neste período", busca: busca)
                         } else {
                             TabelaCustosBuilds(cards: fatia.itens,
                                                indiceInicial: (fatia.pagina - 1) * fatia.tamanho,
@@ -508,7 +574,7 @@ struct PaginaCustos: View {
                         }
                     case .maisCaros:
                         if top.isEmpty {
-                            Text("Sem gasto conhecido neste período").fontePainel(12.5).foregroundStyle(PV.mudo)
+                            ListaVazia(mensagem: "Sem gasto conhecido neste período", busca: busca)
                         } else {
                             TabelaCustosBuilds(cards: top, indiceInicial: 0, moeda: moeda,
                                                agora: ctx.date, abrir: modelo.abrirCard)
@@ -520,6 +586,7 @@ struct PaginaCustos: View {
         }
         .onChange(of: periodo) { _, _ in pagina = 1 }
         .onChange(of: aba) { _, _ in pagina = 1 }
+        .onChange(of: busca.texto) { _, _ in pagina = 1 }
     }
 
     private func controles(_ fatia: GastoCore.PaginaBuilds) -> some View {
@@ -554,7 +621,7 @@ private struct TabelaCustosBuilds: View {
                 rotulo("Status", 110)
                 rotulo("Duração", 78, .trailing)
                 rotulo("Custo", 88, .trailing)
-                rotulo("Quando", 72, .trailing)
+                rotulo("Quando", 92, .trailing)
             }
             .padding(.horizontal, 10)
             ForEach(Array(cards.enumerated()), id: \.element.card) { i, card in
@@ -575,7 +642,7 @@ private struct TabelaCustosBuilds: View {
                         .layoutPriority(-1)
                     celula(card.lane, 96)
                     Text(card.motivo ?? Formato.plural(card.tentativas, "tentativa", "tentativas"))
-                        .foregroundStyle(card.destaque ? Color(hex: 0xFF8DA3) : PV.mudo)
+                        .foregroundStyle(card.destaque ? Aurora.rosa : PV.mudo)
                         .lineLimit(1)
                         .frame(width: 110, alignment: .leading)
                         .layoutPriority(1)
@@ -585,11 +652,11 @@ private struct TabelaCustosBuilds: View {
                         .lineLimit(1)
                         .frame(width: 88, alignment: .trailing)
                         .layoutPriority(1)
-                    celula(haPainel(card.ultimoInicio, agora: agora) ?? "", 72, .trailing, mudo: true)
+                    celula(haPainel(card.ultimoInicio, agora: agora) ?? "", 92, .trailing, mudo: true)
                 }
                 .fontePainel(12.5)
                 .padding(.horizontal, 10).frame(height: 40)
-                .background(RoundedRectangle(cornerRadius: 8).fill(card.destaque ? Color(hex: 0x2A1324) : PV.linha))
+                .background(RoundedRectangle(cornerRadius: 8).fill(card.destaque ? Aurora.vermelho.opacity(0.10) : PV.linha))
             }
         }
     }
@@ -643,8 +710,11 @@ struct PaginaTestes: View {
     private var snap: SnapshotPainel? { modelo.snapshot }
 
     var body: some View {
-        VStack(spacing: 13) {
-            HStack(alignment: .top, spacing: 13) {
+        // Relógios («há 2 min», «prova há 12 min») precisam de um pulso próprio: a página
+        // inteira antes só se redesenhava quando o snapshot mudava.
+        TimelineView(.periodic(from: .now, by: 5)) { ctx in
+            VStack(spacing: 13) {
+                HStack(alignment: .top, spacing: 13) {
                 cartaoPagina("Prova em curso", direita: {
                     Text("lock único: uma prova por vez").fontePainel(11.5).foregroundStyle(PV.ambar)
                 }) {
@@ -685,9 +755,9 @@ struct PaginaTestes: View {
                     HStack(spacing: 18) {
                         Rosca(passou: ind.provasOk, falhou: ind.provasFalha).frame(width: 120, height: 120)
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("\(ind.provasOk) passou").foregroundStyle(Color(hex: 0x19E58C))
+                            Text("\(ind.provasOk) passou").foregroundStyle(Aurora.verde)
                                 .help("Provas de hoje com veredito ok (local e GitHub)")
-                            Text("\(ind.provasFalha) falhou").foregroundStyle(Color(hex: 0xF64561))
+                            Text("\(ind.provasFalha) falhou").foregroundStyle(Aurora.vermelho)
                             Text("— ignorado").foregroundStyle(PV.mudo).help("Testes ignorados: em breve")
                             Text(Formato.plural(ind.provasHoje, "prova hoje", "provas hoje")).foregroundStyle(PV.mudo)
                             if ind.remotasVerdes + ind.remotasVermelhas > 0 {
@@ -705,7 +775,7 @@ struct PaginaTestes: View {
                 let historico = FiltroBusca(busca.texto).filtrar(snap?.historico ?? []) { h in
                     [h.card, h.titulo, h.lane, h.selo] }
                 if historico.isEmpty {
-                    Text("Sem prova terminada ainda").fontePainel(12.5).foregroundStyle(PV.mudo)
+                    ListaVazia(mensagem: "Sem prova terminada ainda", busca: busca)
                 } else {
                     let fatia = ListaPaginada.cortar(historico, numero: paginaHistorico, vazio: "0 provas")
                     VStack(alignment: .leading, spacing: 10) {
@@ -715,12 +785,14 @@ struct PaginaTestes: View {
                             Spacer(minLength: 8)
                             controlesHistorico(fatia)
                         }
-                        TabelaHistoricoTestes(itens: fatia.itens, abrir: modelo.abrirCard)
+                        TabelaHistoricoTestes(itens: fatia.itens, agora: ctx.date, abrir: modelo.abrirCard)
                     }
                 }
             }
+            }
+            .padding(.top, 10)
+            .onChange(of: busca.texto) { _, _ in paginaHistorico = 1 }
         }
-        .padding(.top, 10)
     }
 
     private func controlesHistorico(_ fatia: ListaPaginada<ResumoProvaHistorico>) -> some View {
@@ -738,6 +810,7 @@ struct PaginaTestes: View {
 /// Histórico da tela Testes, no mesmo desenho da tabela de Custos. Falha pinta a linha como `destaque`.
 private struct TabelaHistoricoTestes: View {
     var itens: [ResumoProvaHistorico]
+    var agora: Date
     var abrir: (String) -> Void
 
     var body: some View {
@@ -781,7 +854,7 @@ private struct TabelaHistoricoTestes: View {
                     .frame(width: 90, alignment: .leading)
                     Text(Formato.relogio(item.segundos))
                         .frame(width: 80, alignment: .trailing)
-                    Text(haPainel(item.quando, agora: Date()) ?? "—")
+                    Text(haPainel(item.quando, agora: agora) ?? "—")
                         .foregroundStyle(PV.mudo)
                         .lineLimit(1)
                         .frame(width: 110, alignment: .trailing)
@@ -789,7 +862,7 @@ private struct TabelaHistoricoTestes: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fontePainel(12.5)
                 .padding(.horizontal, 10).frame(height: 40)
-                .background(RoundedRectangle(cornerRadius: 8).fill(falha ? Color(hex: 0x2A1324) : PV.linha))
+                .background(RoundedRectangle(cornerRadius: 8).fill(falha ? Aurora.vermelho.opacity(0.10) : PV.linha))
             }
         }
     }
@@ -797,7 +870,7 @@ private struct TabelaHistoricoTestes: View {
     private func corSelo(_ item: ResumoProvaHistorico) -> Color {
         if item.zeroTestes { return .white }
         if item.selo == ProvaRemota(card: "", lane: "", estado: .mainVermelha).selo { return PV.ambar }
-        if item.falha { return Color(hex: 0xFF8DA3) }
+        if item.falha { return Aurora.vermelho }
         if item.emCurso { return PV.ambar }
         return PV.verde
     }
@@ -860,11 +933,11 @@ struct CartaoProvaV2: View {
                 if !carta.suites.isEmpty { GradeSuites(suites: carta.suites) }
                 if let motivo = carta.motivo {
                     Text(motivo).fontePainel(12)
-                        .foregroundStyle(carta.zeroTestes || carta.falha ? Color(hex: 0xFFB3C1) : PV.texto)
+                        .foregroundStyle(carta.zeroTestes || carta.falha ? Aurora.rosa : PV.texto)
                         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 8).fill(PV.vermelho.opacity(carta.falha || carta.zeroTestes ? 0.16 : 0.08)))
                 }
-                Text("Próxima ação: \(carta.proximaAcao)").fontePainel(12.5).foregroundStyle(Color(hex: 0x8CC4FF))
+                Text("Próxima ação: \(carta.proximaAcao)").fontePainel(12.5).foregroundStyle(Aurora.azul)
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 8).fill(PV.navSelecao))
                 RegraZeroTestes(alerta: carta.zeroTestes)
@@ -886,7 +959,7 @@ struct CartaoProvaV2: View {
                 VStack(spacing: 4) {
                     Text(marca(fase, i))
                         .fontePainel(11, .semibold)
-                        .foregroundStyle(fase.marca == .atual ? Color(hex: 0x04121F) : PV.texto)
+                        .foregroundStyle(fase.marca == .atual ? Aurora.tinta : PV.texto)
                         .frame(width: 28, height: 28)
                         .background(Circle().fill(fundo(fase.marca)))
                         .overlay(Circle().strokeBorder(borda(fase.marca), lineWidth: 1))
@@ -927,7 +1000,7 @@ struct CartaoProvaV2: View {
         case .feita: return PV.verde
         case .falha: return PV.vermelho
         case .atual: return PV.ciano
-        case .aguardando: return Color(hex: 0x3A4C68)
+        case .aguardando: return Color.white.opacity(0.16)
         }
     }
 }
@@ -961,10 +1034,10 @@ struct GradeSuites: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(suite.nome).font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .lineLimit(1).truncationMode(.middle)
-                            Text(legenda(suite)).fontePainel(11).foregroundStyle(Color(hex: 0xFFB3C1))
+                            Text(legenda(suite)).fontePainel(11).foregroundStyle(Aurora.rosa)
                         }
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: 0x2A1324)))
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Aurora.vermelho.opacity(0.10)))
                         .overlay(alignment: .bottom) { Rectangle().fill(PV.vermelho).frame(height: 3) }
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
@@ -977,7 +1050,7 @@ struct GradeSuites: View {
         switch e {
         case .ok: return PV.verde
         case .falha: return PV.vermelho
-        case .pendente: return Color(hex: 0x2A3A52)
+        case .pendente: return Color.white.opacity(0.12)
         }
     }
 
@@ -1003,7 +1076,7 @@ struct RegraZeroTestes: View {
             Text("0 testes rodados = falha.").fontePainel(12.5, alerta ? .semibold : .regular)
                 .foregroundStyle(alerta ? PV.vermelho : PV.mudo)
             Text("A prova é reprovada mesmo que o xcodebuild diga sucesso.").fontePainel(12.5)
-                .foregroundStyle(alerta ? Color(hex: 0xFFB3C1) : PV.mudo)
+                .foregroundStyle(alerta ? Aurora.rosa : PV.mudo)
         }
         .padding(alerta ? 10 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)

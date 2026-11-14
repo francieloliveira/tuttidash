@@ -91,12 +91,23 @@ final class EstadoAjustes: ObservableObject {
         let t = textos[c.chave] ?? ""
         do {
             try modelo.definir(c, t)
+            // O valor já está no arquivo a partir daqui: marca como gravado antes de mexer no
+            // serviço agendado. Se o launchctl falhar, o campo não pode continuar dizendo
+            // «Não gravado ainda» — o texto que vale é o que está no config.
+            gravados[c.chave] = t
             erros[c.chave] = nil
             if c.chave.hasPrefix("agendas.") {
-                try GerenciadorAgendas(config: modelo.dados).intervaloMudou(chave: c.chave)
+                do { try GerenciadorAgendas(config: modelo.dados).intervaloMudou(chave: c.chave) }
+                catch {
+                    let m = String(localized: "Valor gravado, mas o agendamento não foi atualizado: \(error.localizedDescription)")
+                    erros[c.chave] = m
+                    marcar([c.chave], .erro(m, em: Date()))
+                    Task { @MainActor in CentralAvisos.compartilhada.erro(String(localized: "Agendamento não atualizado"), m) }
+                    aoSalvar()
+                    return
+                }
             }
             salvo = String(localized: "Salvo em \(modelo.arquivo.path)")
-            gravados[c.chave] = t
             marcar([c.chave], .ok("", em: Date()))
             let rotulo = c.rotulo
             Task { @MainActor in CentralAvisos.compartilhada.ok(String(localized: "Salvo: \(rotulo)")) }

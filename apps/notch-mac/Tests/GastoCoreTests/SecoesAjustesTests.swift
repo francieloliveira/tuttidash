@@ -136,6 +136,20 @@ final class SecoesAjustesTests: XCTestCase {
         XCTAssertFalse(CatalogoAjustes.rotuloRestaurarCampos.contains("bloco"))
     }
 
+    /// Várias palavras: cada uma pode estar num texto diferente do item, em qualquer ordem.
+    func testBuscaAceitaVariasPalavras() {
+        // «lane projetos»: «lane» no grupo/seção, «projetos» no bloco.
+        let projetos = CatalogoAjustes.buscar("lane projetos").filter { $0.bloco == .projetos }
+        XCTAssertFalse(projetos.isEmpty)
+        // A ordem das palavras não muda o resultado.
+        let invertido = CatalogoAjustes.buscar("acompanhadas contas")
+        let normal = CatalogoAjustes.buscar("Contas acompanhadas")
+        XCTAssertEqual(invertido.map(\.id), normal.map(\.id))
+        XCTAssertFalse(normal.isEmpty)
+        // Palavra que não existe em nenhum texto do item descarta o item.
+        XCTAssertTrue(CatalogoAjustes.buscar("contas zzzz-nada").isEmpty)
+    }
+
     func testConfig0600ECasa0700() throws {
         let t = try PastaTemp()
         let m = ModeloAjustes(home: t.url)

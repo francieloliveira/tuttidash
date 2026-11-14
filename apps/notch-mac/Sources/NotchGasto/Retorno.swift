@@ -322,14 +322,8 @@ struct Esqueleto: View {
 }
 
 extension View {
-    /// Cartão com profundidade: leve gradiente, borda que acende no hover e sombra.
+    /// Cartão de vidro da Aurora, com profundidade e brilho no hover.
     func cartaoVivo(raio: CGFloat = DS.raioG, hover: Bool = false) -> some View {
-        self
-            .background(RoundedRectangle(cornerRadius: raio, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: 0x0B1A30), PV.cartao], startPoint: .top, endPoint: .bottom)))
-            .overlay(RoundedRectangle(cornerRadius: raio, style: .continuous)
-                .strokeBorder(LinearGradient(colors: [Color.white.opacity(hover ? 0.16 : 0.08), PV.cartaoBorda],
-                                             startPoint: .top, endPoint: .bottom), lineWidth: 1))
-            .shadow(color: .black.opacity(hover ? 0.45 : 0.3), radius: hover ? 16 : 10, y: hover ? 8 : 4)
+        vidroAurora(raio: raio, hover: hover)
     }
 }

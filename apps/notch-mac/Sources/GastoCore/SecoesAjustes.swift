@@ -275,18 +275,27 @@ extension CatalogoAjustes {
 
     /// Busca por nome, explicação, grupo, bloco ou chave, sem diferenciar acento e maiúscula.
     /// Grupo só com bloco (Projetos, Contas acompanhadas) também volta, para a navegação abrir o bloco.
+    ///
+    /// Várias palavras: cada uma precisa aparecer em algum dos textos do item, em qualquer ordem
+    /// («lane projetos» acha o bloco «Projetos» do grupo das lanes). Antes o termo inteiro era
+    /// comparado de uma vez e duas palavras só achavam o que tivesse as duas coladas.
     public static func buscar(_ termo: String, em secoes: [SecaoAjustes] = secoes()) -> [ResultadoBuscaAjuste] {
         let normal = { (s: String) in s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "pt_BR")) }
-        let t = normal(termo.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard !t.isEmpty else { return [] }
+        let palavras = termo.split(whereSeparator: \.isWhitespace).map { normal(String($0)) }
+        guard !palavras.isEmpty else { return [] }
+        func bate(_ textos: [String]) -> Bool {
+            let campos = textos.map(normal)
+            return palavras.allSatisfy { p in campos.contains { $0.contains(p) } }
+        }
         var r: [ResultadoBuscaAjuste] = []
         for s in secoes {
             for g in s.grupos {
-                let grupoBate = normal(g.nome).contains(t)
-                for c in g.campos where [c.rotulo, c.ajuda, g.nome, c.chave].contains(where: { normal($0).contains(t) }) {
+                // O nome da seção entra na comparação: «lane projetos» acha o bloco Projetos
+                // dentro de «Lanes», que é o caminho que o resultado mostra na tela.
+                for c in g.campos where bate([c.rotulo, c.ajuda, g.nome, c.chave, s.nome]) {
                     r.append(ResultadoBuscaAjuste(secao: s.id, grupo: g.nome, campo: c))
                 }
-                for b in g.blocos where grupoBate || normal(b.nome).contains(t) {
+                for b in g.blocos where bate([g.nome, b.nome, s.nome]) {
                     r.append(ResultadoBuscaAjuste(secao: s.id, grupo: g.nome, bloco: b))
                 }
             }

@@ -160,20 +160,20 @@ struct PilulaBarra: View {
         .background(
             Capsule()
                 .fill(
-                    LinearGradient(colors: [Color(hex: 0x14141C), Color(hex: 0x0A0A10)],
+                    LinearGradient(colors: [Color(hex: 0x18213A), Color(hex: 0x080C16)],
                                    startPoint: .top, endPoint: .bottom)
                 )
                 .overlay(
                     Capsule()
                         .strokeBorder(
-                            LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.03)],
+                            LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.03)],
                                            startPoint: .top, endPoint: .bottom),
                             lineWidth: 1
                         )
                 )
                 .overlay(
                     Capsule()
-                        .strokeBorder(r.rodando > 0 ? PV.verde.opacity(0.22) : .clear, lineWidth: 1)
+                        .strokeBorder(r.rodando > 0 ? Aurora.acento.opacity(0.28) : .clear, lineWidth: 1)
                 )
                 .shadow(color: Color.black.opacity(0.5), radius: 6, x: 0, y: 3)
         )
@@ -261,64 +261,117 @@ private struct IndicadorRodando: View {
 }
 
 /// O painel que abre abaixo da pílula: lanes ligadas, card, modelo, % e a última linha do log.
+/// Fundo aurora + cartões de vidro, igual às outras superfícies do app.
 struct PainelBarra: View {
     @ObservedObject var modelo: ModeloNotch
     var fechar: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SeloVersao(compacto: true)
+            HStack(spacing: 8) {
+                MarcaAurora(tamanho: 22)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("TuttiDash")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(Aurora.texto)
+                    SeloVersao(compacto: true)
+                }
+                Spacer(minLength: 8)
+            }
+
             HStack(spacing: 8) {
                 CirculoEstado(geral: modelo.snapshot?.geral, pulsar: false)
                 Text(modelo.snapshot?.rotuloGeral ?? "Lendo")
-                    .font(.sf(13, .semibold)).foregroundStyle(TemaPainel.texto)
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Aurora.texto)
                 Spacer()
                 Text(ResumoBarra.montar(modelo.snapshot).texto)
-                    .font(.sf(11)).foregroundStyle(TemaPainel.mudo)
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(Aurora.mudo)
             }
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(Capsule().fill(Color.white.opacity(0.045)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+
             let linhas = (modelo.snapshot?.notch.linhas ?? []).filter { $0.estado != .desligada }
             if linhas.isEmpty {
                 Text(modelo.snapshot == nil ? "Lendo o estado das lanes…" : "Nenhuma lane ligada.")
-                    .font(.sf(12)).foregroundStyle(TemaPainel.mudo)
+                    .font(.system(size: 11.5, design: .rounded))
+                    .foregroundStyle(Aurora.mudo)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(linhas, id: \.lane) { l in
                 HStack(alignment: .top, spacing: 10) {
-                    Circle().fill(TemaPainel.cor(l.lane)).frame(width: 9, height: 9).padding(.top, 4)
+                    Circle()
+                        .fill(TemaPainel.cor(l.lane))
+                        .frame(width: 7, height: 7)
+                        .shadow(color: TemaPainel.cor(l.lane).opacity(0.6), radius: 3)
+                        .padding(.top, 5)
                     VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(ResumoBarra.titulo(l.lane)).font(.sf(12, .semibold)).foregroundStyle(TemaPainel.texto)
+                        HStack(spacing: 6) {
+                            Text(ResumoBarra.titulo(l.lane))
+                                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Aurora.texto)
                             if let card = l.card {
-                                Button(card) { modelo.abrirCard(card); fechar() }
-                                    .buttonStyle(.link).font(.sf(12, .semibold))
+                                Button { modelo.abrirCard(card); fechar() } label: {
+                                    Text(card)
+                                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Aurora.azul)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Abrir \(card) no Linear")
                             }
                             Spacer()
-                            Text(ResumoBarra.textoPct(l.pct)).font(.sf(12, .semibold).monospacedDigit())
+                            Text(ResumoBarra.textoPct(l.pct))
+                                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
                                 .foregroundStyle(corConta(l.pct))
                         }
-                        Text(l.descricao).font(.sf(11)).foregroundStyle(TemaPainel.texto).lineLimit(1)
+                        Text(l.descricao)
+                            .font(.system(size: 10.5, design: .rounded))
+                            .foregroundStyle(Aurora.texto2)
+                            .lineLimit(1)
                         if let m = l.textoModelo {
-                            Text(m).font(.system(size: 10)).foregroundStyle(TemaPainel.mudo).lineLimit(1)
+                            Text(m)
+                                .font(.system(size: 9.5, design: .rounded))
+                                .foregroundStyle(Aurora.apagado)
+                                .lineLimit(1)
                         }
                     }
                 }
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
+                .padding(9)
+                .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color.white.opacity(0.035)))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
             }
             if let m = MensagemLog.resumir(modelo.snapshot?.logTexto ?? "") {
                 LinhaMensagemBarra(mensagem: m)
             }
-            HStack {
-                Button("Abrir painel") { fechar(); modelo.abrirPainel() }
-                Button("Ajustes") { fechar(); modelo.abrirConfig() }
+            HStack(spacing: 7) {
+                Button { fechar(); modelo.abrirPainel() } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "macwindow").font(.system(size: 9.5, weight: .semibold))
+                        Text("Abrir painel")
+                    }
+                }
+                .buttonStyle(EstiloBotaoPrincipal(compacto: true))
+                Button { fechar(); modelo.abrirConfig() } label: {
+                    Text("Ajustes")
+                }
+                .buttonStyle(EstiloBotaoSecundario(compacto: true))
                 Spacer()
-                Button("Sair") { PresencaApp.sair() }
+                Button { PresencaApp.sair() } label: {
+                    Text("Sair").foregroundStyle(Aurora.vermelho.opacity(0.85))
+                }
+                .buttonStyle(EstiloBotaoSecundario(compacto: true))
+                .help("Encerrar o TuttiDash")
             }
-            .font(.sf(11))
         }
         .padding(14)
-        .frame(width: 360)
-        .background(LinearGradient(colors: [Color(hex: 0x14102A), Color(hex: 0x05070F)],
-                                   startPoint: .top, endPoint: .bottom))
+        .frame(width: 372)
+        .background(FundoAurora(intensidade: 0.8))
         .environment(\.colorScheme, .dark)
     }
 }

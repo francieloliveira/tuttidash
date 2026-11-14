@@ -180,10 +180,29 @@ struct PaginaEsperando: View {
     var body: some View {
         HStack(alignment: .top, spacing: 13) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(String(localized: "Respostas em aberto · \(caixa.abertas)")).fontePainel(15, .semibold)
+                HStack(spacing: 7) {
+                    RotuloSecao(titulo: "Respostas em aberto", icone: "tray.full", cor: Aurora.ambar)
+                    Text("\(caixa.abertas)")
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Aurora.ambar)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(Capsule().fill(Aurora.ambar.opacity(0.15)))
+                    Spacer(minLength: 0)
+                }
                 if caixa.itens.isEmpty {
-                    Text(String(localized: "Nada esperando por você agora."))
-                        .fontePainel(12.5).foregroundStyle(PV.mudo)
+                    VStack(spacing: 8) {
+                        Image(systemName: "checkmark.seal")
+                            .font(.system(size: 20, weight: .light))
+                            .foregroundStyle(Aurora.verde.opacity(0.8))
+                        Text(String(localized: "Nada esperando por você agora."))
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(Aurora.mudo)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 22)
                 }
                 ForEach(caixa.itens) { item in linhaLista(item) }
                 Spacer(minLength: 0)
@@ -195,12 +214,20 @@ struct PaginaEsperando: View {
 
             Group {
                 if let item = atual { detalhe(item) } else {
-                    Text(String(localized: "Quando um card precisar de você, a pendência e as decisões aparecem aqui."))
-                        .fontePainel(13).foregroundStyle(PV.mudo)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 10) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 24, weight: .light))
+                            .foregroundStyle(Aurora.apagado)
+                        Text(String(localized: "Quando um card precisar de você, a pendência e as decisões aparecem aqui."))
+                            .font(.system(size: 12.5, design: .rounded))
+                            .foregroundStyle(Aurora.mudo)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 340)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .padding(14)
+            .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .cartaoVivo()
         }
@@ -212,25 +239,42 @@ struct PaginaEsperando: View {
         let respondida = caixa.respondidas.contains(item.perguntaId)
         return Button { caixa.selecionado = item.card; resposta = "" } label: {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(item.card).fontePainel(13.5, .semibold).foregroundStyle(PV.texto)
+                HStack(spacing: 6) {
+                    Text(item.card)
+                        .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Aurora.texto)
                     Spacer()
                     if caixa.enviando.contains(item.card) {
                         ProgressView().controlSize(.small)
                     } else if respondida {
-                        Text(String(localized: "enviado")).fontePainel(11).foregroundStyle(PV.verde)
+                        PilulaAurora(titulo: "enviado", cor: Aurora.verde, compacta: true)
                     }
                 }
-                Text(item.titulo).fontePainel(12).foregroundStyle(PV.texto2).lineLimit(1)
-                Text(meta(item)).fontePainel(11).foregroundStyle(PV.mudo).lineLimit(1)
+                Text(item.titulo)
+                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(Aurora.texto2)
+                    .lineLimit(1)
+                Text(meta(item))
+                    .font(.system(size: 10.5, design: .rounded))
+                    .foregroundStyle(Aurora.apagado)
+                    .lineLimit(1)
             }
-            .padding(10)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(sel ? PV.azulFundo : PV.interno))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(sel ? PV.azul.opacity(0.6) : PV.linhaBorda, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(sel ? Aurora.acento.opacity(0.12) : Color.white.opacity(0.025)))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(sel ? Aurora.acento.opacity(0.40) : Color.white.opacity(0.05), lineWidth: 1))
+            .overlay(alignment: .leading) {
+                if sel {
+                    Capsule().fill(Aurora.acento).frame(width: 3, height: 22).padding(.leading, 4)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(Pressionavel())
+        .accessibilityAddTraits(sel ? .isSelected : AccessibilityTraits())
     }
 
     private func meta(_ item: ItemCaixa) -> String {
@@ -251,54 +295,113 @@ struct PaginaEsperando: View {
     @ViewBuilder
     private func detalhe(_ item: ItemCaixa) -> some View {
         let ocupado = caixa.enviando.contains(item.card) || caixa.respondidas.contains(item.perguntaId)
-        VStack(alignment: .leading, spacing: 12) {
-            Text("\(item.card) · \(item.titulo)").fontePainel(15, .semibold).lineLimit(2)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(String(localized: "Pendência")).fontePainel(11.5).foregroundStyle(PV.mudo)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(item.card)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Aurora.tinta)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Aurora.gradienteBotao))
+                Text(item.titulo)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Aurora.texto)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                RotuloSecao(titulo: "Pendência", icone: "questionmark.circle")
                 Text(item.pendencia.isEmpty ? (item.motivo.isEmpty ? String(localized: "Sem resumo ainda: veja o card no Linear.") : item.motivo)
                                             : item.pendencia)
-                    .fontePainel(13.5).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 13, design: .rounded))
+                    .foregroundStyle(Aurora.texto2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !item.pendencia.isEmpty && !item.motivo.isEmpty {
-                    Text(String(localized: "Motivo: \(item.motivo)")).fontePainel(11.5).foregroundStyle(PV.mudo)
+                    Text(String(localized: "Motivo: \(item.motivo)"))
+                        .font(.system(size: 11.5, design: .rounded))
+                        .foregroundStyle(Aurora.apagado)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if !item.opcoes.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(String(localized: "Decisões sugeridas")).fontePainel(11.5).foregroundStyle(PV.mudo)
+                VStack(alignment: .leading, spacing: 8) {
+                    RotuloSecao(titulo: "Decisões sugeridas", icone: "list.bullet")
                     ForEach(item.opcoes) { op in
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
                             botaoOpcao(op, item: item, recomendada: op.letra == item.recomenda).disabled(ocupado)
                             Text(String(localized: "O que acontece: \(oQueAcontece(.opcao(op, comentario: ""), item))"))
-                                .fontePainel(11.5).foregroundStyle(PV.mudo)
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundStyle(Aurora.apagado)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.leading, 12)
                         }
                     }
                     if !item.porque.isEmpty {
-                        Text(String(localized: "Por que \(item.recomenda): \(item.porque)")).fontePainel(11.5).foregroundStyle(PV.mudo)
+                        Text(String(localized: "Por que \(item.recomenda): \(item.porque)"))
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundStyle(Aurora.mudo)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
             TextField(String(localized: "Responder no card…"), text: $resposta, axis: .vertical)
-                .textFieldStyle(.roundedBorder).lineLimit(2...5)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12.5, design: .rounded))
+                .foregroundStyle(Aurora.texto)
+                .lineLimit(2...5)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color.black.opacity(0.24)))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
             HStack(spacing: 8) {
-                Button(String(localized: "Responder")) { caixa.decidir(.responder(resposta, liberar: false), item: item); resposta = "" }
-                    .disabled(resposta.trimmingCharacters(in: .whitespaces).isEmpty || ocupado)
-                    .help(oQueAcontece(.responder(resposta, liberar: false), item))
-                Button(String(localized: "Responder e liberar")) { caixa.decidir(.responder(resposta, liberar: true), item: item); resposta = "" }
-                    .disabled(ocupado)
-                    .help(oQueAcontece(.responder(resposta, liberar: true), item))
-                Button(String(localized: "Liberar")) { caixa.decidir(.liberar, item: item) }.disabled(ocupado)
-                    .help(oQueAcontece(.liberar, item))
-                Spacer()
-                if let u = URL(string: item.url), !item.url.isEmpty {
-                    Button(String(localized: "Abrir no Linear")) { NSWorkspace.shared.open(u) }
+                Button { caixa.decidir(.responder(resposta, liberar: false), item: item); resposta = "" } label: {
+                    Text(String(localized: "Responder"))
                 }
-                Button(String(localized: "Cancelar o card…"), role: .destructive) { confirmarCancelar = true }.disabled(ocupado)
+                .buttonStyle(EstiloBotaoPrincipal(compacto: true))
+                .disabled(resposta.trimmingCharacters(in: .whitespaces).isEmpty || ocupado)
+                .help(oQueAcontece(.responder(resposta, liberar: false), item))
+
+                Button { caixa.decidir(.responder(resposta, liberar: true), item: item); resposta = "" } label: {
+                    Text(String(localized: "Responder e liberar"))
+                }
+                .buttonStyle(EstiloBotaoSecundario(compacto: true))
+                .disabled(ocupado)
+                .help(oQueAcontece(.responder(resposta, liberar: true), item))
+
+                Button { caixa.decidir(.liberar, item: item) } label: {
+                    Text(String(localized: "Liberar"))
+                }
+                .buttonStyle(EstiloBotaoSecundario(compacto: true))
+                .disabled(ocupado)
+                .help(oQueAcontece(.liberar, item))
+
+                Spacer()
+
+                if let u = URL(string: item.url), !item.url.isEmpty {
+                    Button { NSWorkspace.shared.open(u) } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.right.square").font(.system(size: 9.5, weight: .semibold))
+                            Text(String(localized: "Abrir no Linear"))
+                        }
+                    }
+                    .buttonStyle(EstiloBotaoSecundario(compacto: true))
+                }
+                Button(role: .destructive) { confirmarCancelar = true } label: {
+                    Text(String(localized: "Cancelar o card…"))
+                        .foregroundStyle(Aurora.vermelho.opacity(0.9))
+                }
+                .buttonStyle(EstiloBotaoSecundario(compacto: true))
+                .disabled(ocupado)
             }
             if let e = caixa.erros[item.card] {
-                Text(e).fontePainel(12).foregroundStyle(PV.vermelho)
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: 10))
+                    Text(e)
+                }
+                .font(.system(size: 11.5, design: .rounded))
+                .foregroundStyle(Aurora.vermelho)
             }
             Spacer(minLength: 0)
         }
@@ -311,16 +414,29 @@ struct PaginaEsperando: View {
 
     private func botaoOpcao(_ op: OpcaoCaixa, item: ItemCaixa, recomendada: Bool) -> some View {
         Button { caixa.decidir(.opcao(op, comentario: resposta), item: item); resposta = "" } label: {
-            HStack {
-                Text("\(op.letra)) \(op.texto)").fontePainel(13).foregroundStyle(PV.texto)
+            HStack(spacing: 10) {
+                Text(op.letra)
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(recomendada ? Aurora.tinta : Aurora.texto2)
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(recomendada
+                                              ? AnyShapeStyle(Aurora.gradienteBotao)
+                                              : AnyShapeStyle(Color.white.opacity(0.08))))
+                Text(op.texto)
+                    .font(.system(size: 12.5, weight: recomendada ? .semibold : .regular, design: .rounded))
+                    .foregroundStyle(Aurora.texto)
                     .multilineTextAlignment(.leading)
                 Spacer()
-                if recomendada { Text(String(localized: "recomendada")).fontePainel(11).foregroundStyle(PV.verde) }
+                if recomendada {
+                    PilulaAurora(titulo: "recomendada", cor: Aurora.verde, compacta: true)
+                }
             }
-            .padding(.horizontal, 12).padding(.vertical, 9)
+            .padding(.horizontal, 11).padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(recomendada ? PV.azulFundo : PV.botao))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(recomendada ? PV.azul.opacity(0.6) : PV.botaoBorda, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(recomendada ? Aurora.acento.opacity(0.10) : Color.white.opacity(0.03)))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(recomendada ? Aurora.acento.opacity(0.35) : Color.white.opacity(0.07), lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(Pressionavel())

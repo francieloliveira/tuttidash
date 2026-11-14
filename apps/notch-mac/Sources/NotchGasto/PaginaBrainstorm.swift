@@ -127,7 +127,7 @@ struct PaginaBrainstorm: View {
                 .padding(.horizontal, 22)
                 .padding(.vertical, 8)
             }
-            .background(PV.fundo)
+            .background(Color.clear)
 
             if !stories.isEmpty {
                 footerBar
@@ -175,88 +175,99 @@ struct PaginaBrainstorm: View {
             passo(3, "Linear")
             Spacer(minLength: 8)
             if !projectName.isEmpty {
-                Text(projectName)
-                    .fontePainel(11)
-                    .foregroundStyle(PV.mudo)
-                    .lineLimit(1)
+                EtiquetaAurora(texto: projectName, cor: Aurora.azul)
             }
-            Button("Limpar tudo") { limparConversa() }
-                .buttonStyle(.plain)
-                .fontePainel(12, .semibold)
-                .foregroundStyle(PV.vermelho)
+            Button { limparConversa() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "trash").font(.system(size: 9.5, weight: .semibold))
+                    Text("Limpar tudo")
+                }
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(Aurora.vermelho.opacity(0.9))
+                .padding(.horizontal, 9)
+                .frame(height: 24)
+                .background(Capsule().fill(Aurora.vermelho.opacity(0.10)))
+            }
+            .buttonStyle(.plain)
+            .help("Zera o chat e a ideia. Os cards ficam.")
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 2)
         .padding(.bottom, 2)
     }
 
     private var chevron: some View {
         Image(systemName: "chevron.right")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(PV.apagado)
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(Aurora.apagado)
     }
 
     private func passo(_ n: Int, _ titulo: String) -> some View {
         let ativo = passoAtual >= n
         return HStack(spacing: 6) {
             Text("\(n)")
-                .fontePainel(10, .bold)
-                .foregroundStyle(ativo ? Color.white : PV.mudo)
+                .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                .foregroundStyle(ativo ? Aurora.tinta : Aurora.mudo)
                 .frame(width: 18, height: 18)
-                .background(Circle().fill(ativo ? PV.azul : PV.tag))
+                .background(Circle().fill(ativo ? AnyShapeStyle(Aurora.gradienteBotao)
+                                                : AnyShapeStyle(Color.white.opacity(0.07))))
             Text(titulo)
-                .fontePainel(12, ativo ? .semibold : .regular)
-                .foregroundStyle(ativo ? PV.texto : PV.mudo)
+                .font(.system(size: 11.5, weight: ativo ? .semibold : .regular, design: .rounded))
+                .foregroundStyle(ativo ? Aurora.texto : Aurora.mudo)
         }
     }
 
     // MARK: - Ideia
 
     private var ideaSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text("Idéia")
-                    .fontePainel(13, .semibold)
-                    .foregroundStyle(PV.mudo)
+                RotuloSecao(titulo: "Idéia", icone: "sparkles", cor: Aurora.acento)
                 Spacer()
                 if reescrevendo {
                     EfeitoThinking()
                 } else {
                     Text(status)
-                        .fontePainel(10)
-                        .foregroundStyle(PV.apagado)
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(Aurora.apagado)
                         .lineLimit(1)
                 }
             }
             Text("Gerar idéia no chat reúne a conversa e os itens marcados. Continuar o chat e gerar de novo acrescenta. A caixa continua editável.")
-                .fontePainel(11)
-                .foregroundStyle(PV.mudo)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(Aurora.mudo)
+                .fixedSize(horizontal: false, vertical: true)
 
             TextEditor(text: $sessao.ideaSummary)
-                .fontePainel(13)
-                .frame(minHeight: 90)
+                .font(.system(size: 13, design: .rounded))
+                .foregroundStyle(Aurora.texto)
                 .scrollContentBackground(.hidden)
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(PV.campo))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(PV.campoBorda, lineWidth: 1))
+                .frame(minHeight: 92)
+                .padding(9)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.black.opacity(0.22)))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(PV.cartao))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(PV.cartaoBorda, lineWidth: 1))
+        .padding(14)
+        .vidroAurora(raio: 16)
     }
 
     // MARK: - Chat (auxiliar)
 
     private var chatSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
-                Text("Chat")
-                    .fontePainel(13, .semibold)
-                    .foregroundStyle(PV.mudo)
+                RotuloSecao(titulo: "Chat", icone: "bubble.left.and.bubble.right", cor: Aurora.azul)
                 Spacer(minLength: 8)
-                Button("Entrar no Claude") { AgenteBrainstorm.abrirLogin() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(precisaLogin ? PV.ambar : PV.azul)
+                Button { AgenteBrainstorm.abrirLogin() } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "person.crop.circle.badge.checkmark")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Entrar no Claude")
+                    }
+                }
+                .buttonStyle(EstiloBotaoSecundario(compacto: true))
+                .tint(precisaLogin ? Aurora.ambar : Aurora.azul)
             }
 
             ScrollView {
@@ -285,48 +296,58 @@ struct PaginaBrainstorm: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(["Explorar riscos", "Quais fluxos principais?", "Simplificar escopo", "Métricas de sucesso"], id: \.self) { q in
-                        Button(q) { enviar(texto: q) }
-                            .fontePainel(10)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
-                            .foregroundStyle(PV.mudo)
-                            .disabled(perguntasEmVoo > 0)
+                        Button { enviar(texto: q) } label: {
+                            Text(q)
+                                .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                                .foregroundStyle(Aurora.texto2)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.white.opacity(0.05)))
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
+                        }
+                        .buttonStyle(Pressionavel())
+                        .disabled(perguntasEmVoo > 0)
                     }
                 }
             }
 
             Button(action: gerarIdeia) {
-                HStack {
+                HStack(spacing: 7) {
                     if reescrevendo { ProgressView().controlSize(.small) }
                     Text(reescrevendo ? "Gerando idéia…" : "Gerar idéia")
                 }
-                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(PV.azul)
+            .buttonStyle(EstiloBotaoPrincipal())
             .disabled(!podeGerarIdeia)
 
             HStack(spacing: 8) {
-                TextField("Pergunte ou descreva a ideia…", text: $sessao.chatInput)
+                TextField("", text: $sessao.chatInput,
+                          prompt: Text("Pergunte ou descreva a ideia…").foregroundColor(Aurora.mudo))
                     .textFieldStyle(.plain)
-                    .fontePainel(13)
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(PV.campo))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(PV.campoBorda, lineWidth: 1))
+                    .font(.system(size: 12.5, design: .rounded))
+                    .foregroundStyle(Aurora.texto)
+                    .tint(Aurora.acento)
+                    .padding(.horizontal, 11)
+                    .frame(height: 36)
+                    .background(Capsule().fill(Color.black.opacity(0.24)))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
                     .onSubmit { enviar(texto: nil) }
 
                 Button { enviar(texto: nil) } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(PV.azul)
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Aurora.tinta)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Aurora.gradienteBotao))
                 }
+                .buttonStyle(Pressionavel())
                 .disabled(perguntasEmVoo > 0 || chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .help("Enviar mensagem")
+                .accessibilityLabel("Enviar mensagem")
             }
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(PV.cartao))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(PV.cartaoBorda, lineWidth: 1))
+        .padding(14)
+        .vidroAurora(raio: 16)
     }
 
     /// Palavra “Thinking” com um brilho que atravessa as letras, como no chat do Cursor.
@@ -363,12 +384,15 @@ struct PaginaBrainstorm: View {
     private func agentBubble(_ msg: ChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(msg.text)
-                .fontePainel(12)
+                .font(.system(size: 12, design: .rounded))
+                .foregroundStyle(Aurora.texto2)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .frame(maxWidth: 420, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 12).fill(PV.interno))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(PV.linhaBorda, lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.045)))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
 
             if !msg.itens.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -379,21 +403,23 @@ struct PaginaBrainstorm: View {
                         } label: {
                             HStack(alignment: .top, spacing: 6) {
                                 Image(systemName: marcado ? "checkmark" : "plus")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.system(size: 9, weight: .bold))
                                     .padding(.top, 2)
                                 Text(item)
                                     .multilineTextAlignment(.leading)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .fontePainel(11)
+                            .font(.system(size: 11, design: .rounded))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(marcado ? PV.azulFundo : PV.tag))
-                            .foregroundStyle(marcado ? PV.azul : PV.texto)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(marcado ? Aurora.acento.opacity(0.14) : Color.white.opacity(0.04)))
+                            .foregroundStyle(marcado ? Aurora.acento : Aurora.texto2)
                         }
                         .buttonStyle(.plain)
+                        .help(marcado ? "Tirar da idéia" : "Incluir na idéia")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -404,11 +430,14 @@ struct PaginaBrainstorm: View {
 
     private func userBubble(_ text: String) -> some View {
         Text(text)
-            .fontePainel(12)
+            .font(.system(size: 12, design: .rounded))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 12).fill(PV.azulFundo))
-            .foregroundStyle(PV.texto)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Aurora.azul.opacity(0.18)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Aurora.azul.opacity(0.25), lineWidth: 1))
+            .foregroundStyle(Aurora.texto)
             .frame(maxWidth: 360, alignment: .trailing)
     }
 
@@ -554,66 +583,76 @@ struct PaginaBrainstorm: View {
 
     private var gerarBar: some View {
         Button(action: generateStories) {
-            HStack {
+            HStack(spacing: 7) {
                 if isGenerating { ProgressView().controlSize(.small) }
                 Text(isGenerating ? "Gerando histórias…" : "Gerar histórias")
             }
-            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(PV.azul)
+        .buttonStyle(EstiloBotaoPrincipal())
         .disabled(ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGenerating || reescrevendo)
-        .padding(.horizontal, 4)
     }
 
     // MARK: - Histórias
 
     private var storiesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Histórias")
-                    .fontePainel(13, .semibold)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                RotuloSecao(titulo: "Histórias", icone: "rectangle.stack", cor: Aurora.violeta)
                 Text("\(stories.count)")
-                    .fontePainel(10)
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Aurora.texto2)
                     .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
+                    .padding(.vertical, 1.5)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
                 if !stories.isEmpty {
                     Text("\(stories.filter(\.approved).count) marcadas")
-                        .fontePainel(10)
-                        .foregroundStyle(PV.mudo)
+                        .font(.system(size: 10.5, design: .rounded))
+                        .foregroundStyle(Aurora.verde)
                 }
                 Spacer()
-                Button("Adicionar") { novaHistoria() }
-                    .fontePainel(11)
+                Button { novaHistoria() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+                        Text("Adicionar")
+                    }
+                }
+                .buttonStyle(EstiloBotaoSecundario(compacto: true))
             }
 
             Text("Cards no quadro. Clique para editar. Esforço e lane são as etiquetas do Linear.")
-                .fontePainel(11)
-                .foregroundStyle(PV.mudo)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(Aurora.mudo)
 
             if stories.isEmpty {
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
+                    Image(systemName: "rectangle.stack.badge.plus")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(Aurora.apagado)
                     Text("Nenhuma história ainda")
-                        .fontePainel(13, .semibold)
-                        .foregroundStyle(PV.mudo)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Aurora.texto2)
                     Text("Aceite itens no chat ou escreva a idéia, depois gere.")
-                        .fontePainel(11)
-                        .foregroundStyle(PV.mudo)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(Aurora.mudo)
                         .multilineTextAlignment(.center)
                 }
                 .padding(20)
-                .frame(minHeight: 120)
-                .background(RoundedRectangle(cornerRadius: 8).fill(PV.cartao))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(PV.cartaoBorda, lineWidth: 1))
+                .frame(maxWidth: .infinity, minHeight: 132)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.025)))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 10)], spacing: 10) {
                     ForEach($sessao.stories) { $story in
                         kanbanCard(story: $story)
                     }
                 }
             }
         }
+        .padding(14)
+        .vidroAurora(raio: 16)
     }
 
     private func kanbanCard(story: Binding<UserStory>) -> some View {
@@ -623,22 +662,22 @@ struct PaginaBrainstorm: View {
             } label: {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(story.wrappedValue.title)
-                        .fontePainel(13, .semibold)
-                        .foregroundStyle(PV.texto)
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Aurora.texto)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.trailing, 22)
                     Text(story.wrappedValue.description)
-                        .fontePainel(11)
-                        .foregroundStyle(PV.texto2)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(Aurora.mudo)
                         .multilineTextAlignment(.leading)
                         .lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if !story.wrappedValue.faltando.isEmpty {
                         Text("Falta: " + story.wrappedValue.faltando.map(\.rawValue).joined(separator: ", "))
-                            .fontePainel(10, .semibold)
-                            .foregroundStyle(PV.vermelho)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Aurora.vermelho)
                     }
                     Spacer(minLength: 0)
                     HStack(spacing: 4) {
@@ -650,36 +689,35 @@ struct PaginaBrainstorm: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-                .background(RoundedRectangle(cornerRadius: 10).fill(PV.cartao))
+                .background(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(Color.white.opacity(story.approved.wrappedValue ? 0.055 : 0.03)))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10).stroke(
-                        !story.wrappedValue.faltando.isEmpty ? PV.vermelho.opacity(0.6)
-                            : (story.approved.wrappedValue ? PV.verde.opacity(0.55) : PV.cartaoBorda),
+                    RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(
+                        !story.wrappedValue.faltando.isEmpty ? Aurora.vermelho.opacity(0.55)
+                            : (story.approved.wrappedValue ? Aurora.verde.opacity(0.45)
+                                                           : Color.white.opacity(0.07)),
                         lineWidth: 1)
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(Pressionavel())
 
             Button {
                 story.approved.wrappedValue.toggle()
             } label: {
                 Image(systemName: story.approved.wrappedValue ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(story.approved.wrappedValue ? PV.verde : PV.mudo)
-                    .font(.system(size: 16))
+                    .foregroundStyle(story.approved.wrappedValue ? Aurora.verde : Aurora.apagado)
+                    .font(.system(size: 15))
                     .padding(8)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help(story.approved.wrappedValue ? "Desmarcar" : "Marcar")
+            .help(story.approved.wrappedValue ? "Desmarcar card" : "Marcar para o Linear")
+            .accessibilityLabel(story.approved.wrappedValue ? "Desmarcar card" : "Marcar card")
         }
     }
 
     private func tag(text: String, destaque: Bool) -> some View {
-        Text(text)
-            .fontePainel(10, destaque ? .semibold : .regular)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 4).fill(destaque ? PV.azulFundo : PV.tag))
-            .foregroundStyle(destaque ? PV.azul : PV.mudo)
+        EtiquetaAurora(texto: text, cor: destaque ? Aurora.azul : Aurora.mudo)
     }
 
     // MARK: - Rodapé
@@ -690,35 +728,45 @@ struct PaginaBrainstorm: View {
 
     private var footerBar: some View {
         HStack(spacing: 8) {
-            Button("Aprovar", action: insertApprovedIntoLinear)
-                .buttonStyle(.borderedProminent)
-                .tint(PV.verde)
-                .disabled(!haMarcadas || isGenerating || marcadasIncompletas > 0)
-                .help(marcadasIncompletas > 0
-                      ? "\(marcadasIncompletas) card(s) marcado(s) sem objetivo, aceite ou fora de escopo. Abra e complete."
-                      : "Cria os cards marcados no Linear.")
-            Button("Remover", action: removerMarcadas)
-                .buttonStyle(.bordered)
-                .foregroundStyle(PV.vermelho)
-                .disabled(!haMarcadas || isGenerating)
-            Button("Marcar todas") { for i in stories.indices { stories[i].approved = true } }
-                .buttonStyle(.bordered)
-            Button("Desmarcar todas") { for i in stories.indices { stories[i].approved = false } }
-                .buttonStyle(.bordered)
+            Button { insertApprovedIntoLinear() } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.up.right.square").font(.system(size: 10, weight: .semibold))
+                    Text("Aprovar")
+                }
+            }
+            .buttonStyle(EstiloBotaoPrincipal(compacto: true))
+            .disabled(!haMarcadas || isGenerating || marcadasIncompletas > 0)
+            .help(marcadasIncompletas > 0
+                  ? "\(marcadasIncompletas) card(s) marcado(s) sem objetivo, aceite ou fora de escopo. Abra e complete."
+                  : "Cria os cards marcados no Linear.")
+            Button { removerMarcadas() } label: {
+                Text("Remover").foregroundStyle(Aurora.vermelho.opacity(0.9))
+            }
+            .buttonStyle(EstiloBotaoSecundario(compacto: true))
+            .disabled(!haMarcadas || isGenerating)
+            Button { for i in stories.indices { stories[i].approved = true } } label: {
+                Text("Marcar todas")
+            }
+            .buttonStyle(EstiloBotaoSecundario(compacto: true))
+            .disabled(stories.isEmpty)
+            Button { for i in stories.indices { stories[i].approved = false } } label: {
+                Text("Desmarcar todas")
+            }
+            .buttonStyle(EstiloBotaoSecundario(compacto: true))
+            .disabled(!haMarcadas)
             Spacer(minLength: 8)
             if marcadasIncompletas > 0 {
-                Text("\(marcadasIncompletas) incompleto(s)")
-                    .fontePainel(11, .semibold)
-                    .foregroundStyle(PV.vermelho)
+                PilulaAurora(titulo: "\(marcadasIncompletas) incompleto(s)", cor: Aurora.vermelho, compacta: true)
             }
             Text(status)
-                .fontePainel(11)
-                .foregroundStyle(PV.mudo)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(Aurora.mudo)
                 .lineLimit(1)
         }
         .padding(.horizontal, 22)
-        .padding(.vertical, 12)
-        .background(PV.lateral)
+        .padding(.vertical, 10)
+        .background(Color.black.opacity(0.22))
+        .overlay(alignment: .top) { Rectangle().fill(Aurora.hair).frame(height: 1) }
     }
 
     // MARK: - Ações
@@ -746,6 +794,9 @@ struct PaginaBrainstorm: View {
             }
             await MainActor.run {
                 isGenerating = false
+                // «Limpar tudo» no meio da geração não pode repovoar o quadro nem o chat:
+                // a resposta desta conversa já não vale. Antes os cards voltavam depois do limpo.
+                guard geracao == conversaGeracao else { return }
                 switch resultado {
                 case .success(let lista):
                     let cards = lista.compactMap { Self.story(de: $0) }
@@ -758,7 +809,6 @@ struct PaginaBrainstorm: View {
                     status = semNorte
                         ? "\(cards.count) histórias. Projeto sem norte: crie em Ajustes › Projetos."
                         : "\(cards.count) histórias ancoradas no norte"
-                    guard geracao == conversaGeracao else { return }
                     messages.append(ChatMessage(
                         isAgent: true,
                         text: "Histórias da idéia, cada uma com esforço e lane do catálogo. Marque as que seguem."))

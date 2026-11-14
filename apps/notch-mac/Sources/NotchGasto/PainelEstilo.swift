@@ -2,62 +2,64 @@ import AppKit
 import SwiftUI
 import GastoCore
 
-/// Cores e medidas do painel v2. Amostradas da imagem de referência do design.
+/// Cores e medidas do painel. Apontam para a linguagem Aurora (ver `Aurora.swift`),
+/// assim o código antigo do painel herda o visual novo sem trocar cada chamada.
 enum PV {
-    static let fundo = Color(hex: 0x040B17)
-    static let lateral = Color(hex: 0x020814)
-    static let lateralBorda = Color(hex: 0x0D1828)
-    static let divisor = Color(hex: 0x13213A)
-    static let cartao = Color(hex: 0x081426)
-    static let cartaoBorda = Color(hex: 0x15233A)
-    static let interno = Color(hex: 0x0A1628)
-    static let linha = Color(hex: 0x0C1A2E)
-    static let linhaBorda = Color(hex: 0x13223A)
-    static let kpiTopo = Color(hex: 0x071A2E)
-    static let kpiBase = Color(hex: 0x061424)
-    static let kpiBorda = Color(hex: 0x16273F)
-    static let campo = Color(hex: 0x06101F)
-    static let campoBorda = Color(hex: 0x1B2A44)
-    static let tecla = Color(hex: 0x111D31)
-    static let botao = Color(hex: 0x0A1A30)
-    static let botaoBorda = Color(hex: 0x22344F)
-    static let navSelecao = Color(hex: 0x0A2149)
-    static let navSelecaoBorda = Color(hex: 0x17386E)
+    static let fundo = Aurora.base
+    static let lateral = Color(hex: 0x080D18)
+    static let lateralBorda = Color.white.opacity(0.07)
+    static let divisor = Color.white.opacity(0.07)
+    static let cartao = Aurora.vidro
+    static let cartaoBorda = Color.white.opacity(0.09)
+    static let interno = Color.white.opacity(0.032)
+    static let linha = Color.white.opacity(0.032)
+    static let linhaBorda = Color.white.opacity(0.06)
+    static let kpiTopo = Color(hex: 0x0E1729)
+    static let kpiBase = Color(hex: 0x0A1120)
+    static let kpiBorda = Color.white.opacity(0.10)
+    static let campo = Color.black.opacity(0.22)
+    static let campoBorda = Color.white.opacity(0.11)
+    static let tecla = Color(hex: 0x141F33)
+    static let botao = Color.white.opacity(0.055)
+    static let botaoBorda = Color.white.opacity(0.12)
+    static let navSelecao = Aurora.acento.opacity(0.12)
+    static let navSelecaoBorda = Aurora.acento.opacity(0.32)
     static let tag = Color(hex: 0x1A2840)
-    static let trilho = Color(hex: 0x22364F)
-    static let grade = Color(hex: 0x15233A)
-    static let eixo = Color(hex: 0x22324C)
+    static let trilho = Color.white.opacity(0.09)
+    static let grade = Color.white.opacity(0.06)
+    static let eixo = Color.white.opacity(0.12)
 
-    static let texto = Color(hex: 0xE6EDF7)
-    static let texto2 = Color(hex: 0xC2CEDF)
-    static let icone = Color(hex: 0xC9D4E4)
-    static let mudo = Color(hex: 0xA9B6C9)
-    static let apagado = Color(hex: 0x6B7C96)
+    static let texto = Aurora.texto
+    static let texto2 = Aurora.texto2
+    static let icone = Aurora.texto2
+    static let mudo = Aurora.mudo
+    static let apagado = Aurora.apagado
 
-    static let azul = Color(hex: 0x4FA3FF)
-    static let azulForte = Color(hex: 0x3B82F6)
-    static let azulBotao = Color(hex: 0x1F5FE0)
-    static let azulIcone = Color(hex: 0x3B9BFF)
-    static let azulFundo = Color(hex: 0x0B2B57)
-    static let verde = Color(hex: 0x35D66E)
-    static let verdeClaro = Color(hex: 0x22E5A0)
-    static let verdeFundo = Color(hex: 0x0F3B33)
-    static let vermelho = Color(hex: 0xFF4D6D)
-    static let vermelhoPonto = Color(hex: 0xFF3B5C)
-    static let vermelhoFundo = Color(hex: 0x4A1528)
-    static let ambar = Color(hex: 0xF5A524)
-    static let ambarFundo = Color(hex: 0x4A3416)
-    static let dourado = Color(hex: 0xF2B544)
-    static let teal = Color(hex: 0x3EE2DB)
-    static let tealFundo = Color(hex: 0x0B3D44)
-    static let ciano = Color(hex: 0x2EE6EA)
-    static let cinzaPilula = Color(hex: 0x1C2A40)
-    static let pontoPilula = Color(hex: 0xB9C7DD)
+    static let azul = Aurora.azul
+    static let azulForte = Aurora.azulForte
+    static let azulBotao = Aurora.azulForte
+    static let azulIcone = Aurora.azul
+    static let azulFundo = Aurora.azul.opacity(0.14)
+    static let verde = Aurora.verde
+    static let verdeClaro = Aurora.acento
+    static let verdeFundo = Aurora.verde.opacity(0.16)
+    static let vermelho = Aurora.vermelho
+    static let vermelhoPonto = Aurora.vermelho
+    static let vermelhoFundo = Aurora.vermelho.opacity(0.16)
+    static let ambar = Aurora.ambar
+    static let ambarFundo = Aurora.ambar.opacity(0.16)
+    static let dourado = Aurora.ambar
+    static let teal = Aurora.acento
+    static let tealFundo = Aurora.acento.opacity(0.14)
+    static let ciano = Aurora.ciano
+    static let violeta = Aurora.violeta
+    static let cinzaPilula = Color.white.opacity(0.07)
+    static let pontoPilula = Aurora.mudo
 
     /// Barras de «Gasto por lane», na ordem das lanes.
     static let barrasLane: [Color] = [
-        Color(hex: 0x2EE6EA), Color(hex: 0x3D8BFD), Color(hex: 0x8B8CF8), Color(hex: 0xF45FBE), Color(hex: 0xF0A271),
-        Color(hex: 0x5CFFC8), Color(hex: 0xFFD23F),
+        Aurora.acento, Aurora.azul, Aurora.violeta, Aurora.rosa, Color(hex: 0xF0A271),
+        Color(hex: 0x5CFFC8), Aurora.ambar,
     ]
 }
 
@@ -260,7 +262,7 @@ struct SeloVersao: View {
     }
 }
 
-/// «Ver todas →».
+/// «Ver todas →», em pílula de vidro.
 struct BotaoVer: View {
     var texto: String
     var pequeno = false
@@ -269,36 +271,49 @@ struct BotaoVer: View {
 
     var body: some View {
         Button(action: acao) {
-            HStack(spacing: pequeno ? 6 : 7) {
+            HStack(spacing: pequeno ? 5 : 6) {
                 Text(texto)
-                Image(systemName: "arrow.right").font(.system(size: pequeno ? 10 : 11, weight: .semibold))
+                Image(systemName: "arrow.right").font(.system(size: pequeno ? 9 : 10, weight: .semibold))
             }
             .fixedSize()
-            .fontePainel(pequeno ? 11.5 : 12.5)
-            .foregroundStyle(PV.texto)
-            .padding(.horizontal, pequeno ? 10 : 11)
-            .frame(height: pequeno ? 26 : 32)
-            .background(RoundedRectangle(cornerRadius: pequeno ? 7 : 8).fill(hover ? PV.azulFundo : PV.botao))
-            .overlay(RoundedRectangle(cornerRadius: pequeno ? 7 : 8).strokeBorder(hover ? PV.azul.opacity(0.5) : PV.botaoBorda, lineWidth: 1))
-            .contentShape(Rectangle())
+            .font(.system(size: pequeno ? 10.5 : 11.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(hover ? Aurora.acento : Aurora.texto2)
+            .padding(.horizontal, pequeno ? 9 : 11)
+            .frame(height: pequeno ? 24 : 28)
+            .background(Capsule().fill(Color.white.opacity(hover ? 0.10 : 0.05)))
+            .overlay(Capsule().strokeBorder(hover ? Aurora.acento.opacity(0.4) : Color.white.opacity(0.10), lineWidth: 1))
+            .contentShape(Capsule())
         }
         .buttonStyle(Pressionavel())
         .onHover { h in comAnimacao(DS.suave) { hover = h } }
     }
 }
 
-/// Pílula Ativa / Pausada / Desligada.
+/// Pílula Ativa / Pausada / Desligada, no desenho da Aurora.
 struct PilulaEstado: View {
     var estado: EstadoPilula
 
-    var body: some View {
-        HStack(spacing: 7) {
-            Circle().fill(estado == .ativa ? PV.verde : PV.pontoPilula).frame(width: 8, height: 8)
-            Text(estado.rotulo).fontePainel(12, .medium).foregroundStyle(PV.texto)
+    private var cor: Color {
+        switch estado {
+        case .ativa: return Aurora.verde
+        case .pausada: return Aurora.ambar
+        case .desligada: return Aurora.vermelho
         }
-        .padding(.leading, 11).padding(.trailing, 13)
-        .frame(height: 28)
-        .background(Capsule().fill(estado == .ativa ? PV.verdeFundo : PV.cinzaPilula))
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(cor).frame(width: 6, height: 6)
+                .shadow(color: cor.opacity(0.8), radius: 3)
+            Text(estado.rotulo)
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(cor)
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 24)
+        .background(Capsule().fill(cor.opacity(0.12)))
+        .overlay(Capsule().strokeBorder(cor.opacity(0.26), lineWidth: 1))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -364,21 +379,24 @@ enum AbrirComando {
     static func janelaLanes() { abrir(chave: "painel.lanes_comando", padrao: Legado.lanesComando) }
 }
 
-/// Botão retangular das páginas (ferramentas, log).
+/// Botão das páginas (ferramentas, log), em pílula de vidro.
 struct BotaoPV: View {
     var texto: String
-    var cor: Color = PV.texto
+    var cor: Color = Aurora.texto2
     var acao: () -> Void
     @State private var hover = false
 
     var body: some View {
         Button(action: acao) {
-            Text(texto).fontePainel(12.5).foregroundStyle(cor)
-                .padding(.horizontal, 12).frame(minHeight: 34)
+            Text(texto)
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(hover ? Aurora.acento : cor)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 32)
                 .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 8).fill(hover ? PV.azulFundo : PV.botao))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(hover ? PV.azul.opacity(0.5) : PV.botaoBorda, lineWidth: 1))
-                .contentShape(Rectangle())
+                .background(Capsule().fill(Color.white.opacity(hover ? 0.10 : 0.05)))
+                .overlay(Capsule().strokeBorder(hover ? Aurora.acento.opacity(0.38) : Color.white.opacity(0.10), lineWidth: 1))
+                .contentShape(Capsule())
         }
         .buttonStyle(Pressionavel())
         .onHover { h in comAnimacao(DS.suave) { hover = h } }
@@ -408,25 +426,25 @@ struct SeletorAbasCustos: View {
             ForEach(AbaListaCustos.allCases, id: \.self) { item in
                 Button { comAnimacao { aba = item } } label: {
                     Text(item.rotulo)
-                        .fontePainel(12.5, aba == item ? .semibold : .regular)
-                        .foregroundStyle(aba == item ? Color.white : PV.texto)
+                        .font(.system(size: 11.5, weight: aba == item ? .semibold : .regular, design: .rounded))
+                        .foregroundStyle(aba == item ? Aurora.tinta : Aurora.texto2)
                         .padding(.horizontal, 12)
-                        .frame(height: 28)
+                        .frame(height: 26)
                         .background {
                             if aba == item {
-                                RoundedRectangle(cornerRadius: 7).fill(PV.azulBotao)
+                                Capsule().fill(Aurora.gradienteBotao)
                                     .matchedGeometryEffect(id: "aba-custos", in: ns)
                             }
                         }
-                        .contentShape(Rectangle())
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(aba == item ? .isSelected : AccessibilityTraits())
             }
         }
         .padding(2)
-        .background(RoundedRectangle(cornerRadius: 9).fill(PV.botao))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(PV.campoBorda, lineWidth: 1))
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
     }
 }
 
@@ -440,18 +458,18 @@ struct SeletorPeriodo: View {
             ForEach(PeriodoCustos.allCases, id: \.self) { p in
                 Button { comAnimacao { periodo = p } } label: {
                     Text(p.rotulo)
-                        .fontePainel(12.5, periodo == p ? .semibold : .regular)
-                        .foregroundStyle(periodo == p ? Color.white : PV.texto)
-                        .frame(width: p == .semana ? 78 : 66, height: 28)
-                        .background { if periodo == p { RoundedRectangle(cornerRadius: 7).fill(PV.azulBotao).matchedGeometryEffect(id: "periodo", in: ns) } }
-                        .contentShape(Rectangle())
+                        .font(.system(size: 11.5, weight: periodo == p ? .semibold : .regular, design: .rounded))
+                        .foregroundStyle(periodo == p ? Aurora.tinta : Aurora.texto2)
+                        .frame(width: p == .semana ? 76 : 64, height: 26)
+                        .background { if periodo == p { Capsule().fill(Aurora.gradienteBotao).matchedGeometryEffect(id: "periodo", in: ns) } }
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(2)
-        .background(RoundedRectangle(cornerRadius: 9).fill(PV.botao))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(PV.campoBorda, lineWidth: 1))
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
     }
 }
 
@@ -459,13 +477,16 @@ struct SeletorPeriodo: View {
 struct RotuloColuna: View {
     var texto: String
     var body: some View {
-        Text(texto.uppercased()).fontePainel(11).tracking(0.6).foregroundStyle(Color(hex: 0x8FA0BA))
+        Text(texto.uppercased())
+            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+            .tracking(0.7)
+            .foregroundStyle(Aurora.mudo)
     }
 }
 
 extension View {
     /// Linha interna (fundo um pouco mais claro que o cartão).
-    func linhaPV(raio: CGFloat = 8, borda: Bool = true) -> some View {
+    func linhaPV(raio: CGFloat = 10, borda: Bool = true) -> some View {
         background(RoundedRectangle(cornerRadius: raio, style: .continuous).fill(PV.linha))
             .overlay {
                 if borda {

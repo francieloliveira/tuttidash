@@ -223,7 +223,7 @@ private struct FontePainel: ViewModifier {
     var peso: Font.Weight
 
     func body(content: Content) -> some View {
-        content.font(.system(size: tamanho * fator, weight: peso))
+        content.font(.system(size: tamanho * fator, weight: peso, design: .rounded))
     }
 }
 

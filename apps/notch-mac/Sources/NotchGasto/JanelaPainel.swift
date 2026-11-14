@@ -32,7 +32,7 @@ final class JanelaPainel: NSObject, NSWindowDelegate {
             // Painel v2: desenhado para 1600×900. Abaixo disso os blocos dividem a largura.
             w.setContentSize(NSSize(width: 1600, height: 900))
             w.minSize = NSSize(width: 1280, height: 800)
-            w.backgroundColor = NSColor(srgbRed: 2 / 255, green: 8 / 255, blue: 20 / 255, alpha: 1)
+            w.backgroundColor = NSColor(srgbRed: 6 / 255, green: 7 / 255, blue: 13 / 255, alpha: 1)
             w.center()
             w.delegate = self
             janela = w
