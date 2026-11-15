@@ -99,11 +99,21 @@ final class CardBrainstormTests: XCTestCase {
         let sem = BrainstormCLI.promptHistorias(ideia: "x", etiquetas: etiquetas)
         XCTAssertTrue(sem.contains("o projeto não tem norte"))
         XCTAssertTrue(BrainstormCLI.sistemaHistorias.contains("Não invente caminho"))
+        XCTAssertTrue(BrainstormCLI.promptHistorias(ideia: "x", etiquetas: etiquetas)
+            .contains("O formato HISTORIA: já é o card"))
     }
 
     func testHistoriasPensamMaisQueOChat() throws {
         let c = try XCTUnwrap(BrainstormCLI.chamada(cli: "claude", prompt: "p", sessao: nil, saidaCodex: nil, papel: .historias))
         XCTAssertEqual(c.argumentos[c.argumentos.firstIndex(of: "--effort")! + 1], "medium")
+    }
+
+    func testCorpoUsaObjetivoQuandoHistoriaEstaVazia() {
+        let c = CardBrainstorm.corpo(objetivo: "Resultado.", norteServido: "", historia: "   ",
+                                   aceite: ["observável"], prova: "NorteProjetoTests", foraDeEscopo: [],
+                                   arquivos: [], dependencias: ["nenhuma"], esforco: "baixo", lane: "claude")
+        XCTAssertTrue(c.contains("## História"))
+        XCTAssertTrue(c.contains("Resultado."), "sem história, o objetivo sustenta o conteúdo do card")
     }
 
     func testContextoLeNorteSemGlossarioEMapa() throws {
