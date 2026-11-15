@@ -105,7 +105,8 @@ PATH_ENV = f"/opt/homebrew/bin:{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/u
 # chave na config vale o iOS, como antes. Lido a cada ciclo.
 def projeto_linear():
     return projeto().id
-# Documentos do Linear (opcionais): sem id, o diário e a lista de erros conhecidos ficam de fora.
+# Documentos do Linear (opcionais): sem id, o diário fica de fora; a lista de erros
+# conhecidos usa o registro canônico (`gasto_lanes/erros_conhecidos.py`) — FRA-668.
 DIARY_DOC_ID = _cfg("linear.diary_doc_id", "")
 KNOWN_ERRORS_DOC_ID = _cfg("linear.erros_conhecidos_doc_id", "")
 # Estados e etiquetas: ids da config, do cache ou da API pelo nome (linear_ids, FRA-565).
@@ -180,7 +181,7 @@ def _ativar_modulos() -> Path:
     if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
         sys.exit("catalogo não está no bundle; import recusado")
     for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
-                 "proxy_linear.py", "revisao_ia.py", "gasto_privado.py"):
+                 "proxy_linear.py", "revisao_ia.py", "erros_conhecidos.py", "gasto_privado.py"):
         arq = pasta / nome
         if not arq.exists():
             continue
@@ -207,6 +208,7 @@ try:
     import catalogo  # noqa: E402
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
+    import erros_conhecidos  # noqa: E402  fonte única de erros conhecidos (FRA-668)
     import projetos  # noqa: E402
     import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
     import revisao_ia  # noqa: E402
@@ -499,14 +501,26 @@ def diary_append(lines: list[str]) -> None:
 
 
 def known_errors() -> str:
-    if not KNOWN_ERRORS_DOC_ID:
-        return "(sem lista de erros conhecidos: linear.erros_conhecidos_doc_id vazio)"
+    """Lista de erros conhecidos das lanes no texto que vai ao revisor e à triagem (FRA-668).
+
+    Fonte única: o documento do Linear (`linear.erros_conhecidos_doc_id`) quando
+    configurado com conteúdo; sem isso, o registro canônico versionado em
+    `gasto_lanes/erros_conhecidos.py`. Falha de rede não derruba o prompt: o agente
+    recebe o registro canônico (fail-closed para o critério de erro conhecido).
+    """
+    if KNOWN_ERRORS_DOC_ID:
+        try:
+            doc = linear(proxy_linear.consulta("ler_documento"), {"id": KNOWN_ERRORS_DOC_ID})["document"]
+            conteudo = (doc.get("content") or "").strip()
+            if conteudo:
+                return conteudo[:12000]
+        except RuntimeError as exc:
+            log(f"erros conhecidos: {exc}")
     try:
-        doc = linear(proxy_linear.consulta("ler_documento"), {"id": KNOWN_ERRORS_DOC_ID})["document"]
-        return (doc.get("content") or "")[:12000]
-    except RuntimeError as exc:
+        return erros_conhecidos.formatar()
+    except Exception as exc:  # noqa: BLE001 — o fallback também falha; o prompt avisa
         log(f"erros conhecidos: {exc}")
-        return "(lista de erros conhecidos indisponível agora)"
+        return "(registro de erros conhecidos indisponível agora)"
 
 
 def done_state_id(team_issue: dict) -> str | None:

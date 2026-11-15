@@ -1783,6 +1783,42 @@ class ExigeRevisaoIa(unittest.TestCase):
         self.assertTrue(watch.exige_revisao_ia({}))
 
 
+class ErrosConhecidosTest(unittest.TestCase):
+    """FRA-668: fonte única de erros conhecidos. Sem lista no Linear, o prompt recebe o registro canônico."""
+
+    def setUp(self):
+        self.anterior = (watch.KNOWN_ERRORS_DOC_ID, watch.linear)
+        self.addCleanup(self._restaura)
+
+    def _restaura(self):
+        watch.KNOWN_ERRORS_DOC_ID, watch.linear = self.anterior
+
+    def test_sem_doc_id_vai_o_registro_canonicalo(self):
+        watch.KNOWN_ERRORS_DOC_ID = ""
+        texto = watch.known_errors()
+        self.assertIn("**E22**", texto)
+        self.assertIn("Prova sem evidência", texto)
+
+    def test_doc_indisponivel_cai_no_registro(self):
+        watch.KNOWN_ERRORS_DOC_ID = "doc-fake"
+
+        def _linear(query: str, variables: dict) -> dict:
+            raise RuntimeError("proxy fora")
+
+        watch.linear = _linear
+        self.assertIn("**E19**", watch.known_errors())
+
+    def test_doc_com_conteudo_vence(self):
+        watch.KNOWN_ERRORS_DOC_ID = "doc-fake"
+
+        def _linear(query: str, variables: dict) -> dict:
+            return {"document": {"content": "## Erros conhecidos\n\n- **E99** — Outro erro"}}
+
+        watch.linear = _linear
+        self.assertIn("**E99**", watch.known_errors())
+        self.assertNotIn("**E22**", watch.known_errors())
+
+
 class RevisorForaDaCaixa(unittest.TestCase):
     """Causa raiz de 08/11: revisor de nuvem na caixa sem rede nunca respondia."""
 

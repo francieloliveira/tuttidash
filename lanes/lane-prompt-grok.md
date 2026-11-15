@@ -19,4 +19,4 @@ card vai para `lane:falhou`. Siga à risca:
   imagem/vídeo. Você não tem MCP nem web nesta lane.
 - Se precisar de algo fora disso para cumprir o card, **não tente**: grave
   `.lane/result.json` com `needs_dono` explicando o que faltou.
-- **Prova:** não rode `safe_xcodebuild.sh` (E5, regra comum a todas as lanes): a prova é do dispatcher. Liste as suítes em `tests` no `result.json`.
+- **Prova:** não rode `safe_xcodebuild.sh` (E5, comando proibido / regra comum a todas as lanes): a prova é do dispatcher. Liste as suítes em `tests` no `result.json`.
