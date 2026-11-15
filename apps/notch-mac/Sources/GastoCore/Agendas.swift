@@ -354,12 +354,12 @@ public enum StatusAgente: Equatable, Sendable {
 }
 
 extension Trabalho {
-    /// Texto curto de ajuda da chave, em pt-BR.
+    /// Texto curto de ajuda da chave, em pt-BR (FRA-681: diz o que muda ligada e desligada).
     public var ajuda: String {
         switch chave {
-        case "dispatcher": return String(localized: "Distribui os cards prontos para as lanes, a cada minuto. Desligado, nenhuma lane começa trabalho novo.")
-        case "watch": return String(localized: "Faz os merges, cuida da fila e das revisões quando o gestor não está.")
-        case "chave": return String(localized: "Decide quem cuida das lanes, o gestor ou o vigia. Desligar congela a troca automática.")
+        case "dispatcher": return String(localized: "Ligado, distribui os cards prontos para as lanes a cada minuto. Desligado, nenhuma lane começa trabalho novo.")
+        case "watch": return String(localized: "Ligado, faz os merges, cuida da fila e das revisões quando o gestor não está. Desligado, nada é mergeado automaticamente.")
+        case "chave": return String(localized: "Ligada, decide quem cuida das lanes pelo uso do GrokBot: abaixo do limite, o GrokBot trabalha e o Vigia fica parado; no limite ou sem medida, o Vigia assume. Desligada, a troca automática fica congelada.")
         default: return String(localized: "Serviço em segundo plano do TuttiDash.")
         }
     }

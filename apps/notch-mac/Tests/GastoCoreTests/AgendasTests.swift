@@ -180,3 +180,31 @@ final class StatusAgenteTests: XCTestCase {
         XCTAssertFalse(StatusAgente.desativado("com.transcentia.lanes.dispatcher", printDisabled: s))
     }
 }
+
+/// FRA-681: a tela de agentes em segundo plano precisa dizer o que muda ligado e desligado.
+final class AjudaTrabalhoTests: XCTestCase {
+    private func trabalho(_ chave: String) -> Trabalho {
+        Trabalho(label: "com.exemplo.\(chave)", nome: "Exemplo \(chave)", chave: chave,
+                 intervaloPadrao: 60, runAtLoad: false, interpretador: "/usr/bin/python3",
+                 script: "~/x/\(chave).py", argumentos: [], log: "~/Library/Logs/Ex/x.log")
+    }
+
+    func testAjudaDizOLigadoEDesligado() {
+        for chave in ["dispatcher", "watch", "chave"] {
+            let a = trabalho(chave).ajuda
+            XCTAssertTrue(a.contains("Ligad"), "a ajuda de \(chave) precisa dizer o efeito de ligar: \(a)")
+            XCTAssertTrue(a.contains("Desligad"), "a ajuda de \(chave) precisa dizer o efeito de desligar: \(a)")
+        }
+    }
+
+    func testAjudaDaChaveExplicaGrokBotEVigia() {
+        let a = trabalho("chave").ajuda
+        XCTAssertTrue(a.contains("GrokBot"), "a ajuda da TuttiChave precisa citar o GrokBot: \(a)")
+        XCTAssertTrue(a.contains("Vigia"), "a ajuda da TuttiChave precisa citar o Vigia: \(a)")
+        XCTAssertTrue(a.contains("congelada"), "a ajuda da TuttiChave precisa dizer o que acontece ao desligar: \(a)")
+    }
+
+    func testNomeCurtoDaChave() {
+        XCTAssertEqual(trabalho("chave").nomeCurto, "TuttiChave")
+    }
+}
