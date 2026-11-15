@@ -118,6 +118,19 @@ struct SecaoAgendas: View {
     }
 
     @State private var confirmarDesligar: Trabalho?
+    @State private var confirmarPararTudo = false
+
+    /// Nenhum dos agentes está ligado: «Parar tudo» fica desabilitado.
+    private var todosDesligados: Bool {
+        estado.gerenciador.trabalhos.allSatisfy { !(estado.status[$0.label]?.ligado ?? false) }
+    }
+
+    /// Desliga de uma vez só quem está ligado (FRA-681).
+    private func pararTudo() {
+        for t in estado.gerenciador.trabalhos where estado.status[t.label]?.ligado ?? false {
+            estado.alternarApp(t, ligar: false)
+        }
+    }
 
     private func chave(_ t: Trabalho) -> Binding<Bool> {
         Binding(get: { estado.status[t.label]?.ligado ?? false }, set: { novo in
@@ -179,6 +192,17 @@ struct SecaoAgendas: View {
             .padding(.vertical, 3)
             .animation(DS.anim(DS.suave), value: estado.status[t.label])
         }
+        HStack(spacing: DS.e3) {
+            Button(role: .destructive) {
+                confirmarPararTudo = true
+            } label: {
+                Label(String(localized: "Parar tudo"), systemImage: "stop.circle.fill")
+            }
+            .disabled(todosDesligados || !estado.trabalhando.isEmpty)
+            .accessibilityIdentifier("parar-tudo")
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 6)
         if estado.status.values.contains(.precisaAprovacao) {
             Button(String(localized: "Abrir Itens de Login nos Ajustes do Sistema")) {
                 RegistroSMAppService.abrirItensDeLogin()
@@ -202,6 +226,12 @@ struct SecaoAgendas: View {
             }
         } message: {
             Text(String(localized: "As lanes param de receber cards novos até você ligar de novo. Isto não muda as lanes ligadas nem a pausa."))
+        }
+        .confirmationDialog(String(localized: "Parar todos os agentes em segundo plano?"),
+                            isPresented: $confirmarPararTudo) {
+            Button(String(localized: "Parar tudo"), role: .destructive) { pararTudo() }
+        } message: {
+            Text(String(localized: "Desliga o Dispatcher, o Vigia e a TuttiChave de uma vez. As lanes que já estão rodando não são interrompidas; para parar também o app e as lanes, use TuttiDash › Sair."))
         }
         .confirmationDialog(String(localized: "Substituir o agendamento atual deste job?"),
                             isPresented: Binding(get: { confirmar != nil }, set: { if !$0 { confirmar = nil } })) {
