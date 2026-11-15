@@ -34,6 +34,7 @@ public enum BrainstormCLI {
     Não percorra o repositório: responda com o que esta conversa já tem. \
     Se o pedido citar um arquivo que você ainda não abriu, leia só esse arquivo.
     Tom: sucinto, crítico e criativo. Aponte o furo antes de elogiar.
+    Fala: uma ou duas frases que amarram a ideia; se a ideia já estiver clara, devolva direto, sem enrolação.
     Português. No máximo 6 linhas, sem título e sem preâmbulo.
     Depois feche com um bloco ITENS: e de 2 a 4 linhas começando com "- ".
     Cada item é uma frase curta que pode ser acrescentada à ideia. Nada depois do bloco.
@@ -62,6 +63,10 @@ public enum BrainstormCLI {
     e o que fica fora de escopo, inclusive o que é de outra história desta idéia.
     Quando houver norte, copie o trecho (§ ou R) que a história serve; história que contraria o norte não entra.
     Arquivos só os que aparecem no mapa; sem mapa, escreva "a confirmar pelo agente". Não invente caminho.
+    Cada história nasce de um pedaço com valor percebido para quem a usa; sem valor percebido, não é história.
+    Objetivo: resultado observável. Aceite: critério que quem não escreve consegue verificar. Prova: a
+    suíte do mapa ou "sem suíte: como verificar".
+    Fora: o que esta história não faz, incluindo o que pertence a outra história da mesma ideia.
     Português. Devolva só os blocos HISTORIA:, sem texto antes ou depois.
     """
 
@@ -220,6 +225,8 @@ public enum BrainstormCLI {
         Quebre a idéia em 3 a 6 histórias. Cada uma cobre um pedaço diferente.
         Esforço baixo é ajuste pequeno; medio é o miolo; alto atravessa várias partes.
         Distribua as lanes quando mais de uma aceitar o esforço. Não ponha todas na mesma sem motivo.
+        Cada história deve falar de um pedaço com valor percebido para quem a usa; sem valor, não é história.
+        A história que contradiz o norte não entra.
         Repita o bloco, sem texto fora dele:
 
         HISTORIA:
@@ -464,6 +471,7 @@ public enum BrainstormCLI {
             \(mensagem)
 
             Responda direto, sem reler o repositório.
+            Conecte o item à história existente mais próxima; se for novo, mantenha o par lane/esforço do catálogo.
             Feche com o bloco ITENS: e de 2 a 4 linhas "- ". Nada depois do bloco.
             """
         }
@@ -485,6 +493,7 @@ public enum BrainstormCLI {
         \(fala)
 
         Feche com o bloco ITENS: e de 2 a 4 linhas "- ". Nada depois do bloco.
+        Conecte o item à história existente mais próxima; se for novo, mantenha o par lane/esforço do catálogo.
         """
     }
 

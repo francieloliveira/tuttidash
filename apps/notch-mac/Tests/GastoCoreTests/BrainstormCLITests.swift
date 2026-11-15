@@ -5,6 +5,7 @@ final class BrainstormCLITests: XCTestCase {
     func testSistemaNaoMandaVarrerORepositorio() {
         XCTAssertTrue(BrainstormCLI.sistema.contains("Não percorra o repositório"))
         XCTAssertTrue(BrainstormCLI.sistema.contains("Não edite arquivos"))
+        XCTAssertTrue(BrainstormCLI.sistema.contains("Fala: uma ou duas frases"))
         XCTAssertFalse(BrainstormCLI.sistema.contains("Leia o código"))
         XCTAssertFalse(BrainstormCLI.sistema.contains("leia os docs"))
     }
@@ -31,6 +32,7 @@ final class BrainstormCLITests: XCTestCase {
         XCTAssertFalse(seguido.contains("Conversa:"))
         XCTAssertFalse(seguido.contains("olá"))
         XCTAssertTrue(seguido.contains("sem reler o repositório"))
+        XCTAssertTrue(seguido.contains("Conecte o item à história existente mais próxima"))
         XCTAssertTrue(seguido.contains("de novo"))
         XCTAssertTrue(seguido.contains("ITENS:"))
         XCTAssertTrue(frio.contains("ITENS:"))
@@ -107,6 +109,9 @@ final class BrainstormCLITests: XCTestCase {
         XCTAssertTrue(pedido.contains("pedaço diferente"))
         XCTAssertTrue(BrainstormCLI.sistemaHistorias.contains("Não percorra o repositório"))
         XCTAssertTrue(BrainstormCLI.sistemaHistorias.contains("Não edite arquivos"))
+        XCTAssertTrue(BrainstormCLI.sistemaHistorias.contains("valor percebido"))
+        XCTAssertTrue(pedido.contains("sem valor, não é história"))
+        XCTAssertTrue(pedido.contains("A história que contradiz o norte não entra"))
         XCTAssertFalse(BrainstormCLI.sistemaHistorias.contains("ITENS:"))
 
         let chamada = BrainstormCLI.chamada(cli: "claude", prompt: pedido, sessao: nil,
