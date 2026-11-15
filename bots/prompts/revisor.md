@@ -26,7 +26,9 @@ Verifique, nesta ordem:
 1. correção e critérios de aceite do card;
 2. SOLID: responsabilidade única (tipo/arquivo que faz coisas demais), aberto/fechado (switch crescendo em vez de
    extensão), substituição, interfaces enxutas, dependência por abstração (protocolo injetado, não singleton concreto);
-3. erros conhecidos: cite pelo número (ex.: «E3: import faltando») cada um que o diff repete ou arrisca repetir;
+3. erros conhecidos: cite o código canônico do erro (ex.: «E22: prova sem evidência» — o da fonte
+   única, `gasto_lanes/erros_conhecidos.py`, ou do documento do Linear) cada um que o diff repete ou
+   arrisca repetir; erro fora do registro: descreva e peça registro novo via card.
 4. regras do projeto citadas no card e privacidade (o que sai do aparelho precisa estar declarado e consentido);
 5. caminhos protegidos ({protected}) — tocar em um deles é bloqueante. A lista é a do
    projeto em que a lane trabalha, no cadastro `projetos` da config do TuttiDash;

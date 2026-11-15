@@ -6,7 +6,7 @@ Roda a cada 60 s via launchd (com.transcentia.lanes.dispatcher).
   --dry-run  só registra o que assumiria (padrão do plist até a titular ligar)
   --real     assume cards nas lanes habilitadas em ~/.transcentia/lanes/enabled
 
-Divisão de trabalho (E3):
+Divisão de trabalho (E3 — fonte única: gasto_lanes/erros_conhecidos.py):
   dispatcher  lê o card, cria o worktree, abre a lane no tmux e, ao final,
               faz push para a URL do cadastro e abre o PR em rascunho. O card só
               vai para In Review quando o check remoto `prova-remota` está verde
@@ -4217,7 +4217,7 @@ def ultimas_tentativas(blocos: list[list[str]]) -> list[list[str]]:
     return list(ult.values())
 
 
-# E22: a prova só vale com esta linha, N>0, na última tentativa de cada suíte.
+# E22 (registro canônico: gasto_lanes/erros_conhecidos.py, FRA-668): a prova só vale com esta linha, N>0, na última tentativa de cada suíte.
 # `with 0 failures` seguido de `(0 unexpected)` também vale. `Executed 0 tests` não.
 EXEC_OK_RE = re.compile(r"Executed ([1-9]\d*) tests?, with 0 failures\b")
 
@@ -4248,7 +4248,7 @@ def prova_e22(wt: Path, prova: Optional[Path] = None) -> bool:
 def proof_veredito(wt: Path, rc: str = "", prova: Optional[Path] = None) -> str:
     """O que a prova diz de verdade: 'verde', 'vermelho', 'preflight' ou 'sem-dado'.
 
-    Exit 0 (melhoria 1, 21/10/2026, e E22): manda o código de saída. Só vira `vermelho`
+    Exit 0 (melhoria 1, 21/10/2026, e E22 — registro canônico: gasto_lanes/erros_conhecidos.py): manda o código de saída. Só vira `vermelho`
     com evidência forte na **última** tentativa de alguma suíte. Trecho de código e
     tentativa anterior que a seguinte resolveu não derrubam um exit 0. Verde só com
     `Executed N tests, with 0 failures` e N>0 em cada suíte; sem isso é `sem-prova`.
@@ -4266,7 +4266,7 @@ def proof_veredito(wt: Path, rc: str = "", prova: Optional[Path] = None) -> str:
     if rc == "0":
         if any(evidencia(l) for b in ultimas_tentativas(blocos) for l in b):
             return "vermelho"
-        # Exit 0 sem a linha do E22 não é prova: log vazio ou 0 testes não fecham o card.
+        # Exit 0 sem a linha do E22 (registro canônico: gasto_lanes/erros_conhecidos.py) não é prova: log vazio ou 0 testes não fecham o card.
         if prova_e22(wt, prova):
             return "verde"
         return "sem-prova"

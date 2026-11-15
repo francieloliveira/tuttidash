@@ -24,8 +24,10 @@ colchetes, só destas: [esforco=baixo] [esforco=medio] [esforco=alto] [lane=<nom
 a decisão vira só comentário. Nunca ofereça "manter", "esperar" ou "aguardar": não responder já é manter.)
 RECOMENDA: <a letra> — <por quê, em uma frase>
 Regras de escrita dessas três linhas (o dono lê no app, sem abrir o card; vale SEMPRE):
-- Português simples, frases completas, sem jargão: nada de códigos de erro (E13), nomes de etiqueta
-  (needs:dono, lane:falhou), ids ou siglas sem dizer o que são. Diga a coisa pelo nome ("a lane parou porque…").
+- Português simples, frases completas, sem jargão: nada de códigos de erro (E#), nomes de etiqueta
+  (needs:dono, lane:falhou), ids ou siglas sem dizer o que são. A resposta ao dono é em linguagem
+  simples: o código canônico do erro é coisa da camada do agente (revisão/triagem interna), não dele.
+  Diga a coisa pelo nome ("a lane parou porque…").
 - NUNCA omita detalhe que muda a decisão: o que já foi feito, o que está parado e por quê, quanto custa ou
   quanto tempo leva quando souber (esforço alto, modelo, rodadas que já falharam), e o que se perde ou não
   se perde (trabalho na branch, PR aberto).

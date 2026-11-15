@@ -61,6 +61,7 @@ COPIAS = (
     ("gasto_lanes/config.py", "gasto_lanes/config.py", 0o644),
     ("gasto_lanes/proxy_linear.py", "gasto_lanes/proxy_linear.py", 0o644),
     ("gasto_lanes/revisao_ia.py", "gasto_lanes/revisao_ia.py", 0o644),
+    ("gasto_lanes/erros_conhecidos.py", "gasto_lanes/erros_conhecidos.py", 0o644),
     ("gasto_lanes/acp.py", "gasto_lanes/acp.py", 0o644),
     ("gasto_lanes/politica_acp.py", "gasto_lanes/politica_acp.py", 0o644),
     ("gasto_lanes/mapa.py", "gasto_lanes/mapa.py", 0o644),

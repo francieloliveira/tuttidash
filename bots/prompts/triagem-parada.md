@@ -10,10 +10,11 @@ Card {card}: {title} (estado: {state})
 {comments}
 ## Fim do log da lane ({log_name})
 {log_tail}
-## Erros conhecidos (E1, E2, …)
+## Erros conhecidos das lanes (E1, E2, …)
 {known_errors}
+A lista vem da fonte única: o registro canônico `gasto_lanes/erros_conhecidos.py` (E3, E5, E13, E14, E19, E22) ou o documento do Linear do projeto.
 
-Diga em até 12 linhas: causa provável (cite o E# se for um erro conhecido), o que a lane deve fazer diferente na próxima
+Diga em até 12 linhas: causa provável (cite o E# do registro se for um erro conhecido), o que a lane deve fazer diferente na próxima
 rodada (instrução curta que entra no card) e se o trabalho já feito na branch pode ser aproveitado.
 Confira também se a descrição cita repo/prova antigos (ex.: outro repo ou comando de prova que não é o do cadastro do
 projeto em `projetos`): texto velho é causa válida — peça a atualização do texto para o repo/prova do projeto.
