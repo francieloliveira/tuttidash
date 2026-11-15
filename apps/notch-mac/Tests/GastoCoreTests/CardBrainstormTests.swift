@@ -101,6 +101,8 @@ final class CardBrainstormTests: XCTestCase {
         XCTAssertTrue(BrainstormCLI.sistemaHistorias.contains("Não invente caminho"))
         XCTAssertTrue(BrainstormCLI.promptHistorias(ideia: "x", etiquetas: etiquetas)
             .contains("O formato HISTORIA: já é o card"))
+        XCTAssertTrue(BrainstormCLI.promptHistorias(ideia: "x", etiquetas: etiquetas)
+            .contains("Aceite: cada critério deve ser observável e falsificável"))
     }
 
     func testHistoriasPensamMaisQueOChat() throws {

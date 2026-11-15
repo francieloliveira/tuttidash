@@ -230,6 +230,8 @@ public enum BrainstormCLI {
         O formato HISTORIA: já é o card: objetivo (o resultado), historia (Como…Eu quero…Para que…), aceite
         (cada critério observável com a prova), fora (o que não faz), arquivos e dependências. Não escreva fora
         do bloco.
+        Aceite: cada critério deve ser observável e falsificável por quem não escreveu; a prova acompanha o
+        critério final do aceite.
         Repita o bloco, sem texto fora dele:
 
         HISTORIA:
