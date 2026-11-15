@@ -227,6 +227,9 @@ public enum BrainstormCLI {
         Distribua as lanes quando mais de uma aceitar o esforço. Não ponha todas na mesma sem motivo.
         Cada história deve falar de um pedaço com valor percebido para quem a usa; sem valor, não é história.
         A história que contradiz o norte não entra.
+        O formato HISTORIA: já é o card: objetivo (o resultado), historia (Como…Eu quero…Para que…), aceite
+        (cada critério observável com a prova), fora (o que não faz), arquivos e dependências. Não escreva fora
+        do bloco.
         Repita o bloco, sem texto fora dele:
 
         HISTORIA:

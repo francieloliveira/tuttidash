@@ -46,7 +46,9 @@ public enum CardBrainstorm {
             secao("Norte servido", norte.components(separatedBy: "\n").map { $0.hasPrefix(">") ? $0 : "> \($0)" })
         }
         let hist = historia.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !hist.isEmpty { secao("História", [hist]) }
+        // A precisão do card não pode depender de a história ter texto bonito: sem ele,
+        // o objetivo vira o conteúdo — o card continua completo e o agente da lane lê tudo.
+        if !hist.isEmpty { secao("História", [hist]) } else if !obj.isEmpty { secao("História", [obj]) }
         var ac = limpar(aceite).map { "- [ ] \($0)" }
         let p = prova.trimmingCharacters(in: .whitespacesAndNewlines)
         if !p.isEmpty { ac.append("- [ ] Prova: \(p)") }
