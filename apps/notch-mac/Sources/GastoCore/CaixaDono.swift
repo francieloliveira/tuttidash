@@ -387,9 +387,5 @@ public enum CaixaDono {
     }
 
     /// Texto como literal de string do GraphQL (o JSON escapa do mesmo jeito).
-    static func lit(_ s: String) -> String {
-        guard let d = try? JSONSerialization.data(withJSONObject: [s]), let t = String(data: d, encoding: .utf8),
-              t.count >= 2 else { return "\"\"" }
-        return String(t.dropFirst().dropLast())
-    }
+    static func lit(_ s: String) -> String { LiteralGraphQL.texto(s) }
 }

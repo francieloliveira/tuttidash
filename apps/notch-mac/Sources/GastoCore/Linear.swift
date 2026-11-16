@@ -71,7 +71,17 @@ public struct ProjetoLinear: Identifiable, Equatable, Hashable, Sendable {
     public var rotulo: String { timeNome.isEmpty ? nome : "\(nome) · \(timeNome)" }
 }
 
-/// Só leitura: nenhuma mutação é enviada ao Linear.
+/// Texto como literal de string do GraphQL (o JSON escapa do mesmo jeito).
+public enum LiteralGraphQL {
+    public static func texto(_ s: String) -> String {
+        guard let d = try? JSONSerialization.data(withJSONObject: [s]),
+              let t = String(data: d, encoding: .utf8), t.count >= 2 else { return "\"\"" }
+        return String(t.dropFirst().dropLast())
+    }
+}
+
+/// Cliente do Linear do app: lê o workspace e cria projeto. As escolhas dos Ajustes só leem;
+/// mover card, comentar e etiquetar continua com o vigia (pelo proxy).
 public struct ServicoLinear: Sendable {
     public let cliente: ClienteLinear
     public init(cliente: ClienteLinear = HTTPClienteLinear()) { self.cliente = cliente }
@@ -122,12 +132,44 @@ public struct ServicoLinear: Sendable {
 
     static func projetos(_ d: [String: Any]) -> [ProjetoLinear] {
         let nodes = (d["projects"] as? [String: Any])?["nodes"] as? [[String: Any]] ?? []
-        return nodes.compactMap { n in
-            guard let id = n["id"] as? String, let nome = n["name"] as? String else { return nil }
-            let time = ((n["teams"] as? [String: Any])?["nodes"] as? [[String: Any]])?.first
-            return ProjetoLinear(id: id, nome: nome, url: n["url"] as? String ?? "",
-                                 timeID: time?["id"] as? String ?? "", timeNome: time?["name"] as? String ?? "")
-        }.sorted { $0.rotulo.localizedCaseInsensitiveCompare($1.rotulo) == .orderedAscending }
+        return nodes.compactMap(projeto)
+            .sorted { $0.rotulo.localizedCaseInsensitiveCompare($1.rotulo) == .orderedAscending }
+    }
+
+    /// Um nó de projeto (a consulta da lista e a resposta do `projectCreate` têm a mesma forma).
+    static func projeto(_ n: [String: Any]) -> ProjetoLinear? {
+        guard let id = n["id"] as? String, let nome = n["name"] as? String else { return nil }
+        let time = ((n["teams"] as? [String: Any])?["nodes"] as? [[String: Any]])?.first
+        return ProjetoLinear(id: id, nome: nome, url: n["url"] as? String ?? "",
+                             timeID: time?["id"] as? String ?? "", timeNome: time?["name"] as? String ?? "")
+    }
+
+    /// Times do workspace. A criação de projeto pede um time.
+    public func times(token t: String) async throws -> [ItemLinear] {
+        let d = try await cliente.consultar("{ teams(first: 100) { nodes { id name } } }", token: try token(t))
+        return Self.itens(d, "teams")
+    }
+
+    /// Cria o projeto no Linear sem sair do TuttiDash. O nome entra como literal
+    /// do GraphQL (JSON escapa igual); o time é um uuid, recusado se trouxer aspa ou barra.
+    public func criarProjeto(nome bruto: String, timeID: String, token t: String) async throws -> ProjetoLinear {
+        let nome = bruto.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nome.isEmpty else { throw ErroLinear.resposta("o nome do projeto está vazio") }
+        let time = timeID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard UUID(uuidString: time) != nil else { throw ErroLinear.resposta("o time do projeto não foi escolhido") }
+        let q = """
+        mutation { projectCreate(input: {name: \(LiteralGraphQL.texto(nome)), teamIds: ["\(time)"]}) { \
+        success project { id name url teams(first: 1) { nodes { id name } } } } }
+        """
+        let d = try await cliente.consultar(q, token: try token(t))
+        guard let carga = d["projectCreate"] as? [String: Any] else {
+            throw ErroLinear.resposta("projectCreate")
+        }
+        guard (carga["success"] as? Bool) == true, let n = carga["project"] as? [String: Any],
+              let projeto = Self.projeto(n) else {
+            throw ErroLinear.resposta("o Linear não devolveu o projeto criado")
+        }
+        return projeto
     }
 
     public func opcoes(time: String, token t: String) async throws -> OpcoesTime {

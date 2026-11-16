@@ -21,6 +21,18 @@ final class EstadoProjetos: ObservableObject {
     let modelo: ModeloAjustes
     let servico: ServicoLinear
     let tokens: TokenLinear
+    /// Criação de projeto no Linear sem sair do TuttiDash.
+    struct CriacaoProjeto: Identifiable {
+        let id = UUID()
+        var linhaID: UUID
+    }
+    @Published var criacao: CriacaoProjeto?
+    @Published var times: [ItemLinear] = []
+    @Published var avisoTimes: String?
+    @Published var carregandoTimes = false
+    @Published var criandoProjeto = false
+    /// Quantas cargas de lista estão em voo: o `Atualizar lista` não pode ser engolido pelo `.task`.
+    private var cargas = 0
     @Published var linhas: [LinhaCadastro]
     @Published var erro: String?
     @Published var aviso: String?
@@ -130,11 +142,16 @@ final class EstadoProjetos: ObservableObject {
             : (texto.isEmpty ? String(localized: "A instalação falhou (código \(r.codigo)).") : texto)
     }
 
-    /// Carrega as duas listas fora da thread da interface.
-    func carregarListas() async {
-        guard !carregandoListas else { return }
+    /// Carrega as duas listas fora da thread da interface. `forcar` é o botão «Atualizar lista»:
+    /// ele relê o Linear mesmo que uma carga esteja em voo (o `.task` não é bloqueado por ele).
+    func carregarListas(forcar: Bool = false) async {
+        if cargas > 0 && !forcar { return }
+        cargas += 1
         carregandoListas = true
-        defer { carregandoListas = false }
+        defer {
+            cargas -= 1
+            carregandoListas = cargas > 0
+        }
         let tokens = self.tokens, servico = self.servico
         if let t = await Task.detached(operation: { tokens.ler() }).value {
             do {
@@ -152,6 +169,56 @@ final class EstadoProjetos: ObservableObject {
             avisoGitHub = lista.isEmpty ? String(localized: "Nenhum repositório na sua conta do GitHub.") : nil
         case .failure(let e):
             avisoGitHub = e.errorDescription
+        }
+    }
+
+    // MARK: - Criar projeto no Linear
+
+    /// Abre a folha de criação e traz os times (uma vez só).
+    func prepararCriacao(_ linhaID: UUID) async {
+        criacao = CriacaoProjeto(linhaID: linhaID)
+        if times.isEmpty { await carregarTimes() }
+    }
+
+    /// Times do workspace. Sem token, o motivo aparece dentro da folha.
+    func carregarTimes() async {
+        guard !carregandoTimes else { return }
+        carregandoTimes = true
+        defer { carregandoTimes = false }
+        let tokens = self.tokens, servico = self.servico
+        guard let t = await Task.detached(operation: { tokens.ler() }).value else {
+            times = []
+            avisoTimes = String(localized: "Conecte o Linear (Ajustes › Contas › Linear) para criar o projeto.")
+            return
+        }
+        do {
+            times = try await servico.times(token: t)
+            avisoTimes = times.isEmpty ? String(localized: "Nenhum time no seu Linear.") : nil
+        } catch {
+            times = []
+            avisoTimes = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// Cria no Linear, relê a lista e já escolhe o projeto na linha. Devolve o motivo do erro (nil = criou).
+    func criarProjeto(nome: String, timeID: String, linhaID: UUID) async -> String? {
+        guard !criandoProjeto else { return nil }
+        criandoProjeto = true
+        defer { criandoProjeto = false }
+        let tokens = self.tokens, servico = self.servico
+        guard let t = await Task.detached(operation: { tokens.ler() }).value else {
+            return String(localized: "Conecte o Linear (Ajustes › Contas › Linear) para criar o projeto.")
+        }
+        do {
+            let novo = try await servico.criarProjeto(nome: nome, timeID: timeID, token: t)
+            await carregarListas(forcar: true)
+            escolherLinear(novo, linhaID)
+            criacao = nil
+            erro = nil
+            aviso = String(localized: "Projeto \(novo.nome) criado no Linear. Agora escolha o repositório do GitHub e a pasta.")
+            return nil
+        } catch {
+            return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
@@ -338,6 +405,15 @@ struct SecaoProjetos: View {
                 estado.definirNorte(p.projetoID)
             }))
         }
+        .sheet(item: $estado.criacao) { c in
+            CriarProjetoSheet(estado: estado, linhaID: c.linhaID, timeSugerido: timeDoRascunho(c.linhaID))
+        }
+    }
+
+    /// Time do projeto já escolhido na linha (vazio se ainda não há projeto).
+    private func timeDoRascunho(_ id: UUID) -> String {
+        guard let l = estado.linhas.first(where: { $0.id == id }) else { return "" }
+        return estado.projetosLinear.first { $0.id == l.rascunho.projetoID }?.timeID ?? ""
     }
 
     @ViewBuilder
@@ -550,20 +626,34 @@ private struct LinhaProjeto: View {
     }
 
     @ViewBuilder private var campoLinear: some View {
-        if estado.projetosLinear.isEmpty {
-            LabeledContent(String(localized: "Projeto no Linear")) {
-                ListaIndisponivel(aviso: estado.avisoLinear, carregando: estado.carregandoListas) {
-                    Task { await estado.carregarListas() }
+        LabeledContent(String(localized: "Projeto no Linear")) {
+            HStack(spacing: 6) {
+                if estado.projetosLinear.isEmpty {
+                    ListaIndisponivel(aviso: estado.avisoLinear, carregando: estado.carregandoListas) {
+                        Task { await estado.carregarListas(forcar: true) }
+                    }
+                } else {
+                    Picker(String(localized: "Projeto no Linear"), selection: Binding<String>(
+                        get: { p.projetoID },
+                        set: { id in if let x = estado.projetosLinear.first(where: { $0.id == id }) { estado.escolherLinear(x, linha.id) } })) {
+                        if !estado.projetosLinear.contains(where: { $0.id == p.projetoID }) {
+                            Text(p.projetoID.isEmpty ? String(localized: "Escolha…") : String(localized: "(fora da lista)")).tag(p.projetoID)
+                        }
+                        ForEach(estado.projetosLinear) { x in Text(x.rotulo).tag(x.id) }
+                    }
+                    .labelsHidden()
                 }
-            }
-        } else {
-            Picker(String(localized: "Projeto no Linear"), selection: Binding<String>(
-                get: { p.projetoID },
-                set: { id in if let x = estado.projetosLinear.first(where: { $0.id == id }) { estado.escolherLinear(x, linha.id) } })) {
-                if !estado.projetosLinear.contains(where: { $0.id == p.projetoID }) {
-                    Text(p.projetoID.isEmpty ? String(localized: "Escolha…") : String(localized: "(fora da lista)")).tag(p.projetoID)
+                Button { Task { await estado.prepararCriacao(linha.id) } } label: {
+                    Image(systemName: "plus.circle")
                 }
-                ForEach(estado.projetosLinear) { x in Text(x.rotulo).tag(x.id) }
+                .buttonStyle(.borderless)
+                .help(String(localized: "Criar projeto no Linear"))
+                Button { Task { await estado.carregarListas(forcar: true) } } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help(String(localized: "Atualizar a lista do Linear"))
+                .disabled(estado.carregandoListas)
             }
         }
     }
@@ -572,7 +662,7 @@ private struct LinhaProjeto: View {
         if estado.repos.isEmpty {
             LabeledContent(String(localized: "Repositório no GitHub")) {
                 ListaIndisponivel(aviso: estado.avisoGitHub, carregando: estado.carregandoListas) {
-                    Task { await estado.carregarListas() }
+                    Task { await estado.carregarListas(forcar: true) }
                 }
             }
         } else {
@@ -663,6 +753,90 @@ private struct LinhaProjeto: View {
             Button(linha.nova ? String(localized: "Adicionar") : String(localized: "Salvar")) { estado.salvar(linha.id) }
                 .buttonStyle(.borderedProminent)
                 .disabled(motivo != nil || !linha.mudou)
+        }
+    }
+}
+
+/// Cria o projeto no Linear e já o escolhe no cadastro. O time é obrigatório no
+/// Linear; o resto (repositório, pasta) continua sendo escolhido aqui.
+private struct CriarProjetoSheet: View {
+    @ObservedObject var estado: EstadoProjetos
+    let linhaID: UUID
+    /// Time do projeto que a linha já aponta, quando há um: evita trocar de time sem querer.
+    let timeSugerido: String
+    @Environment(\.dismiss) private var fechar
+    @State private var nome = ""
+    @State private var timeID = ""
+    @State private var erro: String?
+    @State private var criando = false
+
+    private var podeCriar: Bool {
+        !criando && !nome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !timeID.isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(String(localized: "Criar projeto no Linear")).font(.title3.weight(.semibold))
+            Text(String(localized: "O projeto nasce no Linear, no time escolhido. Depois escolha o repositório do GitHub e a pasta aqui no cadastro."))
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            TextField(String(localized: "Nome do projeto"), text: $nome,
+                      prompt: Text(String(localized: "Como aparece no Linear")))
+                .textFieldStyle(.roundedBorder)
+            if estado.carregandoTimes {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(String(localized: "Carregando os times…")).foregroundStyle(.secondary)
+                }
+            } else if estado.times.isEmpty {
+                HStack(spacing: 6) {
+                    Label(estado.avisoTimes ?? String(localized: "Nenhum time no seu Linear."),
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(String(localized: "Tentar de novo")) { Task { await estado.carregarTimes() } }
+                }
+            } else {
+                Picker(String(localized: "Time do projeto"), selection: $timeID) {
+                    Text(String(localized: "Escolha…")).tag("")
+                    ForEach(estado.times) { t in Text(t.nome).tag(t.id) }
+                }
+            }
+            if let e = erro {
+                Label(e, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button(String(localized: "Cancelar")) { fechar() }
+                    .keyboardShortcut(.cancelAction)
+                Button(criando ? String(localized: "Criando…") : String(localized: "Criar no Linear")) {
+                    Task {
+                        criando = true
+                        erro = await estado.criarProjeto(nome: nome, timeID: timeID, linhaID: linhaID)
+                        criando = false
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!podeCriar)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .task {
+            await estado.carregarTimes()
+            sugerirTime()
+        }
+        // A lista de times chega depois da folha abrir: o time sugerido entra quando ela chega.
+        .onChange(of: estado.times) { _, _ in sugerirTime() }
+    }
+
+    /// Um time só já vem escolhido; com vários, vale o time do projeto que a linha aponta.
+    private func sugerirTime() {
+        guard timeID.isEmpty else { return }
+        if !timeSugerido.isEmpty, estado.times.contains(where: { $0.id == timeSugerido }) {
+            timeID = timeSugerido
+        } else if estado.times.count == 1 {
+            timeID = estado.times[0].id
         }
     }
 }
