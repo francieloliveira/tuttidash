@@ -1,9 +1,9 @@
 import SwiftUI
 import GastoCore
 
-/// FRA-531: «Quem cuida das lanes». A TuttiChave não é um interruptor geral: ela decide quem cuida
-/// das lanes, o gestor (Grok Bot) ou o vigia no Mac. A tela só grava `bots_chave.modo_forcado` e roda o
-/// bots-chave; nunca cria nem apaga PAUSE, PAUSE.manual ou `enabled`.
+/// FRA-531/FRA-682: «Vigia — quem cuida». O Vigia local e o gestor (Grok Bot) não trabalham
+/// juntos: o PAUSE decide quem cuida. O seletor grava `bots_chave.modo_forcado` e roda o
+/// bots-chave na hora; nunca cria nem apaga PAUSE, PAUSE.manual ou `enabled`.
 @MainActor
 final class EstadoGestaoLanes: ObservableObject {
     let gestao: GestaoLanes
@@ -11,7 +11,6 @@ final class EstadoGestaoLanes: ObservableObject {
     @Published var quem: QuemCuida?
     @Published var lidoEm: Date?
     @Published var aplicando = false
-    @Published var chaveLigada: Bool?
 
     init(modelo: ModeloAjustes) {
         gestao = GestaoLanes(modelo: modelo)
@@ -22,12 +21,10 @@ final class EstadoGestaoLanes: ObservableObject {
     func recarregar() {
         let g = gestao
         Task.detached(priority: .utility) { [weak self] in
-            let app = AgentesDoApp(registro: RegistroSMAppService())
-            let chave = AgentesDoApp.todos.first { $0.novo.hasSuffix(".chave") }.map { app.status($0).ligado }
-            let q = g.quemCuida(chaveLigada: chave)
+            let q = g.quemCuida()
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                comAnimacao(DS.suave) { self.chaveLigada = chave; self.quem = q; self.lidoEm = Date() }
+                comAnimacao(DS.suave) { self.quem = q; self.lidoEm = Date() }
             }
         }
     }
@@ -44,16 +41,16 @@ final class EstadoGestaoLanes: ObservableObject {
         }
         aoSalvar()
         aplicando = true
-        let g = gestao, chave = chaveLigada
+        let g = gestao
         Task.detached(priority: .userInitiated) { [weak self] in
             let codigo = g.executar(g.script)
-            let q = g.quemCuida(chaveLigada: chave)
+            let q = g.quemCuida()
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 comAnimacao(DS.suave) { self.quem = q; self.lidoEm = Date(); self.aplicando = false }
                 if codigo != 0 {
-                    CentralAvisos.compartilhada.erro(String(localized: "A TuttiChave não conseguiu aplicar"),
-                                                     String(localized: "Ela saiu com código \(Int(codigo)). A escolha ficou gravada e vale na próxima conferência."))
+                    CentralAvisos.compartilhada.erro(String(localized: "A conferência do GrokBot não rodou"),
+                                                     String(localized: "Saiu com código \(Int(codigo)). A escolha ficou gravada e vale na próxima conferência."))
                 } else {
                     CentralAvisos.compartilhada.ok(String(localized: "Escolha aplicada: \(m.rotulo)"), q.titulo)
                 }
@@ -65,7 +62,7 @@ final class EstadoGestaoLanes: ObservableObject {
 struct SecaoGestaoLanes: View {
     @StateObject var estado: EstadoGestaoLanes
     var aoSalvar: () -> Void
-    /// Embutido nos Ajustes: o título «Quem cuida das lanes» vem do grupo, não de outro Section.
+    /// Embutido nos Ajustes: o título vem do grupo «Chave Geral e agentes», não de outro Section.
     var embutido = false
 
     /// O estado é criado uma vez só: a página se redesenha a cada poucos segundos (FRA-579).
@@ -112,6 +109,7 @@ struct SecaoGestaoLanes: View {
 
     @ViewBuilder
     private var conteudo: some View {
+        if embutido { SubtituloAjuste(texto: String(localized: "Vigia — quem cuida")) }
         // Quem está cuidando agora, e por quê.
         HStack(alignment: .top, spacing: DS.e3) {
             Image(systemName: simbolo).font(.system(size: 26, weight: .medium)).foregroundStyle(cor)
@@ -154,7 +152,7 @@ struct SecaoGestaoLanes: View {
     }
 
     private var rodape: some View {
-        Text(String(localized: "Uma pausa geral feita por você sempre vence esta escolha."))
+        Text(String(localized: "Com a Chave Geral desligada, a escolha fica guardada e volta a valer quando ela ligar."))
             .fontePainel(11.5).foregroundStyle(PV.mudo)
     }
 }

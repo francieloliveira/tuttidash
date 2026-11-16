@@ -190,21 +190,41 @@ final class AjudaTrabalhoTests: XCTestCase {
     }
 
     func testAjudaDizOLigadoEDesligado() {
-        for chave in ["dispatcher", "watch", "chave"] {
+        for chave in ["dispatcher", "watch"] {
             let a = trabalho(chave).ajuda
             XCTAssertTrue(a.contains("Ligad"), "a ajuda de \(chave) precisa dizer o efeito de ligar: \(a)")
             XCTAssertTrue(a.contains("Desligad"), "a ajuda de \(chave) precisa dizer o efeito de desligar: \(a)")
         }
     }
 
-    func testAjudaDaChaveExplicaGrokBotEVigia() {
-        let a = trabalho("chave").ajuda
-        XCTAssertTrue(a.contains("GrokBot"), "a ajuda da TuttiChave precisa citar o GrokBot: \(a)")
-        XCTAssertTrue(a.contains("Vigia"), "a ajuda da TuttiChave precisa citar o Vigia: \(a)")
-        XCTAssertTrue(a.contains("congelada"), "a ajuda da TuttiChave precisa dizer o que acontece ao desligar: \(a)")
+    func testNomeCurtoDosDoisServicos() {
+        XCTAssertEqual(trabalho("dispatcher").nomeCurto, "Dispatcher")
+        XCTAssertEqual(trabalho("watch").nomeCurto, "Vigia")
+        XCTAssertEqual(trabalho("outra").nomeCurto, "Exemplo outra")
+    }
+}
+
+/// FRA-682: a TuttiChave virou conferência do próprio app. Uma entrada antiga em `agendas.jobs`
+/// não pode voltar a aparecer na tela nem virar job do launchd.
+final class ChaveAposentadaTests: XCTestCase {
+    private let entrada: [String: Any] = [
+        "label": "com.transcentia.bots.chave", "nome": "TuttiDash TuttiChave", "chave": "chave",
+        "intervalo_padrao": 600, "run_at_load": true, "interpretador": "/usr/bin/python3",
+        "script": "/Applications/TuttiDash.app/Contents/Resources/controle/tools/bots-chave",
+        "argumentos": [], "log": "~/Library/Logs/TranscentIA/chave.log",
+    ]
+
+    func testListaIgnoraOJobDaChave() {
+        let cfg: [String: Any] = ["agendas": ["jobs": [entrada]]]
+        XCTAssertTrue(Trabalho.lista(config: cfg).isEmpty)
+        let g = GerenciadorAgendas(home: URL(fileURLWithPath: "/tmp/casa-teste"),
+                                   sistema: SistemaFalso(), config: cfg)
+        XCTAssertTrue(g.trabalhos.isEmpty)
     }
 
-    func testNomeCurtoDaChave() {
-        XCTAssertEqual(trabalho("chave").nomeCurto, "TuttiChave")
+    func testJobAntigoDoLabelNovoNaoEhJob() {
+        var novo = entrada
+        novo["label"] = "app.tuttidash.agente.chave"
+        XCTAssertTrue(Trabalho.lista(config: ["agendas": ["jobs": [novo]]]).isEmpty)
     }
 }

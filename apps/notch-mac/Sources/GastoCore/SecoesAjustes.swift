@@ -113,7 +113,8 @@ extension CatalogoAjustes {
             CampoAjuste("watch.card_pedidos_triagem", String(localized: "Card de pedidos da triagem"), .textoOpcional, "",
                         ajuda: String(localized: "Onde o vigia deixa os pedidos de cards novos.")),
             CampoAjuste("watch.pedido_triagem_intervalo_s", String(localized: "Pedir cards à triagem no máximo a cada (s)"), n(600, 604_800), "14400"),
-            CampoAjuste("bots_chave.intervalo_s", String(localized: "A chave confere a cada (s)"), n(60, 86_400), "600"),
+            CampoAjuste("bots_chave.intervalo_s", String(localized: "Conferir o uso do GrokBot a cada (s)"), n(60, 86_400), "600",
+                        ajuda: String(localized: "O app confere com o TuttiDash aberto e troca o responsável pela regra abaixo.")),
             CampoAjuste("bots_chave.modo_forcado", String(localized: "Quem cuida dos bots"), .escolha(["auto", "vigia", "grokbot"]), "auto",
                         ajuda: String(localized: "Automático decide pela % de uso da conta."),
                         rotulos: ["auto": String(localized: "Automático (pela % da conta)"), "vigia": String(localized: "Sempre o vigia"),
@@ -198,10 +199,10 @@ extension CatalogoAjustes {
                              blocos: [.ollama]),
             ]),
             SecaoAjustes(id: .automacao, nome: String(localized: "Automação"), simbolo: "bolt.horizontal.circle",
-                         subtitulo: String(localized: "Quem cuida das lanes e os agentes que rodam sozinhos"), grupos: [
-                GrupoAjustes(String(localized: "Quem cuida das lanes"), blocos: [.quemCuida]),
-                GrupoAjustes(String(localized: "Agentes em segundo plano"),
-                             ajuda: String(localized: "Rodam de dentro do TuttiDash, mesmo com a janela fechada."), blocos: [.agentesSegundoPlano]),
+                         subtitulo: String(localized: "Chave Geral, Dispatcher e Vigia"), grupos: [
+                GrupoAjustes(String(localized: "Chave Geral e agentes"),
+                             ajuda: String(localized: "A Chave Geral liga ou desliga o Dispatcher e o Vigia de uma vez. Cada um também tem o seu interruptor, para controle pontual."),
+                             blocos: [.agentesSegundoPlano, .quemCuida]),
             ]),
             SecaoAjustes(id: .avancado, nome: String(localized: "Avançado"), simbolo: "slider.horizontal.3",
                          subtitulo: String(localized: "Tempos, intervalos, caminhos e arquivos. Raramente precisa mexer"), grupos: [
@@ -215,8 +216,8 @@ extension CatalogoAjustes {
                 GrupoAjustes(String(localized: "Privacidade dos modelos"), ajuda: String(localized: "Desde 23/10/2026, modelo free que registra ou treina com o uso pode receber código nas lanes e na revisão."), campos: [
                     c("privacidade.exigir_sem_treino"), c("privacidade.max_retencao_dias"), c("privacidade.max_idade_dias"), c("privacidade.intervalo_h"),
                 ], recolhido: true),
-                GrupoAjustes(String(localized: "TuttiChave"), ajuda: String(localized: "Quando o uso do Grok Bot passa do limite, o vigia assume."), campos: [
-                    campo("bots_chave.limite_pct", ajuda: String(localized: "Acima disto a chave passa as lanes para o vigia.")),
+                GrupoAjustes(String(localized: "Quem cuida das lanes (GrokBot)"), ajuda: String(localized: "Quando o uso do Grok Bot passa do limite, o vigia assume. O app confere isso sozinho, com o TuttiDash aberto."), campos: [
+                    campo("bots_chave.limite_pct", ajuda: String(localized: "Acima disto o app passa as lanes para o vigia.")),
                     c("bots_chave.intervalo_s"),
                 ], recolhido: true),
                 GrupoAjustes(String(localized: "Vigia"), campos: [
@@ -229,7 +230,7 @@ extension CatalogoAjustes {
                 ], recolhido: true),
                 GrupoAjustes(String(localized: "Agendamentos"), ajuda: String(localized: "Mudar um intervalo recarrega só aquele serviço."),
                              blocos: [.jobsAgendados], campos: [
-                    c("agendas.dispatcher_s"), c("agendas.watch_s"), c("agendas.chave_s"), c("agendas.env.dispatcher.SKIP_PREFLIGHT"),
+                    c("agendas.dispatcher_s"), c("agendas.watch_s"), c("agendas.env.dispatcher.SKIP_PREFLIGHT"),
                 ], recolhido: true),
                 GrupoAjustes(String(localized: "Antes de cada build"), ajuda: String(localized: "O app confere disco e carga antes de rodar a prova."), campos: [
                     c("preflight.min_free_gb"), c("preflight.warn_free_gb"), c("preflight.max_load"), c("preflight.skip_preflight_first"),

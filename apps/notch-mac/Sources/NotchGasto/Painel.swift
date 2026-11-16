@@ -620,7 +620,7 @@ struct BotaoSair: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
-        .help(String(localized: "Sair do TuttiDash"))
+        .help(String(localized: "Sair e parar as lanes do TuttiDash"))
     }
 }
 
