@@ -101,7 +101,7 @@ public enum CatalogoAjustes {
             AbaAjustes(nome: String(localized: "Contas e gasto"), simbolo: "dollarsign.circle", campos: [
                 CampoAjuste("teto_semanal_usd", String(localized: "Teto semanal (US$, 0 = sem teto)"), d(0, 100_000), "0"),
                 CampoAjuste("aviso_pct", String(localized: "Aviso em (% do teto)"), d(1, 100), "80"),
-                CampoAjuste("bots_chave.limite_pct", String(localized: "Limite da chave dos bots (%)"), d(1, 100), "90"),
+                CampoAjuste("bots_chave.limite_pct", String(localized: "Limite de uso do GrokBot (%)"), d(1, 100), "90"),
                 CampoAjuste("uso_contas", String(localized: "Consultar limites das contas"), .booleano, "true"),
             ] + credenciaisContas(), nota: nil, gestaoLanes: true, contas: true),
             AbaAjustes(nome: String(localized: "Lanes"), simbolo: "arrow.triangle.branch", campos: [
@@ -141,7 +141,6 @@ public enum CatalogoAjustes {
             AbaAjustes(nome: String(localized: "Agendas"), simbolo: "clock", campos: [
                 CampoAjuste("agendas.dispatcher_s", String(localized: "Dispatcher das lanes (s)"), n(15, 86_400), "60"),
                 CampoAjuste("agendas.watch_s", String(localized: "Vigia dos bots (s)"), n(15, 86_400), "180"),
-                CampoAjuste("agendas.chave_s", String(localized: "Chave dos bots (s)"), n(15, 86_400), "600"),
             ], nota: String(localized: "Mudar um intervalo recarrega só aquele job, e só se ele foi instalado por aqui."), agendas: true),
             AbaAjustes(nome: String(localized: "Painel"), simbolo: "terminal", campos: [
                 CampoAjuste("painel.comando", String(localized: "Comando do painel de logs"), .caminho(deveExistir: true, opcional: true), Legado.painelComando),

@@ -9,7 +9,7 @@ final class QuemCuidaTests: XCTestCase {
 
     func testAutomaticoAbaixoDoLimiteTheoCuida() {
         let q = QuemCuida.calcular(modo: .auto, estado: estado("grokbot", 42), pauseManual: false, pause: true,
-                                   gestor: nil, limitePct: 90, chaveLigada: true)
+                                   gestor: nil, limitePct: 90)
         XCTAssertEqual(q.responsavel, .gestor)
         XCTAssertEqual(q.titulo, "O gestor está cuidando")
         XCTAssertTrue(q.motivo.contains("42%") && q.motivo.contains("90%"), q.motivo)
@@ -18,14 +18,14 @@ final class QuemCuidaTests: XCTestCase {
 
     func testAutomaticoNoLimiteVigiaAssume() {
         let q = QuemCuida.calcular(modo: .auto, estado: estado("vigia", 93), pauseManual: false, pause: false,
-                                   gestor: nil, limitePct: 90, chaveLigada: true)
+                                   gestor: nil, limitePct: 90)
         XCTAssertEqual(q.responsavel, .vigia)
         XCTAssertTrue(q.motivo.contains("93%"))
     }
 
     func testMedidaFalhouVigiaAssume() {
         let q = QuemCuida.calcular(modo: .auto, estado: estado("vigia", nil), pauseManual: false, pause: false,
-                                   gestor: nil, limitePct: 90, chaveLigada: true)
+                                   gestor: nil, limitePct: 90)
         XCTAssertEqual(q.responsavel, .vigia)
         XCTAssertTrue(q.motivo.contains("Na dúvida"))
     }
@@ -33,42 +33,36 @@ final class QuemCuidaTests: XCTestCase {
     func testPausaGeralVenceTudo() {
         for m in ModoForcado.allCases {
             let q = QuemCuida.calcular(modo: m, estado: estado("grokbot", 10), pauseManual: true, pause: true,
-                                       gestor: "vigia", limitePct: 90, chaveLigada: true)
+                                       gestor: "vigia", limitePct: 90)
             XCTAssertEqual(q.responsavel, .pausaGeral, "\(m)")
         }
     }
 
     func testForcadoEExplicaETrocaPendente() {
         let q = QuemCuida.calcular(modo: .vigia, estado: estado("grokbot", 10), pauseManual: false, pause: true,
-                                   gestor: nil, limitePct: 90, chaveLigada: true)
+                                   gestor: nil, limitePct: 90)
         XCTAssertEqual(q.responsavel, .gestor, "vale o PAUSE de agora")
         XCTAssertEqual(q.motivo, "Você escolheu «Sempre o vigia».")
         XCTAssertTrue(q.avisos.contains { $0.contains("próxima conferência") })
     }
 
-    func testChaveDesligadaAvisaQueCongelou() {
-        let q = QuemCuida.calcular(modo: .auto, estado: estado("grokbot", 10), pauseManual: false, pause: true,
-                                   gestor: nil, limitePct: 90, chaveLigada: false)
-        XCTAssertTrue(q.avisos.contains { $0.contains("congelada") })
-    }
-
     func testGestorPassadoAMao() {
         let q = QuemCuida.calcular(modo: .auto, estado: nil, pauseManual: false, pause: true,
-                                   gestor: "opencode", limitePct: 90, chaveLigada: nil)
+                                   gestor: "opencode", limitePct: 90)
         XCTAssertEqual(q.responsavel, .outro("opencode"))
         XCTAssertEqual(QuemCuida.calcular(modo: .auto, estado: nil, pauseManual: false, pause: true,
-                                          gestor: "inventado", limitePct: 90, chaveLigada: nil).responsavel, .gestor)
+                                          gestor: "inventado", limitePct: 90).responsavel, .gestor)
     }
 
     /// Lê PAUSE, PAUSE.manual e gestor do disco, sem criar nem apagar nada.
     func testGestaoLeArquivosSemMexer() throws {
         let t = try PastaTemp()
         let g = GestaoLanes(modelo: ModeloAjustes(home: t.url)) { _ in 0 }
-        XCTAssertEqual(g.quemCuida(chaveLigada: true).responsavel, .vigia)
+        XCTAssertEqual(g.quemCuida().responsavel, .vigia)
         _ = try t.escrever(".transcentia/bots/PAUSE", "")
-        XCTAssertEqual(g.quemCuida(chaveLigada: true).responsavel, .gestor)
+        XCTAssertEqual(g.quemCuida().responsavel, .gestor)
         _ = try t.escrever(".transcentia/bots/PAUSE.manual", "")
-        XCTAssertEqual(g.quemCuida(chaveLigada: true).responsavel, .pausaGeral)
+        XCTAssertEqual(g.quemCuida().responsavel, .pausaGeral)
         XCTAssertTrue(FileManager.default.fileExists(atPath: g.pause.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: g.pauseManual.path))
         XCTAssertEqual(g.limitePct, 90)

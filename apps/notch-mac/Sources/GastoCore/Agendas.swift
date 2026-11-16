@@ -27,6 +27,12 @@ public struct Trabalho: Identifiable, Equatable, Sendable {
         self.argumentos = argumentos; self.log = log
     }
 
+    /// Jobs que o app não agenda mais. A TuttiChave virou conferência do próprio app (FRA-682):
+    /// uma entrada antiga de `agendas.jobs` no config não vira serviço nem chave na tela.
+    public static let labelsAposentados: Set<String> = [
+        "com.transcentia.bots.chave", "app.tuttidash.agente.chave",
+    ]
+
     /// Jobs vindos de `agendas.jobs` na config (padrões só no `cfg`). Sem config = nenhum job.
     public static func lista(config: [String: Any]) -> [Trabalho] {
         let l = Configuracao.valor("agendas.jobs", em: config) as? [[String: Any]] ?? []
@@ -39,7 +45,7 @@ public struct Trabalho: Identifiable, Equatable, Sendable {
                             runAtLoad: (d["run_at_load"] as? NSNumber)?.boolValue ?? false,
                             interpretador: d["interpretador"] as? String ?? "/usr/bin/python3",
                             script: script, argumentos: d["argumentos"] as? [String] ?? [], log: log)
-        }
+        }.filter { !Self.labelsAposentados.contains($0.label) }
     }
 }
 
@@ -359,7 +365,6 @@ extension Trabalho {
         switch chave {
         case "dispatcher": return String(localized: "Ligado, distribui os cards prontos para as lanes a cada minuto. Desligado, nenhuma lane começa trabalho novo.")
         case "watch": return String(localized: "Ligado, faz os merges, cuida da fila e das revisões quando o gestor não está. Desligado, nada é mergeado automaticamente.")
-        case "chave": return String(localized: "Ligada, decide quem cuida das lanes pelo uso do GrokBot: abaixo do limite, o GrokBot trabalha e o Vigia fica parado; no limite ou sem medida, o Vigia assume. Desligada, a troca automática fica congelada.")
         default: return String(localized: "Serviço em segundo plano do TuttiDash.")
         }
     }
@@ -369,7 +374,6 @@ extension Trabalho {
         switch chave {
         case "dispatcher": return String(localized: "Dispatcher")
         case "watch": return String(localized: "Vigia")
-        case "chave": return String(localized: "TuttiChave")
         default: return nome
         }
     }
@@ -378,7 +382,6 @@ extension Trabalho {
         switch chave {
         case "dispatcher": return "arrow.triangle.branch"
         case "watch": return "eye"
-        case "chave": return "key.horizontal"
         default: return "gearshape.2"
         }
     }

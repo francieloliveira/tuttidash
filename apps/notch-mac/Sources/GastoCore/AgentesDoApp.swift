@@ -21,13 +21,16 @@ public struct AgenteApp: Equatable, Sendable {
     public var plist: String { "\(novo).plist" }
 }
 
-/// Os três agentes (Vigia, Chave, Dispatcher) registrados pelo app com SMAppService.
+/// Os dois agentes (Dispatcher e Vigia) registrados pelo app com SMAppService.
 /// Ligar/desligar só mexe no serviço do launchd; nunca em `enabled` nem em PAUSE.
+/// A TuttiChave saiu daqui (FRA-682): virou conferência do próprio app, sem job.
 public final class AgentesDoApp {
     public static let dispatcher = AgenteApp(novo: "app.tuttidash.agente.dispatcher", antigo: "com.transcentia.lanes.dispatcher")
-    public static let todos = [dispatcher,
-        AgenteApp(novo: "app.tuttidash.agente.vigia", antigo: "com.transcentia.bots.watch"),
-        AgenteApp(novo: "app.tuttidash.agente.chave", antigo: "com.transcentia.bots.chave")]
+    public static let vigia = AgenteApp(novo: "app.tuttidash.agente.vigia", antigo: "com.transcentia.bots.watch")
+    public static let todos = [dispatcher, vigia]
+    /// Job aposentado (FRA-682). Só serve para desligar o que ficou instalado; não é mais ligado.
+    public static let chaveAposentada = AgenteApp(novo: "app.tuttidash.agente.chave",
+                                                  antigo: "com.transcentia.bots.chave")
     public static func agente(antigo: String) -> AgenteApp? { todos.first { $0.antigo == antigo } }
 
     public let home: URL
@@ -117,7 +120,6 @@ public final class AgentesDoApp {
     private static let legadoFixo: [String: (script: String, intervalo: Int, aoCarregar: Bool, extra: [String])] = [
         "com.transcentia.lanes.dispatcher": (".transcentia/lanes/dispatcher.py", 60, true, ["--real"]),
         "com.transcentia.bots.watch": (".transcentia/bots/watch.py", 180, false, []),
-        "com.transcentia.bots.chave": (".transcentia/tools/bots-chave", 600, true, []),
     ]
 
     private static func labelSeguro(_ label: String) -> Bool {
@@ -207,7 +209,6 @@ public final class AgentesDoApp {
         let papel: String
         switch a.antigo {
         case "com.transcentia.bots.watch": papel = "vigia"
-        case "com.transcentia.bots.chave": papel = "chave"
         case "com.transcentia.lanes.dispatcher": papel = "dispatcher"
         default: return
         }
@@ -290,5 +291,21 @@ public final class AgentesDoApp {
         if carregado(a.antigo).0 { _ = sistema.launchctl(["bootout", "\(dominio)/\(a.antigo)"]) }
         let st = registro.status(a.plist)
         if st == .ativo || st == .precisaAprovacao { try registro.desregistrar(a.plist) }
+    }
+
+    /// FRA-682: a TuttiChave deixou de ser um agente — o app faz a conferência no próprio ciclo.
+    /// Desliga e desregistra o que ficou instalado e manda o plist solto para a reserva.
+    /// Idempotente: rodar de novo não muda nada e não toca no Dispatcher nem no Vigia.
+    public func aposentarChave() {
+        let a = Self.chaveAposentada
+        _ = sistema.launchctl(["bootout", "\(dominio)/\(a.novo)"])
+        _ = sistema.launchctl(["disable", "\(dominio)/\(a.novo)"])
+        if carregado(a.antigo).0 { _ = sistema.launchctl(["bootout", "\(dominio)/\(a.antigo)"]) }
+        _ = sistema.launchctl(["disable", "\(dominio)/\(a.antigo)"])
+        if sistema.existe(legadoURL(a.antigo)), let url = urlLegadoSeguro(a.antigo) {
+            try? mover(url, reservaURL(a.antigo))
+        }
+        let st = registro.status(a.plist)
+        if st == .ativo || st == .precisaAprovacao { try? registro.desregistrar(a.plist) }
     }
 }

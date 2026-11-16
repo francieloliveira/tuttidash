@@ -71,17 +71,21 @@ public final class GestaoLanes {
 
     public var modo: ModoForcado { ModoForcado(texto: modelo.valorTexto(ModoForcado.chave)) }
 
+    /// Intervalo da conferência do GrokBot, em segundos (`bots_chave.intervalo_s`).
+    /// Antes era o job `chave` do launchd; agora é o app que roda no próprio ciclo (FRA-682).
+    public var intervalo: TimeInterval { Double(modelo.valorTexto("bots_chave.intervalo_s") ?? "") ?? 600 }
+
     /// Só leitura: a tela nunca cria nem apaga estes arquivos (quem mexe é o bots-chave e o dono).
     public var pause: URL { home.appendingPathComponent(".transcentia/bots/PAUSE") }
     public var pauseManual: URL { home.appendingPathComponent(".transcentia/bots/PAUSE.manual") }
     public var gestor: URL { home.appendingPathComponent(".transcentia/bots/gestor") }
     public var limitePct: Double { Double(modelo.valorTexto("bots_chave.limite_pct") ?? "") ?? 90 }
 
-    public func quemCuida(chaveLigada: Bool?) -> QuemCuida {
+    public func quemCuida() -> QuemCuida {
         let fm = FileManager.default
         let g = (try? String(contentsOf: gestor, encoding: .utf8))?.split(whereSeparator: \.isWhitespace).first.map(String.init)
         return QuemCuida.calcular(modo: modo, estado: estado(), pauseManual: fm.fileExists(atPath: pauseManual.path),
-                                  pause: fm.fileExists(atPath: pause.path), gestor: g, limitePct: limitePct, chaveLigada: chaveLigada)
+                                  pause: fm.fileExists(atPath: pause.path), gestor: g, limitePct: limitePct)
     }
 
     public func estado() -> EstadoChave? {
@@ -111,26 +115,23 @@ public struct QuemCuida: Equatable, Sendable {
     public let responsavel: ResponsavelLanes
     public let titulo: String
     public let motivo: String
-    /// Avisos extras (chave desligada, troca pendente).
+    /// Avisos extras (troca pendente).
     public let avisos: [String]
 
     public static func calcular(modo: ModoForcado, estado: EstadoChave?, pauseManual: Bool, pause: Bool,
-                                gestor: String?, limitePct: Double, chaveLigada: Bool?) -> QuemCuida {
+                                gestor: String?, limitePct: Double) -> QuemCuida {
         let lim = Formatar.n(limitePct.rounded())
         var avisos: [String] = []
-        if chaveLigada == false {
-            avisos.append(String(localized: "A TuttiChave está desligada: a troca automática fica congelada como está."))
-        }
         if pauseManual {
             return QuemCuida(responsavel: .pausaGeral, titulo: String(localized: "Tudo em pausa"),
-                             motivo: String(localized: "Você pausou tudo. A chave não troca nada até você tirar a pausa geral."),
+                             motivo: String(localized: "Você pausou tudo. Nada é trocado até você tirar a pausa geral."),
                              avisos: avisos)
         }
         let validos = ["grokbot", "vigia", "opencode", "claude", "agente", "humano"]
         if let gestor = gestor?.lowercased(), validos.contains(String(gestor.split(separator: ":").first ?? "")) {
             let resp: ResponsavelLanes = gestor == "vigia" ? .vigia : gestor == "grokbot" ? .gestor : .outro(gestor)
             return QuemCuida(responsavel: resp, titulo: titulo(resp),
-                             motivo: String(localized: "A gestão foi passada à mão para \(nome(resp)). A chave só registra, não decide."),
+                             motivo: String(localized: "A gestão foi passada à mão para \(nome(resp)). Nada é trocado automaticamente."),
                              avisos: avisos)
         }
         let resp: ResponsavelLanes = pause ? .gestor : .vigia
@@ -147,7 +148,7 @@ public struct QuemCuida: Equatable, Sendable {
             } else if estado != nil {
                 motivo = String(localized: "Não deu para medir o uso do Grok Bot. Na dúvida, o vigia assume.")
             } else {
-                motivo = String(localized: "A chave ainda não conferiu. Até lá vale quem já estava cuidando.")
+                motivo = String(localized: "A conferência do GrokBot ainda não rodou. Até lá vale quem já estava cuidando.")
             }
         }
         let esperado: ResponsavelLanes? = {
@@ -160,7 +161,7 @@ public struct QuemCuida: Equatable, Sendable {
             }
         }()
         if let esperado, esperado != resp {
-            avisos.append(String(localized: "A troca para \(nome(esperado)) acontece na próxima conferência da chave."))
+            avisos.append(String(localized: "A troca para \(nome(esperado)) acontece na próxima conferência do GrokBot."))
         }
         return QuemCuida(responsavel: resp, titulo: titulo(resp), motivo: motivo, avisos: avisos)
     }

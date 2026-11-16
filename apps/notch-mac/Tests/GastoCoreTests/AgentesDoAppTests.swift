@@ -172,34 +172,77 @@ final class AgentesDoAppTests: XCTestCase {
         XCTAssertNoThrow(try a.desligar(d))
     }
 
-    func testChaveDesligadaNaoReativaEApontaOBundle() throws {
+    func testVigiaDesligadoNaoReativaEApontaOBundle() throws {
         let r = RegistroFalso()
         let s = LaunchdFalso(); s.registro = r
-        let chave = AgentesDoApp.todos.first { $0.antigo == "com.transcentia.bots.chave" }!
+        let vigia = AgentesDoApp.vigia
         let agente = "/Applications/TuttiDash.app/Contents/MacOS/tuttidash-agente"
         let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 1, esperar: { _ in },
                              integridade: IntegridadeFixa(.ok), agenteBundle: agente)
         let original: [String: Any] = [
-            "Label": chave.antigo,
-            "ProgramArguments": ["/usr/bin/python3", "/tmp/casa-agentes/.transcentia/tools/bots-chave"],
+            "Label": vigia.antigo,
+            "ProgramArguments": ["/usr/bin/python3", "/tmp/casa-agentes/.transcentia/bots/watch.py"],
             "Disabled": true,
         ]
         let dados = try PropertyListSerialization.data(fromPropertyList: original, format: .xml, options: 0)
-        s.arquivos[a.legadoURL(chave.antigo).path] = dados
-        s.desativados.insert(chave.antigo)
-        XCTAssertEqual(a.migrar(chave), .mantidoDesligado)
-        XCTAssertEqual(r.status(chave.plist), .naoRegistrado)
+        s.arquivos[a.legadoURL(vigia.antigo).path] = dados
+        s.desativados.insert(vigia.antigo)
+        XCTAssertEqual(a.migrar(vigia), .mantidoDesligado)
+        XCTAssertEqual(r.status(vigia.plist), .naoRegistrado)
         XCTAssertFalse(s.chamadas.contains { $0.first == "enable" || $0.first == "bootstrap" || $0.first == "bootout" })
-        XCTAssertFalse(s.carregados.contains(chave.novo))
-        let novo = try XCTUnwrap(s.arquivos[a.legadoURL(chave.antigo).path])
+        XCTAssertFalse(s.carregados.contains(vigia.novo))
+        let novo = try XCTUnwrap(s.arquivos[a.legadoURL(vigia.antigo).path])
         let obj = try XCTUnwrap(PropertyListSerialization.propertyList(from: novo, options: [], format: nil) as? [String: Any])
-        XCTAssertEqual(obj["ProgramArguments"] as? [String], [agente, "chave"])
+        XCTAssertEqual(obj["ProgramArguments"] as? [String], [agente, "vigia"])
         XCTAssertEqual(obj["Disabled"] as? Bool, true)
     }
 
     func testMapaDeLabels() {
         XCTAssertEqual(AgentesDoApp.agente(antigo: "com.transcentia.bots.watch")?.novo, "app.tuttidash.agente.vigia")
-        XCTAssertEqual(Set(AgentesDoApp.todos.map(\.novo)).count, 3)
+        XCTAssertEqual(Set(AgentesDoApp.todos.map(\.novo)).count, 2)
+        XCTAssertEqual(AgentesDoApp.todos.map(\.antigo), ["com.transcentia.lanes.dispatcher", "com.transcentia.bots.watch"])
+        XCTAssertNil(AgentesDoApp.agente(antigo: "com.transcentia.bots.chave"), "a TuttiChave saiu dos agentes")
+        XCTAssertNil(AgentesDoApp.agente(antigo: AgentesDoApp.chaveAposentada.antigo))
+    }
+
+    /// FRA-682: a TuttiChave deixou de ser agente. A aposentadoria desliga e desregistra
+    /// o que ficou instalado e manda o plist solto para a reserva — sem tocar nos outros dois.
+    func testAposentarChaveDesligaEDesregistra() throws {
+        let r = RegistroFalso()
+        let s = LaunchdFalso(); s.registro = r
+        let chave = AgentesDoApp.chaveAposentada
+        let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 1, esperar: { _ in },
+                             integridade: IntegridadeFixa(.ok))
+        s.arquivos[a.legadoURL(chave.antigo).path] = Data("chave".utf8)
+        s.carregados.insert(chave.antigo)
+        r.estado[chave.plist] = .ativo
+        r.estado[AgentesDoApp.dispatcher.plist] = .ativo
+        r.estado[AgentesDoApp.vigia.plist] = .ativo
+
+        a.aposentarChave()
+
+        XCTAssertFalse(s.carregados.contains(chave.antigo))
+        XCTAssertNil(s.arquivos[a.legadoURL(chave.antigo).path])
+        XCTAssertNotNil(s.arquivos[a.reservaURL(chave.antigo).path])
+        XCTAssertEqual(r.status(chave.plist), .naoRegistrado)
+        XCTAssertEqual(r.status(AgentesDoApp.dispatcher.plist), .ativo)
+        XCTAssertEqual(r.status(AgentesDoApp.vigia.plist), .ativo)
+        XCTAssertTrue(s.desativados.contains(chave.antigo))
+        XCTAssertTrue(s.desativados.contains(chave.novo))
+        XCTAssertFalse(s.chamadas.contains { $0.joined().contains("dispatcher") || $0.joined().contains("bots.watch") })
+    }
+
+    /// Rodar de novo não muda nada: é o que acontece em toda abertura do app.
+    func testAposentarChaveEhIdempotente() {
+        let r = RegistroFalso()
+        let s = LaunchdFalso(); s.registro = r
+        let a = AgentesDoApp(home: casa, sistema: s, registro: r, tentativas: 1, esperar: { _ in },
+                             integridade: IntegridadeFixa(.ok))
+        a.aposentarChave()
+        let antes = s.chamadas
+        a.aposentarChave()
+        XCTAssertEqual(Array(s.chamadas.dropFirst(antes.count)), antes)
+        XCTAssertEqual(r.status(AgentesDoApp.chaveAposentada.plist), .naoRegistrado)
     }
 
     /// Plist com o conteúdo que o app geraria, anotado na migração, volta se o SMAppService recusa.

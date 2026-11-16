@@ -70,6 +70,37 @@ final class EstadoAgendas: ObservableObject {
         }
     }
 
+    /// Chave Geral (FRA-682): liga/desliga o lote fora da main thread, com um refresh só no fim.
+    /// Um serviço que falha não impede o outro: no fim, o erro aparece e o estado relido manda.
+    func alternarTodos(_ lista: [Trabalho], ligar: Bool) {
+        let alvos = lista.filter { !trabalhando.contains($0.label) }
+        guard !alvos.isEmpty else { return }
+        for t in alvos { trabalhando.insert(t.label) }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var falha: String?
+            let app = AgentesDoApp(registro: RegistroSMAppService())
+            for t in alvos {
+                guard let agente = AgentesDoApp.agente(antigo: t.label) else { continue }
+                do { if ligar { try app.ligar(agente) } else { try app.desligar(agente) } }
+                catch { falha = "\(t.nomeCurto): \(MaquinaAcao.motivo(error))" }
+            }
+            let f = falha
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                for t in alvos { self.trabalhando.remove(t.label) }
+                self.erro = f
+                if let f {
+                    CentralAvisos.compartilhada.erro(String(localized: "Não deu para \(ligar ? "ligar" : "desligar") a automação"), f)
+                } else {
+                    CentralAvisos.compartilhada.ok(ligar ? String(localized: "Chave Geral ligada") : String(localized: "Chave Geral desligada"))
+                    // Ligou agora: confere o GrokBot na hora, sem esperar o intervalo do app.
+                    if ligar { NotificationCenter.default.post(name: .chaveGeralLigada, object: nil) }
+                }
+                self.atualizar()
+            }
+        }
+    }
+
     func executarApp(_ f: @escaping (AgentesDoApp) throws -> Void) {
         Task.detached(priority: .userInitiated) { [weak self] in
             var falha: String?
@@ -97,6 +128,12 @@ final class EstadoAgendas: ObservableObject {
     }
 }
 
+/// Aviso interno do app (FRA-682): a Chave Geral acabou de ligar. O `AppDelegate`
+/// escuta para conferir o GrokBot na hora, sem esperar o intervalo.
+extension Notification.Name {
+    static let chaveGeralLigada = Notification.Name("app.tuttidash.chaveGeralLigada")
+}
+
 struct SecaoAgendas: View {
     @StateObject var estado: EstadoAgendas
     /// Embutido nos Ajustes: o título vem do grupo, não de outro Section.
@@ -109,27 +146,30 @@ struct SecaoAgendas: View {
         self.embutido = embutido
     }
 
-    private func texto(_ e: EstadoTrabalho?) -> (String, Color) {
-        switch e {
-        case .ativo: return (String(localized: "ativo"), .green)
-        case .erro(let m): return (String(localized: "erro: \(m)"), .red)
-        default: return (String(localized: "parado"), .secondary)
-        }
-    }
-
     @State private var confirmarDesligar: Trabalho?
-    @State private var confirmarPararTudo = false
 
-    /// Nenhum dos agentes está ligado: «Parar tudo» fica desabilitado.
-    private var todosDesligados: Bool {
-        estado.gerenciador.trabalhos.allSatisfy { !(estado.status[$0.label]?.ligado ?? false) }
+    /// Os serviços que a Chave Geral comanda (a TuttiChave saiu da lista: FRA-682).
+    private var servicos: [Trabalho] { estado.gerenciador.trabalhos }
+
+    /// Chave Geral ligada = pelo menos um dos dois serviços está de pé.
+    private var chaveGeralLigada: Bool {
+        servicos.contains { estado.status[$0.label]?.ligado ?? false }
     }
 
-    /// Desliga de uma vez só quem está ligado (FRA-681).
-    private func pararTudo() {
-        for t in estado.gerenciador.trabalhos where estado.status[t.label]?.ligado ?? false {
-            estado.alternarApp(t, ligar: false)
-        }
+    /// Ainda não leu o launchd: não deixa clicar em cima de um estado desconhecido.
+    private var lendo: Bool { servicos.contains { estado.status[$0.label] == nil } }
+
+    private var seloChaveGeral: (String, Color) {
+        guard !lendo else { return (String(localized: "lendo…"), PV.apagado) }
+        let ligados = servicos.filter { estado.status[$0.label]?.ligado ?? false }.count
+        if ligados == 0 { return (String(localized: "desligada"), PV.apagado) }
+        return (String(localized: "ligada · \(ligados) de \(servicos.count)"), PV.verde)
+    }
+
+    /// Chave Geral: liga ou desliga o Dispatcher e o Vigia de uma vez (FRA-682).
+    /// Não interrompe lane nenhuma: para isso existe «Sair e parar as lanes».
+    private func alternarChaveGeral(_ ligar: Bool) {
+        estado.alternarTodos(servicos, ligar: ligar)
     }
 
     private func chave(_ t: Trabalho) -> Binding<Bool> {
@@ -166,7 +206,39 @@ struct SecaoAgendas: View {
                 .textSelection(.enabled)
                 .accessibilityIdentifier("doutor-controle")
         }
-        ForEach(estado.gerenciador.trabalhos) { t in
+        // Chave Geral: o interruptor único. Fica acima dos dois serviços e reflete o conjunto.
+        HStack(alignment: .center, spacing: DS.e3) {
+            let selo = seloChaveGeral
+            IconeCartao(simbolo: "power", cor: chaveGeralLigada ? PV.verde : PV.apagado,
+                        fundo: (chaveGeralLigada ? PV.verde : PV.apagado).opacity(0.14), tamanho: 32, tamanhoIcone: 15)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(String(localized: "Chave Geral")).fontePainel(13.5, .semibold)
+                    HStack(spacing: 5) {
+                        Circle().fill(selo.1).frame(width: 6, height: 6)
+                        Text(selo.0)
+                    }
+                    .fontePainel(11).foregroundStyle(selo.1)
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(Capsule().fill(selo.1.opacity(0.12)))
+                }
+                Text(String(localized: "Liga ou desliga o Dispatcher e o Vigia de uma vez. Para controle pontual, use o interruptor de cada um. As lanes que já estão rodando continuam; para interrompê-las, use TuttiDash › Sair e parar as lanes."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if !estado.trabalhando.isEmpty { ProgressView().controlSize(.small) }
+            Toggle("", isOn: Binding(get: { chaveGeralLigada }, set: { alternarChaveGeral($0) }))
+                .labelsHidden().toggleStyle(.switch)
+                .disabled(lendo || !estado.trabalhando.isEmpty)
+                .accessibilityLabel(String(localized: "Chave Geral"))
+                .accessibilityIdentifier("chave-geral")
+        }
+        .padding(.vertical, 3)
+        .animation(DS.anim(DS.suave), value: chaveGeralLigada)
+
+        Divider().padding(.vertical, 2)
+
+        ForEach(servicos) { t in
             HStack(alignment: .center, spacing: DS.e3) {
                 IconeCartao(simbolo: t.simbolo, cor: corStatus(estado.status[t.label]),
                             fundo: corStatus(estado.status[t.label]).opacity(0.14), tamanho: 32, tamanhoIcone: 15)
@@ -192,17 +264,6 @@ struct SecaoAgendas: View {
             .padding(.vertical, 3)
             .animation(DS.anim(DS.suave), value: estado.status[t.label])
         }
-        HStack(spacing: DS.e3) {
-            Button(role: .destructive) {
-                confirmarPararTudo = true
-            } label: {
-                Label(String(localized: "Parar tudo"), systemImage: "stop.circle.fill")
-            }
-            .disabled(todosDesligados || !estado.trabalhando.isEmpty)
-            .accessibilityIdentifier("parar-tudo")
-            Spacer(minLength: 0)
-        }
-        .padding(.top, 6)
         if estado.status.values.contains(.precisaAprovacao) {
             Button(String(localized: "Abrir Itens de Login nos Ajustes do Sistema")) {
                 RegistroSMAppService.abrirItensDeLogin()
@@ -226,12 +287,6 @@ struct SecaoAgendas: View {
             }
         } message: {
             Text(String(localized: "As lanes param de receber cards novos até você ligar de novo. Isto não muda as lanes ligadas nem a pausa."))
-        }
-        .confirmationDialog(String(localized: "Parar todos os agentes em segundo plano?"),
-                            isPresented: $confirmarPararTudo) {
-            Button(String(localized: "Parar tudo"), role: .destructive) { pararTudo() }
-        } message: {
-            Text(String(localized: "Desliga o Dispatcher, o Vigia e a TuttiChave de uma vez. As lanes que já estão rodando não são interrompidas; para parar também o app e as lanes, use TuttiDash › Sair."))
         }
         .confirmationDialog(String(localized: "Substituir o agendamento atual deste job?"),
                             isPresented: Binding(get: { confirmar != nil }, set: { if !$0 { confirmar = nil } })) {
