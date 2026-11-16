@@ -892,9 +892,10 @@ struct PaginaBrainstorm: View {
         status = "Enviando \(approved.count)…"
 
         Task {
-            let timeId: String
+            let ids: IdsBrainstorm
             do {
-                timeId = try await Self.timeDoProjeto(projectId)
+                ids = try await Self.idsGarantidos(
+                    projetoID: projectId, lanes: Set(approved.map(\.lane)).sorted())
             } catch {
                 await MainActor.run {
                     isGenerating = false
@@ -903,12 +904,13 @@ struct PaginaBrainstorm: View {
                 }
                 return
             }
-            let ids = Self.idsLinear(projetoID: projectId)
-            guard let stateTodo = ids.todo, !stateTodo.isEmpty else {
+            let stateTodo = ids.todo
+            guard !stateTodo.isEmpty else {
                 await MainActor.run {
                     isGenerating = false
-                    status = "Cache linear-ids sem estado Todo"
-                    CentralAvisos.compartilhada.erro("IDs do Linear incompletos", "Rode o dispatcher uma vez ou confira ~/.transcentia/lanes/linear-ids.")
+                    status = "Linear sem estado Todo"
+                    CentralAvisos.compartilhada.erro("IDs do Linear incompletos",
+                                                     "O time do projeto não tem o estado Todo. Confira as colunas no Linear.")
                 }
                 return
             }
@@ -927,7 +929,7 @@ struct PaginaBrainstorm: View {
                     "title": s.title,
                     "description": s.descricaoLinear,
                     "projectId": projectId,
-                    "teamId": timeId,
+                    "teamId": ids.time,
                     "stateId": stateTodo,
                     "priority": min(max(s.priority, 1), 4),
                     "estimate": s.estimate,
@@ -963,33 +965,48 @@ struct PaginaBrainstorm: View {
     // MARK: - Linear / proxy
 
     private struct IdsBrainstorm {
-        var todo: String?
+        var todo: String
+        /// Time do projeto: o `issueCreate` do Linear exige um time.
+        var time: String
         var esforco: [String: String]
         var lanes: [String: String]
     }
 
-    private static func idsLinear(projetoID: String) -> IdsBrainstorm {
-        let config = Configuracao.lerArquivo()
-        let cacheURL = CaixaDono.caminhoCacheIds(projetoID: projetoID)
-        var cache = CaixaDono.lerCacheIds(cacheURL)
-        if cache.isEmpty {
-            cache = CaixaDono.lerCacheIds(CaixaDono.caminhoCacheIds(projetoID: ""))
+    /// IDs do estado Todo, do esforço e das lanes, mais o time do projeto. Usa a mesma regra do
+    /// dispatcher (`linear_ids.garantir`): cache do projeto, depois a API pelo nome, e cria o que
+    /// não existir. Antes o app lia só o cache: uma lane sem id (ou um projeto novo, sem cache)
+    /// fazia o envio inteiro parar em «Falha no envio».
+    private static func idsGarantidos(projetoID: String, lanes: [String]) async throws -> IdsBrainstorm {
+        let pasta = try pastaDoProxy()
+        let payload = try JSONSerialization.data(withJSONObject: ["projeto": projetoID, "lanes": lanes])
+        guard let payloadTexto = String(data: payload, encoding: .utf8) else {
+            throw ErroLinear.resposta("JSON inválido")
         }
-        let ids = CaixaDono.idsDoApp(config: config, cache: cache, rotuloDono: "needs:dono")
-        let estadosCache = (cache["estados"] as? [String: Any]) ?? [:]
-        let todoCfg = (Configuracao.valor("linear.state_todo_id", em: config) as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let todo = todoCfg.isEmpty ? (estadosCache["todo"] as? String) : todoCfg
-        return IdsBrainstorm(todo: todo, esforco: ids.esforco, lanes: ids.lanes)
-    }
-
-    /// O `issueCreate` do Linear exige o time. O projeto padrão aponta para ele.
-    private static func timeDoProjeto(_ projetoID: String) async throws -> String {
-        let data = try await pedirProxy(op: "time_do_projeto", variaveis: ["id": projetoID])
-        let nos = (((data["project"] as? [String: Any])?["teams"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
-        let id = (nos.first?["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !id.isEmpty else { throw ErroLinear.resposta("O projeto não tem um time no Linear") }
-        return id
+        let script = """
+        import sys, json
+        sys.path.insert(0, sys.argv[1])
+        import linear_ids, proxy_linear, config
+        try:
+            pedido = json.loads(sys.argv[2])
+            projeto = pedido.get("projeto") or ""
+            dono = config.obter("linear.owner_label", "needs:dono") or "needs:dono"
+            ids = linear_ids.garantir(config.obter, proxy_linear.executar_consulta, dono=dono,
+                                      lanes=pedido.get("lanes") or [], project_id=projeto)
+            time = linear_ids.time_do_projeto(proxy_linear.executar_consulta, projeto)
+            print(json.dumps({"ok": True, "time": time, "ids": ids}, ensure_ascii=False))
+        except Exception as e:
+            print(json.dumps({"ok": False, "erro": str(e)}, ensure_ascii=False))
+            sys.exit(1)
+        """
+        let obj = try executarPython(script, pasta: pasta, argumento: payloadTexto)
+        guard let raiz = obj["ids"] as? [String: Any] else {
+            throw ErroLinear.resposta("resposta sem os ids do Linear")
+        }
+        let estados = raiz["estados"] as? [String: Any] ?? [:]
+        return IdsBrainstorm(todo: (estados["todo"] as? String) ?? "",
+                             time: (obj["time"] as? String) ?? "",
+                             esforco: raiz["esforco"] as? [String: String] ?? [:],
+                             lanes: raiz["lanes"] as? [String: String] ?? [:])
     }
 
     private static func criarIssue(input: [String: Any]) async throws {
@@ -1001,18 +1018,7 @@ struct PaginaBrainstorm: View {
     }
 
     private static func pedirProxy(op: String, variaveis: [String: Any]) async throws -> [String: Any] {
-        let candidatos: [URL] = [
-            ScriptsDoBundle.modulosAssinados(),
-            Bundle.main.resourceURL?.appendingPathComponent("controle/gasto_lanes"),
-            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Developer/tuttidash/gasto_lanes"),
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("gasto_lanes"),
-        ].compactMap { $0 }
-        guard let pasta = candidatos.first(where: {
-            FileManager.default.isReadableFile(atPath: $0.appendingPathComponent("proxy_linear.py").path)
-        }) else {
-            throw ErroLinear.resposta("proxy_linear.py não encontrado no bundle")
-        }
-
+        let pasta = try pastaDoProxy()
         let payload = try JSONSerialization.data(withJSONObject: ["op": op, "variaveis": variaveis])
         guard let payloadTexto = String(data: payload, encoding: .utf8) else {
             throw ErroLinear.resposta("JSON inválido")
@@ -1034,9 +1040,35 @@ struct PaginaBrainstorm: View {
             sys.exit(1)
         """
 
+        let obj = try executarPython(script, pasta: pasta, argumento: payloadTexto)
+        guard let data = obj["data"] as? [String: Any] else {
+            throw ErroLinear.resposta("resposta do proxy sem data")
+        }
+        return data
+    }
+
+    /// Pasta com os módulos do plano de controle (`proxy_linear.py` é o marcador).
+    private static func pastaDoProxy() throws -> URL {
+        let candidatos: [URL] = [
+            ScriptsDoBundle.modulosAssinados(),
+            Bundle.main.resourceURL?.appendingPathComponent("controle/gasto_lanes"),
+            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Developer/tuttidash/gasto_lanes"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("gasto_lanes"),
+        ].compactMap { $0 }
+        guard let pasta = candidatos.first(where: {
+            FileManager.default.isReadableFile(atPath: $0.appendingPathComponent("proxy_linear.py").path)
+        }) else {
+            throw ErroLinear.resposta("proxy_linear.py não encontrado no bundle")
+        }
+        return pasta
+    }
+
+    /// Roda um script Python com a pasta dos módulos e um JSON de argumento. O script devolve
+    /// `{"ok": true, ...}` ou `{"ok": false, "erro": "..."}` — o erro vai para a tela.
+    private static func executarPython(_ script: String, pasta: URL, argumento: String) throws -> [String: Any] {
         let processo = Process()
         processo.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        processo.arguments = ["-c", script, pasta.path, payloadTexto]
+        processo.arguments = ["-c", script, pasta.path, argumento]
         let pipe = Pipe()
         processo.standardOutput = pipe
         processo.standardError = pipe
@@ -1048,10 +1080,7 @@ struct PaginaBrainstorm: View {
             let msg = (obj?["erro"] as? String) ?? String(data: dados, encoding: .utf8) ?? "falha no proxy"
             throw ErroLinear.resposta(msg)
         }
-        guard let data = obj?["data"] as? [String: Any] else {
-            throw ErroLinear.resposta("resposta do proxy sem data")
-        }
-        return data
+        return obj ?? [:]
     }
 }
 
