@@ -58,6 +58,71 @@ final class LinearTests: XCTestCase {
         catch { XCTAssertEqual(error as? ErroLinear, .resposta("organization.urlKey")) }
     }
 
+    func testTimesDoWorkspace() async throws {
+        let f = ClienteFalso()
+        f.respostas = ["teams": ["nodes": [["id": "t2", "name": "Zeta"], ["id": "t1", "name": "Alfa"]]]]
+        let times = try await ServicoLinear(cliente: f).times(token: "ok")
+        XCTAssertEqual(times.map(\.nome), ["Alfa", "Zeta"])
+        XCTAssertTrue(f.consultas.joined().contains("teams(first: 100)"))
+    }
+
+    /// Criar projeto no Linear pelo app, com o nome escapado e o time validado.
+    func testCriarProjetoNoLinear() async throws {
+        let f = ClienteFalso()
+        f.respostas = ["projectCreate": ["success": true, "project": [
+            "id": "p1", "name": "App \"novo\"\nlinha 2", "url": "https://linear.app/acme/project/app",
+            "teams": ["nodes": [["id": "11111111-1111-4111-8111-111111111111", "name": "FRA"]]],
+        ]]]
+        let p = try await ServicoLinear(cliente: f).criarProjeto(
+            nome: "  App \"novo\"\nlinha 2  ", timeID: "11111111-1111-4111-8111-111111111111", token: "ok")
+        XCTAssertEqual(p.id, "p1")
+        XCTAssertEqual(p.nome, "App \"novo\"\nlinha 2")
+        XCTAssertEqual(p.timeNome, "FRA")
+        XCTAssertEqual(p.rotulo, "App \"novo\"\nlinha 2 · FRA")
+        let q = try XCTUnwrap(f.consultas.last)
+        XCTAssertTrue(q.contains("projectCreate"))
+        XCTAssertTrue(q.contains("teamIds: [\"11111111-1111-4111-8111-111111111111\"]"))
+        // O nome vai como literal do GraphQL: aspas e quebra de linha escapadas, sem sobra de espaço.
+        XCTAssertTrue(q.contains(#"name: "App \"novo\"\nlinha 2""#), q)
+    }
+
+    func testCriarProjetoRecusaTimeInvalidoSemChamarOLinear() async {
+        let f = ClienteFalso()
+        let s = ServicoLinear(cliente: f)
+        for time in ["", "nao-e-uuid", "t1\"}"] {
+            do {
+                _ = try await s.criarProjeto(nome: "App", timeID: time, token: "ok")
+                XCTFail("aceitou o time \(time)")
+            } catch {
+                XCTAssertEqual(error as? ErroLinear, .resposta("o time do projeto não foi escolhido"))
+            }
+        }
+        do {
+            _ = try await s.criarProjeto(nome: "   ", timeID: "11111111-1111-4111-8111-111111111111", token: "ok")
+            XCTFail("aceitou nome vazio")
+        } catch {
+            XCTAssertEqual(error as? ErroLinear, .resposta("o nome do projeto está vazio"))
+        }
+        XCTAssertTrue(f.consultas.isEmpty, "nada pode ir ao Linear antes da validação")
+    }
+
+    func testCriarProjetoSemSucessoNaoDevolveProjeto() async {
+        let f = ClienteFalso()
+        f.respostas = ["projectCreate": ["success": false]]
+        do {
+            _ = try await ServicoLinear(cliente: f).criarProjeto(
+                nome: "App", timeID: "11111111-1111-4111-8111-111111111111", token: "ok")
+            XCTFail("devolveu projeto sem success")
+        } catch {
+            XCTAssertEqual(error as? ErroLinear, .resposta("o Linear não devolveu o projeto criado"))
+        }
+    }
+
+    func testLiteralDoGraphQLEscapa() {
+        XCTAssertEqual(LiteralGraphQL.texto("a\"b\\c\nd"), #""a\"b\\c\nd""#)
+        XCTAssertEqual(LiteralGraphQL.texto(""), "\"\"")
+    }
+
     func testEscolhasVaoParaConfigEVoltam() throws {
         let t = try PastaTemp()
         let m = ModeloAjustes(home: t.url)
