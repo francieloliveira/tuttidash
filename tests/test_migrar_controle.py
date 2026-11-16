@@ -2,7 +2,8 @@
 
 Instalação limpa e atualização de uma instalação antiga. O dispatcher e o
 vigia sobem pelo tuttidash-agente do bundle. O script antigo não pega card.
-Chave desligada não é religada. PAUSE e enabled ficam como estavam.
+A TuttiChave é aposentada (FRA-682): o job sai do LaunchAgents e nada é religado.
+PAUSE e enabled ficam como estavam.
 """
 import json
 import os
@@ -196,7 +197,7 @@ class MigracaoHome(unittest.TestCase):
         self.assertEqual(args, [str(self.binario), "dispatcher"])
         self.assertNotIn(".transcentia", " ".join(args))
 
-    def test_atualiza_instalacao_antiga_sem_reativar_chave(self):
+    def test_atualiza_instalacao_antiga_aposenta_chave(self):
         pause = self.home / ".transcentia" / "bots" / "PAUSE"
         config = self.home / ".transcentia" / "tools" / "config.json"
         _escrever(pause, "pause-continua\n", 0o644)
@@ -241,9 +242,20 @@ class MigracaoHome(unittest.TestCase):
         self.assertTrue(any("lanes.dispatcher.plist" in p for p in boot))
         self.assertTrue(any("bots.watch.plist" in p for p in boot))
         self.assertFalse(any("bots.chave.plist" in p for p in boot))
-        chave_obj = plistlib.loads(chave.read_bytes())
-        self.assertEqual(chave_obj["ProgramArguments"], [str(self.binario), "chave"])
-        self.assertIs(chave_obj["Disabled"], True)
+        # A chave não vira agente do app: o plist sai do LaunchAgents, guardado em aposentados.
+        self.assertFalse(chave.exists(), "a chave não pode continuar no LaunchAgents")
+        guardado = list((self.home / ".transcentia" / "aposentados").rglob("com.transcentia.bots.chave.plist"))
+        self.assertEqual(len(guardado), 1, "o plist da chave precisa ir para aposentados/")
+        self.assertEqual(guardado[0].read_bytes(), plistlib.dumps({
+            "Label": "com.transcentia.bots.chave",
+            "ProgramArguments": ["/usr/bin/python3", str(self.home / ".transcentia/tools/bots-chave")],
+            "Disabled": True,
+            "RunAtLoad": True,
+        }))
+        labels = {c[1].rsplit("/", 1)[-1] for c in calls if c and c[0] == "disable"}
+        self.assertIn("com.transcentia.bots.chave", labels)
+        self.assertIn("app.tuttidash.agente.chave", labels)
+        self.assertTrue(any(c and c[0] == "bootout" and c[1].endswith("com.transcentia.bots.chave") for c in calls))
         for papel, log in (("dispatcher", "lanes-dispatcher.launchd.log"), ("vigia", "bots-watch.launchd.log")):
             rodou = self._rodar(papel)
             self.assertEqual(rodou.returncode, 0, rodou.stderr)

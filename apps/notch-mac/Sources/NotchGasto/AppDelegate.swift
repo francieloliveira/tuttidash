@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         acoesMenu.aoSair = { PresencaApp.sair() }
         acoesMenu.aoBuscar = { NavegacaoPainel.compartilhada.pedirFocoBusca() }
         MenuPrincipalApp.instalar(acoes: acoesMenu)
-        // O dispatcher/vigia/chave só trabalham enquanto este PID estiver vivo.
+        // O dispatcher, o vigia e a conferência do GrokBot só trabalham enquanto este PID estiver vivo.
         PresencaDoApp.marcarAberta()
         // FRA-682: a TuttiChave deixou de ser um job do launchd. O app confere o GrokBot
         // no próprio ciclo e desliga o que tiver ficado instalado.
