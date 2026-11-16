@@ -1,5 +1,5 @@
 // Lançador compilado dos agentes do TuttiDash (SMAppService).
-// Uso: tuttidash-agente <dispatcher|vigia|chave>
+// Uso: tuttidash-agente <dispatcher|vigia>
 // Executa o script em Contents/Resources/controle do mesmo .app.
 // Não lê nem executa cópia em ~/.transcentia.
 //
@@ -700,7 +700,7 @@ int main(int argc, char **argv) {
 #endif
     home = getenv("HOME");
     if (!home || argc < 2) {
-        fprintf(stderr, "uso: tuttidash-agente <dispatcher|vigia|chave>\n");
+        fprintf(stderr, "uso: tuttidash-agente <dispatcher|vigia>\n");
         return 64;
     }
     if (!strcmp(argv[1], "dispatcher")) {
@@ -710,9 +710,6 @@ int main(int argc, char **argv) {
     } else if (!strcmp(argv[1], "vigia")) {
         rel = "bots/watch.py";
         log = "bots-watch.launchd.log";
-    } else if (!strcmp(argv[1], "chave")) {
-        rel = "tools/bots-chave";
-        log = "bots-chave.launchd.log";
     } else {
         fprintf(stderr, "agente desconhecido: %s\n", argv[1]);
         return 64;

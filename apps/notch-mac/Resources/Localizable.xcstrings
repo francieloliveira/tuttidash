@@ -404,42 +404,10 @@
     "A OPENAI_API_KEY foi recusada. Confira a chave e reabra os Ajustes." : {
 
     },
-    "A TuttiChave está desligada: a troca automática fica congelada como está." : {
-
-    },
-    "A TuttiChave não conseguiu aplicar" : {
-
-    },
-    "A chave ainda não conferiu. Até lá vale quem já estava cuidando." : {
-
-    },
-    "A chave confere a cada (s)" : {
-
-    },
-    "A chave dos bots saiu com código %lld." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The bots switch exited with code %lld."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A chave dos bots saiu com código %lld."
-          }
-        }
-      }
-    },
     "A conta precisa de um id." : {
 
     },
     "A cota do Copilot é um número inteiro de requisições por mês." : {
-
-    },
-    "A gestão foi passada à mão para %@. A chave só registra, não decide." : {
 
     },
     "A lane põe esta etiqueta quando para e precisa de uma decisão sua." : {
@@ -474,9 +442,6 @@
 
     },
     "A prova é reprovada mesmo que o xcodebuild diga sucesso." : {
-
-    },
-    "A troca para %@ acontece na próxima conferência da chave." : {
 
     },
     "A área de transferência recusou o texto." : {
@@ -607,9 +572,6 @@
 
     },
     "Achadas nesta pasta" : {
-
-    },
-    "Acima disto a chave passa as lanes para o vigia." : {
 
     },
     "Adicionar" : {
@@ -1049,22 +1011,6 @@
     },
     "Carregando…" : {
 
-    },
-    "Chave dos bots (s)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bots switch (s)"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chave dos bots (s)"
-          }
-        }
-      }
     },
     "Claude (vigia no Mac)" : {
       "extractionState" : "stale",
@@ -2213,22 +2159,6 @@
     },
     "Ligue cada projeto do Linear ao repositório do GitHub em que as lanes trabalham. As duas listas vêm das suas contas." : {
 
-    },
-    "Limite da chave dos bots (%)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bots switch limit (%)"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Limite da chave dos bots (%)"
-          }
-        }
-      }
     },
     "Limpar busca" : {
 
@@ -3893,9 +3823,6 @@
         }
       }
     },
-    "TuttiChave" : {
-
-    },
     "TuttiDash · gasto das lanes" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4094,9 +4021,6 @@
 
     },
     "Você escolheu «Sempre o vigia»." : {
-
-    },
-    "Você pausou tudo. A chave não troca nada até você tirar a pausa geral." : {
 
     },
     "Volta os campos deste grupo ao padrão" : {

@@ -162,23 +162,23 @@ class Binario(unittest.TestCase):
 
     def test_pycache_nao_quebra_e_py_extra_quebra(self):
         self._compilar(self.binario, teste=True, pular_assinatura=True)
-        self._plantar({"tools/bots-chave": "print('chave')\n"})
+        self._plantar({"bots/watch.py": "print('vigia')\n"})
         self._gravar_ancora()
         cache = self.controle / "gasto_lanes" / "__pycache__" / "catalogo.pyc"
         _escrever(cache, "lixo", 0o644)
-        r = self._rodar("chave", ancora=self.ancora)
+        r = self._rodar("vigia", ancora=self.ancora)
         self.assertEqual(r.returncode, 0, r.stderr)
         _escrever(self.controle / "gasto_lanes" / "evil.py", "print('evil')\n", 0o644)
-        r2 = self._rodar("chave", ancora=self.ancora)
+        r2 = self._rodar("vigia", ancora=self.ancora)
         self.assertEqual(r2.returncode, 77, r2.stderr)
         self.assertIn("integridade: divergencia: hash", r2.stderr)
 
     def test_ancora_gravavel_pelo_grupo_nao_vale(self):
         self._compilar(self.binario, teste=True, pular_assinatura=True)
-        self._plantar({"tools/bots-chave": "print('chave')\n"})
+        self._plantar({"bots/watch.py": "print('vigia')\n"})
         self._gravar_ancora()
         self.ancora.chmod(0o666)
-        r = self._rodar("chave", ancora=self.ancora)
+        r = self._rodar("vigia", ancora=self.ancora)
         self.assertEqual(r.returncode, 77, r.stderr)
         self.assertIn("integridade: divergencia: ancora", r.stderr)
 

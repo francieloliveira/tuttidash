@@ -47,19 +47,23 @@ COPIAS_ANTIGAS = (
 # label, papel, nome do lançador, intervalo, RunAtLoad, log
 JOBS = (
     ("com.transcentia.bots.watch", "vigia", "TuttiDash Vigia", 180, False, "bots-watch.launchd.log"),
-    ("com.transcentia.bots.chave", "chave", "TuttiDash Chave", 600, True, "bots-chave.launchd.log"),
     ("com.transcentia.lanes.dispatcher", "dispatcher", "TuttiDash Dispatcher", 60, True, "lanes-dispatcher.launchd.log"),
 )
 
 LABEL_NO_APP = {
     "com.transcentia.bots.watch": "app.tuttidash.agente.vigia",
-    "com.transcentia.bots.chave": "app.tuttidash.agente.chave",
     "com.transcentia.lanes.dispatcher": "app.tuttidash.agente.dispatcher",
 }
+
+# FRA-682: a TuttiChave deixou de ser agente. O app confere o GrokBot no próprio ciclo,
+# com o TuttiDash aberto; nenhum job do launchd roda `tools/bots-chave`. Aqui só se desfaz
+# o que tiver ficado instalado.
+APOSENTADOS = ("com.transcentia.bots.chave", "app.tuttidash.agente.chave")
 
 LANCADORES_VELHOS = (
     "TranscentIA Bots (vigia)",
     "TranscentIA Chave Bots",
+    "TuttiDash Chave",
     "TranscentIA Lanes (dispatcher)",
 )
 
@@ -310,6 +314,13 @@ def aplicar(sem_launchd: bool) -> int:
         else:
             carregados[label] = _launchctl(["print", f"{dominio}/{label}"]).returncode == 0
 
+    # Chave aposentada: foto do plist solto e do estado do launchd, para o rollback.
+    chave_label = "com.transcentia.bots.chave"
+    chave_plist = pasta_plist / f"{chave_label}.plist"
+    chave_antes = _foto_arquivo(chave_plist)
+    chave_desligada = _desligada(chave_label, _ler_plist(chave_plist), texto_disabled)
+    chave_carregada = False if sem_launchd else _launchctl(["print", f"{dominio}/{chave_label}"]).returncode == 0
+
     lanc_antes = {}
     for _label, _papel, nome, _intervalo, _run, _log in JOBS:
         caminho = pasta_lanc / nome
@@ -353,6 +364,17 @@ def aplicar(sem_launchd: bool) -> int:
                 _launchctl(["bootout", f"{dominio}/{label}"])
                 if carregados[label] and not desligados[label] and plists_antes[label] is not None:
                     _launchctl(["bootstrap", dominio, str(pasta_plist / f"{label}.plist")])
+        # Chave: devolve o plist e o serviço ao estado de antes.
+        if not sem_launchd:
+            _launchctl(["bootout", f"{dominio}/{chave_label}"])
+        if chave_antes is None:
+            if chave_plist.exists() or chave_plist.is_symlink():
+                chave_plist.unlink()
+        else:
+            _restaurar_arquivo(chave_plist, chave_antes)
+        if not sem_launchd and chave_carregada and not chave_desligada and chave_antes is not None:
+            _launchctl(["enable", f"{dominio}/{chave_label}"])
+            _launchctl(["bootstrap", dominio, str(chave_plist)])
         print(f"ROLLBACK: verificação falhou ({motivo}); estado anterior restaurado")
         return 1
 
@@ -382,6 +404,24 @@ def aplicar(sem_launchd: bool) -> int:
         velho = pasta_lanc / nome
         if velho.exists() or velho.is_symlink():
             velho.unlink()
+
+    # FRA-682: aposenta a TuttiChave. Desliga os dois labels, tira o plist solto do
+    # LaunchAgents e o guarda em aposentados/ (o rollback devolve). Nada de bootstrap.
+    try:
+        if not sem_launchd:
+            for label in APOSENTADOS:
+                _launchctl(["bootout", f"{dominio}/{label}"])
+                _launchctl(["disable", f"{dominio}/{label}"])
+        if chave_antes is not None:
+            destino = aposentados / "launchd" / chave_plist.name
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            if destino.exists() or destino.is_symlink():
+                destino.unlink()
+            chave_plist.rename(destino)
+            destino.chmod(0o644)
+            print(f"AVISO: agente da TuttiChave aposentado: {destino}")
+    except OSError as exc:
+        return desfazer(f"aposentar chave: {exc}")
 
     programas = {}
     for label, papel, nome, intervalo, run_at_load, log_name in JOBS:

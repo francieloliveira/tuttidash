@@ -11,7 +11,8 @@
 - bots_chave.modo_forcado (config.json, via cfg): auto (padrão, decide pela %),
   vigia (apaga PAUSE e não recria) ou grokbot (cria PAUSE e não apaga). Escolhido no TuttiDash.
 Teste: BOTS_CHAVE_PCT=97 (simula a medida) ou BOTS_CHAVE_PCT=falha (simula erro).
-Lançador: ~/Library/Application Support/AgentesLocais/TuttiDash Chave
+Chave Geral do TuttiDash: o app roda este script do bundle a cada bots_chave.intervalo_s
+(só com a Chave Geral ligada). Nenhum job do launchd o executa.
 """
 import json, os, subprocess, sys
 from datetime import datetime

@@ -363,10 +363,10 @@ struct PainelBarra: View {
                 .buttonStyle(EstiloBotaoSecundario(compacto: true))
                 Spacer()
                 Button { PresencaApp.sair() } label: {
-                    Text("Sair").foregroundStyle(Aurora.vermelho.opacity(0.85))
+                    Text("Sair e parar as lanes").foregroundStyle(Aurora.vermelho.opacity(0.85))
                 }
                 .buttonStyle(EstiloBotaoSecundario(compacto: true))
-                .help("Encerrar o TuttiDash")
+                .help("Sair do TuttiDash e parar as lanes em andamento")
             }
         }
         .padding(14)

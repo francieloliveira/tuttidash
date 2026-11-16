@@ -6,12 +6,15 @@
 #                               medir-estresse, lanepct-auto (+ build do lanepct),
 #                               o catálogo de agentes (agents.d/ + catalogo.py),
 #                               prompts do vigia e instalar.sh, e os launchd
-#                               com.transcentia.bots.watch / .chave pelos lançadores com nome.
+#                               com.transcentia.bots.watch e .lanes.dispatcher pelos lançadores com nome.
 #                               FRA-613/617: dispatcher, vigia, chave, run_lane, lane_view,
 #                               lanes_window e lanes_ctl NÃO são copiados para ~/.transcentia.
 #                               Cópias antigas são aposentadas. O launchd executa o bundle.
 #                               Se a âncora não conferir, a migração volta ao estado anterior
-#                               e não religa chave que estava desligada.
+#                               e não religa serviço que estava desligado.
+#                               FRA-682: a chave não é job do launchd. O app roda o
+#                               `tools/bots-chave` do bundle com a Chave Geral ligada; aqui
+#                               só se aposenta o job antigo (com.transcentia.bots.chave).
 #                               FRA-615: catalogo, projetos, privacidade, linear_ids, fila
 #                               e config também não. O bundle traz controle/gasto_lanes.
 #                               gasto_privado.py continua opcional (build pessoal).

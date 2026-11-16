@@ -101,7 +101,8 @@ class BundleDoAgente(unittest.TestCase):
         return caminho.read_text()
 
     def test_launchd_usa_o_bundle_e_ignora_a_copia_antiga(self):
-        for papel in ("dispatcher", "vigia", "chave"):
+        # FRA-682: a TuttiChave deixou de ser agente; só Dispatcher e Vigia sobem pelo binário.
+        for papel in ("dispatcher", "vigia"):
             with self.subTest(papel=papel):
                 marca = self.tmp / f"marca-{papel}"
                 self._script(papel, f"print('bundle-{papel}')\n")
@@ -122,6 +123,16 @@ class BundleDoAgente(unittest.TestCase):
                 self.assertEqual(r2.returncode, 0, r2.stderr)
                 self.assertEqual(self._log(papel).strip(), f"bundle-{papel}")
                 self.assertFalse(marca.exists())
+
+    def test_agente_recusa_o_papel_chave(self):
+        # Fail-closed: nada além do app assinado roda `bots-chave`.
+        marca = self.tmp / "marca-chave"
+        self._script("chave", f"open({str(marca)!r}, 'w').write('rodou')\n")
+        r = self._rodar("chave")
+        self.assertEqual(r.returncode, 64, r.stderr)
+        self.assertIn("agente desconhecido: chave", r.stderr)
+        self.assertFalse(marca.exists())
+        self.assertEqual(self._log("chave"), "")
 
     def test_sem_script_no_bundle_nao_cai_no_legado(self):
         marca = self.tmp / "marca-ausente"
@@ -150,19 +161,30 @@ class BundleDoAgente(unittest.TestCase):
 
 
 class ScriptsReaisSobem(unittest.TestCase):
-    def test_dispatcher_vigia_e_chave_saem_sem_app(self):
+    def test_dispatcher_e_vigia_saem_sem_app(self):
         with tempfile.TemporaryDirectory(prefix="fra613-sobe-") as bruto:
             home = Path(bruto)
             env = {**os.environ, "HOME": str(home)}
             casos = [
                 [PYTHON, str(ROOT / "lanes" / "dispatcher.py"), "--dry-run"],
                 [PYTHON, str(ROOT / "bots" / "watch.py")],
-                [PYTHON, str(ROOT / "tools" / "bots-chave")],
             ]
             for cmd in casos:
                 with self.subTest(cmd=cmd[-1]):
                     r = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
                     self.assertEqual(r.returncode, 0, r.stderr[-500:] if r.stderr else r.stdout[-500:])
+
+    def test_chave_nao_mexe_em_nada_sem_o_app(self):
+        # FRA-682: o app chama `tools/bots-chave`; sem app aberto ele não toca em PAUSE nem em modo.json.
+        with tempfile.TemporaryDirectory(prefix="fra682-chave-") as bruto:
+            home = Path(bruto)
+            env = {**os.environ, "HOME": str(home)}
+            r = subprocess.run([PYTHON, str(ROOT / "tools" / "bots-chave")],
+                               cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr[-500:] if r.stderr else r.stdout[-500:])
+            bots = home / ".transcentia" / "bots"
+            self.assertFalse((bots / "PAUSE").exists())
+            self.assertFalse((bots / "modo.json").exists())
 
 
 class RunLaneDoBundle(unittest.TestCase):
@@ -252,8 +274,10 @@ class InstallNaoCopiaScripts(unittest.TestCase):
             self.assertNotIn("watch.py", texto)
             modo = stat.S_IMODE(lancador.stat().st_mode)
             self.assertEqual(modo, 0o755)
-            for nome in ("TuttiDash Chave", "TuttiDash Dispatcher"):
+            for nome in ("TuttiDash Dispatcher", "TuttiDash Vigia"):
                 self.assertTrue((lancador.parent / nome).is_file())
+            # FRA-682: a chave não é lançador; o app confere o GrokBot no próprio ciclo.
+            self.assertFalse((lancador.parent / "TuttiDash Chave").exists())
 
 
 class ContratoDoBuild(unittest.TestCase):
@@ -298,7 +322,9 @@ class ContratoDoBuild(unittest.TestCase):
         por_chave = {j["chave"]: j["script"] for j in cfg["DEFAULTS"]["agendas"]["jobs"]}
         self.assertEqual(por_chave["dispatcher"], prefixo + "lanes/dispatcher.py")
         self.assertEqual(por_chave["watch"], prefixo + "bots/watch.py")
-        self.assertEqual(por_chave["chave"], prefixo + "tools/bots-chave")
+        # FRA-682: a chave não é job do launchd; o app roda o `tools/bots-chave` do bundle.
+        self.assertNotIn("chave", por_chave)
+        self.assertEqual(len(por_chave), 2)
         for script in por_chave.values():
             self.assertNotIn(".transcentia", script)
 

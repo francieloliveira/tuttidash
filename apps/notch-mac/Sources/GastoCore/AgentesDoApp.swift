@@ -294,10 +294,13 @@ public final class AgentesDoApp {
     }
 
     /// FRA-682: a TuttiChave deixou de ser um agente — o app faz a conferência no próprio ciclo.
-    /// Desliga e desregistra o que ficou instalado e manda o plist solto para a reserva.
-    /// Idempotente: rodar de novo não muda nada e não toca no Dispatcher nem no Vigia.
+    /// Desliga, desregistra e manda o plist solto para a reserva. Idempotente: rodar de novo
+    /// não muda nada e não toca no Dispatcher nem no Vigia.
     public func aposentarChave() {
         let a = Self.chaveAposentada
+        // Sempre primeiro: com o `launchctl disable` abaixo o SMAppService deixa de achar
+        // o serviço e o registro ficaria órfão nos Itens de Login. Não registrado, lança e não muda nada.
+        try? registro.desregistrar(a.plist)
         _ = sistema.launchctl(["bootout", "\(dominio)/\(a.novo)"])
         _ = sistema.launchctl(["disable", "\(dominio)/\(a.novo)"])
         if carregado(a.antigo).0 { _ = sistema.launchctl(["bootout", "\(dominio)/\(a.antigo)"]) }
@@ -305,7 +308,5 @@ public final class AgentesDoApp {
         if sistema.existe(legadoURL(a.antigo)), let url = urlLegadoSeguro(a.antigo) {
             try? mover(url, reservaURL(a.antigo))
         }
-        let st = registro.status(a.plist)
-        if st == .ativo || st == .precisaAprovacao { try? registro.desregistrar(a.plist) }
     }
 }
