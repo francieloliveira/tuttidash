@@ -82,6 +82,12 @@ install -m 755 "$REPO/lanes/lane_view.py" "$CTRL/lanes/lane_view.py"
 install -m 755 "$REPO/lanes/lanes_window.py" "$CTRL/lanes/lanes_window.py"
 install -m 755 "$REPO/lanes/lanes_ctl.py" "$CTRL/lanes/lanes_ctl.py"
 install -m 755 "$REPO/lanes/run_lane.sh" "$CTRL/lanes/run_lane.sh"
+# O prompt do agente é lido ao lado do dispatcher (caminho_prompt, FRA-595). Sem
+# empacotar, o app cai na cópia antiga de ~/.transcentia/lanes e a correção não chega.
+for f in "$REPO"/lanes/lane-prompt.md "$REPO"/lanes/lane-prompt-*.md; do
+  [ -f "$f" ] || continue
+  install -m 644 "$f" "$CTRL/lanes/$(basename "$f")"
+done
 install -m 755 "$REPO/bots/watch.py" "$CTRL/bots/watch.py"
 install -m 644 "$REPO/bots/caixa_leitura.py" "$CTRL/bots/caixa_leitura.py"
 install -m 755 "$REPO/bots/git-leitura" "$CTRL/bots/git-leitura"
