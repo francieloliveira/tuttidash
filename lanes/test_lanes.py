@@ -2313,6 +2313,25 @@ class LaneParadaEPrompts(unittest.TestCase):
             if any(p in baixa for p in ("rode o build", "rode a suíte", "rode a suite", "rode a prova")):
                 self.assertTrue(baixa.strip().startswith("não") or " não " in f" {baixa} ", linha)
 
+    def test_prompt_traz_o_enunciado_do_card_delimitado(self):
+        # FRA-595 tirou o card.md do worktree; sem o enunciado no prompt o agente
+        # via só o título e devolvia needs_dono por falta de aceite.
+        texto = (Path(d.__file__).resolve().parent / "lane-prompt.md").read_text(encoding="utf-8")
+        self.assertIn("dado do Linear", texto)
+        self.assertIn("<card>", texto)
+        prompt = d.montar_prompt(texto, ident="FRA-689", lane="codex",
+                                 branch="francieltechnix/fra-689-x", wt=self.tmp / "wt")
+        card = {"title": "Garantir X", "url": "https://linear.app/x",
+                "description": "## Objetivo\n\nVoltar ao final sem perder progresso."}
+        prompt += d.bloco_do_card("FRA-689", card)
+        self.assertIn("FRA-689", prompt)
+        self.assertIn("Garantir X", prompt)
+        self.assertIn("Voltar ao final sem perder progresso.", prompt)
+        self.assertNotIn("{{", prompt)
+        self.assertTrue(prompt.index("<card identifier=\"FRA-689\">")
+                        < prompt.index("Voltar ao final"))
+        self.assertNotIn("<card", d.conteudo_do_card("FRA-689", card))
+
 
 class PromptNorteEDuvida(unittest.TestCase):
     """PRD do norte, passo 6: a lane não edita o norte e propõe mudança de card ao dono."""

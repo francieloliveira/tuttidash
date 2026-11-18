@@ -2523,6 +2523,31 @@ def limit_text(lane: str, effort: str) -> str:
     return f"teto US$ {BUDGET_USD[effort]}"
 
 
+def montar_prompt(template: str, *, ident: str, lane: str, branch: str, wt: Path) -> str:
+    """Prompt do agente com os campos do card preenchidos.
+
+    FRA-595 tirou o `card.md` do worktree, mas o prompt continuou mandando «edita o
+    código do card» sem entregar o enunciado: o agente via só o título. O texto do card
+    entra em `bloco_do_card`, dentro do prompt, para funcionar em toda lane (a Claude só
+    lê `./**`, então um arquivo na pasta de provas não seria acessível)."""
+    return (template.replace("{{CARD}}", ident).replace("{{LANE}}", lane)
+            .replace("{{BRANCH}}", branch).replace("{{WORKTREE}}", str(wt)))
+
+
+def conteudo_do_card(ident: str, card: dict) -> str:
+    return (f"# {ident} — {card.get('title') or ''}\n\n"
+            f"{card.get('url') or ''}\n\n"
+            f"{card.get('description') or ''}\n")
+
+
+def bloco_do_card(ident: str, card: dict) -> str:
+    """Enunciado do card delimitado como dado, para o agente não confundi-lo com o prompt."""
+    return ("\n## Enunciado do card (dado do Linear)\n\n"
+            f"<card identifier=\"{ident}\">\n"
+            + conteudo_do_card(ident, card)
+            + "</card>\n")
+
+
 def claim(lane: str, issue: dict, effort: str, measure: str = "",
           modelo: Optional[str] = None) -> None:
     card = linear(QUERY_ISSUE, {"id": issue["id"]})["issue"]
@@ -2554,15 +2579,15 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "",
                            else f"lane-prompt-{catalogo.perfil_da_lane(lane)}.md")
     if extra.is_file():
         template += "\n" + extra.read_text(encoding="utf-8")
-    prompt = (template.replace("{{CARD}}", ident).replace("{{LANE}}", lane)
-              .replace("{{BRANCH}}", branch).replace("{{WORKTREE}}", str(wt)))
+    card_md = prova / "card.md"
+    prompt = montar_prompt(template, ident=ident, lane=lane, branch=branch, wt=wt)
     prompt += resume_note(wt)
     prompt += nota_main
     bancada = bancada_ativa(lane, issue)
     if bancada:
         prompt += TEXTO_BANCADA.replace("{comando}", str(COMANDO_BANCADA))
-    escrever_exclusivo(prova / "card.md",
-                       f"# {ident} — {card['title']}\n\n{card['url']}\n\n{card.get('description') or ''}\n")
+    prompt += bloco_do_card(ident, card)
+    escrever_exclusivo(card_md, conteudo_do_card(ident, card))
     prompt_file = prova / "prompt.md"
     escrever_exclusivo(prompt_file, prompt)
 
