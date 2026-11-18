@@ -2402,6 +2402,36 @@ class LaneParadaEPrompts(unittest.TestCase):
                         < prompt.index("Voltar ao final"))
         self.assertNotIn("<card", d.conteudo_do_card("FRA-689", card))
 
+    def test_prompt_traz_os_comentarios_recentes_como_dado(self):
+        # A prova remota vermelha e as regras do dono moram nos comentários. Sem eles o
+        # agente repetia o mesmo teste instável e devolvia needs_dono de novo.
+        texto = (Path(d.__file__).resolve().parent / "lane-prompt.md").read_text(encoding="utf-8")
+        self.assertIn("comentarios", texto)
+        card = {"comments": {"nodes": [
+            {"body": "primeiro"},
+            {"body": "   "},
+            {"body": "o check `prova-remota` ficou vermelho: 'Amarelo' != 'Verde'"},
+        ]}}
+        bloco = d.bloco_dos_comentarios(card)
+        self.assertIn("<comentarios>", bloco)
+        self.assertIn("'Amarelo' != 'Verde'", bloco)
+        self.assertIn("primeiro", bloco)
+        self.assertLess(bloco.index("primeiro"), bloco.index("Amarelo"))
+        self.assertNotIn("<comentarios>", bloco.split("</comentarios>")[1])
+        self.assertEqual(d.bloco_dos_comentarios({}), "")
+
+    def test_comentarios_do_card_ficam_no_limite(self):
+        nodes = [{"body": f"c{i}"} for i in range(20)]
+        limpos = d.comentarios_do_card({"comments": {"nodes": nodes}})
+        self.assertEqual(len(limpos), d.COMENTARIOS_NO_PROMPT)
+        self.assertEqual(limpos[-1], "c19")
+        comprido = d.comentarios_do_card({"comments": {"nodes": [{"body": "x" * 9000}]}})
+        self.assertEqual(len(comprido[0]), d.TETO_COMENTARIO)
+        muitos = d.bloco_dos_comentarios({"comments": {"nodes": [
+            {"body": "y" * d.TETO_COMENTARIO} for _ in range(8)]}})
+        self.assertLessEqual(len(muitos), d.TETO_COMENTARIOS + 600)
+        self.assertIn("…(início cortado)", muitos)
+
 
 class PromptNorteEDuvida(unittest.TestCase):
     """PRD do norte, passo 6: a lane não edita o norte e propõe mudança de card ao dono."""
