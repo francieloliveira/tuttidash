@@ -160,7 +160,10 @@ class ComandoTest(ComConfig):
             self.assertTrue(texto.endswith('-- "$(cat /run/prompt.md)"'), lane)
 
     def test_codex_grok_dsh(self):
-        self.assertEqual(d.agent_command("codex-2", "medio")[:3], ["codex", "exec", "--json"])
+        # FRA-692: sem `--sandbox workspace-write` o Codex roda em read-only e a lane
+        # não escreve o resultado. O worktree do card é onde ela trabalha.
+        self.assertEqual(d.agent_command("codex-2", "medio")[:5],
+                         ["codex", "exec", "--json", "--sandbox", "workspace-write"])
         with mock.patch.object(d, "lane_permissions", return_value={"allow": [], "deny": []}):
             self.assertEqual(d.agent_command("grok-2", "medio", prompt=Path("/run/p.md"))[0], "grok")
         cmd = d.agent_command("deepseek-2", "medio", patch=Path("/run/d.yml"))
