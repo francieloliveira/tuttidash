@@ -2390,7 +2390,7 @@ class LaneParadaEPrompts(unittest.TestCase):
         self.assertIn("dado do Linear", texto)
         self.assertIn("<card>", texto)
         prompt = d.montar_prompt(texto, ident="FRA-689", lane="codex",
-                                 branch="francieltechnix/fra-689-x", wt=self.tmp / "wt")
+                                 branch="equipe/fra-689-x", wt=self.tmp / "wt")
         card = {"title": "Garantir X", "url": "https://linear.app/x",
                 "description": "## Objetivo\n\nVoltar ao final sem perder progresso."}
         prompt += d.bloco_do_card("FRA-689", card)
