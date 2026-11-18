@@ -137,7 +137,10 @@ query Candidatos($project: ID!, $state: ID!) {
 """, ("project", "state")),
         "card": Operacao("""
 query Card($id: String!) {
-  issue(id: $id) { id identifier title description url branchName state { id name } }
+  issue(id: $id) {
+    id identifier title description url branchName state { id name }
+    comments(last: 12) { nodes { body createdAt } }
+  }
 }
 """, ("id",)),
         "comentar": Operacao("""
