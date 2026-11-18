@@ -1520,6 +1520,76 @@ class RetryDeModelo(unittest.TestCase):
         self.assertIsNone(d.retomar_com_outro_modelo(self.st(), "1", None))
 
 
+class TrocaDeLane(unittest.TestCase):
+    """FRA-690: provedor inteiro fora -> o card muda para a lane irmã e o dono é avisado."""
+
+    EVENTO = ('{"type":"error","timestamp":1,"error":{"type":"provider.no-route",'
+              '"message":"Model unavailable: opencode-go/beam-free"}}\n')
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.chamadas, self.avisos = [], []
+        self.antigo = (d.STATE_DIR, d.LABEL_LANE_IDS, d.linear, d.tirar_label_da_lane,
+                       d._avisar_dono, d._resolucao_modelo, d.modelo_da_lane)
+        d.STATE_DIR = self.tmp / "state"
+        d.STATE_DIR.mkdir()
+        d.LABEL_LANE_IDS = {"opencode": "lbl-opencode", "opencode-go": "lbl-go"}
+        d.linear = lambda op, var: self.chamadas.append((op, var)) or {}
+        d.tirar_label_da_lane = lambda issue_id, lane: self.chamadas.append(("remover", lane))
+        d._avisar_dono = lambda titulo, texto: self.avisos.append((titulo, texto))
+        d._resolucao_modelo = lambda lane, effort: {
+            "modelo": "opencode/nemotron-3.5-super-vl-free" if lane == "opencode"
+                      else "opencode-go/kimi-k3"}
+        d.modelo_da_lane = lambda lane, effort: "opencode-go/kimi-k3" if lane == "opencode-go" \
+            else "opencode/nemotron-3.5-super-vl-free"
+        self.addCleanup(self.restaura)
+
+    def restaura(self):
+        (d.STATE_DIR, d.LABEL_LANE_IDS, d.linear, d.tirar_label_da_lane,
+         d._avisar_dono, d._resolucao_modelo, d.modelo_da_lane) = self.antigo
+
+    def st(self) -> dict:
+        log = self.tmp / "FRA-690-opencode-go.jsonl"
+        log.write_text(self.EVENTO, encoding="utf-8")
+        return {"lane": "opencode-go", "card": "FRA-690", "log": str(log),
+                "modelo": "opencode-go/beam-free", "effort": "alto", "issue_id": "id690"}
+
+    def test_provedor_fora_move_o_card_para_a_lane_irma(self):
+        r = d.trocar_de_lane(self.st(), "1", None)
+        self.assertIn("opencode", r)
+        self.assertIn(("label", {"id": "id690", "label": "lbl-opencode"}),
+                      [("label" if "issueAddLabel" in op else op, v)
+                       for op, v in self.chamadas if isinstance(v, dict)])
+        self.assertIn(("remover", "opencode-go"), self.chamadas)
+        comentario = [v["body"] for op, v in self.chamadas if isinstance(v, dict) and "body" in v]
+        self.assertTrue(any("Alerta para o dono" in c for c in comentario), comentario)
+        self.assertTrue(any("pagamento" in c for c in comentario))
+        self.assertEqual(len(self.avisos), 1)
+        self.assertIn("provedor opencode-go", self.avisos[0][1])
+        self.assertEqual(d.ler_troca_lane("FRA-690")["para"], "opencode")
+
+    def test_uma_troca_por_card_em_24h(self):
+        d.trocar_de_lane(self.st(), "1", None)
+        self.chamadas.clear()
+        self.assertIsNone(d.trocar_de_lane(self.st(), "1", None),
+                          "não pode ficar pulando entre lanes")
+        self.assertEqual(self.chamadas, [])
+
+    def test_sucesso_ou_erro_comum_nao_troca(self):
+        self.assertIsNone(d.trocar_de_lane(self.st(), "0",
+                                           {"status": "done"}))
+        log = self.tmp / "outro.jsonl"
+        log.write_text('{"type":"error","error":{"type":"provider.quota"}}\n', encoding="utf-8")
+        st = self.st()
+        st["log"] = str(log)
+        self.assertIsNone(d.trocar_de_lane(st, "1", None))
+
+    def test_lane_reserva_ignora_o_mesmo_provedor(self):
+        self.assertEqual(d.lane_reserva("opencode-go", "alto"),
+                         ("opencode", "opencode/nemotron-3.5-super-vl-free"))
+
+
 class Limite429DoProvedor(unittest.TestCase):
     """O plano grátis do OpenCode devolve 429 (`FreeUsageLimitError`) no 1º passo; a lane não
     pode voltar a assumir card a cada ciclo (FRA-189/FRA-507/FRA-192, 20/10)."""

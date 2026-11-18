@@ -3171,6 +3171,135 @@ def retomar_com_outro_modelo(st: dict, code: str, res: Optional[dict]) -> Option
     return f"retomando com {alt} (o modelo {atual} não respondeu)"
 
 
+# --- Troca automática de lane com o provedor fora (FRA-690) --------------------
+# `provider.no-route` em modelos diferentes do mesmo provedor é conta/plano fora (ou
+# no-route global), não um modelo ruim. Gastar outro card na lane morta só repete o
+# erro: o card muda para a lane irmã (mesmo CLI, outro provedor) e o dono é avisado
+# para conferir os Ajustes — provedor inteiro fora normalmente é pagamento/crédito.
+TROCA_LANE_JANELA_H = 24.0
+
+
+def _prefixo_do_modelo(modelo: str) -> str:
+    modelo = (modelo or "").strip()
+    return modelo.split("/", 1)[0] if "/" in modelo else ""
+
+
+def _arquivo_troca_lane(ident: str) -> Path:
+    return STATE_DIR / f"lane-troca-{nome_seguro(ident)}.json"
+
+
+def ler_troca_lane(ident: str) -> dict:
+    """Troca de lane já feita para este card dentro da janela. Vazio = pode trocar."""
+    try:
+        dados = json.loads(_arquivo_troca_lane(ident).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError, RuntimeError):
+        return {}
+    if not isinstance(dados, dict):
+        return {}
+    try:
+        quando = dt.datetime.fromisoformat(str(dados.get("em")))
+    except ValueError:
+        return {}
+    if (dt.datetime.now() - quando).total_seconds() >= TROCA_LANE_JANELA_H * 3600:
+        return {}
+    return dados
+
+
+def marcar_troca_lane(ident: str, de: str, para: str, motivo: str = "") -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        _arquivo_troca_lane(ident).write_text(
+            json.dumps({"em": now(), "de": de, "para": para, "motivo": motivo},
+                       ensure_ascii=False, indent=2),
+            encoding="utf-8")
+    except (OSError, RuntimeError):
+        pass
+
+
+def lane_reserva(lane: str, effort: str) -> tuple:
+    """(lane, modelo) de outro provedor com o mesmo CLI e modelo bom neste peso."""
+    cli = catalogo.cli_da_lane(lane)
+    prefixo = _prefixo_do_modelo(modelo_da_lane(lane, effort))
+    if not cli:
+        return "", ""
+    for outra in catalogo.lanes_implementadas():
+        if outra == lane or catalogo.cli_da_lane(outra) != cli:
+            continue
+        if catalogo.transporte_da_lane(outra) != "cli":
+            continue
+        try:
+            modelo = _resolucao_modelo(outra, effort)["modelo"]
+        except Exception:  # noqa: BLE001 — manifesto quebrado não impede a troca de lane
+            continue
+        if not modelo or _prefixo_do_modelo(modelo) == prefixo:
+            continue
+        if catalogo.modelo_excluido(catalogo.perfil_da_lane(outra), modelo):
+            continue
+        return outra, modelo
+    return "", ""
+
+
+def _avisar_dono(titulo: str, texto: str) -> None:
+    """Notificação do macOS. Falha de som/notificação nunca derruba o fechamento."""
+    limpar = lambda t: " ".join(str(t).split())[:180].replace('"', "'")  # noqa: E731
+    script = (f'display notification "{limpar(texto)}" '
+              f'with title "{limpar(titulo)}"')
+    try:
+        subprocess.run(["/usr/bin/osascript", "-e", script],
+                       capture_output=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def trocar_de_lane(st: dict, code: str, res: Optional[dict]) -> Optional[str]:
+    """Provedor recusou modelos diferentes? Move o card para a lane irmã e avisa.
+
+    Uma troca por card em 24 h: se a lane nova também cair, o card falha normalmente
+    (`lane:falhou`) em vez de ficar pulando entre lanes e gastando rodadas."""
+    if code == "0" and res and res.get("status") in ("done", "needs_dono"):
+        return None
+    falhou = modelo_que_falhou(st.get("log") or "")
+    if falhou is None:
+        return None
+    lane = st.get("lane") or ""
+    ident = st.get("card") or ""
+    if not lane or not ident or ler_troca_lane(ident):
+        return None
+    if catalogo.transporte_da_lane(lane) != "cli":
+        return None
+    outra, modelo = lane_reserva(lane, st.get("effort") or EFFORT_DEFAULT)
+    if not outra:
+        return None
+    label = LABEL_LANE_IDS.get(outra)
+    if not label or not st.get("issue_id"):
+        log(f"lane:{lane} {ident}: sem etiqueta para a lane {outra}; não troco")
+        return None
+    provedor = _prefixo_do_modelo(falhou) or _prefixo_do_modelo(st.get("modelo") or "") or lane
+    try:
+        linear(MUT_LABEL, {"id": st["issue_id"], "label": label})
+        tirar_label_da_lane(st["issue_id"], lane)
+    except Exception as exc:  # noqa: BLE001 — sem o Linear, o card segue na lane atual
+        log(f"lane:{lane} {ident}: não trocou para {outra} ({exc})")
+        return None
+    marcar_troca_lane(ident, lane, outra, provedor)
+    aviso = (f"⚠️ O provedor {provedor} recusou modelos diferentes ({falhou}). "
+             f"O card {ident} foi movido de {lane} para {outra}.")
+    _avisar_dono("TuttiDash — provedor fora", aviso)
+    try:
+        linear(MUT_COMMENT, {"id": st["issue_id"], "body":
+            f"🔀 **lane:{lane}** trocou este card para **lane:{outra}**.\n\n"
+            f"- o provedor `{provedor}` recusou modelos diferentes "
+            f"(`provider.no-route`); o último foi `{falhou}`\n"
+            f"- novo modelo em `{outra}`: `{modelo}`\n"
+            f"- o card não volta para `{lane}` automaticamente por 24 h\n\n"
+            f"⚠️ **Alerta para o dono:** provedor inteiro sem rota costuma ser conta/plano "
+            f"sem pagamento ou sem crédito. Confira os Ajustes › Contas antes de devolver "
+            f"o card para `{lane}`."})
+    except Exception as exc:  # noqa: BLE001 — a troca já vale; o comentário é aviso
+        log(f"lane:{lane} {ident}: trocou para {outra}, mas não comentou ({exc})")
+    return f"provedor {provedor} fora; card movido para a lane {outra} ({modelo})"
+
+
 def provider_429(lines: list) -> bool:
     """O stream tem erro HTTP 429 ou limite de uso num evento `error`?
 
@@ -4819,6 +4948,10 @@ def finalize(st: dict) -> Optional[str]:
     retry = retomar_com_outro_modelo(st, code, res)
     if retry:
         return retry
+    # Provedor inteiro fora: troca a lane do card (uma vez em 24 h) e avisa o dono.
+    troca = trocar_de_lane(st, code, res)
+    if troca:
+        return troca
     if code not in ("0",):
         # O watch() grava o motivo em texto quando ele mesmo interrompe a lane.
         if not code.lstrip("-").isdigit():
