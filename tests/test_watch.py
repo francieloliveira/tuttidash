@@ -1021,6 +1021,11 @@ class VigiaLocalPrimeiro(unittest.TestCase):
                  "ollama_modelos", "OLLAMA_AVISO_FILE"]
         antes = {n: getattr(watch, n) for n in nomes}
         self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
+        # Sem a lista real da máquina: o teste é da ordem dos analisadores, não da
+        # conferência de modelo (camada 1, FRA-690).
+        antes_cache = watch.catalogo.ler_cache_modelos
+        watch.catalogo.ler_cache_modelos = lambda *a, **k: {}
+        self.addCleanup(setattr, watch.catalogo, "ler_cache_modelos", antes_cache)
         watch._cfg = lambda k, p: self.cfg.get(k, p)
         watch.agent_paused = lambda: False
         watch.lane_log_tail = lambda ident: ("log", "linha boa\nCoreSimulator timed out\n")
@@ -1192,6 +1197,29 @@ class VigiaLocalPrimeiro(unittest.TestCase):
             watch.revisar("x", self.tmp, "t", "opencode-go", conf)
         self.assertNotIn("claude", tentou)
 
+
+class ModeloDaTriagemTest(unittest.TestCase):
+    """FRA-690: o vigia usa o mesmo resolvedor da lane (lista boa + exclusão de 24 h)."""
+
+    def setUp(self):
+        self.antigo = (watch._cfg, watch.catalogo.ler_cache_modelos)
+        self.addCleanup(setattr, watch, "_cfg", self.antigo[0])
+        self.addCleanup(setattr, watch.catalogo, "ler_cache_modelos", self.antigo[1])
+
+    def test_modelo_do_peso_que_saiu_da_lista_vira_o_proximo_bom(self):
+        conf = {"modo": "auto", "porPeso": {"alto": {"modelo": "opencode/fora-da-lista"}}}
+        watch._cfg = lambda chave, padrao: conf if chave == "lanes.modelo.opencode" else padrao
+        watch.catalogo.ler_cache_modelos = lambda *a, **k: {
+            "listas": {"opencode": ["opencode/beam-free", "opencode/iceman-free"]}}
+        ci = {"labels": {"nodes": [{"name": "alto"}]}}
+        self.assertEqual(watch.modelo_opencode_por_peso(ci), "opencode/beam-free")
+
+    def test_sem_lista_usa_o_manifesto(self):
+        watch._cfg = lambda chave, padrao: padrao
+        watch.catalogo.ler_cache_modelos = lambda *a, **k: {}
+        ci = {"labels": {"nodes": [{"name": "alto"}]}}
+        self.assertEqual(watch.modelo_opencode_por_peso(ci),
+                         watch.catalogo.modelo_de_effort("opencode", "alto"))
 
 
 class WorktreesForaDaPastaTest(unittest.TestCase):

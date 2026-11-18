@@ -127,10 +127,16 @@ class Peso(unittest.TestCase):
 
 
 def sem_ajustes_reais(teste: unittest.TestCase) -> None:
-    """O modelo por peso sai dos Ajustes do Mac (FRA-521); o teste olha só o manifesto."""
-    antigo = d.CONFIG_FILES
-    teste.addCleanup(setattr, d, "CONFIG_FILES", antigo)
+    """O modelo por peso sai dos Ajustes do Mac (FRA-521); o teste olha só o manifesto.
+
+    A lista de modelos da máquina também fica fora: com ela, a conferência da camada 1
+    (FRA-690) trocaria o modelo do manifesto e o teste dependeria do dia.
+    """
+    antigo = (d.CONFIG_FILES, d.CACHE_MODELOS)
+    teste.addCleanup(setattr, d, "CONFIG_FILES", antigo[0])
+    teste.addCleanup(setattr, d, "CACHE_MODELOS", antigo[1])
     d.CONFIG_FILES = [Path(tempfile.mkdtemp()) / "nao-existe.json"]
+    d.CACHE_MODELOS = Path(tempfile.mkdtemp()) / "sem-cache.json"
 
 
 class CopiarParaWorktree(unittest.TestCase):
@@ -600,7 +606,7 @@ class Comandos(unittest.TestCase):
                           "-m", "opencode/glm-5.3-flash-free"])
         self.assertEqual(d.agent_command("opencode", "alto"),
                          ["opencode", "run", "--format", "json",
-                          "-m", "opencode/nemotron-3-ultra-free"])
+                          "-m", "opencode/nemotron-3.5-super-vl-free"])
         self.assertEqual(d.agent_command("opencode-go", "medio"),
                          ["opencode", "run", "--format", "json",
                           "-m", "opencode-go/kimi-k3"])
@@ -617,6 +623,14 @@ class Comandos(unittest.TestCase):
                          ["codex", "exec", "--json", "--sandbox", "workspace-write"])
         for effort in ("baixo", "medio", "alto"):
             self.assertIn("workspace-write", d.agent_command("codex", effort))
+
+    def test_retry_de_modelo_troca_o_id_no_comando(self):
+        # FRA-690 camada 2: o claim relança a lane com outro modelo.
+        self.assertEqual(d.agent_command("opencode", "alto", modelo="opencode/beam-free"),
+                         ["opencode", "run", "--format", "json", "-m", "opencode/beam-free"])
+        self.assertEqual(d.agent_command("codex", "medio", modelo="gpt-6-luna"),
+                         ["codex", "exec", "--json", "--sandbox", "workspace-write",
+                          "-m", "gpt-6-luna"])
 
     def test_deepseek_headless_texto(self):
         # dsh headless: sessão nova, prompt como argumento e patch de conta/modelo.
@@ -1112,7 +1126,7 @@ class PrivacidadeDasLanes(unittest.TestCase):
     def test_modelos_por_peso_de_23_10(self):
         self.assertEqual(d.modelo_da_lane("opencode", "baixo"), "opencode/glm-5.3-flash-free")
         self.assertEqual(d.modelo_da_lane("opencode", "medio"), "opencode/deepseek-v4.1-flash-free")
-        self.assertEqual(d.modelo_da_lane("opencode", "alto"), "opencode/nemotron-3-ultra-free")
+        self.assertEqual(d.modelo_da_lane("opencode", "alto"), "opencode/nemotron-3.5-super-vl-free")
         self.assertIsNone(d.privacy_block("opencode", "medio"))
 
     def test_regra_de_23_10_modelo_que_treina_recebe_codigo(self):
@@ -1144,8 +1158,11 @@ class ModeloDosAjustes(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        self.antigo = d.CONFIG_FILES
-        self.addCleanup(setattr, d, "CONFIG_FILES", self.antigo)
+        self.antigo = (d.CONFIG_FILES, d.CACHE_MODELOS)
+        self.addCleanup(setattr, d, "CONFIG_FILES", self.antigo[0])
+        self.addCleanup(setattr, d, "CACHE_MODELOS", self.antigo[1])
+        # Sem lista do provedor: este teste é da config, não da conferência de modelo.
+        d.CACHE_MODELOS = self.tmp / "sem-cache.json"
 
     def config(self, dados) -> None:
         f = self.tmp / "config.json"
@@ -1258,10 +1275,12 @@ class ModeloPorPeso(unittest.TestCase):
             "anteriores": {"opencode": ["opencode/glm-5.3-flash-free", "opencode/deepseek-v4.1-flash-free"]},
         }), encoding="utf-8")
         self.assertIsNone(d.ler_modelo_lane("opencode"))
-        self.assertEqual(d.modelo_da_lane("opencode", "alto"), d.catalogo.modelo_de_effort("opencode", "alto"),
-                         "peso sem escolha nos Ajustes cai no manifesto")
+        # FRA-690 (camada 1): o padrão do manifesto também é conferido. Este cache só lista
+        # o DeepSeek, então o padrão (Nemotron) sai e o próximo bom da lista assume.
+        self.assertEqual(d.modelo_da_lane("opencode", "alto"), "opencode/deepseek-v4.1-flash-free",
+                         "peso sem escolha usa o manifesto, mas só se ele estiver na lista")
         self.assertEqual(d.modelo_da_lane("opencode", "baixo"), "opencode/deepseek-v4.1-flash-free")
-        self.assertIn("voltou ao automático", d.aviso_modelo("opencode", "alto"))
+        self.assertIn("não está na lista", d.aviso_modelo("opencode", "alto"))
         self.assertEqual(d.reconciliar_modelos_sumidos(), ["opencode"])
         gravado = json.loads((self.tmp / "config.json").read_text(encoding="utf-8"))
         bloco = gravado["lanes"]["modelo"]["opencode"]
@@ -1379,6 +1398,126 @@ class ModeloPorPeso(unittest.TestCase):
                                           "listas": {"grok": ["grok-4.7"]}}), encoding="utf-8")
         self.assertEqual(d.catalogo.lanes_para_atualizar(lanes, self.cache, depois), ["grok", "claude"],
                          "cache antigo, sem selo por lane, renova tudo")
+
+
+class ModeloNaLista(unittest.TestCase):
+    """FRA-690 camada 1: o modelo escolhido E o padrão do manifesto passam pela lista."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.antigo = d.catalogo.MODELOS_EXCLUIDOS
+        self.addCleanup(setattr, d.catalogo, "MODELOS_EXCLUIDOS", self.antigo)
+        d.catalogo.MODELOS_EXCLUIDOS = self.tmp / "excluidos.json"
+
+    @staticmethod
+    def cache(listas, anteriores=None):
+        return {"listas": listas, "anteriores": anteriores or {}}
+
+    def test_padrao_que_saiu_da_lista_da_lugar_ao_proximo(self):
+        c = self.cache({"opencode": ["opencode/beam-free", "opencode/iceman-free"]})
+        r = d.catalogo.resolver_modelo("opencode", "alto", None, c)
+        self.assertEqual(r["modelo"], "opencode/beam-free")
+        self.assertIn("não está na lista", r["aviso"])
+
+    def test_padrao_que_esta_na_lista_fica(self):
+        c = self.cache({"opencode": ["opencode/nemotron-3.5-super-vl-free"]})
+        r = d.catalogo.resolver_modelo("opencode", "alto", None, c)
+        self.assertEqual(r["modelo"], "opencode/nemotron-3.5-super-vl-free")
+        self.assertEqual(r["aviso"], "")
+
+    def test_apelido_do_claude_nao_e_conferido(self):
+        # `opus` não é id da lista do provedor; o CLI aceita o apelido.
+        c = self.cache({"claude": ["claude-opus-5-5", "claude-sonnet-5-5"]})
+        r = d.catalogo.resolver_modelo("claude", "medio", None, c)
+        self.assertEqual(r["modelo"], "opus")
+        self.assertEqual(r["aviso"], "")
+
+    def test_modelo_escolhido_que_nao_esta_na_lista_e_trocado(self):
+        c = self.cache({"opencode": ["opencode/beam-free"]})
+        r = d.catalogo.resolver_modelo("opencode", "medio",
+                                       {"modo": "fixo", "fixo": "opencode/sumiu-free"}, c)
+        self.assertEqual(r["modelo"], "opencode/beam-free")
+        self.assertIn("não está na lista", r["aviso"])
+
+    def test_modelo_excluido_por_falha_fica_fora_24h(self):
+        c = self.cache({"opencode": ["opencode/beam-free", "opencode/iceman-free"]})
+        agora = d.dt.datetime(2026, 11, 18, 12, 0)
+        d.catalogo.excluir_modelo("opencode", "opencode/beam-free", agora=agora)
+        self.assertTrue(d.catalogo.modelo_excluido("opencode", "beam-free", agora=agora))
+        self.assertEqual(d.catalogo.proximo_modelo("opencode", c, agora=agora),
+                         "opencode/iceman-free")
+        depois = agora + d.dt.timedelta(hours=25)
+        self.assertFalse(d.catalogo.modelo_excluido("opencode", "opencode/beam-free", agora=depois))
+        self.assertEqual(d.catalogo.proximo_modelo("opencode", c, agora=depois),
+                         "opencode/beam-free")
+
+    def test_resolver_nao_usa_modelo_excluido(self):
+        c = self.cache({"opencode": ["opencode/beam-free", "opencode/iceman-free"]})
+        d.catalogo.excluir_modelo("opencode", "opencode/beam-free")
+        r = d.catalogo.resolver_modelo("opencode", "alto",
+                                       {"modo": "fixo", "fixo": "opencode/beam-free"}, c)
+        self.assertEqual(r["modelo"], "opencode/iceman-free")
+        self.assertIn("falhou no provedor", r["aviso"])
+
+
+class RetryDeModelo(unittest.TestCase):
+    """FRA-690 camada 2: provedor recusou o modelo -> uma retomada com o próximo da lista."""
+
+    EVENTO = ('{"type":"error","timestamp":1,"error":{"type":"provider.no-route",'
+              '"message":"Model unavailable: opencode-go/muse-spark-1.3-contributor"}}\n')
+    MODELO = "opencode-go/muse-spark-1.3-contributor"
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.antigo = (d.STATE_DIR, d.CACHE_MODELOS, d.catalogo.MODELOS_EXCLUIDOS)
+        self.addCleanup(setattr, d, "STATE_DIR", self.antigo[0])
+        self.addCleanup(setattr, d, "CACHE_MODELOS", self.antigo[1])
+        self.addCleanup(setattr, d.catalogo, "MODELOS_EXCLUIDOS", self.antigo[2])
+        d.STATE_DIR = self.tmp / "state"
+        d.STATE_DIR.mkdir()
+        d.catalogo.MODELOS_EXCLUIDOS = self.tmp / "excluidos.json"
+        self.log = self.tmp / "FRA-690-opencode-go.jsonl"
+
+    def escreve(self, texto: str) -> None:
+        self.log.write_text(texto, encoding="utf-8")
+
+    def cache(self, listas) -> None:
+        self.cache_file = self.tmp / "cache.json"
+        self.cache_file.write_text(json.dumps({"listas": listas}), encoding="utf-8")
+        d.CACHE_MODELOS = self.cache_file
+
+    def st(self) -> dict:
+        return {"lane": "opencode-go", "card": "FRA-690", "log": str(self.log),
+                "modelo": self.MODELO, "effort": "alto", "issue_id": "id690"}
+
+    def test_le_o_modelo_do_evento_de_erro(self):
+        self.escreve(self.EVENTO)
+        self.assertEqual(d.modelo_que_falhou(str(self.log)), self.MODELO)
+        self.assertIsNone(d.modelo_que_falhou(str(self.tmp / "nao-existe.log")))
+
+    def test_sucesso_ou_erro_comum_nao_retoma(self):
+        self.escreve('{"type":"result","subtype":"success"}\n')
+        self.assertIsNone(d.modelo_que_falhou(str(self.log)))
+        self.escreve('{"type":"error","error":{"type":"provider.quota"}}\n')
+        self.assertIsNone(d.modelo_que_falhou(str(self.log)))
+
+    def test_retoma_uma_vez_com_o_proximo_da_lista(self):
+        self.escreve(self.EVENTO)
+        self.cache({"opencode-go": ["opencode-go/beam-free", self.MODELO]})
+        st = self.st()
+        r = d.retomar_com_outro_modelo(st, "1", None)
+        self.assertIn("opencode-go/beam-free", r)
+        self.assertEqual(st["modelo_retry"], {"de": self.MODELO, "para": "opencode-go/beam-free"})
+        self.assertTrue(d.catalogo.modelo_excluido("opencode-go", self.MODELO))
+        self.assertIsNone(d.retomar_com_outro_modelo(self.st(), "1", None),
+                          "só um retry por card dentro da janela")
+
+    def test_sem_alternativa_nao_retoma(self):
+        self.escreve(self.EVENTO)
+        self.cache({"opencode-go": [self.MODELO]})
+        self.assertIsNone(d.retomar_com_outro_modelo(self.st(), "1", None))
 
 
 class Limite429DoProvedor(unittest.TestCase):
