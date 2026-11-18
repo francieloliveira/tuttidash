@@ -611,10 +611,12 @@ class Comandos(unittest.TestCase):
             self.assertTrue(d.limit_text("opencode-go", effort).startswith("teto US$"))
 
     def test_codex_headless_json(self):
+        # FRA-692: o `exec` do Codex abre em read-only por padrão; sem
+        # `--sandbox workspace-write` a lane não escreve no worktree.
         self.assertEqual(d.agent_command("codex", "medio"),
-                         ["codex", "exec", "--json"])
+                         ["codex", "exec", "--json", "--sandbox", "workspace-write"])
         for effort in ("baixo", "medio", "alto"):
-            d.agent_command("codex", effort)  # modelo default do CLI
+            self.assertIn("workspace-write", d.agent_command("codex", effort))
 
     def test_deepseek_headless_texto(self):
         # dsh headless: sessão nova, prompt como argumento e patch de conta/modelo.

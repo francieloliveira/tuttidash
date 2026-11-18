@@ -1360,8 +1360,12 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
         # FRA-374: `exec --json` emite eventos JSONL; o prompt vai
         # como argumento posicional (ver claim). Padrão = modelo default do CLI.
         # Sem teto de gasto no CLI; monitorado pelo ledger depois.
+        # FRA-692: o `exec` do Codex abre em sandbox `read-only` por padrão, e a lane
+        # não escrevia o código nem o `.lane/result.json` (o card caía em `lane:falhou`
+        # com «agente não registrou resultado»). O worktree é do card: escrever nele é
+        # o trabalho da lane.
         return [
-            "codex", "exec", "--json",
+            "codex", "exec", "--json", "--sandbox", "workspace-write",
             *flags_da_lane(lane, effort),
         ]
     if cli == "dsh":
