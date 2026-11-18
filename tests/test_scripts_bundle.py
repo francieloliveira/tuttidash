@@ -315,6 +315,24 @@ class ContratoDoBuild(unittest.TestCase):
         self.assertIn('certificate leaf[subject.OU]', texto)
         self.assertNotIn("cdhash", texto.lower())
 
+    def test_prompt_do_agente_vai_no_bundle(self):
+        # O prompt é lido ao lado do dispatcher (`caminho_prompt`); sem empacotar, o app
+        # cai na cópia antiga de `~/.transcentia/lanes` e a correção do prompt não chega.
+        texto = BUILD.read_text()
+        copia = texto.index("plano de controle")
+        verifica = texto.index("codesign --verify")
+        trecho = texto[copia:verifica]
+        self.assertIn('"$REPO"/lanes/lane-prompt.md', trecho)
+        self.assertIn('"$REPO"/lanes/lane-prompt-*.md', trecho)
+        self.assertIn('"$CTRL/lanes/$(basename "$f")"', trecho)
+        for nome in ("lane-prompt.md", "lane-prompt-acp.md", "lane-prompt-grok.md",
+                     "lane-prompt-opencode.md"):
+            self.assertTrue((ROOT / "lanes" / nome).is_file(), nome)
+        sys.path.insert(0, str(ROOT / "lanes"))
+        import dispatcher as d
+        self.assertEqual(d.caminho_prompt("lane-prompt.md"),
+                         Path(d.__file__).resolve().parent / "lane-prompt.md")
+
     def test_padroes_do_cfg_apontam_para_o_bundle(self):
         import runpy
         cfg = runpy.run_path(str(ROOT / "tools" / "cfg"))
