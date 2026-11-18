@@ -4779,11 +4779,6 @@ def finalize(st: dict) -> Optional[str]:
     prot = touched_protected(g["lane_files"])
     if prot:
         return fail(st, f"tocou caminho protegido ({', '.join(prot)}); nada foi enviado")
-    # Camada 2 (FRA-690): o provedor recusou o modelo? Relança uma vez com outro antes
-    # de marcar `lane:falhou`. `st["modelo_retry"]` avisa o `watch` para não soltar a lane.
-    retry = retomar_com_outro_modelo(st, code, res)
-    if retry:
-        return retry
     if code == "freio":
         try:
             detalhe = ler_sem_seguir(prova / "freio.txt").strip()
@@ -4794,6 +4789,11 @@ def finalize(st: dict) -> Optional[str]:
         until = account_limit(st["log"], st["lane"])
         if until:
             return reacao_ao_limite(st, until)
+    # Camada 2 (FRA-690): o provedor recusou o modelo? Relança uma vez com outro antes
+    # de marcar `lane:falhou`. `st["modelo_retry"]` avisa o `watch` para não soltar a lane.
+    retry = retomar_com_outro_modelo(st, code, res)
+    if retry:
+        return retry
     if code not in ("0",):
         # O watch() grava o motivo em texto quando ele mesmo interrompe a lane.
         if not code.lstrip("-").isdigit():
