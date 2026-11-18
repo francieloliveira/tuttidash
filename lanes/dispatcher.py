@@ -1120,9 +1120,13 @@ def modelo_da_lane(lane: str, effort: str) -> str:
     return _resolucao_modelo(lane, effort)["modelo"]
 
 
-def flags_da_lane(lane: str, effort: str) -> list[str]:
+def flags_da_lane(lane: str, effort: str, modelo: str | None = None) -> list[str]:
     """Flags do CLI neste peso, já com o modelo e o esforço da config.
+    `modelo` força outro id (retry da camada 2, FRA-690).
     Instância ACP: só para exibir (o runner recebe `--modelo`)."""
+    if modelo:
+        return list(catalogo.montar_flags(lane, effort,
+                                          catalogo.com_prefixo_modelo(lane, modelo), "", False))
     inst = catalogo.instancia(lane)
     if inst and inst["transporte"] == "acp":
         m = modelo_da_lane(lane, effort)
@@ -1300,11 +1304,12 @@ def deepseek_resumo(effort: str, lane: str = "deepseek") -> str:
 
 
 def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
-                  patch: Optional[Path] = None, settings: Optional[Path] = None) -> list[str]:
+                  patch: Optional[Path] = None, settings: Optional[Path] = None,
+                  modelo: Optional[str] = None) -> list[str]:
     """Comando headless do agente (claude, grok e opencode são executadas de verdade).
 
     `prompt` e `patch` são caminhos fora do worktree. O agente não pode trocar
-    o arquivo que o runner vai ler.
+    o arquivo que o runner vai ler. `modelo` troca o id do peso (retry, FRA-690).
     """
     # PRD lanes-v2: o comando sai do CLI da lane (`claude`, `grok`, `opencode`, `codex`,
     # `dsh`), não do nome dela. Uma instância (`claude-sonnet`) usa o mesmo comando do
@@ -1320,7 +1325,7 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
             "--settings", str(settings or caminho_settings()),
             "--strict-mcp-config", "--mcp-config", str(caminho_controle("lane-mcp.json")),
             "--max-budget-usd", str(BUDGET_USD[effort]),
-            *flags_da_lane(lane, effort),
+            *flags_da_lane(lane, effort, modelo),
         ]
     if cli == "grok":
         if prompt is None or ".lane" in Path(prompt).parts:
@@ -1333,7 +1338,7 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
             "--sandbox", PERFIL_SANDBOX,
             "--tools", ",".join(GROK_TOOLS), "--disable-web-search",
             "--max-turns", str(GROK_MAX_TURNS[effort]),
-            *flags_da_lane(lane, effort),
+            *flags_da_lane(lane, effort, modelo),
         ]
         for rule in perms["allow"]:
             if not rule.startswith("mcp__"):      # nenhum MCP liberado na lane grok
@@ -1351,10 +1356,10 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
         # redirecionando o stdin por compatibilidade com as outras lanes.
         # Modelo da config da lane (`lanes.modelo.<lane>`); `opencode-go` é a mesma
         # invocação com os modelos Go (ZDR, teto mensal por modelo).
-        modelo = modelo_da_lane(lane, effort)
+        escolhido = modelo or modelo_da_lane(lane, effort)
         return [
             "opencode", "run", "--format", "json",
-            "-m", modelo,
+            "-m", escolhido,
         ]
     if cli == "codex":
         # FRA-374: `exec --json` emite eventos JSONL; o prompt vai
@@ -1366,7 +1371,7 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
         # o trabalho da lane.
         return [
             "codex", "exec", "--json", "--sandbox", "workspace-write",
-            *flags_da_lane(lane, effort),
+            *flags_da_lane(lane, effort, modelo),
         ]
     if cli == "dsh":
         # dsh (DeepSeek Harness) headless: uma sessão nova, a resposta final no
@@ -1402,12 +1407,14 @@ def comando_acp(lane: str, inst: dict, settings: Optional[Path] = None,
 
 
 def texto_do_agente(lane: str, effort: str, prompt: Path,
-                    patch: Optional[Path] = None, settings: Optional[Path] = None) -> str:
+                    patch: Optional[Path] = None, settings: Optional[Path] = None,
+                    modelo: Optional[str] = None) -> str:
     """Linha que o `run_lane.sh` executa. O prompt é um arquivo fora do worktree.
 
     Na opencode e no dsh o prompt entra entre aspas. Sem aspas, um espaço ou uma
     aspa do card partia o argumento e o CLI lia lixo (ou uma flag)."""
-    agent_text = shlex.join(agent_command(lane, effort, prompt=prompt, patch=patch, settings=settings))
+    agent_text = shlex.join(agent_command(lane, effort, prompt=prompt, patch=patch,
+                                          settings=settings, modelo=modelo))
     if catalogo.transporte_da_lane(lane) == "cli" and catalogo.cli_da_lane(lane) in ("opencode", "dsh"):
         agent_text += f' -- "$(cat {shlex.quote(str(prompt))})"'
     return agent_text
@@ -2516,7 +2523,8 @@ def limit_text(lane: str, effort: str) -> str:
     return f"teto US$ {BUDGET_USD[effort]}"
 
 
-def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
+def claim(lane: str, issue: dict, effort: str, measure: str = "",
+          modelo: Optional[str] = None) -> None:
     card = linear(QUERY_ISSUE, {"id": issue["id"]})["issue"]
     ident = card["identifier"]
     branch = branch_segura(card["branchName"], ident)
@@ -2579,7 +2587,8 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     # prompt como `--check` (git diff --check) é lido como flag e o CLI aborta.
     # FRA-595: o comando fica no RUN_DIR, com nonce no nome. O runner recebe o
     # caminho por argv e não lê `.lane/agent_cmd`.
-    agent_text = texto_do_agente(lane, effort, prompt_file, patch_file, settings_file)
+    agent_text = texto_do_agente(lane, effort, prompt_file, patch_file, settings_file,
+                                 modelo=modelo)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LANE_LOG_DIR.mkdir(parents=True, exist_ok=True)
     lane_log = LANE_LOG_DIR / f"{ident}-{lane}-{stamp}.jsonl"
@@ -2591,9 +2600,9 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     base = sh([GIT, "rev-parse", "HEAD"], cwd=wt)
     st = {"lane": lane, "card": ident, "issue_id": card["id"], "title": card["title"],
           "url": card["url"], "branch": branch, "worktree": str(wt), "base": base,
-          "effort": effort, "modelo": modelo_da_lane(lane, effort),
+          "effort": effort, "modelo": modelo or modelo_da_lane(lane, effort),
           "modelo_fixo": aviso_modelo(lane, effort) == "modelo fixo",
-          "aviso_modelo": aviso_modelo(lane, effort),
+          "aviso_modelo": aviso_modelo(lane, effort) if not modelo else "retry de modelo",
           "started": time.time(), "started_at": now(),
           "log": str(lane_log), "session": f"lane-{lane}",
           "run_id": run_id, "agent_cmd": str(cmd_path), "bancada": bancada}
@@ -2601,7 +2610,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
     gravar_claim(lane, st)
 
     flags = (deepseek_resumo(effort, lane) if cli == "dsh"
-             else " ".join(flags_da_lane(lane, effort)) or "padrão do CLI")
+             else " ".join(flags_da_lane(lane, effort, modelo)) or "padrão do CLI")
     linear(MUT_COMMENT, {"id": card["id"], "body":
         f"▶️ **lane:{lane}** assumiu o card ({now()}).\n\n"
         f"- esforço `{effort}` → `{flags}`, {limit_text(lane, effort)}, timeout {LANE_TIMEOUT_MIN} min\n"
@@ -2609,6 +2618,8 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "") -> None:
         + nota_branch
         + linha_main
         + (f"- lane escolhida pela medida: {measure}\n" if measure else "")
+        + (f"- 🔁 retry de modelo: o anterior não respondeu; agora `{modelo}`\n"
+           if modelo else "")
         + ("- 🔌 modo bancada: só o comando `bancada` (USB), com auditoria fora do worktree\n"
            if bancada else "") +
         f"- o agente não fala com Linear/GitHub; o dispatcher fecha o card ao final"})
@@ -3033,6 +3044,106 @@ def agent_outcome(log_path: str) -> str:
 
 
 LIMIT_TEXT_RE = re.compile(r"(hit your|reached your)[^\"\n]{0,60}limit", re.I)
+
+
+# --- Camada 2: modelo recusado pelo provedor (FRA-690) -------------------------
+# A lista do provedor pode estar defasada: o modelo aparece nela e o provedor responde
+# `provider.no-route` / `Model unavailable` (FRA-690, 18/11). Sem isto, o card repetia o
+# mesmo modelo até o vigia chamar o dono. Aqui a lane relança UMA vez com o próximo
+# modelo bom e exclui o que falhou por 24 h.
+MODELO_FALHOU_RE = re.compile(
+    r"model unavailable|model[_ ]not[_ ]found|unknown model|invalid model|no-route|"
+    r"modelo indispon|modelo n[ãa]o encontrado", re.I)
+MODELO_ID_RE = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:/-]*)")
+RETRY_MODELO_JANELA_H = 24.0
+
+
+def modelo_que_falhou(log_path: str) -> Optional[str]:
+    """Modelo citado no evento de erro do provedor. None = não é falha de modelo.
+
+    Devolve "" quando a falha é de modelo mas o id não veio no texto (a lane então
+    exclui o modelo que ela mesma registrou)."""
+    try:
+        linhas = Path(log_path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for raw in reversed(linhas):
+        try:
+            ev = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict) or ev.get("type") != "error":
+            continue
+        err = ev.get("error")
+        texto = json.dumps(err, ensure_ascii=False) if isinstance(err, dict) else str(err or "")
+        if not MODELO_FALHOU_RE.search(texto):
+            continue
+        m = MODELO_ID_RE.search(texto)
+        return m.group(1) if m else ""
+    return None
+
+
+def _arquivo_retry_modelo(ident: str) -> Path:
+    return STATE_DIR / f"modelo-retry-{nome_seguro(ident)}.json"
+
+
+def ler_retry_modelo(ident: str) -> dict:
+    """Retry de modelo já usado por este card dentro da janela (24 h). Vazio = pode."""
+    try:
+        dados = json.loads(_arquivo_retry_modelo(ident).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError, RuntimeError):
+        return {}
+    if not isinstance(dados, dict):
+        return {}
+    em = dados.get("em")
+    try:
+        quando = dt.datetime.fromisoformat(str(em))
+    except ValueError:
+        return {}
+    if (dt.datetime.now() - quando).total_seconds() >= RETRY_MODELO_JANELA_H * 3600:
+        return {}
+    return dados
+
+
+def marcar_retry_modelo(ident: str, de: str, para: str) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        _arquivo_retry_modelo(ident).write_text(
+            json.dumps({"em": now(), "de": de, "para": para}, ensure_ascii=False, indent=2),
+            encoding="utf-8")
+    except (OSError, RuntimeError):
+        pass
+
+
+def retomar_com_outro_modelo(st: dict, code: str, res: Optional[dict]) -> Optional[str]:
+    """O card falhou por modelo recusado? Relança uma vez com outro modelo da lista.
+
+    Devolve a descrição da retomada ou None (segue o caminho normal de falha)."""
+    if code == "0" and res and res.get("status") in ("done", "needs_dono"):
+        return None
+    falhou = modelo_que_falhou(st.get("log") or "")
+    if falhou is None:
+        return None
+    if catalogo.transporte_da_lane(st.get("lane") or "") != "cli":
+        # Instância ACP recebe o modelo por outro caminho; o retry da camada 2 é do CLI.
+        return None
+    ident = st.get("card") or ""
+    if not ident or ler_retry_modelo(ident):
+        # Um retry por card na janela; o modelo que falhou fica excluído e não repete.
+        return None
+    perfil = catalogo.perfil_da_lane(st.get("lane") or "")
+    atual = catalogo.com_prefixo_modelo(perfil, falhou or st.get("modelo") or "")
+    if not atual:
+        return None
+    alt = catalogo.proximo_modelo(perfil, _cache_modelos(), evitar={atual})
+    if not alt:
+        return None
+    catalogo.excluir_modelo(perfil, atual)
+    if falhou and catalogo.com_prefixo_modelo(perfil, falhou) != atual:
+        catalogo.excluir_modelo(perfil, falhou)
+    marcar_retry_modelo(ident, atual, alt)
+    st["modelo_retry"] = {"de": atual, "para": alt}
+    return f"retomando com {alt} (o modelo {atual} não respondeu)"
 
 
 def provider_429(lines: list) -> bool:
@@ -4668,6 +4779,11 @@ def finalize(st: dict) -> Optional[str]:
     prot = touched_protected(g["lane_files"])
     if prot:
         return fail(st, f"tocou caminho protegido ({', '.join(prot)}); nada foi enviado")
+    # Camada 2 (FRA-690): o provedor recusou o modelo? Relança uma vez com outro antes
+    # de marcar `lane:falhou`. `st["modelo_retry"]` avisa o `watch` para não soltar a lane.
+    retry = retomar_com_outro_modelo(st, code, res)
+    if retry:
+        return retry
     if code == "freio":
         try:
             detalhe = ler_sem_seguir(prova / "freio.txt").strip()
@@ -4882,6 +4998,20 @@ def watch(lane: str, st: dict) -> None:
             st["stuck"] = f"fechamento falhou 5 vezes e o Linear não respondeu: {exc2}"
             save_state(lane, st)
             log(f"lane:{lane} TRAVADA em {st['card']}: {st['stuck']}")
+            return
+    # FRA-690: `finalize` pediu outro modelo. O claim grava um estado novo; soltar a lane
+    # aqui apagaria esse estado e a rodada nova morreria no próximo ciclo.
+    retry = st.get("modelo_retry")
+    if retry:
+        try:
+            claim(lane, {"id": st["issue_id"]}, st.get("effort") or EFFORT_DEFAULT,
+                  measure=f"retry de modelo ({retry['de']} → {retry['para']})",
+                  modelo=retry["para"])
+        except Exception as exc:  # noqa: BLE001 — cai no caminho normal e tenta de novo depois
+            log(f"lane:{lane} {st['card']}: não retomou com {retry['para']} ({exc})")
+        else:
+            log(f"lane:{lane} RETOMOU {st['card']} com {retry['para']} "
+                f"(o modelo {retry['de']} não respondeu)")
             return
     destino = prova / "finalized"
     if destino.is_symlink():

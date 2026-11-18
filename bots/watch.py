@@ -689,7 +689,10 @@ def card_of(title: str, branch: str) -> str | None:
 READ_ONLY_SETTINGS = {
     "permissions": {
         "defaultMode": "dontAsk",
-        "allow": ["Read(./**)", "Glob(./**)", "Grep(./**)", "Bash(git-leitura:*)"],
+        # FRA-690: o Claude Code 2.1.325 recusa `Glob(./**)`/`Grep(./**)` no allow
+        # («is not matched by file permission checks») e a triagem/revisão morria antes
+        # de ler o card. Só `Read` tem checagem de arquivo; Glob/Grep entram pelo Read.
+        "allow": ["Read(./**)", "Bash(git-leitura:*)"],
         "deny": ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch",
                  "Bash(cat:*)", "Bash(/bin/cat:*)", "Bash(head:*)", "Bash(tail:*)",
                  "Bash(grep:*)", "Bash(ls:*)", "Bash(wc:*)",
@@ -1806,15 +1809,18 @@ def esforco_do_card(ci: dict) -> str:
 
 
 def modelo_opencode_por_peso(ci: dict) -> str:
-    """O mesmo modelo que a lane opencode usaria neste card (FRA-521: Ajustes por peso, senão o manifesto)."""
+    """O mesmo modelo que a lane opencode usaria neste card (FRA-521: Ajustes por peso,
+    senão o manifesto). FRA-690: passa pelo resolvedor, que confere o modelo contra a
+    lista boa — o vigia não pode divergir da lane nem usar um id que saiu da lista."""
     e = esforco_do_card(ci)
-    conf = _cfg("lanes.modelo.opencode", {}) or {}
     m = ""
-    if isinstance(conf, dict):
-        if conf.get("modo") == "fixo" and conf.get("fixo"):
-            m = str(conf["fixo"])
-        else:
-            m = str(((conf.get("porPeso") or {}).get(e) or {}).get("modelo") or "")
+    try:
+        conf = _cfg("lanes.modelo.opencode", None)
+        r = catalogo.resolver_modelo(
+            "opencode", e, conf, catalogo.ler_cache_modelos(catalogo.CACHE_MODELOS))
+        m = str(r.get("modelo") or "")
+    except Exception:  # noqa: BLE001 — sem catálogo, o padrão do manifesto segura a triagem
+        m = ""
     if not m:
         m = catalogo.modelo_de_effort("opencode", e) or OPENCODE_NEEDS_MODEL
     return m if "/" in m else "opencode/" + m

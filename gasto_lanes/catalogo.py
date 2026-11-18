@@ -126,7 +126,7 @@ EMBUTIDOS_JSON = """\
 "custo": "estimado",
 "resume": "opencode",
 "pesoFontes": ["quota", "gasto"],
-"nota": "Privacidade por MODELO, não por ser free: a regra de cada um sai da documentação do OpenCode (gasto_lanes/privacidade.py, conferida todo dia). Desde 23/10/2026 20h20 (troca a regra de 21/10) modelo free que registra ou treina com o uso também recebe código, nas lanes e na revisão, quando for o melhor free; `privacidade.exigir_sem_treino` religa a regra antiga. Por peso: baixo GLM 5.3 Flash (rápido), médio DeepSeek V4.1 Flash (o que mais entregou), alto Nemotron 3 Ultra (melhor SWE-bench dos free, 1M de contexto).",
+"nota": "Privacidade por MODELO, não por ser free: a regra de cada um sai da documentação do OpenCode (gasto_lanes/privacidade.py, conferida todo dia). Desde 23/10/2026 20h20 (troca a regra de 21/10) modelo free que registra ou treina com o uso também recebe código, nas lanes e na revisão, quando for o melhor free; `privacidade.exigir_sem_treino` religa a regra antiga. Por peso: baixo GLM 5.3 Flash (rápido), médio DeepSeek V4.1 Flash (o que mais entregou), alto Nemotron 3.5 Super VL (melhor SWE-bench dos free na lista de 18/11).",
 "modelos": {
   "baixo": {
     "id": "opencode/glm-5.3-flash-free",
@@ -137,11 +137,11 @@ EMBUTIDOS_JSON = """\
     "flags": ["-m", "opencode/deepseek-v4.1-flash-free"]
     },
   "alto": {
-    "id": "opencode/nemotron-3-ultra-free",
-    "flags": ["-m", "opencode/nemotron-3-ultra-free"]
+    "id": "opencode/nemotron-3.5-super-vl-free",
+    "flags": ["-m", "opencode/nemotron-3.5-super-vl-free"]
     }
   },
-"revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode/deepseek-v4.1-flash-free", "opencode/nemotron-3-ultra-free", "opencode/glm-5.3-flash-free"], "modelo_padrao": "opencode/deepseek-v4.1-flash-free", "esforcos": [], "esforco_padrao": ""},
+"revisao": {"papel": "segunda_opiniao", "auto": true, "comando": ["opencode", "run", "{flags}", "--agent", "plan", "--", "{prompt}"], "flag_modelo": ["-m", "{modelo}"], "flag_esforco": [], "entrada": "argumento", "saida": "stdout", "modelos": ["opencode/deepseek-v4.1-flash-free", "opencode/nemotron-3.5-super-vl-free", "opencode/glm-5.3-flash-free"], "modelo_padrao": "opencode/deepseek-v4.1-flash-free", "esforcos": [], "esforco_padrao": ""},
 "acp": {"comando": ["opencode", "acp"], "ambiente_config": "OPENCODE_CONFIG_CONTENT", "chave_modelo": "model", "opcao_modelo": "model", "config": {"permission": {"edit": "ask", "bash": "ask", "webfetch": "ask"}}},
 "privacidade": "opencode",
 "instalar": {"comando": "brew install opencode", "entrar": "opencode", "dica_entrar": "Dentro do OpenCode, digite /connect e escolha o provedor da sua conta.", "docs": "https://github.com/anomalyco/opencode"},
@@ -1209,6 +1209,144 @@ def _aviso_sumiu(lane: str, modelo: str, peso: str | None = None) -> str:
     return f"o modelo {nome} saiu da lista; a lane voltou ao automático"
 
 
+def lista_da_lane(lane: str, cache: dict | None) -> list:
+    """Ids da lista boa atual da lane (o cache que o app grava)."""
+    return [str(m) for m in (((cache or {}).get("listas") or {}).get(lane) or [])]
+
+
+def modelo_na_lista(lane: str, modelo: str, cache: dict | None):
+    """True/False quando a lista cobre o modelo; None quando não dá para conferir.
+
+    A lista do cache é a do provedor, com ids completos (`claude-opus-5-5`). O manifesto
+    do Claude usa apelidos (`opus`, `sonnet`), que nunca aparecem nela e funcionam no CLI:
+    apelido sem prefixo e sem histórico é devolvido como None (não reprovado).
+    """
+    modelo = (modelo or "").strip()
+    listas = lista_da_lane(lane, cache)
+    if not modelo or not listas:
+        return None
+    if _na_lista(lane, modelo, listas):
+        return True
+    anteriores = ((cache or {}).get("anteriores") or {}).get(lane) or []
+    com = com_prefixo_modelo(lane, modelo)
+    if "/" not in com and not _na_lista(lane, modelo, anteriores):
+        return None
+    return False
+
+
+def modelo_indisponivel(lane: str, modelo: str, cache: dict | None) -> bool:
+    """True quando o modelo não pode ser usado: saiu da lista ou não está na lista atual.
+
+    É a camada 1 do FRA-690: o padrão do manifesto também passa por aqui. Antes, só o
+    modelo escrito na config era conferido — quando ele sumia, o fallback era outro id
+    morto e a lane falhava em toda rodada.
+    """
+    return modelo_sumiu(modelo, lane, cache) or modelo_na_lista(lane, modelo, cache) is False
+
+
+def aviso_trocado(lane: str, modelo: str, escolhido: str) -> str:
+    return (f"o modelo {com_prefixo_modelo(lane, modelo)} não está na lista do provedor; "
+            f"usando {com_prefixo_modelo(lane, escolhido)}")
+
+
+def aviso_excluido(lane: str, modelo: str, escolhido: str) -> str:
+    return (f"o modelo {com_prefixo_modelo(lane, modelo)} falhou no provedor e está fora "
+            f"por {int(EXCLUSAO_MODELO_H)} h; usando {com_prefixo_modelo(lane, escolhido)}")
+
+
+# --- Exclusão temporária de modelo (camada 2, FRA-690) ------------------------
+# Quando o provedor recusa um modelo que a lista diz que existe (`provider.no-route`),
+# ele fica fora por 24 h: o retry do card e as próximas rodadas não repetem o erro.
+MODELOS_EXCLUIDOS = Path.home() / ".transcentia/lanes/modelos-excluidos.json"
+EXCLUSAO_MODELO_H = 24.0
+
+
+def ler_exclusoes(caminho=None) -> dict:
+    p = Path(caminho) if caminho is not None else MODELOS_EXCLUIDOS
+    try:
+        dados = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError, TypeError):
+        return {}
+    return dados if isinstance(dados, dict) else {}
+
+
+def _exclusao_viva(quando, agora: dt.datetime) -> bool:
+    if not isinstance(quando, str) or not quando:
+        return False
+    try:
+        limite = dt.datetime.fromisoformat(quando)
+    except ValueError:
+        return False
+    if limite.tzinfo is not None and agora.tzinfo is None:
+        agora = agora.astimezone()
+    elif limite.tzinfo is None and agora.tzinfo is not None:
+        limite = limite.replace(tzinfo=agora.tzinfo)
+    return limite > agora
+
+
+def modelo_excluido(lane: str, modelo: str, agora: dt.datetime | None = None,
+                    caminho=None) -> bool:
+    """True se o modelo falhou no provedor e a exclusão de 24 h ainda vale."""
+    agora = agora or dt.datetime.now()
+    alvo = com_prefixo_modelo(lane, modelo)
+    if not alvo:
+        return False
+    por_lane = (ler_exclusoes(caminho).get("excluidos") or {}).get(lane) or {}
+    if not isinstance(por_lane, dict):
+        return False
+    for nome, quando in por_lane.items():
+        if com_prefixo_modelo(lane, nome) == alvo and _exclusao_viva(quando, agora):
+            return True
+    return False
+
+
+def excluir_modelo(lane: str, modelo: str, horas: float = EXCLUSAO_MODELO_H,
+                   agora: dt.datetime | None = None, caminho=None) -> str:
+    """Exclui o modelo por `horas` e devolve o instante-limite (ISO)."""
+    agora = agora or dt.datetime.now()
+    nome = com_prefixo_modelo(lane, modelo)
+    if not nome:
+        return ""
+    p = Path(caminho) if caminho is not None else MODELOS_EXCLUIDOS
+    dados = ler_exclusoes(p)
+    excluidos = dados.get("excluidos")
+    if not isinstance(excluidos, dict):
+        excluidos = {}
+    por_lane = excluidos.get(lane)
+    if not isinstance(por_lane, dict):
+        por_lane = {}
+    # Limpa o que já venceu: o arquivo não cresce sem limite.
+    por_lane = {k: v for k, v in por_lane.items() if _exclusao_viva(v, agora)}
+    limite = (agora + dt.timedelta(hours=float(horas))).replace(microsecond=0).isoformat()
+    por_lane[nome] = limite
+    excluidos[lane] = por_lane
+    dados["excluidos"] = excluidos
+    dados["atualizado_em"] = agora.replace(microsecond=0).isoformat()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        tmp.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(p)
+    except OSError:
+        pass
+    return limite
+
+
+def proximo_modelo(lane: str, cache: dict | None, evitar=(), agora: dt.datetime | None = None,
+                   caminho=None) -> str:
+    """Próximo modelo bom da lane: na lista atual, fora dos excluídos e de `evitar`."""
+    agora = agora or dt.datetime.now()
+    evitar_norm = {com_prefixo_modelo(lane, m) for m in evitar if m}
+    for bruto in filtrar_modelos(lane, lista_da_lane(lane, cache)):
+        modelo = com_prefixo_modelo(lane, bruto)
+        if modelo in evitar_norm:
+            continue
+        if modelo_excluido(lane, modelo, agora=agora, caminho=caminho):
+            continue
+        return modelo
+    return ""
+
+
 AVISO_FIXO_VAZIO = "modo fixo sem modelo; a lane usa o automático"  # igual ao ModeloLane.avisoFixoVazio
 
 
@@ -1261,6 +1399,16 @@ def resolver_modelo(lane: str, effort: str, bruto, cache: dict | None = None) ->
         pedido = (bloco.get("esforco") or "") if isinstance(bloco, dict) else ""
         if not aviso:
             aviso = cfg.get("aviso") or ""
+    excluido = bool(modelo) and modelo_excluido(lane, modelo)
+    if modelo and (modelo_indisponivel(lane, modelo, cache) or excluido):
+        # Camada 1 (FRA-690): o escolhido e o PADRÃO do manifesto passam pela lista.
+        # Camada 2: modelo que o provedor recusou fica 24 h fora, sem repetir o erro.
+        alt = proximo_modelo(lane, cache, evitar={modelo})
+        if alt and alt != modelo:
+            troca = (aviso_excluido(lane, modelo, alt) if excluido
+                     else aviso_trocado(lane, modelo, alt))
+            aviso = troca if not aviso or aviso == "modelo fixo" else f"{aviso} · {troca}"
+            modelo = alt
     esforco, explicito = padrao["esforco"], False
     if pedido:
         if _esforco_valido(lane, modelo, pedido, cache):
@@ -1361,14 +1509,14 @@ def ajuste_sumido(lane: str, bruto, cache: dict | None) -> tuple:
     cfg = normalizar_config_modelo(bruto)
     aviso = ""
     mudou = False
-    if cfg["modo"] == "fixo" and cfg["fixo"] and modelo_sumiu(cfg["fixo"], lane, cache):
+    if cfg["modo"] == "fixo" and cfg["fixo"] and modelo_indisponivel(lane, cfg["fixo"], cache):
         cfg["modo"] = "auto"
         aviso = _aviso_sumiu(lane, cfg["fixo"])
         cfg["aviso"] = aviso
         mudou = True
     for peso, bloco in list((cfg.get("porPeso") or {}).items()):
         modelo = (bloco or {}).get("modelo") or ""
-        if not modelo or not modelo_sumiu(modelo, lane, cache):
+        if not modelo or not modelo_indisponivel(lane, modelo, cache):
             continue
         padrao = padrao_por_peso(lane).get(peso) or {}
         bloco = dict(bloco)

@@ -118,6 +118,10 @@ class AllowlistTest(unittest.TestCase):
                          "Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)"):
             self.assertNotIn(proibido, allow)
         self.assertIn("Bash(git-leitura:*)", allow)
+        self.assertIn("Read(./**)", allow)
+        # FRA-690: o Claude Code 2.1.325 recusa Glob/Grep no allow
+        # («is not matched by file permission checks») e a triagem morria antes de ler.
+        self.assertEqual([r for r in allow if r.startswith(("Glob(", "Grep("))], [])
         self.assertIn("Bash(cat:*)", deny)
         self.assertIn("Bash(git show:*)", deny)
         self.assertIn("Bash(git worktree:*)", deny)
