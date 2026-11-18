@@ -139,7 +139,8 @@ query Candidatos($project: ID!, $state: ID!) {
 query Card($id: String!) {
   issue(id: $id) {
     id identifier title description url branchName state { id name }
-    comments(last: 12) { nodes { body createdAt } }
+    recentes: comments(first: 12) { nodes { body createdAt } }
+    antigos: comments(last: 12) { nodes { body createdAt } }
   }
 }
 """, ("id",)),

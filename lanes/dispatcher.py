@@ -2553,13 +2553,32 @@ def bloco_do_card(ident: str, card: dict) -> str:
 COMENTARIOS_NO_PROMPT = 8
 TETO_COMENTARIO = 3000
 TETO_COMENTARIOS = 9000
+#: Apelidos das conexões de comentários na consulta `card` do proxy. O Linear devolve
+#: comentários do mais novo para o mais antigo: `last` sozinho traria os mais velhos.
+CHAVES_COMENTARIOS = ("recentes", "antigos", "comments")
 
 
 def comentarios_do_card(card: dict) -> list:
-    """Últimos comentários não vazios, do mais antigo para o mais recente."""
-    nodes = ((card.get("comments") or {}).get("nodes")) or []
-    limpos = [(c.get("body") or "").strip() for c in nodes]
-    return [c[:TETO_COMENTARIO] for c in limpos if c][-COMENTARIOS_NO_PROMPT:]
+    """Últimos comentários não vazios, do mais antigo para o mais recente.
+
+    O Linear ordena comentários do mais novo para o mais antigo, então `last` traz os
+    **mais velhos** — a consulta `card` pede as duas pontas (`recentes`/`antigos`) e a
+    ordem sai daqui, pelo `createdAt`. Assim a direção do Linear não muda o resultado."""
+    vistos: set = set()
+    itens = []
+    for chave in CHAVES_COMENTARIOS:
+        for c in ((card.get(chave) or {}).get("nodes")) or []:
+            corpo = (c.get("body") or "").strip()
+            if not corpo:
+                continue
+            quando = str(c.get("createdAt") or "")
+            marca = (quando, corpo)
+            if marca in vistos:
+                continue
+            vistos.add(marca)
+            itens.append((quando, corpo))
+    itens.sort(key=lambda par: par[0])
+    return [corpo[:TETO_COMENTARIO] for _, corpo in itens[-COMENTARIOS_NO_PROMPT:]]
 
 
 def bloco_dos_comentarios(card: dict) -> str:
