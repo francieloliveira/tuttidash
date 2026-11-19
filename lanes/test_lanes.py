@@ -1965,6 +1965,18 @@ class StrikesDaOpencode(unittest.TestCase):
         self.assertEqual(d.registrar_ajustes_ollie("FRA-448", mais, "baixo"), 2)
         self.assertEqual(d.strikes_do_card("FRA-448"), 2)
 
+    def test_dois_comentarios_do_mesmo_head_contam_uma_vez(self):
+        # 19/11: o vigia perdeu o estado no meio do tick e revisou o MESMO SHA duas
+        # vezes. Contar por comentário gastava duas tentativas por uma rodada só.
+        sha = "6414e5ffba11bf0a9841ab30f31b3e2d6ed2c007"
+        comentarios = [
+            {"id": "c1", "body": f"[Revisor] REVISOR: AJUSTES · head `{sha}`"},
+            {"id": "c2", "body": f"[Revisor] REVISOR: AJUSTES · head `{sha}`"},
+        ]
+        self.assertEqual(d.registrar_ajustes_ollie("FRA-690", comentarios, "alto"), 1)
+        novo_head = comentarios + [{"id": "c3", "body": f"[Revisor] REVISOR: AJUSTES · head `{'a' * 40}`"}]
+        self.assertEqual(d.registrar_ajustes_ollie("FRA-690", novo_head, "alto"), 2)
+
     def test_tres_ajustes_no_baixo_estouram_o_freio_antes_de_assumir(self):
         comentarios = [{"id": f"c{i}", "body": "REVISOR: AJUSTES"} for i in range(3)]
         issue = {"identifier": "FRA-449", "id": "id-449", "_effort": "baixo",

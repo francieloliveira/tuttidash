@@ -185,6 +185,8 @@ ORCAMENTO_ACUMULADO_USD = {"baixo": 8, "medio": 20, "alto": 40}
 TEMPO_ACUMULADO_MIN = {"baixo": 120, "medio": 270, "alto": 360}
 FREIO_LABEL = linear_ids.FALHOU
 MARCA_AJUSTE_OLLIE = "REVISOR: AJUSTES"
+# O comentário do revisor cita o SHA completo do head: `... · head \`<sha>\``.
+RE_HEAD_REVISOR = re.compile(r"head\s+`([0-9a-f]{7,40})`")
 
 # Contramedida de 11/10 (FRA-306 cortado pelo limite de 5 h no turno 107, lanes 11 h paradas).
 # Folga mínima na conta para assumir um card, pela janela que mais aperta (lanepct).
@@ -3880,7 +3882,12 @@ def comentarios_de(issue: dict) -> list:
 
 
 def registrar_ajustes_ollie(identifier: str, comentarios: list, effort: str = EFFORT_DEFAULT) -> int:
-    """Cada comentário novo com pedido de ajuste do revisor soma 1 (D4). O mesmo id não repete."""
+    """Cada pedido de ajuste do revisor soma 1 (D4). O mesmo head não repete.
+
+    O mesmo head pode receber dois comentários (duas revisões do mesmo SHA, ex.:
+    o vigia reavaliou depois de perder o estado). Contar por comentário gastava
+    duas tentativas por uma rodada só e estourava o freio do card.
+    """
     if not identifier:
         return 0
     dados = ler_strikes()
@@ -3892,9 +3899,11 @@ def registrar_ajustes_ollie(identifier: str, comentarios: list, effort: str = EF
         if MARCA_AJUSTE_OLLIE not in corpo:
             continue
         cid = str(comentario.get("id") or "")
-        if not cid or cid in vistos:
+        achado = RE_HEAD_REVISOR.search(corpo)
+        chave = f"head:{achado.group(1)}" if achado else cid
+        if not chave or chave in vistos:
             continue
-        vistos.append(cid)
+        vistos.append(chave)
         novos += 1
         motivos = [m for m in card.get("motivos") or [] if isinstance(m, str)]
         motivos.append("revisor pediu ajustes")

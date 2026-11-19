@@ -677,6 +677,40 @@ def segurar_sem_aprovacao(ci: dict, pr: dict, st: dict, diary: list[str], agora:
                  f"{int((agora - desde) // 3600)} h → chamou o dono")
 
 
+def devolver_por_ajustes(ci: dict, pr: dict, st: dict, diary: list[str] | None = None) -> bool:
+    """Card com AJUSTES volta à fila, uma vez por head.
+
+    A fila do dispatcher lê só a coluna do `linear.state_todo_id` (o id vem dos
+    Ajustes, por `linear_ids`; nunca o literal «Todo»). Sem isto o card ficava em
+    In Review com o PR parado: o [`merge_ready`] só olhava APROVADO e seguia.
+    """
+    head = str(pr.get("headRefOid") or "")
+    feitos = st.setdefault("ajustes_devolvidos", {})
+    if not head or head in feitos:
+        return False
+    if not STATE_TODO_ID:
+        # Sem a coluna dos Ajustes não adivinha: o card espera e o gestor avisa.
+        log(f"{ci.get('identifier')}: AJUSTES sem `linear.state_todo_id`; card fica em In Review")
+        return False
+    if labels_of(ci) & BLOCKING:
+        # Dono no meio (`needs:dono`) ou freio estourado (`lane:falhou`): não volta sozinho.
+        return False
+    set_state(ci["id"], STATE_TODO_ID)
+    comment(ci["id"],
+            f"♻️ **Devolvido à fila**: o revisor pediu AJUSTES no PR #{pr['number']} (head `{head[:7]}`).\n\n"
+            "- a revisão completa está no comentário abaixo e no PR\n"
+            "- a lane retoma o mesmo worktree e corrige; o veredito novo vale para o próximo head\n")
+    feitos[head] = {"desde": datetime.now().isoformat(timespec="seconds"), "pr": pr["number"]}
+    if len(feitos) > 300:  # o state.json não cresce sem fim
+        for antigo in sorted(feitos, key=lambda h: str((feitos[h] or {}).get("desde") or ""))[:-300]:
+            feitos.pop(antigo, None)
+    panel(f"revisor: {ci['identifier']} PR #{pr['number']} AJUSTES → card de volta à fila")
+    log(f"{ci['identifier']}: AJUSTES no PR #{pr['number']} → card de volta à fila")
+    if diary is not None:
+        diary.append(f"Revisor · {ci['identifier']} PR #{pr['number']} AJUSTES → card de volta à fila")
+    return True
+
+
 def card_of(title: str, branch: str) -> str | None:
     m = re.search(r"\b(FRA-\d+)\b", title, re.I) or re.search(r"\b(fra-\d+)\b", branch, re.I)
     return m.group(1).upper() if m else None
@@ -1268,7 +1302,8 @@ def merge_ready(st: dict, diary: list[str]) -> None:
             continue
         veredito = veredito_do_head(repo, pr, st)
         if veredito == "AJUSTES":
-            continue  # a revisão pediu ajustes no head atual
+            devolver_por_ajustes(ci, pr, st, diary)
+            continue
         if veredito != "APROVADO":
             segurar_sem_aprovacao(ci, pr, st, diary)
             continue

@@ -469,6 +469,59 @@ class MergeExigeAprovadoTest(unittest.TestCase):
         self.assertIn("Não mergeio sem revisão", self.calls[1][1])
 
 
+class DevolucaoPorAjustes(unittest.TestCase):
+    """19/11: AJUSTES deixava o card parado em In Review — a fila do dispatcher lê só o Todo."""
+
+    SHA = "c" * 40
+
+    def setUp(self):
+        velhos = (watch.set_state, watch.comment, watch.panel, watch.log, watch.STATE_TODO_ID)
+        self.addCleanup(lambda: (setattr(watch, "set_state", velhos[0]),
+                                 setattr(watch, "comment", velhos[1]),
+                                 setattr(watch, "panel", velhos[2]),
+                                 setattr(watch, "log", velhos[3]),
+                                 setattr(watch, "STATE_TODO_ID", velhos[4])))
+        self.chamadas = []
+        watch.set_state = lambda i, s: self.chamadas.append(("state", i, s))
+        watch.comment = lambda i, b: self.chamadas.append(("comment", i, b))
+        watch.panel = lambda *a: None
+        watch.log = lambda *a: None
+        # A coluna vem dos Ajustes (`linear.state_todo_id`), nunca do literal «Todo».
+        watch.STATE_TODO_ID = "coluna-todo-da-config"
+
+    def _ci(self, **extra):
+        ci = {"id": "id-689", "identifier": "FRA-689", "labels": {"nodes": []}}
+        ci.update(extra)
+        return ci
+
+    def test_ajustes_devolve_para_a_coluna_configurada_uma_vez_por_head(self):
+        st = {}
+        pr = {"number": 7, "headRefOid": self.SHA}
+        self.assertTrue(watch.devolver_por_ajustes(self._ci(), pr, st, []))
+        self.assertEqual(self.chamadas[0], ("state", "id-689", "coluna-todo-da-config"))
+        self.assertIn("Devolvido à fila", self.chamadas[1][2])
+        self.assertFalse(watch.devolver_por_ajustes(self._ci(), pr, st, []))
+        self.assertEqual(len(self.chamadas), 2)
+        # head novo é rodada nova
+        self.assertTrue(watch.devolver_por_ajustes(
+            self._ci(), {"number": 7, "headRefOid": "d" * 40}, st, []))
+
+    def test_nao_devolve_com_dono_ou_freio_estourado(self):
+        st = {}
+        pr = {"number": 7, "headRefOid": self.SHA}
+        for label in (watch.OWNER_LABEL, "lane:falhou", "lane:parada"):
+            self.assertFalse(watch.devolver_por_ajustes(
+                self._ci(labels={"nodes": [{"name": label}]}), pr, st, []))
+        self.assertEqual(self.chamadas, [])
+        self.assertEqual(st.get("ajustes_devolvidos"), {})
+
+    def test_sem_coluna_configurada_nao_adivinha(self):
+        watch.STATE_TODO_ID = ""
+        self.assertFalse(watch.devolver_por_ajustes(
+            self._ci(), {"number": 7, "headRefOid": self.SHA}, {}, []))
+        self.assertEqual(self.chamadas, [])
+
+
 class AprovacaoAutenticadaTest(unittest.TestCase):
     """FRA-593: [Revisor] só com autor confiável e SHA completo. FRA-611: a prova é o check remoto."""
 
