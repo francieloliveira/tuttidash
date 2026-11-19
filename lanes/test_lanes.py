@@ -2421,16 +2421,42 @@ class LaneParadaEPrompts(unittest.TestCase):
         self.assertEqual(d.bloco_dos_comentarios({}), "")
 
     def test_comentarios_do_card_ficam_no_limite(self):
-        nodes = [{"body": f"c{i}"} for i in range(20)]
-        limpos = d.comentarios_do_card({"comments": {"nodes": nodes}})
+        nodes = [{"body": f"c{i}", "createdAt": f"2026-11-18T10:{i:02d}:00Z"}
+                 for i in range(20)]
+        limpos = d.comentarios_do_card({"antigos": {"nodes": nodes}})
         self.assertEqual(len(limpos), d.COMENTARIOS_NO_PROMPT)
         self.assertEqual(limpos[-1], "c19")
-        comprido = d.comentarios_do_card({"comments": {"nodes": [{"body": "x" * 9000}]}})
+        comprido = d.comentarios_do_card({"antigos": {"nodes": [{"body": "x" * 9000}]}})
         self.assertEqual(len(comprido[0]), d.TETO_COMENTARIO)
-        muitos = d.bloco_dos_comentarios({"comments": {"nodes": [
-            {"body": "y" * d.TETO_COMENTARIO} for _ in range(8)]}})
+        muitos = d.bloco_dos_comentarios({"antigos": {"nodes": [
+            {"body": f"{i}" + "y" * d.TETO_COMENTARIO, "createdAt": f"2026-11-18T0{i}:00:00Z"}
+            for i in range(8)]}})
         self.assertLessEqual(len(muitos), d.TETO_COMENTARIOS + 600)
         self.assertIn("…(início cortado)", muitos)
+
+    def test_comentarios_do_card_usa_os_mais_novos_na_ordem_do_linear(self):
+        # O Linear manda comentário do mais novo para o mais antigo, então `last: 12`
+        # trouxe os mais velhos: o diagnóstico da prova remota do FRA-690 ficou fora do
+        # prompt. A consulta pede as duas pontas e a ordem sai do `createdAt`.
+        antigos = [{"body": f"velho{i}", "createdAt": f"2026-11-18T0{i}:00:00Z"}
+                   for i in range(1, 9)]
+        recentes = [{"body": f"novo{i}", "createdAt": f"2026-11-19T0{i}:00:00Z"}
+                    for i in range(1, 9)]
+        card = {"recentes": {"nodes": recentes}, "antigos": {"nodes": antigos}}
+        limpos = d.comentarios_do_card(card)
+        self.assertEqual(len(limpos), 8)
+        self.assertEqual(limpos, [f"novo{i}" for i in range(1, 9)])
+        # as duas pontas se sobrepõem quando o card tem poucos comentários: sem repetir
+        card2 = {"recentes": {"nodes": recentes}, "antigos": {"nodes": recentes[:2]}}
+        self.assertEqual(d.comentarios_do_card(card2), [f"novo{i}" for i in range(1, 9)])
+
+    def test_consulta_do_card_pede_as_duas_pontas_de_comentarios(self):
+        texto = d.proxy_linear.consulta("card") if hasattr(d, "proxy_linear") else ""
+        if not texto:
+            import proxy_linear
+            texto = proxy_linear.consulta("card")
+        self.assertIn("recentes: comments(first:", texto)
+        self.assertIn("antigos: comments(last:", texto)
 
 
 class PromptNorteEDuvida(unittest.TestCase):
