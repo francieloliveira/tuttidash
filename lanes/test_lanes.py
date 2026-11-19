@@ -624,6 +624,31 @@ class Comandos(unittest.TestCase):
         for effort in ("baixo", "medio", "alto"):
             self.assertIn("workspace-write", d.agent_command("codex", effort))
 
+    def test_codex_libera_o_git_do_worktree_no_sandbox(self):
+        # FRA-689: num worktree o índice e o HEAD ficam no `.git` do repositório
+        # principal, fora do cwd. Com só `workspace-write`, o `git add` do agente
+        # morria com «Operation not permitted» em `.git/worktrees/<card>/index.lock`.
+        repo = Path(tempfile.mkdtemp(prefix="codex-git-")) / "repo"
+        repo.mkdir()
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True, env=env)
+        (repo / "a").write_text("a", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "a"], check=True, env=env)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "x"], check=True, env=env)
+        wt = repo.parent / "wt"
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", str(wt), "-b", "card"],
+                       check=True, env=env)
+        cmd = d.agent_command("codex", "medio", wt=wt)
+        self.assertIn("-c", cmd)
+        flag = cmd[cmd.index("-c") + 1]
+        self.assertTrue(flag.startswith("sandbox_workspace_write.writable_roots=["), flag)
+        self.assertIn(str(repo / ".git"), flag)
+        self.assertNotIn(str(wt), flag.split("=", 1)[1])
+        # sem worktree (chamada antiga), o comando fica sem raiz extra
+        self.assertEqual(d.agent_command("codex", "medio"),
+                         ["codex", "exec", "--json", "--sandbox", "workspace-write"])
+
     def test_retry_de_modelo_troca_o_id_no_comando(self):
         # FRA-690 camada 2: o claim relança a lane com outro modelo.
         self.assertEqual(d.agent_command("opencode", "alto", modelo="opencode/beam-free"),
