@@ -2705,7 +2705,12 @@ def run_revisor(agente: str, texto: str, cwd: Path, tag: str, conf: dict,
         if caixa.tem_segredo(out) or caixa.tem_segredo(err):
             _log_saida_agente(tag, out + "\n" + err)
         if proc.returncode != 0:
-            raise RuntimeError(f"{' '.join(argv[:3])}… ({proc.returncode}): {caixa.redigir(err)[:300]}")
+            # O `claude -p` deslogado escreve «Not logged in · Please run /login» no
+            # stdout e sai com 1. Olhar só o stderr deixava o log em «(1): » — vazio —
+            # e a causa real ia parar no `needs:dono` do card como «sem APROVADO».
+            detalhe = " | ".join(t for t in (caixa.redigir(err).strip(),
+                                             caixa.redigir(out).strip()) if t)
+            raise RuntimeError(f"{' '.join(argv[:3])}… ({proc.returncode}): {detalhe[:300]}")
     except caixa.SegredoDetectado:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -2745,6 +2750,27 @@ def ordem_revisao(revisor: str, conf: dict, so_sozinho: bool = False, instalado=
            and privacidade_ok(a, str((conf.get(a) or {}).get("modelo") or ""))[0]]
     if so_sozinho:
         out = [a for a in out if papel(a, conf) == "sozinho"]
+    return reserva_automatica(out, conf, instalado)
+
+
+def reserva_automatica(out: list[str], conf: dict, instalado) -> list[str]:
+    """Completa a lista de revisores com quem aprova sozinho, no fim.
+
+    `watch.ordem_revisao` com um nome só é uma preferência, não uma lista fechada.
+    Em 18/11 a config dizia só `claude`: o login do CLI expirou e a revisão parou
+    de vez — todo PR ficou sem `[Revisor] APROVADO` e o gestor abriu `needs:dono`
+    depois de 6 h. Com dois ou mais nomes, a lista é intencional e não muda.
+    """
+    if len(out) >= 2:
+        return out
+    for a in revisores_catalogo():
+        if a in out or papel(a, conf) != "sozinho":
+            continue
+        if not instalado(AGENTES.get(a, {}).get("cli") or a):
+            continue
+        if not privacidade_ok(a, str((conf.get(a) or {}).get("modelo") or ""))[0]:
+            continue
+        out.append(a)
     return out
 
 
