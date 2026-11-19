@@ -1175,6 +1175,23 @@ class VigiaLocalPrimeiro(unittest.TestCase):
         self.assertEqual(watch.ordem_revisao("opencode-go", conf, instalado=lambda c: True)[:2], ["opencode-go", "codex"])
         self.assertEqual(watch.ordem_revisao("opencode", conf, so_sozinho=True, instalado=lambda c: True)[-1], "claude")
 
+    def test_config_com_um_revisor_so_ganha_reserva_automatica(self):
+        # 18/11: `watch.ordem_revisao = "claude"` + login do CLI expirado deixaram
+        # todo PR sem `[Revisor] APROVADO`. Um nome só é preferência, não lista fechada.
+        self.cfg["watch.ordem_revisao"] = "claude"
+        self.assertEqual(watch.ordem_revisao("claude", watch.conf_revisor(), instalado=lambda c: True),
+                         ["claude", "codex", "grok"])
+        # Lista com dois nomes é intencional: a reserva automática não mexe.
+        self.cfg["watch.ordem_revisao"] = "claude, grok"
+        self.assertEqual(watch.ordem_revisao("claude", watch.conf_revisor(), instalado=lambda c: True),
+                         ["claude", "grok"])
+        # Sem nenhum dos dois instalado, sobra a reserva automática.
+        self.cfg["watch.ordem_revisao"] = "claude"
+        self.assertEqual(
+            watch.ordem_revisao("claude", watch.conf_revisor(),
+                                instalado=lambda c: c in ("codex", "grok")),
+            ["codex", "grok"])
+
     def test_revisao_cai_no_reserva_e_pula_claude_no_limite(self):
         tentou = []
 
@@ -1878,3 +1895,13 @@ class RevisorForaDaCaixa(unittest.TestCase):
         self.w.manifesto_revisao = lambda a: {"saida": "stdout", "local": True}
         self.w.run_revisor("local", "p", self.tmp, "t", {})
         self.assertEqual(self.chamadas, ["caixa"])
+
+    def test_falha_do_revisor_mostra_o_stdout_quando_o_stderr_esta_vazio(self):
+        # 18/11: `claude -p` deslogado responde «Not logged in · Please run /login»
+        # no stdout e sai com 1. A mensagem lia só o stderr e virava «(1): ».
+        self.w.manifesto_revisao = lambda a: {"saida": "stdout"}
+        ruim = types.SimpleNamespace(returncode=1, stdout="Not logged in · Please run /login\n", stderr="")
+        self.w.caixa.executar_com_rede = lambda *a, **k: ruim
+        with self.assertRaises(RuntimeError) as erro:
+            self.w.run_revisor("claude", "p", self.tmp, "t", {})
+        self.assertIn("Not logged in", str(erro.exception))
