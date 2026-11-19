@@ -1303,9 +1303,47 @@ def deepseek_resumo(effort: str, lane: str = "deepseek") -> str:
     return f"{modelo_da_lane(lane, effort) or 'deepseek-flash'} · reasoning {deepseek_esforco(effort, lane)}"
 
 
+def raizes_git_gravaveis(wt: Path) -> list:
+    """Pastas do git que o agente precisa poder escrever para commitar num worktree.
+
+    Num worktree o índice e o HEAD ficam no `.git` do repositório principal (fora do
+    worktree). O sandbox `workspace-write` do Codex só libera o cwd, então `git add`
+    morria com «Operation not permitted» em `.git/worktrees/<card>/index.lock`."""
+    try:
+        saida = subprocess.run(
+            [GIT, "rev-parse", "--git-dir", "--git-common-dir"], cwd=str(wt),
+            capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if saida.returncode != 0:
+        return []
+    raizes: list = []
+    for linha in saida.stdout.splitlines():
+        bruto = linha.strip()
+        if not bruto:
+            continue
+        caminho = Path(bruto)
+        if not caminho.is_absolute():
+            caminho = (wt / caminho).resolve()
+        if caminho.is_dir() and caminho not in raizes:
+            raizes.append(caminho)
+    return raizes
+
+
+def writable_roots_codex(wt: Optional[Path]) -> list:
+    """Flags do Codex para escrever nas pastas do git do worktree (fora do cwd)."""
+    if wt is None:
+        return []
+    raizes = raizes_git_gravaveis(wt)
+    if not raizes:
+        return []
+    valor = "[" + ", ".join(json.dumps(str(r)) for r in raizes) + "]"
+    return ["-c", f"sandbox_workspace_write.writable_roots={valor}"]
+
+
 def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
                   patch: Optional[Path] = None, settings: Optional[Path] = None,
-                  modelo: Optional[str] = None) -> list[str]:
+                  modelo: Optional[str] = None, wt: Optional[Path] = None) -> list[str]:
     """Comando headless do agente (claude, grok e opencode são executadas de verdade).
 
     `prompt` e `patch` são caminhos fora do worktree. O agente não pode trocar
@@ -1371,6 +1409,7 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
         # o trabalho da lane.
         return [
             "codex", "exec", "--json", "--sandbox", "workspace-write",
+            *writable_roots_codex(wt),
             *flags_da_lane(lane, effort, modelo),
         ]
     if cli == "dsh":
@@ -1408,13 +1447,13 @@ def comando_acp(lane: str, inst: dict, settings: Optional[Path] = None,
 
 def texto_do_agente(lane: str, effort: str, prompt: Path,
                     patch: Optional[Path] = None, settings: Optional[Path] = None,
-                    modelo: Optional[str] = None) -> str:
+                    modelo: Optional[str] = None, wt: Optional[Path] = None) -> str:
     """Linha que o `run_lane.sh` executa. O prompt é um arquivo fora do worktree.
 
     Na opencode e no dsh o prompt entra entre aspas. Sem aspas, um espaço ou uma
     aspa do card partia o argumento e o CLI lia lixo (ou uma flag)."""
     agent_text = shlex.join(agent_command(lane, effort, prompt=prompt, patch=patch,
-                                          settings=settings, modelo=modelo))
+                                          settings=settings, modelo=modelo, wt=wt))
     if catalogo.transporte_da_lane(lane) == "cli" and catalogo.cli_da_lane(lane) in ("opencode", "dsh"):
         agent_text += f' -- "$(cat {shlex.quote(str(prompt))})"'
     return agent_text
@@ -2662,7 +2701,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "",
     # FRA-595: o comando fica no RUN_DIR, com nonce no nome. O runner recebe o
     # caminho por argv e não lê `.lane/agent_cmd`.
     agent_text = texto_do_agente(lane, effort, prompt_file, patch_file, settings_file,
-                                 modelo=modelo)
+                                 modelo=modelo, wt=wt)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LANE_LOG_DIR.mkdir(parents=True, exist_ok=True)
     lane_log = LANE_LOG_DIR / f"{ident}-{lane}-{stamp}.jsonl"
