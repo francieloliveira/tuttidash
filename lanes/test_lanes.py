@@ -2769,8 +2769,21 @@ class ProvaRemotaNoDispatcher(unittest.TestCase):
         self.labels = []
         self.chamadas = []
         self.erro_view = None
+        self.erro_log = None
+        self.log_falha = (
+            "prova-remota\tUNKNOWN STEP\t2026-11-19T15:22:50.1Z ##[group]Run set -euo pipefail\n"
+            "prova-remota\tUNKNOWN STEP\t2026-11-19T15:22:55.3Z ERROR: test_x (test_jogo.TestPartida)\n"
+            "prova-remota\tUNKNOWN STEP\t2026-11-19T15:22:55.3Z Traceback (most recent call last):\n"
+            "prova-remota\tUNKNOWN STEP\t2026-11-19T15:22:55.3Z IndexError: pop from empty list\n"
+            "prova-remota\tUNKNOWN STEP\t2026-11-19T15:22:55.3Z Ran 22 tests in 0.001s\n"
+            "prova-remota\tUNKNOWN STEP\t2026-11-19T15:22:55.3Z FAILED (errors=1)\n"
+            "prova-remota\tUNKNOWN STEP\t2026-11-19T15:22:55.6Z ##[error]Process completed with exit code 1.\n")
         self.existe_pr = True
         self.sha_head = self.SHA
+        # A coluna de volta é a dos Ajustes (`linear.state_todo_id`); o teste fixa uma.
+        antes_todo = d.STATE_TODO_ID
+        d.STATE_TODO_ID = "state-todo-da-config"
+        self.addCleanup(setattr, d, "STATE_TODO_ID", antes_todo)
         self.gh = {
             "state": "OPEN", "isDraft": True, "number": 9,
             "url": "https://github.com/francieloliveira/tuttidash/pull/9",
@@ -2822,6 +2835,10 @@ class ProvaRemotaNoDispatcher(unittest.TestCase):
             return ""
         if args[:3] == ["gh", "pr", "merge"]:
             raise AssertionError("não mergeia")
+        if args[:4] == ["gh", "run", "view", "99"]:
+            if self.erro_log:
+                raise RuntimeError(self.erro_log)
+            return self.log_falha
         if args[:3] == ["gh", "run", "list"] and getattr(self, "runs_main", None) is not None:
             return json.dumps(self.runs_main)
         if args[:3] == ["git", "-c", "core.hooksPath=/dev/null"] and args[3] in ("fetch", "merge"):
@@ -2893,14 +2910,49 @@ class ProvaRemotaNoDispatcher(unittest.TestCase):
         self.assertIsNone(d.finalize(self.st))
         self._sem_autoridade_local()
 
-    def test_check_vermelho_nao_move_e_chama_o_dono(self):
+    def test_check_vermelho_devolve_a_fila_com_o_erro(self):
+        # 19/11/2026: vermelho chamava o dono e a lane voltava sem saber o que quebrou.
         self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
         saida = d.finalize(self.st)
-        self.assertEqual(saida, d.OWNER_LABEL)
+        self.assertEqual(saida, "Todo (prova remota vermelha)")
         self._sem_autoridade_local()
+        self.assertEqual(self.estados, ["state-todo-da-config"])
+        self.assertEqual(self.labels, [], "vermelho é correção, não decisão do dono")
+        texto = self.comentarios[0]
+        self.assertIn("devolvido à fila", texto)
+        self.assertIn(self.gh["url"], texto)
+        # O erro vem junto: sem ele a lane repete o mesmo defeito.
+        self.assertIn("IndexError: pop from empty list", texto)
+        self.assertIn("FAILED (errors=1)", texto)
+        self.assertIn("não afrouxe o teste", texto)
+        self.assertNotIn("##[group]", texto)
+
+    def test_vermelho_sem_a_coluna_configurada_chama_o_dono(self):
+        d.STATE_TODO_ID = ""
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        self.assertEqual(d.finalize(self.st), d.OWNER_LABEL)
+        self.assertEqual(self.estados, [], "sem a coluna dos Ajustes não adivinha")
         self.assertEqual(self.labels, [d.OWNER_LABEL])
-        self.assertIn("vermelho", self.comentarios[0])
-        self.assertIn(self.gh["url"], self.comentarios[0])
+
+    def test_vermelho_sem_o_log_do_check_devolve_igual(self):
+        self.erro_log = "gh run view… falhou (1): HTTP 502"
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        self.assertEqual(d.finalize(self.st), "Todo (prova remota vermelha)")
+        self.assertIn("devolvido à fila", self.comentarios[0])
+        self.assertNotIn("Traceback", self.comentarios[0])
+
+    def test_prova_vermelha_com_freio_estourado_vira_lane_falhou(self):
+        # D4: o vaivém de prova vermelha é limitado, não infinito.
+        (d.STATE_DIR / "opencode-strikes.json").write_text(json.dumps({
+            "strikes": 0, "max": 3, "cards": {"FRA-611": {"n": 2, "esforco": "baixo",
+                                                          "chaves": []}},
+        }), encoding="utf-8")
+        self.st["effort"] = "baixo"
+        self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
+        saida = d.finalize(self.st)
+        self.assertIn("lane:falhou", saida)
+        self.assertEqual(self.labels, [d.FREIO_LABEL])
+        self.assertEqual(self.estados, [], "freio estourado não devolve à fila")
 
     def _run_main(self, conclusao):
         return [{"status": "completed", "conclusion": conclusao, "headSha": "c" * 40,
@@ -2941,7 +2993,9 @@ class ProvaRemotaNoDispatcher(unittest.TestCase):
     def test_vermelho_com_a_main_verde_e_sem_espera_e_do_card(self):
         self.gh["statusCheckRollup"] = [self._check("FAILURE", sha=self.SHA)]
         self.runs_main = self._run_main("success")
-        self.assertEqual(d.finalize(self.st), d.OWNER_LABEL)
+        self.assertEqual(d.finalize(self.st), "Todo (prova remota vermelha)")
+        self.assertEqual(self.estados, ["state-todo-da-config"])
+        self.assertEqual(self.labels, [])
 
     def _registros(self):
         arq = d.STATE_DIR / d.PROVAS_REMOTAS
@@ -3334,3 +3388,14 @@ class DesfechoComSaidaEmTexto(unittest.TestCase):
         self.assertIsInstance(d.agent_outcome(str(log)), str)
         log.write_text('{"type": "result", "subtype": "success", "num_turns": 2}\n"ok"\n', encoding="utf-8")
         self.assertIn("success", d.agent_outcome(str(log)))
+
+
+class AmbienteDoAgente(unittest.TestCase):
+    """19/11/2026: no worktree da lane o `python3` morria com PermissionError ao gravar
+    bytecode, e o agente concluía «não foram executados testes». Sem cache de bytecode
+    (o mesmo que a prova remota e o revisor já usam) a checagem rápida funciona."""
+
+    def test_runner_nao_depende_de_cache_de_bytecode(self):
+        runner = Path(d.__file__).resolve().parent / "run_lane.sh"
+        texto = runner.read_text(encoding="utf-8")
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", texto)
