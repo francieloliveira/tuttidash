@@ -285,3 +285,10 @@ tipo fora da lista ou `.github/` deixam o check **vermelho** ("precisa da prova
 no Mac"): nunca há verde sem teste. Ponha `.github/*` nos `protegidos` do
 projeto. Para mudar a prova, mude o modelo aqui e reinstale.
 
+Vermelho é **correção da lane, não decisão do dono** (19/11/2026): o card volta
+para a coluna dos Ajustes (`linear.state_todo_id`) com o trecho do log do check
+(`gh run view <run> --log-failed`) no comentário, e conta tentativa (D4). Sem a
+coluna configurada, ou com o freio estourado, aí sim chama o dono. Antes o card
+ia direto para `needs:dono` sem dizer o erro: a lane voltava às cegas e repetia
+o mesmo defeito (FRA-690).
+

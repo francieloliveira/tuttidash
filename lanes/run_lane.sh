@@ -73,6 +73,7 @@ PROMPT="$RUN_DIR/prompt.md"
 env -i HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" \
   TMPDIR="${TMPDIR:-/tmp}" LANG="${LANG:-pt_BR.UTF-8}" TERM="${TERM:-xterm-256color}" \
   PATH="$PATH" SHELL=/bin/bash ZDOTDIR="$CLEAN_ZDOTDIR" LANE="$LANE" \
+  PYTHONDONTWRITEBYTECODE=1 \
   DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}" \
   /usr/bin/python3 -c '
 import os, sys

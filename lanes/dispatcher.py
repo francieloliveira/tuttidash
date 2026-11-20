@@ -4871,6 +4871,84 @@ def retomar_depois_da_main(st: dict, wt: Path) -> str:
     return ""
 
 
+#: `.../actions/runs/<id>/job/<id>` do check. O id da rodada basta para ler o log.
+_RUN_DO_CHECK_RE = re.compile(r"/actions/runs/(\d+)")
+#: Linhas do log que explicam a falha: o que a lane precisa ver para corrigir.
+_LINHA_DE_ERRO_RE = re.compile(
+    r"(?i)(error\b|traceback|exception|assert|panic|fatal|failed\b|Ran \d+ tests?)")
+_PREFIXO_LOG_ACTIONS_RE = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z\s?")
+
+
+def log_da_prova_remota(st: dict, limite: int = 16, tamanho_max: int = 1800) -> str:
+    """Trecho do log do check vermelho, para o card dizer **o que** quebrou.
+
+    Antes o card dizia só «a prova remota ficou vermelha»: a lane voltava sem saber
+    o erro e repetia o mesmo defeito (FRA-690, 19/11/2026). Vazio = não deu para ler
+    (o comentário sai sem o trecho, como antes).
+    """
+    url = str(st.get("prova_remota_check") or "").strip()
+    achado = _RUN_DO_CHECK_RE.search(url)
+    wt = str(st.get("worktree") or "").strip()
+    if not achado or not wt:
+        return ""
+    try:
+        bruto = sh([GH, "run", "view", achado.group(1), "--log-failed"],
+                   cwd=wt, timeout=180)
+    except Exception:  # noqa: BLE001 — log é enfeite; sem ele o card volta igual
+        return ""
+    linhas = []
+    for linha in (bruto or "").splitlines():
+        # `prova-remota\tUNKNOWN STEP\t2026-11-19T15:22:55.3Z ERROR: ...`
+        partes = linha.split("\t", 2)
+        texto = _PREFIXO_LOG_ACTIONS_RE.sub("", (partes[2] if len(partes) == 3 else linha).strip())
+        if texto:
+            linhas.append(texto)
+    uteis = [l for l in linhas if _LINHA_DE_ERRO_RE.search(l)]
+    escolhidas = (uteis or linhas)[-limite:]
+    return "\n".join(escolhidas)[:tamanho_max]
+
+
+def devolver_por_prova_vermelha(st: dict, motivo: str, detalhe: str = "") -> str:
+    """Prova remota vermelha volta para a fila com o erro, em vez de chamar o dono.
+
+    Vermelho é quase sempre defeito no que a lane acabou de escrever (teste novo que
+    não roda, fixture curta). Chamar o dono aqui parava o card, e a lane voltava sem
+    saber o que quebrou — o vaivém do FRA-690 (19/11/2026). A volta conta tentativa
+    (D4) e a coluna vem dos Ajustes (`linear.state_todo_id`); sem ela, não adivinha.
+    """
+    ident = st.get("card") or ""
+    registrar_tentativa(st, motivo)
+    effort = _esforco_freio(st.get("effort") or EFFORT_DEFAULT)
+    gasto = gasto_do_card(ident)
+    tempo = tempo_do_card_min(ident, sessao=st, agora=st.get("agora"))
+    _anotar_medidas(ident, effort, gasto, tempo)
+    n = strikes_do_card(ident)
+    if causa_estouro(n, effort, gasto, tempo):
+        return publicar_freio(st.get("issue_id") or "", st.get("lane") or "", ident, effort,
+                              motivo, detalhe, st)
+    if not STATE_TODO_ID:
+        # Sem a coluna configurada não adivinha: cai no pedido ao dono, como antes.
+        log(f"{ident}: prova remota vermelha sem `linear.state_todo_id`; card fica com o dono")
+        return chamar_dono_prova_remota(st, motivo)
+    url = str(st.get("prova_remota_url") or "").strip()
+    check = str(st.get("prova_remota_check") or "").strip()
+    linhas = [f"♻️ **lane:{st['lane']}** devolvido à fila: {motivo}.", ""]
+    if detalhe:
+        linhas += ["Trecho do log do check (o erro que derrubou a prova):", "", "````",
+                   detalhe, "````", ""]
+    if url:
+        linhas.append(f"PR: {url}")
+    if check:
+        linhas.append(f"Check: {check}")
+    linhas += ["",
+               "- corrija a causa no código; não afrouxe o teste para passar",
+               f"- tentativa {n} do card; a próxima rodada faz um head novo e a prova roda de novo"]
+    linear(MUT_COMMENT, {"id": st["issue_id"], "body": "\n".join(linhas)})
+    mudar_estado(st["issue_id"], STATE_TODO_ID)
+    log(f"lane:{st['lane']} {ident}: prova remota vermelha → card de volta à fila "
+        f"(tentativa {n})")
+    return f"Todo (prova remota vermelha)"
+
 def chamar_dono_prova_remota(st: dict, motivo: str) -> str:
     """Timeout ou erro: etiqueta do dono. O card não vai para In Review."""
     aplicar_label(st["issue_id"], LABEL_DONO_ID, OWNER_LABEL)
@@ -4979,7 +5057,11 @@ def fechar_com_prova_remota(st: dict, wt: Path, res: dict, g: dict) -> Optional[
             return None
     if decisao == "dono":
         registrar_prova_remota(st, "vermelho" if vermelho else "tempo", sha)
-        return chamar_dono_prova_remota(st, motivo_prova_remota(sha, head, checks, desde, agora))
+        motivo = motivo_prova_remota(sha, head, checks, desde, agora)
+        if vermelho:
+            # Prova vermelha é correção, não decisão do dono: volta à fila com o erro.
+            return devolver_por_prova_vermelha(st, motivo, log_da_prova_remota(st))
+        return chamar_dono_prova_remota(st, motivo)
     if decisao != "mover":
         raise RuntimeError(f"decisão de prova remota desconhecida: {decisao}")
     try:
