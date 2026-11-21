@@ -113,6 +113,7 @@ struct ConteudoPagina: View {
         case .dashboard: DashboardPainel(modelo: modelo, largura: largura, ir: ir)
         case .lanes: PaginaLanes(modelo: modelo)
         case .builds: PaginaBuilds(modelo: modelo)
+        case .instalar: PaginaInstalar(modelo: modelo)
         case .entregas: PaginaEntregas(modelo: modelo)
         case .testes: PaginaTestes(modelo: modelo)
         case .custos: PaginaCustos(modelo: modelo)
@@ -394,7 +395,7 @@ struct CabecalhoPainel: View {
     /// Brainstorm e «Esperando você», onde digitar não filtrava nada.
     private var paginaTemBusca: Bool {
         switch pagina {
-        case .lanes, .builds, .entregas, .testes, .custos: return true
+        case .lanes, .builds, .instalar, .entregas, .testes, .custos: return true
         case .dashboard, .brainstorm, .esperando, .ajustes: return false
         }
     }

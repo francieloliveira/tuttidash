@@ -16,6 +16,7 @@ public enum ScriptsDoBundle {
         "bots/watch.py",
         "tools/instalar-prova-remota",
         "tools/instalar-norte",
+        "tools/instalar.py",
     ]
 
     /// Caminho no bundle deste processo, se o arquivo estiver lá e for legível.

@@ -209,6 +209,7 @@ try:
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import erros_conhecidos  # noqa: E402  fonte única de erros conhecidos (FRA-668)
+    import instalar  # noqa: E402  instalação por projeto (FRA-698)
     import projetos  # noqa: E402
     import proxy_linear  # noqa: E402  token do Linear fica no proxy (FRA-607)
     import revisao_ia  # noqa: E402
@@ -317,7 +318,11 @@ INSTALL_SCRIPT = STATE_DIR / "instalar.sh"
 # Comando que instala o app no aparelho, no worktree `install-main` do projeto.
 # Lista de argv (ex.: ["./scripts/instalar-no-iphone.sh"]). Vazio = não instala (FRA-565).
 # Texto antigo ainda vale, partido com shlex.split e com aviso para migrar à lista.
-# O comando por projeto é o FRA-585: aqui continua a chave global, sem duplicar isso.
+# FRA-585/FRA-698: o comando por projeto é `projetos[].entrega` (campo
+# `instalacao`), usado antes desta chave. A chave global fica só como reserva de
+# projeto sem instalação declarada.
+INSTALAR_RESERVA_OBSOLETA = ("watch.instalar_comando é reserva obsoleta: cadastre a instalação "
+                             "do projeto em Ajustes › Projetos (FRA-698).")
 
 
 def instalar_argv(bruto=None) -> tuple[list[str], str]:
@@ -350,6 +355,47 @@ def instalar_argv(bruto=None) -> tuple[list[str], str]:
             partes.append(item)
         return partes, ""
     return [], "watch.instalar_comando: use uma lista de argv; instalação desligada."
+
+
+INSTALAR_SCRIPT = Path(__file__).resolve().parent.parent / "tools" / "instalar.py"
+
+
+def instalacao_argv(p) -> tuple:
+    """(argv, aviso) da instalação declarada no cadastro do projeto.
+
+    `argv` é a ação a rodar depois do merge (`subir` para serviço, `instalar` para
+    artefato). Devolve `None` quando o projeto decidiu não instalar (classe
+    `nenhuma`, cadastro inválido ou artefato que exige administrador) — nesse caso
+    o vigia não cai na chave global. `[]` significa projeto sem `instalacao`: aí a
+    reserva obsoleta `watch.instalar_comando` ainda vale.
+    """
+    bruto = getattr(p, "instalacao", None)
+    if not isinstance(bruto, dict) or not bruto:
+        return [], ""
+    e = instalar.de_projeto(p)
+    if e.erros:
+        return None, "instalação recusada: " + "; ".join(e.erros)
+    if e.classe == "nenhuma":
+        return None, "projeto declara instalação nenhuma; o vigia não instala"
+    if e.classe == "servico":
+        if not e.subir:
+            return None, "instalação de serviço sem comando de subir; o vigia não instala"
+        if e.requer_admin:
+            return None, "instalação de serviço exige administrador; use a tela Instalar"
+        acao = "subir"
+    elif e.classe == "artefato":
+        if not e.instalar:
+            return None, "instalação de artefato sem comando de instalar; o vigia não instala"
+        if e.requer_admin:
+            return None, ("instalação exige administrador: instale pela tela Instalar "
+                          "(o vigia não pode pedir senha)")
+        acao = "instalar"
+    else:  # pragma: no cover - de_projeto já barra classe desconhecida
+        return None, f"classe de instalação desconhecida: {e.classe_declarada}"
+    if not INSTALAR_SCRIPT.is_file():
+        return None, f"o CLI da instalação não está no bundle: {INSTALAR_SCRIPT}"
+    return (["/usr/bin/python3", str(INSTALAR_SCRIPT), acao,
+             "--projeto", p.id, "--json"], "")
 
 
 PANEL_LOG = HOME / "Library" / "Logs" / "TranscentIA" / "lanes-dispatcher.log"
@@ -981,20 +1027,46 @@ def tmux_alive(session: str) -> bool:
 
 
 def start_install(ref: str, tag: str, card_id: str | None, st: dict, diary: list[str]) -> bool:
-    """Instala no aparelho numa sessão tmux própria (E14), no worktree `<worktrees>/install-main`.
+    """Instala ou sobe a instalação numa sessão tmux própria (E14).
 
+    Ordem (FRA-698): a `instalacao` do cadastro do projeto manda. Projeto sem ela
+    cai na reserva obsoleta `watch.instalar_comando`, no worktree
+    `<worktrees>/install-main`. Projeto que declara `nenhuma` não instala nada.
     O comando entra como argv, cada pedaço citado para o tmux não reabrir um shell.
-    Repo e worktree são conferidos contra o cadastro antes de abrir a sessão.
     """
-    argv, aviso = instalar_argv()
-    if aviso:
-        log(aviso)
-    if not argv:
-        return False
     if tmux_alive(INSTALL_SESSION):
         log(f"instalação {tag}: outra instalação em andamento, fica para o próximo tick")
         return False
     p = projeto()
+    argv, aviso = instalacao_argv(p)
+    if aviso:
+        log(aviso)
+    if argv is None:
+        return True                  # decidido: não instalar; o pendente pode ser limpo
+    if argv:
+        trava = instalar.bloqueio(p)
+        if trava:
+            log(f"instalação {tag}: {trava}; fica para o próximo tick")
+            return False
+        out = HOME / "Library/Logs/TranscentIA" / f"instalacao-{tag}-{datetime.now():%Y%m%d-%H%M%S}.log"
+        comando = " ".join(shlex.quote(x) for x in argv)
+        cmdline = (f"{comando} > {shlex.quote(str(out))} 2>&1; "
+                   f"echo $? > {shlex.quote(str(out) + '.exit')}")
+        sh(["tmux", "new-session", "-d", "-s", INSTALL_SESSION,
+            "-c", str(p.repo), "/bin/bash", "-c", cmdline])
+        st["installs"]["atual"] = {"ref": ref, "tag": tag, "card_id": card_id, "log": str(out),
+                                   "projeto": p.id, "origem": "instalacao",
+                                   "inicio": datetime.now().isoformat(timespec="seconds")}
+        diary.append(f"Gestor · instalação do projeto iniciada ({ref}); log {out.name}")
+        log(f"instalação {tag} iniciada ({ref})")
+        return True
+    # Reserva obsoleta: projeto sem `instalacao` continua como antes (FRA-565/FRA-585).
+    log(INSTALAR_RESERVA_OBSOLETA)
+    argv, aviso = instalar_argv()
+    if aviso:
+        log(aviso)
+    if not argv:
+        return True
     wt = p.worktrees / "install-main"
     codigo, detalhe = projetos.checar_alvo_instalar(p.repo, wt, cadastro=p)
     if codigo:
@@ -1005,6 +1077,7 @@ def start_install(ref: str, tag: str, card_id: str | None, st: dict, diary: list
                        ["/bin/bash", str(INSTALL_SCRIPT), ref, str(out), str(p.repo), str(wt), *argv])
     sh(["tmux", "new-session", "-d", "-s", INSTALL_SESSION, cmdline])
     st["installs"]["atual"] = {"ref": ref, "tag": tag, "card_id": card_id, "log": str(out),
+                               "projeto": p.id, "origem": "watch.instalar_comando",
                                "inicio": datetime.now().isoformat(timespec="seconds")}
     diary.append(f"Gestor · instalação no aparelho iniciada ({ref}); log {out.name}")
     log(f"instalação {tag} iniciada ({ref})")
@@ -1018,7 +1091,8 @@ def check_install(st: dict, diary: list[str]) -> None:
     exit_f = Path(cur["log"] + ".exit")
     rc = exit_f.read_text().strip() if exit_f.exists() else "?"
     ok = rc == "0"
-    msg = (f"[Gestor] Instalação no aparelho de `{cur['ref']}`: {'instalado' if ok else f'falhou (código {rc})'}. "
+    rotulo = "Instalação" if cur.get("origem") == "instalacao" else "Instalação no aparelho"
+    msg = (f"[Gestor] {rotulo} de `{cur['ref']}`: {'concluída' if ok else f'falhou (código {rc})'}. "
            f"Log: `{cur['log']}`")
     if cur.get("card_id"):
         try:

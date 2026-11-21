@@ -2715,6 +2715,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "",
     base = sh([GIT, "rev-parse", "HEAD"], cwd=wt)
     st = {"lane": lane, "card": ident, "issue_id": card["id"], "title": card["title"],
           "url": card["url"], "branch": branch, "worktree": str(wt), "base": base,
+          "projeto": projeto().id,
           "effort": effort, "modelo": modelo or modelo_da_lane(lane, effort),
           "modelo_fixo": aviso_modelo(lane, effort) == "modelo fixo",
           "aviso_modelo": aviso_modelo(lane, effort) if not modelo else "retry de modelo",

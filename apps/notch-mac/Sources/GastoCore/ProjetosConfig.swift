@@ -9,6 +9,183 @@ import Foundation
 ///
 /// Adicionar um projeto aqui é o que o dispatcher enxerga: não há lista escrita
 /// em código para atualizar junto.
+/// FRA-698: como o projeto se instala. Três classes, não um tipo por projeto.
+///
+/// `servico`: há um processo de pé (subir/parar, porta, saúde, URL).
+/// `artefato`: há um pacote produzido e instalado num destino (empacotar, validar,
+/// instalar). `nenhuma`: não se instala; a entrega é o commit/tag.
+///
+/// Os comandos são uma linha de texto (programa + argumentos) e rodam **sem shell**:
+/// o Python parte com `shlex.split`. Marcadores: `{porta}`, `{artefato}`, `{destino}`,
+/// `{pid}`, `{log}`, `{ref}`, `{worktree}`, `{head}` e `{repo}`. A tela só lê o estado e chama
+/// `tools/instalar.py`; quem age é o Python. A chave do config continua `entrega`.
+public struct InstalacaoCadastro: Equatable, Sendable {
+    public enum Classe: String, CaseIterable, Equatable, Sendable {
+        case nenhuma, servico, artefato
+
+        public var rotulo: String {
+            switch self {
+            case .nenhuma: return String(localized: "Nenhuma")
+            case .servico: return String(localized: "Serviço")
+            case .artefato: return String(localized: "Artefato instalável")
+            }
+        }
+
+        public var ajuda: String {
+            switch self {
+            case .nenhuma:
+                return String(localized: "Não se instala: a entrega é o commit/tag no git.")
+            case .servico:
+                return String(localized: "Há um processo que fica de pé: sobe, responde no health check e para.")
+            case .artefato:
+                return String(localized: "Há um pacote produzido e instalado num destino: empacota, valida e instala.")
+            }
+        }
+    }
+
+    public var classe: Classe
+    public var empacotar: String
+    public var validar: String
+    public var instalar: String
+    public var subir: String
+    public var parar: String
+    public var versao: String
+    /// Texto para a porta (vazio = sem porta). A validação numérica fica em `problema()`.
+    public var porta: String
+    public var saude: String
+    public var url: String
+    public var artefato: String
+    public var destino: String
+    /// O vigia não pode pedir senha: artefato com administrador só instala pela tela.
+    public var requerAdmin: Bool
+    /// Classe lida do arquivo que o app não conhece: preservada ao salvar, recusada pelo Python.
+    public var classeDesconhecida: String
+
+    public init(classe: Classe = .nenhuma, empacotar: String = "", validar: String = "",
+                instalar: String = "", subir: String = "", parar: String = "", versao: String = "",
+                porta: String = "", saude: String = "", url: String = "", artefato: String = "",
+                destino: String = "", requerAdmin: Bool = false, classeDesconhecida: String = "") {
+        self.classe = classe
+        self.empacotar = empacotar
+        self.validar = validar
+        self.instalar = instalar
+        self.subir = subir
+        self.parar = parar
+        self.versao = versao
+        self.porta = porta
+        self.saude = saude
+        self.url = url
+        self.artefato = artefato
+        self.destino = destino
+        self.requerAdmin = requerAdmin
+        self.classeDesconhecida = classeDesconhecida
+    }
+
+    /// Vazia de verdade: nenhuma classe escolhida e nenhum campo preenchido.
+    public var vazia: Bool {
+        classe == .nenhuma && classeDesconhecida.isEmpty && empacotar.isEmpty && validar.isEmpty
+            && instalar.isEmpty && subir.isEmpty && parar.isEmpty && versao.isEmpty
+            && porta.isEmpty && saude.isEmpty && url.isEmpty && artefato.isEmpty
+            && destino.isEmpty && !requerAdmin
+    }
+
+    /// `{porta}` num endereço exige porta numérica.
+    private var usaPorta: Bool { saude.contains("{porta}") || url.contains("{porta}") }
+
+    public func problema() -> String? {
+        if !classeDesconhecida.isEmpty {
+            return String(localized: "A entrega tem uma classe que o app não conhece (\(classeDesconhecida)). Corrija no config.json ou escolha uma classe aqui.")
+        }
+        switch classe {
+        case .nenhuma:
+            return nil
+        case .servico:
+            if subir.trimmingCharacters(in: .whitespaces).isEmpty {
+                return String(localized: "Serviço: diga o comando de subir.")
+            }
+            if usaPorta, Int(porta.trimmingCharacters(in: .whitespaces)) == nil {
+                return String(localized: "Serviço: o endereço usa {porta}; informe a porta.")
+            }
+        case .artefato:
+            if instalar.trimmingCharacters(in: .whitespaces).isEmpty {
+                return String(localized: "Artefato: diga o comando de instalar.")
+            }
+            if destino.trimmingCharacters(in: .whitespaces).isEmpty {
+                return String(localized: "Artefato: diga o destino da instalação.")
+            }
+        }
+        for (rotulo, comando) in [("empacotar", empacotar), ("validar", validar),
+                                  ("instalar", instalar), ("subir", subir),
+                                  ("parar", parar), ("versão", versao)] where !comando.isEmpty {
+            if !Self.aspasBalanceadas(comando) {
+                return String(localized: "Entrega: aspas sem fechar no comando de \(rotulo).")
+            }
+        }
+        return nil
+    }
+
+    /// Confere só o pareamento de aspas simples e duplas (o `shlex` do Python é a autoridade).
+    static func aspasBalanceadas(_ texto: String) -> Bool {
+        var simples = false, duplas = false, escapado = false
+        for c in texto {
+            if escapado { escapado = false; continue }
+            if c == "\\" && !simples { escapado = true; continue }
+            if c == "'" && !duplas { simples.toggle() }
+            else if c == "\"" && !simples { duplas.toggle() }
+        }
+        return !simples && !duplas && !escapado
+    }
+
+    /// O dicionário que o Python lê. `nil` quando a entrega é vazia (chave ausente = nenhuma).
+    public func dict() -> [String: Any]? {
+        if vazia { return nil }
+        var d: [String: Any] = [
+            "classe": classeDesconhecida.isEmpty ? classe.rawValue : classeDesconhecida,
+        ]
+        for (chave, valor) in [("empacotar", empacotar), ("validar", validar),
+                               ("instalar", instalar), ("subir", subir), ("parar", parar),
+                               ("versao", versao), ("saude", saude), ("url", url),
+                               ("artefato", artefato), ("destino", destino)] {
+            let s = valor.trimmingCharacters(in: .whitespaces)
+            if !s.isEmpty { d[chave] = s }
+        }
+        if let n = Int(porta.trimmingCharacters(in: .whitespaces)), n > 0 { d["porta"] = n }
+        if requerAdmin { d["requer_admin"] = true }
+        return d
+    }
+
+    /// Lê a chave `entrega` do cadastro. Ausente ou fora de forma = nenhuma.
+    public static func ler(_ bruto: [String: Any]?) -> InstalacaoCadastro {
+        guard let bruto, !bruto.isEmpty else { return InstalacaoCadastro() }
+        let declarada = "\(bruto["classe"] ?? "nenhuma")".trimmingCharacters(in: .whitespaces).lowercased()
+        let conhecida = Classe(rawValue: declarada)
+        func texto(_ chave: String) -> String {
+            if let s = bruto[chave] as? String { return s }
+            if let lista = bruto[chave] as? [String] {
+                return lista.map(Self.citar).joined(separator: " ")
+            }
+            return ""
+        }
+        return InstalacaoCadastro(
+            classe: conhecida ?? .nenhuma,
+            empacotar: texto("empacotar"), validar: texto("validar"),
+            instalar: texto("instalar"), subir: texto("subir"), parar: texto("parar"),
+            versao: texto("versao"),
+            porta: bruto["porta"].map { "\($0)" } ?? "",
+            saude: texto("saude"), url: texto("url"),
+            artefato: texto("artefato"), destino: texto("destino"),
+            requerAdmin: (bruto["requer_admin"] as? NSNumber)?.boolValue ?? false,
+            classeDesconhecida: conhecida == nil ? declarada : "")
+    }
+
+    /// Um argumento de argv vira texto citável, para lista escrita à mão não perder o espaço.
+    static func citar(_ s: String) -> String {
+        guard s.contains(where: { $0 == " " || $0 == "\"" || $0 == "'" }) else { return s }
+        return "\"" + s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+}
+
 public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     public var id: String            { projetoID }
     /// UUID do projeto no Linear. É a chave; duas entradas com o mesmo id não fazem sentido.
@@ -52,6 +229,8 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     /// Entra sempre no freio, por cima do declarado ou do padrão: nenhuma lane edita o norte.
     /// Vazio = projeto sem norte. Caminho que não serve (absoluto, `~`, `..`) é descartado.
     public var norte: String
+    /// FRA-698: como o projeto se instala (serviço, artefato ou nenhuma).
+    public var instalacao: InstalacaoCadastro
 
     /// Freio padrão quando o projeto não declara o seu: a config dos agentes do projeto
     /// (igual ao `PROTEGIDOS_PADRAO` do `projetos.py`).
@@ -61,7 +240,8 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
                 repo: String = "", worktrees: String = "", prova: String = "python3 {suite}",
                 provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = [],
                 antesDoPush: String = "", github: String = "", suites: [String] = [],
-                bancada: Bool = false, pastasDoApp: [String] = [], norte: String = "") {
+                bancada: Bool = false, pastasDoApp: [String] = [], norte: String = "",
+                instalacao: InstalacaoCadastro = InstalacaoCadastro()) {
         self.projetoID = projetoID
         self.nome = nome.isEmpty ? projetoID : nome
         self.ativo = ativo
@@ -78,6 +258,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         self.bancada = bancada
         self.pastasDoApp = pastasDoApp
         self.norte = Self.norteValido(norte)
+        self.instalacao = instalacao
     }
 
     /// Mesma regra do `norte_valido` do `projetos.py`: relativo ao repo, sem `~`, `..`,
@@ -125,6 +306,7 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
             return String(localized: "A prova precisa ter {suite} no lugar do teste.")
         }
         if provaTentativas < 1 { return String(localized: "Mínimo de 1 tentativa.") }
+        if let m = instalacao.problema() { return m }
         return nil
     }
 }
@@ -164,7 +346,8 @@ public enum ProjetosConfig {
                                    bancada: (item["bancada"] as? [String: Any]).flatMap { $0["ativo"] as? NSNumber }
                                        .map { JV.ehBool($0) && $0.boolValue } ?? false,
                                    pastasDoApp: ((item["prova_remota"] as? [String: Any])?["pastas_do_app"] as? [String]) ?? [],
-                                   norte: (item["norte"] as? String) ?? "")
+                                   norte: (item["norte"] as? String) ?? "",
+                                   instalacao: InstalacaoCadastro.ler(item["entrega"] as? [String: Any]))
         }.filter { $0.problema() == nil }
         return saida
     }
@@ -185,6 +368,7 @@ public enum ProjetosConfig {
             if p.bancada { item["bancada"] = ["ativo": true] }
             if !p.pastasDoApp.isEmpty { item["prova_remota"] = ["pastas_do_app": p.pastasDoApp] }
             if !p.norte.isEmpty { item["norte"] = p.norte }
+            if let e = p.instalacao.dict() { item["entrega"] = e }
             return item
         }
     }

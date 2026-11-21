@@ -226,4 +226,70 @@ final class ProjetosConfigTests: XCTestCase {
         ProjetosConfig.gravar(ps, em: &d)
         XCTAssertEqual((d["projetos"] as? [[String: Any]])?.first?["suites"] as? [String], ["tests.test_x", "GastoCoreTests"])
     }
+
+    // MARK: - Entrega (FRA-698)
+
+    func testEntregaVaiEVoltaPeloRegistro() {
+        let instalacao = InstalacaoCadastro(classe: .artefato, instalar: "./scripts/instalar-app.sh",
+                                     destino: "/Applications/TuttiDash.app")
+        var d: [String: Any] = ["projetos": [["id": notch, "nome": "P", "repo": "~/Developer/tuttidash",
+                                              "entrega": instalacao.dict() ?? [:]]]]
+        let ps = ProjetosConfig.ler(d)
+        XCTAssertEqual(ps.first?.instalacao.classe, .artefato)
+        XCTAssertEqual(ps.first?.instalacao.instalar, "./scripts/instalar-app.sh")
+        XCTAssertEqual(ps.first?.instalacao.destino, "/Applications/TuttiDash.app")
+        ProjetosConfig.gravar(ps, em: &d)
+        let deNovo = ProjetosConfig.ler(d)
+        XCTAssertEqual(deNovo.first?.instalacao.dict()?["classe"] as? String, "artefato")
+        XCTAssertEqual(deNovo.first?.instalacao.dict()?["destino"] as? String, "/Applications/TuttiDash.app")
+    }
+
+    func testEntregaVaziaNaoGravaChave() {
+        var d: [String: Any] = [:]
+        ProjetosConfig.gravar([ProjetoCadastro(projetoID: notch, repo: "~/r")], em: &d)
+        let ps = ProjetosConfig.ler(d)
+        XCTAssertNil((d["projetos"] as? [[String: Any]])?.first?["entrega"])
+        XCTAssertTrue((ps.first?.instalacao.vazia) ?? false)
+        XCTAssertNil(ps.first?.instalacao.dict())
+    }
+
+    func testEntregaServicoExigeSubirEValidaPorta() {
+        let ok = InstalacaoCadastro(classe: .servico, subir: "python3 servidor.py", porta: "8080")
+        XCTAssertNil(ok.problema())
+        XCTAssertEqual(ok.dict()?["classe"] as? String, "servico")
+        XCTAssertEqual(ok.dict()?["subir"] as? String, "python3 servidor.py")
+        XCTAssertEqual(ok.dict()?["porta"] as? Int, 8080)
+        XCTAssertNil(ok.dict()?["requer_admin"] as? NSNumber)
+        XCTAssertNil(ok.dict()?["url"] as? String)
+        XCTAssertNotNil(InstalacaoCadastro(classe: .servico, porta: "8080").problema(),
+                         "serviço sem comando de subir não se entrega")
+        XCTAssertNotNil(InstalacaoCadastro(classe: .servico, subir: "python3 servidor.py", porta: "abc",
+                                       saude: "http://127.0.0.1:{porta}/saude").problema(),
+                        "porta numérica exigida quando o endereço usa {porta}")
+    }
+
+    func testEntregaArtefatoExigeInstalarEDestino() {
+        let ok = InstalacaoCadastro(classe: .artefato, instalar: "./tools/reinstalar-app.sh",
+                                 destino: "/Applications/TuttiDash.app")
+        XCTAssertEqual(ok.dict()?["instalar"] as? String, "./tools/reinstalar-app.sh")
+        XCTAssertEqual(ok.dict()?["destino"] as? String, "/Applications/TuttiDash.app")
+        XCTAssertNil(ok.problema())
+        XCTAssertNotNil(InstalacaoCadastro(classe: .artefato, instalar: "", destino: "").problema(),
+                        "artefato sem comando de instalar não se entrega")
+        XCTAssertNotNil(InstalacaoCadastro(classe: .artefato, instalar: "./instalar.sh", destino: "").problema(),
+                        "artefato sem destino não se entrega")
+    }
+
+    func testEntregaClasseDesconhecidaFicaParaCorrecao() {
+        let e = InstalacaoCadastro(classeDesconhecida: "container")
+        XCTAssertEqual(e.classe, .nenhuma)
+        XCTAssertEqual(e.classeDesconhecida, "container")
+        XCTAssertNotNil(e.problema())
+    }
+
+    func testEntregaAspasDesbalanceadasSinaChamadaProblema() {
+        let cmd = InstalacaoCadastro(classe: .artefato, instalar: "./instalar.sh \"sem fechar", destino: "/tmp/a")
+        XCTAssertFalse(InstalacaoCadastro.aspasBalanceadas(cmd.instalar))
+        XCTAssertTrue(InstalacaoCadastro.aspasBalanceadas("./instalar.sh ok"))
+    }
 }

@@ -59,6 +59,14 @@ Regras:
     Absoluto, com `~`, `..` ou quebra de linha é ignorado. Vazio = projeto sem norte.
   - `bancada`: `{"ativo": true}` libera o modo bancada (FRA-618) neste projeto. Só vale
     junto com a etiqueta `lane:bancada` no card e a lane `claude`. Desligado por padrão.
+  - `entrega`: como o projeto se instala (FRA-698), uma de três classes:
+    `{"classe": "servico" | "artefato" | "nenhuma", ...}`. Os comandos de
+    `empacotar`, `validar`, `instalar`, `subir`, `parar` e `versao` são argv (lista) ou
+    uma linha de comando partida com shlex, sempre sem shell. `porta`, `saude`, `url`,
+    `artefato`, `destino` e `requer_admin` completam o cadastro. Ausente = `nenhuma`.
+    Quem interpreta é `gasto_lanes/instalar.py`; o vigia usa a mesma classe depois do
+    merge (o `watch.instalar_comando` fica só como reserva obsoleta). A chave do
+    config.json continua `entrega`; no código o campo é `instalacao`.
 
 Somente Python 3 da stdlib.
 """
@@ -100,13 +108,13 @@ class Projeto:
 
     __slots__ = ("id", "nome", "ativo", "padrao", "repo", "github", "worktrees",
                  "prova", "prova_tentativas", "suites", "protegidos", "copiar_para_worktree", "antes_do_push",
-                 "bancada", "pastas_do_app", "norte")
+                 "bancada", "pastas_do_app", "norte", "instalacao")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
                  repo: str = "", worktrees: str = "", github: str = "", prova: str = "python3 {suite}",
                  prova_tentativas: int = 1, suites=None, protegidos=None, copiar_para_worktree=None,
                  antes_do_push: str = "", bancada: bool = False, pastas_do_app=None,
-                 norte=""):
+                 norte="", instalacao=None):
         self.id = id
         self.nome = nome or id
         self.ativo = ativo
@@ -132,6 +140,9 @@ class Projeto:
         # FRA-620: pastas que só o Mac prova. A prova-remota no Linux fica vermelha nelas.
         self.pastas_do_app = [str(p).strip().strip("/") for p in (pastas_do_app or [])
                               if str(p).strip().strip("/") and ".." not in str(p)]
+        # FRA-698: o cadastro da entrega é interpretado por `gasto_lanes/instalar.py`.
+        # Aqui ele só é guardado (ditado); classe desconhecida é reportada por lá.
+        self.instalacao = dict(instalacao) if isinstance(instalacao, dict) else {}
 
     def comando_prova(self, suite: str) -> str:
         """Comando completo da prova de uma suíte, já com o placeholder trocado.
@@ -222,7 +233,8 @@ def _do_registro(bruto: dict) -> list:
             antes_do_push=str(item.get("antes_do_push") or ""),
             bancada=_bancada_ativa(item.get("bancada")),
             pastas_do_app=_pastas_do_app(item.get("prova_remota")),
-            norte=item.get("norte")))
+            norte=item.get("norte"),
+            instalacao=item.get("entrega")))
     return saida
 
 

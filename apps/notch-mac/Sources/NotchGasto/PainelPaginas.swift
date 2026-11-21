@@ -3,8 +3,8 @@ import GastoCore
 
 // Páginas da barra lateral: o conteúdo do painel v1 que não cabe no Dashboard da imagem.
 
-private func cartaoPagina<C: View>(_ titulo: String, @ViewBuilder direita: () -> some View = { EmptyView() },
-                                   @ViewBuilder conteudo: () -> C) -> some View {
+func cartaoPagina<C: View>(_ titulo: String, @ViewBuilder direita: () -> some View = { EmptyView() },
+                           @ViewBuilder conteudo: () -> C) -> some View {
     VStack(alignment: .leading, spacing: 10) {
         HStack(spacing: 10) {
             Text(titulo).fontePainel(15, .semibold)
@@ -27,7 +27,7 @@ private func par(_ nome: String, _ valor: String, cor: Color = PV.texto) -> some
     .fontePainel(12.5)
 }
 
-private func stat(_ nome: String, _ valor: String, cor: Color = PV.verde) -> some View {
+func stat(_ nome: String, _ valor: String, cor: Color = PV.verde) -> some View {
     VStack(alignment: .leading, spacing: 3) {
         Text(nome).fontePainel(11).foregroundStyle(PV.mudo)
         Text(valor).fontePainel(14, .semibold).foregroundStyle(cor).lineLimit(1)
