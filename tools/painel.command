@@ -18,7 +18,7 @@ criar() {
   f=$($TM split-window -P -F '#{pane_id}' -h -f -l "$W" -t "$a" "bash $T/seguir-lanes.sh")
   c=$($TM split-window -P -F '#{pane_id}' -v -t "$a" "bash $T/acompanhar-testes.command")
   b=$($TM split-window -P -F '#{pane_id}' -h -t "$a" \
-      "tail -n $N -F $L/bots-watch.log $L/bots-chave.log | bash $T/colorir.sh")
+      "tail -n $N -F $L/bots-watch.log | bash $T/colorir.sh")
   e=$($TM split-window -P -F '#{pane_id}' -h -t "$c" "bash $T/seguir-build.sh")
   $TM source-file "$T/tema.tmux"
   $TM set -t painel allow-rename off

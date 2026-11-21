@@ -65,7 +65,6 @@ DEFAULTS = {
          "script": "/Applications/TuttiDash.app/Contents/Resources/controle/bots/watch.py", "argumentos": [],
          "log": "~/Library/Logs/TranscentIA/bots-watch.launchd.log"},
     ]},
-    "bots_chave": {"limite_pct": 90, "intervalo_s": 600, "modo_forcado": "auto"},
     "painel": {"comando": "~/.transcentia/tools/painel.command", "tmux": "/opt/homebrew/bin/tmux", "sessao": "painel",
                "gestor_log_glob": "/tmp/fra*-*.log",
                "proof_log_glob": "~/Developer/*-worktrees/*/.lane/proof.log",
@@ -241,7 +240,6 @@ NOMES_ANTIGOS = {"TranscentIA Lanes (dispatcher)": "TuttiDash Dispatcher",
 SCRIPTS_ANTIGOS = {
     ".transcentia/lanes/dispatcher.py": "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/dispatcher.py",
     ".transcentia/bots/watch.py": "/Applications/TuttiDash.app/Contents/Resources/controle/bots/watch.py",
-    ".transcentia/tools/bots-chave": "/Applications/TuttiDash.app/Contents/Resources/controle/tools/bots-chave",
 }
 
 

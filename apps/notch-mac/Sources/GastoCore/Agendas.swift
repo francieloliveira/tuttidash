@@ -296,7 +296,6 @@ public final class GerenciadorAgendas {
         "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/lanes_ctl.py",
         "/Applications/TuttiDash.app/Contents/Resources/controle/lanes/run_lane.sh",
         "/Applications/TuttiDash.app/Contents/Resources/controle/bots/watch.py",
-        "/Applications/TuttiDash.app/Contents/Resources/controle/tools/bots-chave",
     ]
 
     static func scriptDoBundle(_ bruto: String) -> String? {

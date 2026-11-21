@@ -93,8 +93,6 @@ final class EstadoAgendas: ObservableObject {
                     CentralAvisos.compartilhada.erro(String(localized: "Não deu para \(ligar ? "ligar" : "desligar") a automação"), f)
                 } else {
                     CentralAvisos.compartilhada.ok(ligar ? String(localized: "Chave Geral ligada") : String(localized: "Chave Geral desligada"))
-                    // Ligou agora: confere o GrokBot na hora, sem esperar o intervalo do app.
-                    if ligar { NotificationCenter.default.post(name: .chaveGeralLigada, object: nil) }
                 }
                 self.atualizar()
             }
@@ -126,12 +124,6 @@ final class EstadoAgendas: ObservableObject {
             }
         }
     }
-}
-
-/// Aviso interno do app (FRA-682): a Chave Geral acabou de ligar. O `AppDelegate`
-/// escuta para conferir o GrokBot na hora, sem esperar o intervalo.
-extension Notification.Name {
-    static let chaveGeralLigada = Notification.Name("app.tuttidash.chaveGeralLigada")
 }
 
 struct SecaoAgendas: View {
