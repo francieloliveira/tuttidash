@@ -11,7 +11,7 @@ O TuttiDash é um conjunto de ferramentas locais com que um desenvolvedor, no Ma
 
 - R1: Cada lane leva um card, um worktree git e um agente por vez.
 - R2: O agente da lane não fala com o Linear nem com o GitHub; quem move o card, comenta e abre o PR é o dispatcher.
-- R3: O card só vai para In Review, e só há merge, com a prova-remota verde no SHA completo da head e a aprovação do [Revisor] nessa head (e a revisao-ia, quando a main tem esse workflow).
+- R3: O card só vai para In Review, e só há merge, com a prova-remota verde no SHA completo da head e a aprovação do [Revisor] nessa head (e a revisao-ia, quando a main tem esse workflow). Exceção: pedido direto do dono pode pular a aprovação do [Revisor] e o rito do card, desde que a prova esteja verde e não haja caminho protegido, segredo ou dado pessoal no diff; o merge e o motivo ficam registrados.
 - R4: Os freios por card (tentativas, gasto, tempo) e os caminhos protegidos valem acima de concluir o card.
 - R5: Nenhuma lane edita o norte; mudança no norte é proposta ao dono.
 - R6: A chave do Linear fica só no Keychain do app; dispatcher e vigia usam o proxy local. O TuttiDash não renova nem reescreve credencial de outra ferramenta.
