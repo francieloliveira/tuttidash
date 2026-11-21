@@ -33,10 +33,8 @@ class MigraScriptsDosJobs(unittest.TestCase):
             {"label": "com.transcentia.lanes.dispatcher", "script": "~/.transcentia/lanes/dispatcher.py",
              "argumentos": ["--real"]},
             {"label": "com.transcentia.bots.watch", "script": "~/.transcentia/bots/watch.py"},
-            {"label": "com.transcentia.bots.chave", "script": "~/.transcentia/tools/bots-chave"},
         ])
-        self.assertEqual([j["script"] for j in jobs], [
-            CONTROLE + "lanes/dispatcher.py", CONTROLE + "bots/watch.py", CONTROLE + "tools/bots-chave"])
+        self.assertEqual([j["script"] for j in jobs], [CONTROLE + "lanes/dispatcher.py", CONTROLE + "bots/watch.py"])
         self.assertEqual(jobs[0]["argumentos"], ["--real"])
 
     def test_caminho_absoluto_do_home_tambem_migra(self):

@@ -65,7 +65,7 @@ public enum PresencaDoApp {
     /// Fechar a janela do painel não passa por aqui; o app continua na barra.
     public static func pararTudo(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         // Primeiro os agentes; depois as sessões tmux que eles abriram.
-        for padrao in ["tuttidash-agente", "lanes/dispatcher.py", "bots/watch.py", "tools/bots-chave"] {
+        for padrao in ["tuttidash-agente", "lanes/dispatcher.py", "bots/watch.py"] {
             _ = rodar("/usr/bin/pkill", ["-f", padrao])
         }
         matarLanes()

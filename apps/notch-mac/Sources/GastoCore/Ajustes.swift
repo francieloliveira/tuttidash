@@ -45,8 +45,6 @@ public struct AbaAjustes: Identifiable, Sendable {
     public var linear: Bool = false
     /// true na aba Agendas, que mostra o estado e os botões dos jobs.
     public var agendas: Bool = false
-    /// true na aba Contas e gasto, que mostra "Quem gerencia as lanes".
-    public var gestaoLanes: Bool = false
     /// true na aba Contas, que mostra o cadastro de contas acompanhadas.
     public var contas: Bool = false
     /// true na aba Lanes, que mostra os toggles de enable das lanes.
@@ -101,9 +99,8 @@ public enum CatalogoAjustes {
             AbaAjustes(nome: String(localized: "Contas e gasto"), simbolo: "dollarsign.circle", campos: [
                 CampoAjuste("teto_semanal_usd", String(localized: "Teto semanal (US$, 0 = sem teto)"), d(0, 100_000), "0"),
                 CampoAjuste("aviso_pct", String(localized: "Aviso em (% do teto)"), d(1, 100), "80"),
-                CampoAjuste("bots_chave.limite_pct", String(localized: "Limite de uso do GrokBot (%)"), d(1, 100), "90"),
                 CampoAjuste("uso_contas", String(localized: "Consultar limites das contas"), .booleano, "true"),
-            ] + credenciaisContas(), nota: nil, gestaoLanes: true, contas: true),
+            ] + credenciaisContas(), nota: nil, contas: true),
             AbaAjustes(nome: String(localized: "Lanes"), simbolo: "arrow.triangle.branch", campos: [
                 CampoAjuste("lanes.budget_usd.baixo", String(localized: "Orçamento esforço baixo (US$)"), d(0.5, 500), "3"),
                 CampoAjuste("lanes.budget_usd.medio", String(localized: "Orçamento esforço médio (US$)"), d(0.5, 500), "8"),

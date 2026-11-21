@@ -148,7 +148,6 @@ struct TelaAjustes: View {
                         }
                         if aba.modelosLane { SecaoModeloLanes(modelo: estado.modelo, aoSalvar: aoSalvar) }
                         if aba.projetos { SecaoProjetos(estado: EstadoProjetos(modelo: estado.modelo)) }
-                        if aba.gestaoLanes { SecaoGestaoLanes(estado: EstadoGestaoLanes(modelo: estado.modelo), aoSalvar: aoSalvar) }
                         ForEach(aba.campos) { c in LinhaCampo(campo: c, estado: estado, aoSalvar: aoSalvar) }
                     }
                     .formStyle(.grouped)

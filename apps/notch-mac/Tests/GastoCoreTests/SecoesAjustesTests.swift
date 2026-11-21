@@ -35,12 +35,11 @@ final class SecoesAjustesTests: XCTestCase {
             XCTAssertTrue(alcancaveis.contains(k), "\(k) sumiu dos Ajustes")
         }
         for k in CatalogoAjustes.camposNovos().map(\.chave) { XCTAssertTrue(alcancaveis.contains(k), "\(k) sem seção") }
-        XCTAssertTrue(alcancaveis.contains(ModoForcado.chave), "quem cuida das lanes sumiu")
     }
 
     /// FRA-534: «Tela» saiu. A pílula é item da barra de menus e acompanha o menu.
     func testGeralTelaAposentada() {
-        XCTAssertEqual(CatalogoAjustes.chavesAposentadas, ["geral.tela"])
+        XCTAssertEqual(CatalogoAjustes.chavesAposentadas.sorted(), ["bots_chave.intervalo_s", "bots_chave.limite_pct", "geral.tela"])
         let geral = CatalogoAjustes.secoes().first { $0.id == .geral }!
         XCTAssertFalse(geral.campos.contains { $0.chave == "geral.tela" })
         XCTAssertTrue(geral.campos.contains { $0.chave == "geral.abrir_no_login" })
@@ -60,7 +59,7 @@ final class SecoesAjustesTests: XCTestCase {
     /// Os blocos próprios (lanes ligadas, modelos, projetos, contas, Linear, agentes, manifestos...) continuam lá.
     func testTodoBlocoTemLugar() {
         let blocos = CatalogoAjustes.secoes().flatMap(\.blocos)
-        for b: BlocoAjustes in [.lanesHabilitadas, .modeloLanes, .projetos, .contas, .quemCuida, .agentesSegundoPlano,
+        for b: BlocoAjustes in [.lanesHabilitadas, .modeloLanes, .projetos, .contas, .agentesSegundoPlano,
                                 .jobsAgendados, .linear, .linearLeitura, .manifestos, .ferramentas] {
             XCTAssertEqual(blocos.filter { $0 == b }.count, 1, "\(b)")
         }
@@ -131,7 +130,6 @@ final class SecoesAjustesTests: XCTestCase {
         XCTAssertNil(contas.first?.campo)
         XCTAssertEqual(BlocoAjustes.projetos.chaves, [])
         XCTAssertEqual(BlocoAjustes.contas.chaves, [])
-        XCTAssertEqual(BlocoAjustes.quemCuida.chaves, [ModoForcado.chave])
         XCTAssertEqual(CatalogoAjustes.rotuloRestaurarCampos, "Restaurar padrão dos campos")
         XCTAssertFalse(CatalogoAjustes.rotuloRestaurarCampos.contains("bloco"))
     }

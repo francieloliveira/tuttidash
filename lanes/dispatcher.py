@@ -1239,7 +1239,7 @@ def privacy_block(lane: str, effort: str) -> Optional[str]:
 
 def atualizar_privacidade() -> None:
     """Confere a documentação de privacidade do OpenCode uma vez por `privacidade.intervalo_h`.
-    Fica no dispatcher (roda sempre) e não no vigia (que pausa no modo Grok Bot)."""
+    Fica no dispatcher (roda sempre) e não no vigia (que pode estar parado ou sem vaga)."""
     if privacidade is None:
         return
     try:

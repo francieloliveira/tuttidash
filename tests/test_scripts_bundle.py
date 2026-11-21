@@ -21,7 +21,6 @@ PYTHON = "/usr/bin/python3"
 SCRIPTS = {
     "dispatcher": ("lanes/dispatcher.py", "lanes-dispatcher.launchd.log", "--real"),
     "vigia": ("bots/watch.py", "bots-watch.launchd.log", None),
-    "chave": ("tools/bots-chave", "bots-chave.launchd.log", None),
 }
 
 
@@ -65,7 +64,6 @@ class BundleDoAgente(unittest.TestCase):
         rel = {
             "dispatcher": ".transcentia/lanes/dispatcher.py",
             "vigia": ".transcentia/bots/watch.py",
-            "chave": ".transcentia/tools/bots-chave",
         }[papel]
         destino = self.home / rel
         _escrever(destino, corpo)
@@ -124,16 +122,6 @@ class BundleDoAgente(unittest.TestCase):
                 self.assertEqual(self._log(papel).strip(), f"bundle-{papel}")
                 self.assertFalse(marca.exists())
 
-    def test_agente_recusa_o_papel_chave(self):
-        # Fail-closed: nada além do app assinado roda `bots-chave`.
-        marca = self.tmp / "marca-chave"
-        self._script("chave", f"open({str(marca)!r}, 'w').write('rodou')\n")
-        r = self._rodar("chave")
-        self.assertEqual(r.returncode, 64, r.stderr)
-        self.assertIn("agente desconhecido: chave", r.stderr)
-        self.assertFalse(marca.exists())
-        self.assertEqual(self._log("chave"), "")
-
     def test_sem_script_no_bundle_nao_cai_no_legado(self):
         marca = self.tmp / "marca-ausente"
         self._legado("vigia", f"open({str(marca)!r}, 'w').write('legado')\n")
@@ -173,19 +161,6 @@ class ScriptsReaisSobem(unittest.TestCase):
                 with self.subTest(cmd=cmd[-1]):
                     r = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
                     self.assertEqual(r.returncode, 0, r.stderr[-500:] if r.stderr else r.stdout[-500:])
-
-    def test_chave_nao_mexe_em_nada_sem_o_app(self):
-        # FRA-682: o app chama `tools/bots-chave`; sem app aberto ele não toca em PAUSE nem em modo.json.
-        with tempfile.TemporaryDirectory(prefix="fra682-chave-") as bruto:
-            home = Path(bruto)
-            env = {**os.environ, "HOME": str(home)}
-            r = subprocess.run([PYTHON, str(ROOT / "tools" / "bots-chave")],
-                               cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
-            self.assertEqual(r.returncode, 0, r.stderr[-500:] if r.stderr else r.stdout[-500:])
-            bots = home / ".transcentia" / "bots"
-            self.assertFalse((bots / "PAUSE").exists())
-            self.assertFalse((bots / "modo.json").exists())
-
 
 class RunLaneDoBundle(unittest.TestCase):
     def test_lane_view_sai_do_mesmo_diretorio_que_o_runner(self):
@@ -242,7 +217,7 @@ class InstallNaoCopiaScripts(unittest.TestCase):
             sentinela = "LEGADO-NAO-ATUALIZAR\n"
             for caminho in (
                 lanes / "dispatcher.py", lanes / "lanes_window.py", lanes / "lanes_ctl.py",
-                lanes / "run_lane.sh", lanes / "lane_view.py", bots / "watch.py", tools / "bots-chave",
+                lanes / "run_lane.sh", lanes / "lane_view.py", bots / "watch.py",
                 lanes / "catalogo.py", lanes / "gasto_privado.py", bots / "catalogo.py",
                 bots / "privacidade.py", bots / "projetos.py", bots / "linear_ids.py",
             ):
@@ -256,7 +231,7 @@ class InstallNaoCopiaScripts(unittest.TestCase):
             self.assertNotIn("legado inerte", r.stdout)
             for caminho in (
                 lanes / "dispatcher.py", lanes / "run_lane.sh", lanes / "lane_view.py",
-                bots / "watch.py", tools / "bots-chave",
+                bots / "watch.py",
                 lanes / "catalogo.py", lanes / "gasto_privado.py", bots / "catalogo.py",
                 bots / "privacidade.py", bots / "projetos.py", bots / "linear_ids.py",
             ):
@@ -276,7 +251,7 @@ class InstallNaoCopiaScripts(unittest.TestCase):
             self.assertEqual(modo, 0o755)
             for nome in ("TuttiDash Dispatcher", "TuttiDash Vigia"):
                 self.assertTrue((lancador.parent / nome).is_file())
-            # FRA-682: a chave não é lançador; o app confere o GrokBot no próprio ciclo.
+            # FRA-700: sem a chave de gerenciamento não há serviço a lançar.
             self.assertFalse((lancador.parent / "TuttiDash Chave").exists())
 
 
@@ -288,7 +263,7 @@ class ContratoDoBuild(unittest.TestCase):
         self.assertLess(copia, verifica)
         for nome in (
             "dispatcher.py", "lane_view.py", "lanes_window.py", "lanes_ctl.py",
-            "run_lane.sh", "watch.py", "bots-chave", "lanes.command",
+            "run_lane.sh", "watch.py", "lanes.command",
         ):
             self.assertIn(f'install -m 755 "$REPO/', texto)
             self.assertIn(nome, texto)
@@ -340,7 +315,7 @@ class ContratoDoBuild(unittest.TestCase):
         por_chave = {j["chave"]: j["script"] for j in cfg["DEFAULTS"]["agendas"]["jobs"]}
         self.assertEqual(por_chave["dispatcher"], prefixo + "lanes/dispatcher.py")
         self.assertEqual(por_chave["watch"], prefixo + "bots/watch.py")
-        # FRA-682: a chave não é job do launchd; o app roda o `tools/bots-chave` do bundle.
+        # FRA-700: sem a chave de gerenciamento não há job de chave no launchd.
         self.assertNotIn("chave", por_chave)
         self.assertEqual(len(por_chave), 2)
         for script in por_chave.values():

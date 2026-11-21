@@ -210,7 +210,7 @@ final class ChaveAposentadaTests: XCTestCase {
     private let entrada: [String: Any] = [
         "label": "com.transcentia.bots.chave", "nome": "TuttiDash TuttiChave", "chave": "chave",
         "intervalo_padrao": 600, "run_at_load": true, "interpretador": "/usr/bin/python3",
-        "script": "/Applications/TuttiDash.app/Contents/Resources/controle/tools/bots-chave",
+        "script": "/Applications/TuttiDash.app/Contents/Resources/controle/tools/instalar-norte",
         "argumentos": [], "log": "~/Library/Logs/TranscentIA/chave.log",
     ]
 

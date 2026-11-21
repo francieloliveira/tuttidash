@@ -55,10 +55,19 @@ LABEL_NO_APP = {
     "com.transcentia.lanes.dispatcher": "app.tuttidash.agente.dispatcher",
 }
 
-# FRA-682: a TuttiChave deixou de ser agente. O app confere o GrokBot no próprio ciclo,
-# com o TuttiDash aberto; nenhum job do launchd roda `tools/bots-chave`. Aqui só se desfaz
-# o que tiver ficado instalado.
+# FRA-682: a TuttiChave deixou de ser agente. Nenhum job do launchd roda a chave;
+# aqui só se desfaz o que tiver ficado instalado na atualização.
 APOSENTADOS = ("com.transcentia.bots.chave", "app.tuttidash.agente.chave")
+
+# FRA-700: o GrokBot saiu do TuttiDash; vigia e dispatcher são sempre quem cuida.
+# Um `bots/PAUSE` esquecido congelaria o vigia em silêncio, então ele é removido.
+# `gestor` e `modo.json` só existiam para a gestão antiga. `PAUSE.manual` é a
+# pausa do dono e não é tocada.
+LEGADO_GROKBOT = (
+    ".transcentia/bots/PAUSE",
+    ".transcentia/bots/gestor",
+    ".transcentia/bots/modo.json",
+)
 
 LANCADORES_VELHOS = (
     "TranscentIA Bots (vigia)",
@@ -113,6 +122,18 @@ def _caminho(home: Path, rel: str) -> Path:
     if ".." in rel.split("/"):
         raise SystemExit(f"relativo recusado: {rel}")
     return home.joinpath(*rel.split("/"))
+
+
+def _limpar_grokbot(home: Path) -> None:
+    """Apaga o estado da gestão GrokBot (idempotente). Nunca toca em PAUSE.manual."""
+    for rel in LEGADO_GROKBOT:
+        caminho = _caminho(home, rel)
+        try:
+            if caminho.is_file() or caminho.is_symlink():
+                caminho.unlink()
+                print(f"AVISO: estado do GrokBot removido: {caminho}")
+        except OSError as exc:
+            print(f"AVISO: não removi {caminho}: {exc}", file=sys.stderr)
 
 
 def _curto(rel: str) -> str:
@@ -460,6 +481,8 @@ def aplicar(sem_launchd: bool) -> int:
     motivo = verificar()
     if motivo:
         return desfazer(motivo)
+    # Só depois da âncora conferir: com rollback, o estado anterior fica intacto.
+    _limpar_grokbot(home)
     return 0
 
 
