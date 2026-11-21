@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from gasto_lanes import instalar
 from gasto_lanes import projetos as P
 
 IOS = "aaaaaaaa-0000-4000-8000-000000000001"
@@ -281,6 +282,32 @@ class Norte(Base):
         tocados = ["docs/produto/caminho.md", "docs/produto/mapa.md"]
         presos = [c for c in tocados if any(fnmatch.fnmatch(c, g) for g in p.protegidos)]
         self.assertEqual(presos, [self.NORTE])
+
+
+class Instalacao(Base):
+    """O cadastro da instalação (FRA-698): três classes, comandos e flags por projeto."""
+
+    def test_sem_instalacao_o_projeto_nao_instala(self):
+        p = P.ler_registro([self.config(lista=[{"id": NOTCH, "repo": "~/x"}])])[0]
+        self.assertEqual(p.instalacao, {})
+        self.assertEqual(instalar.de_projeto(p).classe, "nenhuma")
+
+    def test_instalacao_vai_e_volta_do_registro(self):
+        cfg = {"classe": "artefato", "instalar": ["./scripts/instalar.sh"], "destino": "/Applications/App.app"}
+        ps = self.usar(self.config(lista=[{"id": NOTCH, "repo": "~/x", "entrega": cfg}]))
+        self.assertEqual(ps[0].instalacao, cfg)
+
+    def test_instalacao_texto_vira_argv_no_de_projeto(self):
+        p = P.Projeto(id="x", repo="~/x",
+                      instalacao={"classe": "servico", "subir": "python3 servidor.py --porta {porta}"})
+        e = instalar.de_projeto(p)
+        self.assertEqual(e.classe, "servico")
+        self.assertEqual(e.subir, ("python3", "servidor.py", "--porta", "{porta}"))
+        self.assertEqual(e.porta, 0)
+
+    def test_instalacao_nula_nao_duplica_a_lista(self):
+        p = P.Projeto(id="x", repo="~/x", instalacao=None)
+        self.assertEqual(p.instalacao, {})
 
 
 if __name__ == "__main__":

@@ -93,6 +93,7 @@ install -m 644 "$REPO/bots/caixa_leitura.py" "$CTRL/bots/caixa_leitura.py"
 install -m 755 "$REPO/bots/git-leitura" "$CTRL/bots/git-leitura"
 install -m 755 "$REPO/tools/instalar-prova-remota" "$CTRL/tools/instalar-prova-remota"
 install -m 755 "$REPO/tools/instalar-norte" "$CTRL/tools/instalar-norte"
+install -m 755 "$REPO/tools/instalar.py" "$CTRL/tools/instalar.py"
 mkdir -p "$CTRL/tools/prova-remota-linux"
 install -m 644 "$REPO/tools/prova-remota-linux/prova-remota.yml" "$CTRL/tools/prova-remota-linux/prova-remota.yml"
 install -m 755 "$REPO/tools/prova-remota-linux/prova-remota.sh" "$CTRL/tools/prova-remota-linux/prova-remota.sh"
@@ -104,7 +105,7 @@ echo "==> módulos Python (controle/gasto_lanes, FRA-615)"
 # Uma cópia só: dispatcher, vigia, janela e ListaModelos leem esta pasta.
 # gasto_privado.py é do build pessoal; sem o arquivo a instalação pública segue.
 mkdir -p "$CTRL/gasto_lanes"
-for mod in catalogo.py projetos.py privacidade.py linear_ids.py fila.py config.py proxy_linear.py revisao_ia.py erros_conhecidos.py acp.py politica_acp.py mapa.py; do
+for mod in catalogo.py projetos.py privacidade.py linear_ids.py fila.py config.py proxy_linear.py revisao_ia.py erros_conhecidos.py acp.py politica_acp.py mapa.py instalar.py; do
   install -m 644 "$REPO/gasto_lanes/$mod" "$CTRL/gasto_lanes/$mod"
 done
 PRIVADO_PY="$REPO/apps/notch-mac/Privado/python/gasto_privado.py"
@@ -124,7 +125,14 @@ xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "
 rm -rf "$APP/Contents/Resources/en.lproj"
 
 # Dados pessoais do build: .env (atual) ou Privado/assinatura.env (antigo, só na transição).
-for ENV_LOCAL in "$HERE/.env" "$HERE/Privado/assinatura.env"; do
+# Instalando uma versão de branch (`tools/instalar.py --ref`), este build roda num worktree,
+# que não tem os arquivos gitignored: TUTTIDASH_REPO_MAIN aponta o checkout principal.
+ENV_CANDIDATOS=("$HERE/.env" "$HERE/Privado/assinatura.env")
+if [[ -n "${TUTTIDASH_REPO_MAIN:-}" && "$TUTTIDASH_REPO_MAIN/apps/notch-mac" != "$HERE" ]]; then
+  ENV_CANDIDATOS+=("$TUTTIDASH_REPO_MAIN/apps/notch-mac/.env"
+                   "$TUTTIDASH_REPO_MAIN/apps/notch-mac/Privado/assinatura.env")
+fi
+for ENV_LOCAL in "${ENV_CANDIDATOS[@]}"; do
   if [[ ! -f "$ENV_LOCAL" ]]; then continue; fi
   if [[ -z "${SIGN_IDENTITY:-}" ]]; then
     SIGN_IDENTITY="$(sed -n 's/^SIGN_IDENTITY=//p' "$ENV_LOCAL" | head -1)"
@@ -156,6 +164,11 @@ codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp=none \
 PERFIL="${PROVISION_PROFILE:-$HERE/.local/TuttiDash.provisionprofile}"
 PERFIL="${PERFIL/#\~/$HOME}"
 [[ -f "$PERFIL" || -n "${PROVISION_PROFILE:-}" ]] || PERFIL="$HERE/Privado/TuttiDash.provisionprofile"
+# Worktree de versão: o profile pode estar só no checkout principal.
+if [[ ! -f "$PERFIL" && -z "${PROVISION_PROFILE:-}" && -n "${TUTTIDASH_REPO_MAIN:-}" \
+      && "$TUTTIDASH_REPO_MAIN/apps/notch-mac" != "$HERE" ]]; then
+  PERFIL="$TUTTIDASH_REPO_MAIN/apps/notch-mac/.local/TuttiDash.provisionprofile"
+fi
 ENT_ARGS=()
 if [[ "$SIGN_IDENTITY" != "-" && -f "$PERFIL" ]]; then
   PREFIXO="$(security cms -D -i "$PERFIL" | plutil -extract ApplicationIdentifierPrefix.0 raw -)"

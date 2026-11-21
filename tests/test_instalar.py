@@ -367,5 +367,64 @@ class StartInstall(unittest.TestCase):
         self.assertNotIn("bash -c", cmdline)
 
 
+class StartInstallProjeto(unittest.TestCase):
+    """FRA-698: a instalação do projeto vence a reserva global `watch.instalar_comando`."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.chamadas = []
+        nomes = ["_cfg", "sh", "tmux_alive", "projeto", "LOG_FILE"]
+        antes = {n: getattr(watch, n) for n in nomes}
+        self.addCleanup(lambda: [setattr(watch, n, v) for n, v in antes.items()])
+        watch.LOG_FILE = self.tmp / "vigia.log"
+        watch.tmux_alive = lambda s: False
+        watch.sh = lambda args, **k: self.chamadas.append(args) or ""
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+
+    def _projeto(self, instalacao):
+        return P.Projeto(id=ID, nome="t", repo=str(self.repo),
+                         worktrees=str(self.tmp / "wts"), padrao=True, instalacao=instalacao)
+
+    def test_servico_sobe_pela_instalacao(self):
+        watch.projeto = lambda: self._projeto({"classe": "servico", "subir": ["python3", "servidor.py"]})
+        watch._cfg = lambda k, p: ["./global.sh"] if k == "watch.instalar_comando" else p
+        st = {"installs": {}}
+        self.assertTrue(watch.start_install("main", "main", None, st, []))
+        self.assertEqual(len(self.chamadas), 1)
+        cmdline = self.chamadas[0][-1]
+        self.assertIn("instalar.py", cmdline)
+        self.assertIn("subir", cmdline)
+        self.assertIn(ID, cmdline)
+        self.assertNotIn("global.sh", cmdline, "a instalação do projeto vence a reserva")
+        self.assertEqual(st["installs"]["atual"]["origem"], "instalacao")
+
+    def test_artefato_instala_pela_instalacao(self):
+        watch.projeto = lambda: self._projeto({
+            "classe": "artefato", "instalar": ["true"], "destino": str(self.tmp / "app")})
+        watch._cfg = lambda k, p: ["./global.sh"] if k == "watch.instalar_comando" else p
+        self.assertTrue(watch.start_install("main", "main", None, {"installs": {}}, []))
+        cmdline = self.chamadas[0][-1]
+        self.assertIn(" instalar ", cmdline)
+        self.assertNotIn("global.sh", cmdline)
+
+    def test_artefato_com_admin_nao_pede_senha_no_vigia(self):
+        watch.projeto = lambda: self._projeto({
+            "classe": "artefato", "instalar": ["sudo", "instalar"], "destino": "/Applications/X.app",
+            "requer_admin": True})
+        watch._cfg = lambda k, p: ["./global.sh"] if k == "watch.instalar_comando" else p
+        self.assertTrue(watch.start_install("main", "main", None, {"installs": {}}, []))
+        self.assertEqual(self.chamadas, [])
+        self.assertIn("não pode pedir senha", watch.LOG_FILE.read_text(encoding="utf-8"))
+
+    def test_nenhuma_nao_cai_na_reserva(self):
+        watch.projeto = lambda: self._projeto({"classe": "nenhuma"})
+        watch._cfg = lambda k, p: ["./global.sh"] if k == "watch.instalar_comando" else p
+        self.assertTrue(watch.start_install("main", "main", None, {"installs": {}}, []))
+        self.assertEqual(self.chamadas, [])
+        self.assertIn("instalação nenhuma", watch.LOG_FILE.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

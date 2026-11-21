@@ -65,7 +65,7 @@ enum PV {
 
 /// Páginas da barra lateral.
 enum PaginaPainel: String, CaseIterable, Identifiable {
-    case dashboard, lanes, brainstorm, builds, entregas, testes, custos, esperando, ajustes
+    case dashboard, lanes, brainstorm, builds, instalar, entregas, testes, custos, esperando, ajustes
 
     var id: String { rawValue }
     /// Páginas da lista de cima; Ajustes fica abaixo do divisor, com sub-seções.
@@ -76,6 +76,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
         case .dashboard: return "Dashboard"
         case .lanes: return "Lanes"
         case .builds: return "Builds"
+        case .instalar: return "Instalar"
         case .entregas: return "Entregas"
         case .testes: return "Testes"
         case .custos: return "Custos"
@@ -90,6 +91,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
         case .dashboard: return "Visão geral do ambiente de build, testes e entregas"
         case .lanes: return "Estado, branch e ações de cada lane"
         case .builds: return "Lock, fila, simulador e histórico de execuções"
+        case .instalar: return "Como cada projeto se instala: serviço, artefato ou nenhuma"
         case .entregas: return "Cards fechados e o que está instalado nos aparelhos"
         case .testes: return "Provas em curso, fila do lock e histórico"
         case .custos: return "Gasto conhecido, uso das contas e cards mais caros"
@@ -104,6 +106,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
         case .dashboard: return "house.fill"
         case .lanes: return "list.bullet.rectangle"
         case .builds: return "server.rack"
+        case .instalar: return "shippingbox"
         case .entregas: return "truck.box"
         case .testes: return "checkmark.circle"
         case .custos: return "gauge.with.dots.needle.33percent"

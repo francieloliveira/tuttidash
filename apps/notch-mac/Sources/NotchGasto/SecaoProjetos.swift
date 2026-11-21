@@ -530,6 +530,7 @@ private struct LinhaProjeto: View {
         campoBancada
         campoProvaRemota
         campoNorte
+        campoInstalacao
         DisclosureGroup(String(localized: "Avançado")) {
             TextField(String(localized: "Pasta dos worktrees"), text: $linha.rascunho.worktrees,
                       prompt: Text(p.repo.isEmpty ? String(localized: "vazio = <pasta>-worktrees") : p.worktreesEfetivo))
@@ -584,6 +585,78 @@ private struct LinhaProjeto: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+    }
+
+    // MARK: Instalação (FRA-698)
+
+    /// Como o projeto se instala. A configuração fica aqui; as ações ficam na página «Instalar».
+    @ViewBuilder private var campoInstalacao: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            LabeledContent(String(localized: "Instalação")) {
+                Picker(String(localized: "Instalação"), selection: $linha.rascunho.instalacao.classe) {
+                    ForEach(InstalacaoCadastro.Classe.allCases, id: \.self) { c in
+                        Text(c.rotulo).tag(c)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 460)
+            }
+            Text(p.instalacao.classe.ajuda)
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !p.instalacao.classeDesconhecida.isEmpty {
+                Label(String(localized: "Classe desconhecida no config: \(p.instalacao.classeDesconhecida). Escolha uma acima ou corrija o arquivo."),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            switch p.instalacao.classe {
+            case .nenhuma:
+                EmptyView()
+            case .servico:
+                campoComando(String(localized: "Subir"), $linha.rascunho.instalacao.subir,
+                             ajuda: String(localized: "Programa e argumentos, sem shell. {porta} vira a porta abaixo."))
+                campoComando(String(localized: "Parar"), $linha.rascunho.instalacao.parar,
+                             ajuda: String(localized: "Opcional: vazio encerra o processo pelo pid. {pid} vira o pid."))
+                LabeledContent(String(localized: "Porta")) {
+                    TextField(String(localized: "Porta"), text: $linha.rascunho.instalacao.porta,
+                              prompt: Text("8000"))
+                        .labelsHidden().frame(width: 100)
+                }
+                campoComando(String(localized: "Saúde"), $linha.rascunho.instalacao.saude,
+                             ajuda: String(localized: "URL do health check (ex.: http://127.0.0.1:{porta}/saude). Pode devolver JSON com «versao»."))
+                campoComando(String(localized: "URL"), $linha.rascunho.instalacao.url,
+                             ajuda: String(localized: "Endereço para abrir na tela (ex.: http://127.0.0.1:{porta}/)."))
+            case .artefato:
+                campoComando(String(localized: "Empacotar"), $linha.rascunho.instalacao.empacotar,
+                             ajuda: String(localized: "Gera o pacote. {artefato} e {destino} são trocados abaixo."))
+                campoComando(String(localized: "Validar"), $linha.rascunho.instalacao.validar,
+                             ajuda: String(localized: "Opcional: roda antes de instalar; sair diferente de 0 cancela."))
+                campoComando(String(localized: "Instalar"), $linha.rascunho.instalacao.instalar,
+                             ajuda: String(localized: "Copia/instala no destino. Não roda em shell."))
+                campoComando(String(localized: "Artefato"), $linha.rascunho.instalacao.artefato,
+                             ajuda: String(localized: "Caminho do pacote produzido (ex.: ~/Developer/app/build/App.app)."))
+                campoComando(String(localized: "Destino"), $linha.rascunho.instalacao.destino,
+                             ajuda: String(localized: "Onde o artefato fica instalado (ex.: /Applications/App.app)."))
+                Toggle(String(localized: "Instalar exige administrador"), isOn: $linha.rascunho.instalacao.requerAdmin)
+                Text(String(localized: "Ligado, o vigia não instala sozinho depois do merge: a senha só é pedida quando você clica em Instalar na página Entrega."))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            campoComando(String(localized: "Versão"), $linha.rascunho.instalacao.versao,
+                         ajuda: p.instalacao.classe == .artefato
+                         ? String(localized: "Opcional: comando que imprime a versão. Sem ele, o app lê o Info.plist de um .app instalado.")
+                         : String(localized: "Opcional: comando que imprime a versão em execução."))
+        }
+    }
+
+    private func campoComando(_ titulo: String, _ texto: Binding<String>, ajuda: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            TextField(titulo, text: texto, prompt: Text(titulo))
+                .font(.system(.callout, design: .monospaced))
+            Text(ajuda).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
