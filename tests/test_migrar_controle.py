@@ -175,13 +175,33 @@ class MigracaoHome(unittest.TestCase):
         self.assertNotIn('".transcentia/tools/config.py"', swift)
         self.assertNotIn('".transcentia/bots/PAUSE"', swift)
 
+    def test_limpeza_do_grokbot_apaga_pause_gestor_e_modo(self):
+        """FRA-700: o estado da gestão GrokBot sai; a pausa do dono sobrevive."""
+        pause = self.home / ".transcentia" / "bots" / "PAUSE"
+        manual = self.home / ".transcentia" / "bots" / "PAUSE.manual"
+        gestor = self.home / ".transcentia" / "bots" / "gestor"
+        modo = self.home / ".transcentia" / "bots" / "modo.json"
+        _escrever(pause, "ligado-remover\n", 0o644)
+        _escrever(gestor, "grokbot\n", 0o644)
+        _escrever(modo, '{"modo":"grokbot"}\n', 0o644)
+        _escrever(manual, "pausa-do-dono\n", 0o644)
+        r = self._aplicar()
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertFalse(pause.exists())
+        self.assertFalse(gestor.exists())
+        self.assertFalse(modo.exists())
+        self.assertEqual(manual.read_text(), "pausa-do-dono\n", "a pausa do dono fica")
+
     def test_instalacao_limpa_sobe_dispatcher_e_vigia(self):
         pause = self.home / ".transcentia" / "bots" / "PAUSE"
-        _escrever(pause, "ligado-nao-mexer\n", 0o644)
+        manual = self.home / ".transcentia" / "bots" / "PAUSE.manual"
+        _escrever(pause, "ligado-remover\n", 0o644)
+        _escrever(manual, "pausa-do-dono\n", 0o644)
         r = self._aplicar()
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertFalse(self.card.exists())
-        self.assertEqual(pause.read_text(), "ligado-nao-mexer\n")
+        self.assertFalse(pause.exists(), "o PAUSE do GrokBot não pode congelar o vigia")
+        self.assertEqual(manual.read_text(), "pausa-do-dono\n", "a pausa do dono fica")
         calls = self._calls()
         self.assertFalse(any(c and c[0] == "enable" for c in calls))
         boot = [c[2] for c in calls if c and c[0] == "bootstrap"]
@@ -233,7 +253,7 @@ class MigracaoHome(unittest.TestCase):
         self.assertFalse(link.exists())
         self.assertFalse(link.is_symlink())
         self.assertIn("link", alvo.read_text())
-        self.assertEqual(pause.read_text(), "pause-continua\n")
+        self.assertFalse(pause.exists(), "o PAUSE do GrokBot não pode congelar o vigia")
         self.assertEqual(config.read_text(), '{"enabled": false}\n')
         self.assertFalse(self.card.exists())
         calls = self._calls()

@@ -53,7 +53,7 @@ final class IntegridadeControleTests: XCTestCase {
     }
 
     func testDonoQueNaoERootNaoVale() {
-        let arquivos = ["tools/bots-chave": Data("chave".utf8)]
+        let arquivos = ["tools/instalar-norte": Data("chave".utf8)]
         let v = avaliar(arquivos, uid: 501)
         XCTAssertFalse(v.confere)
         XCTAssertTrue(v.aviso?.contains("integridade: divergencia: ancora") == true)
@@ -61,7 +61,7 @@ final class IntegridadeControleTests: XCTestCase {
     }
 
     func testAssinaturaAdHocNaoPassa() {
-        let arquivos = ["tools/bots-chave": Data("chave".utf8)]
+        let arquivos = ["tools/instalar-norte": Data("chave".utf8)]
         let v = avaliar(arquivos, assinatura: false)
         XCTAssertFalse(v.confere)
         XCTAssertEqual(v.aviso, "integridade: divergencia: assinatura \(IntegridadeControle.equipe)")

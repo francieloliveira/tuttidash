@@ -33,10 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var leituraDisco: LeituraDisco?
     private let coletorUso = ColetorUso()
     private var timerUso: Timer?
-    /// Conferência do GrokBot (FRA-682): era o job `chave`; agora roda no ciclo do app.
-    private var timerChave: Timer?
-    /// Escuta o aviso da Chave Geral ligada (FRA-682).
-    private var observadorChave: NSObjectProtocol?
     private var coletandoUso = false
     private var observador: ObservadorArquivos?
     /// Última leitura do disco das lanes, para remontar o painel quando o uso das contas chega.
@@ -67,17 +63,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         acoesMenu.aoSair = { PresencaApp.sair() }
         acoesMenu.aoBuscar = { NavegacaoPainel.compartilhada.pedirFocoBusca() }
         MenuPrincipalApp.instalar(acoes: acoesMenu)
-        // O dispatcher, o vigia e a conferência do GrokBot só trabalham enquanto este PID estiver vivo.
+        // O dispatcher e o vigia só trabalham enquanto este PID estiver vivo.
         PresencaDoApp.marcarAberta()
-        // FRA-682: a TuttiChave deixou de ser um job do launchd. O app confere o GrokBot
-        // no próprio ciclo e desliga o que tiver ficado instalado.
+        // FRA-682: a TuttiChave deixou de ser um job do launchd. O app desliga o que tiver ficado instalado.
         Task.detached(priority: .utility) {
             AgentesDoApp(registro: RegistroSMAppService()).aposentarChave()
-        }
-        agendarConferenciaChave()
-        // Ligou a Chave Geral agora: confere o GrokBot sem esperar o intervalo.
-        observadorChave = NotificationCenter.default.addObserver(forName: .chaveGeralLigada, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.conferirChave() }
         }
         // O proxy lê o token no Keychain do app e não o devolve aos scripts (FRA-607).
         let proxy = self.proxy
@@ -219,38 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// «Sair» encerra o trabalho automático junto com o app. Fechar o painel não.
     func applicationWillTerminate(_ notification: Notification) {
         proxy.parar()
-        timerChave?.invalidate()
-        if let o = observadorChave { NotificationCenter.default.removeObserver(o) }
         PresencaDoApp.pararTudo()
-    }
-
-    /// FRA-682: no lugar do job `chave`, o app roda o `bots-chave` do bundle assinado a cada
-    /// `bots_chave.intervalo_s`, e só com a Chave Geral ligada (Dispatcher ou Vigia de pé).
-    /// A primeira conferência é logo ao abrir; o intervalo é relido nos Ajustes a cada volta.
-    private func agendarConferenciaChave() {
-        timerChave?.invalidate()
-        let g = GestaoLanes(modelo: ModeloAjustes())
-        timerChave = Timer.scheduledTimer(withTimeInterval: g.intervalo, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.conferirChave() }
-        }
-        timerChave?.tolerance = min(60, g.intervalo / 10)
-        conferirChave()
-    }
-
-    /// Uma conferência do GrokBot. Mudou o intervalo nos Ajustes? O timer é refeito.
-    private func conferirChave() {
-        let g = GestaoLanes(modelo: ModeloAjustes())
-        if let t = timerChave, abs(t.timeInterval - g.intervalo) > 0.5 {
-            agendarConferenciaChave()
-            return
-        }
-        let script = g.script
-        Task.detached(priority: .utility) {
-            let app = AgentesDoApp(registro: RegistroSMAppService())
-            let ligada = app.status(AgentesDoApp.dispatcher).ligado || app.status(AgentesDoApp.vigia).ligado
-            guard ligada else { return }
-            _ = GestaoLanes.rodar(script)
-        }
     }
 
     /// Fechar a janela do painel deixa a pílula. Não é «Sair».

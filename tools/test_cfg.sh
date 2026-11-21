@@ -8,7 +8,6 @@ f=0; ok(){ [ "$1" == "$2" ] && echo "ok  $3" || { echo "FALHA $3: '$1' != '$2'";
 ok "$("$CFG" get estresse.saida)" "~/Library/Logs/TuttiDash/carga-mac.tsv" "padrão da carga do Mac"
 ok "$("$CFG" get estresse.intervalo_s)" 15 "intervalo segue na chave antiga"
 ok "$("$CFG" get preflight.max_load 16)" 16 "sem arquivo: padrão da linha de comando"
-ok "$("$CFG" get bots_chave.limite_pct)" 90 "sem arquivo: padrão interno"
 ok "$("$CFG" get lane_view.pensamento)" true "lane_view: raciocínio ligado por padrão"
 ok "$("$CFG" get lane_view.pensamento_linhas)" 14 "lane_view: linhas de raciocínio"
 ok "$("$CFG" get lane_view.diff_linhas)" 14 "lane_view: linhas de diff"

@@ -129,7 +129,6 @@ struct PaginaAjustes: View {
         case .modeloLanes: SecaoModeloLanes(modelo: estado.modelo, aoSalvar: aoSalvar, embutido: true)
         case .projetos: SecaoProjetos(estado: EstadoProjetos(modelo: estado.modelo), embutido: true)
         case .contas: SecaoContas(modelo: estado.modelo, aoSalvar: aoSalvar, embutido: true)
-        case .quemCuida: SecaoGestaoLanes(estado: EstadoGestaoLanes(modelo: estado.modelo), aoSalvar: aoSalvar, embutido: true)
         case .agentesSegundoPlano: SecaoAgendas(estado: EstadoAgendas(modelo: estado.modelo), embutido: true)
         case .linear: AbaLinear(estado: EstadoLinear(modelo: estado.modelo), aoSalvar: aoSalvar, embutido: true)
         case .jobsAgendados: BlocoJobs(modelo: estado.modelo)

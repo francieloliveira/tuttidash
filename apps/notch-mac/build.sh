@@ -91,7 +91,6 @@ done
 install -m 755 "$REPO/bots/watch.py" "$CTRL/bots/watch.py"
 install -m 644 "$REPO/bots/caixa_leitura.py" "$CTRL/bots/caixa_leitura.py"
 install -m 755 "$REPO/bots/git-leitura" "$CTRL/bots/git-leitura"
-install -m 755 "$REPO/tools/bots-chave" "$CTRL/tools/bots-chave"
 install -m 755 "$REPO/tools/instalar-prova-remota" "$CTRL/tools/instalar-prova-remota"
 install -m 755 "$REPO/tools/instalar-norte" "$CTRL/tools/instalar-norte"
 mkdir -p "$CTRL/tools/prova-remota-linux"

@@ -1958,3 +1958,22 @@ class RevisorForaDaCaixa(unittest.TestCase):
         with self.assertRaises(RuntimeError) as erro:
             self.w.run_revisor("claude", "p", self.tmp, "t", {})
         self.assertIn("Not logged in", str(erro.exception))
+
+
+class PausaDoDonoTest(unittest.TestCase):
+    """FRA-700: só `PAUSE.manual` para o vigia. O `PAUSE` automático antigo saiu."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        antes = watch.STATE_DIR
+        watch.STATE_DIR = Path(self._tmp.name)
+        self.addCleanup(setattr, watch, "STATE_DIR", antes)
+
+    def test_pause_antigo_e_ignorado(self):
+        (watch.STATE_DIR / "PAUSE").touch()
+        self.assertFalse(watch.pausado_pelo_dono(), "arquivo antigo não pode congelar o vigia")
+
+    def test_pause_manual_para_o_vigia(self):
+        (watch.STATE_DIR / "PAUSE.manual").touch()
+        self.assertTrue(watch.pausado_pelo_dono())

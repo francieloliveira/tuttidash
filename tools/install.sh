@@ -7,19 +7,18 @@
 #                               o catálogo de agentes (agents.d/ + catalogo.py),
 #                               prompts do vigia e instalar.sh, e os launchd
 #                               com.transcentia.bots.watch e .lanes.dispatcher pelos lançadores com nome.
-#                               FRA-613/617: dispatcher, vigia, chave, run_lane, lane_view,
+#                               FRA-613/617: dispatcher, vigia, run_lane, lane_view,
 #                               lanes_window e lanes_ctl NÃO são copiados para ~/.transcentia.
 #                               Cópias antigas são aposentadas. O launchd executa o bundle.
 #                               Se a âncora não conferir, a migração volta ao estado anterior
 #                               e não religa serviço que estava desligado.
-#                               FRA-682: a chave não é job do launchd. O app roda o
-#                               `tools/bots-chave` do bundle com a Chave Geral ligada; aqui
-#                               só se aposenta o job antigo (com.transcentia.bots.chave).
 #                               FRA-615: catalogo, projetos, privacidade, linear_ids, fila
 #                               e config também não. O bundle traz controle/gasto_lanes.
 #                               gasto_privado.py continua opcional (build pessoal).
+#                               FRA-700: a chave de gerenciamento saiu: o vigia e o
+#                               dispatcher são sempre quem cuida das lanes (a pausa do dono manda).
 #   tools/install.sh --sem-launchd   copia arquivos e aposenta o legado, sem launchctl
-# Espelho: não mexe no PAUSE (quem decide é a chave bots-chave); nunca inicia o vigia em paralelo.
+# Espelho: não mexe no PAUSE.manual (pausa do dono); nunca inicia o vigia em paralelo.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
@@ -84,4 +83,4 @@ if [ "${1:-}" = "--sem-launchd" ]; then
 else
   python3 "$ROOT/tools/migrar-controle.py" aplicar
 fi
-echo "instalado: ferramentas em $T, vigia em $B (PAUSE $( [ -f "$B/PAUSE" ] && echo presente: vigia parado, Grok Bot ativo || echo ausente: vigia ativo))"
+echo "instalado: ferramentas em $T, vigia em $B (PAUSE.manual $( [ -f "$B/PAUSE.manual" ] && echo presente: vigia parado, dono pausou || echo ausente: vigia ativo))"

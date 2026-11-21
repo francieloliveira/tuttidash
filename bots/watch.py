@@ -3,8 +3,8 @@
 
 Roda a cada 3 min (launchd com.transcentia.bots.watch, pelo lançador
 "~/Library/Application Support/AgentesLocais/TuttiDash Vigia").
-Espelho, nunca em paralelo: com ~/.transcentia/bots/PAUSE presente não faz nada
-(a chave bots-chave cria/apaga o PAUSE conforme o gasto do Grok Bot).
+Pausa do dono: com ~/.transcentia/bots/PAUSE.manual presente não faz nada.
+O antigo ~/.transcentia/bots/PAUSE automático não existe mais e é ignorado.
 
 Eventos (cada tick, nesta ordem; no máximo 1 rodada de IA e 1 merge por tick):
   0. Instalação no aparelho em andamento/terminada -> registra o resultado no card
@@ -3118,6 +3118,16 @@ def step(name: str, fn, *args) -> None:
         log(f"{name} falhou: {exc}")
 
 
+def pausado_pelo_dono() -> bool:
+    """A pausa do dono (`PAUSE.manual`) para o vigia.
+
+    O `PAUSE` automático saiu do TuttiDash (FRA-700). Um arquivo
+    deixado por instalações antigas não pode congelar o vigia em silêncio:
+    só `PAUSE.manual` conta.
+    """
+    return (STATE_DIR / "PAUSE.manual").exists()
+
+
 def main() -> int:
     if not app_aberta():
         return 0
@@ -3125,8 +3135,8 @@ def main() -> int:
     projetos.recarregar()   # cadastro lido uma vez por ciclo
     if not projetos.configurado():
         return 0  # sem projeto cadastrado: nada a vigiar
-    if (STATE_DIR / "PAUSE").exists():
-        return 0  # espelho: o Grok Bot está trabalhando
+    if pausado_pelo_dono():
+        return 0  # pausa do dono
     lock = open(STATE_DIR / "watch.lock", "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

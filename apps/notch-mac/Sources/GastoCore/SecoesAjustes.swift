@@ -11,14 +11,13 @@ public enum IdSecaoAjustes: String, CaseIterable, Identifiable, Sendable {
 
 /// Blocos prontos (telas próprias que já existiam) que entram num grupo.
 public enum BlocoAjustes: Sendable, Equatable {
-    case lanesHabilitadas, modeloLanes, projetos, contas, quemCuida, agentesSegundoPlano,
+    case lanesHabilitadas, modeloLanes, projetos, contas, agentesSegundoPlano,
          jobsAgendados, linear, linearLeitura, manifestos, ferramentas, revisaoAtual, ollama
 
     /// Chaves do config que o bloco edita com controle próprio (contam como alcançáveis).
-    /// Só `quemCuida` tem chave. O botão de restaurar não apaga bloco: continua nos campos.
+    /// O botão de restaurar não apaga bloco: continua nos campos.
     public var chaves: [String] {
         switch self {
-        case .quemCuida: return [ModoForcado.chave]
         case .ollama: return [OllamaLocal.chaveModelo]
         case .lanesHabilitadas, .modeloLanes, .projetos, .contas, .agentesSegundoPlano,
              .jobsAgendados, .linear, .linearLeitura, .manifestos, .ferramentas, .revisaoAtual:
@@ -33,7 +32,6 @@ public enum BlocoAjustes: Sendable, Equatable {
         case .modeloLanes: return String(localized: "Modelo de cada lane")
         case .projetos: return String(localized: "Projetos")
         case .contas: return String(localized: "Contas acompanhadas")
-        case .quemCuida: return String(localized: "Quem cuida das lanes")
         case .agentesSegundoPlano: return String(localized: "Agentes em segundo plano")
         case .jobsAgendados: return String(localized: "Agendamentos")
         case .linear: return String(localized: "Linear")
@@ -113,12 +111,6 @@ extension CatalogoAjustes {
             CampoAjuste("watch.card_pedidos_triagem", String(localized: "Card de pedidos da triagem"), .textoOpcional, "",
                         ajuda: String(localized: "Onde o vigia deixa os pedidos de cards novos.")),
             CampoAjuste("watch.pedido_triagem_intervalo_s", String(localized: "Pedir cards à triagem no máximo a cada (s)"), n(600, 604_800), "14400"),
-            CampoAjuste("bots_chave.intervalo_s", String(localized: "Conferir o uso do GrokBot a cada (s)"), n(60, 86_400), "600",
-                        ajuda: String(localized: "O app confere com o TuttiDash aberto e troca o responsável pela regra abaixo.")),
-            CampoAjuste("bots_chave.modo_forcado", String(localized: "Quem cuida dos bots"), .escolha(["auto", "vigia", "grokbot"]), "auto",
-                        ajuda: String(localized: "Automático decide pela % de uso da conta."),
-                        rotulos: ["auto": String(localized: "Automático (pela % da conta)"), "vigia": String(localized: "Sempre o vigia"),
-                                  "grokbot": String(localized: "Sempre o Grok Bot")]),
             CampoAjuste("agendas.env.dispatcher.SKIP_PREFLIGHT", String(localized: "Dispatcher pula a checagem da máquina"), .escolha(["0", "1"]), "0",
                         ajuda: String(localized: "Vale no próximo ciclo do dispatcher."),
                         rotulos: ["0": String(localized: "Não, sempre checar"), "1": String(localized: "Sim, pular")]),
@@ -202,7 +194,7 @@ extension CatalogoAjustes {
                          subtitulo: String(localized: "Chave Geral, Dispatcher e Vigia"), grupos: [
                 GrupoAjustes(String(localized: "Chave Geral e agentes"),
                              ajuda: String(localized: "A Chave Geral liga ou desliga o Dispatcher e o Vigia de uma vez. Cada um também tem o seu interruptor, para controle pontual."),
-                             blocos: [.agentesSegundoPlano, .quemCuida]),
+                             blocos: [.agentesSegundoPlano]),
             ]),
             SecaoAjustes(id: .avancado, nome: String(localized: "Avançado"), simbolo: "slider.horizontal.3",
                          subtitulo: String(localized: "Tempos, intervalos, caminhos e arquivos. Raramente precisa mexer"), grupos: [
@@ -215,10 +207,6 @@ extension CatalogoAjustes {
                              ajuda: String(localized: "Cada ferramenta tem um manifesto próprio. Só leitura aqui."), blocos: [.manifestos], recolhido: true),
                 GrupoAjustes(String(localized: "Privacidade dos modelos"), ajuda: String(localized: "Desde 23/10/2026, modelo free que registra ou treina com o uso pode receber código nas lanes e na revisão."), campos: [
                     c("privacidade.exigir_sem_treino"), c("privacidade.max_retencao_dias"), c("privacidade.max_idade_dias"), c("privacidade.intervalo_h"),
-                ], recolhido: true),
-                GrupoAjustes(String(localized: "Quem cuida das lanes (GrokBot)"), ajuda: String(localized: "Quando o uso do Grok Bot passa do limite, o vigia assume. O app confere isso sozinho, com o TuttiDash aberto."), campos: [
-                    campo("bots_chave.limite_pct", ajuda: String(localized: "Acima disto o app passa as lanes para o vigia.")),
-                    c("bots_chave.intervalo_s"),
                 ], recolhido: true),
                 GrupoAjustes(String(localized: "Vigia"), campos: [
                     campo("watch.reconferir_needs_max_s", ajuda: String(localized: "0 reconfere só quando o card muda.")),
@@ -258,7 +246,7 @@ extension CatalogoAjustes {
     /// Chaves que saíram dos Ajustes e não voltam. Continuam no `tools/cfg` e no config.json
     /// por compatibilidade, mas o app as ignora com o padrão do cfg (a pílula vive na barra
     /// de menus e segue o menu; a pílula antiga do notch, se ligada, usa a tela do notch).
-    public static let chavesAposentadas: Set<String> = ["geral.tela"]
+    public static let chavesAposentadas: Set<String> = ["geral.tela", "bots_chave.limite_pct", "bots_chave.intervalo_s"]
 
     /// Todas as chaves que a tela nova alcança: campos e as chaves editadas por blocos próprios.
     public static func chavesAlcancaveis(_ secoes: [SecaoAjustes] = secoes()) -> Set<String> {
