@@ -39,3 +39,4 @@
 - Desativar uma lane não grava `enabled` direto nem cria PAUSE.
 - Limite de conta com fonte oficial ou local: billing do GitHub Copilot e base local de sessão do OpenCode.
 - Assinatura e perfil pessoais do build ficam em `.env`, fora do git.
+- A `main` é protegida no GitHub (Settings › Branches), não por código: todo merge entra por PR com os checks `testes`, `prova-remota` e `vigia-py39` verdes, sem bypass (`enforce_admins`), sem force-push e sem apagar a branch. A aprovação do [Revisor] não é trava do GitHub: é regra do norte (R3), cumprida pelo vigia; pedido direto do dono pode pulá-la com prova verde e diff seguro.
