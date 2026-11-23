@@ -12,6 +12,7 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 | FRA-703 | Projeto no parser, ledger, `gasto relatorio`, `fluxo`, painel (custo 7 dias). |
 | FRA-704 | Orçamento, timeouts, `max_lanes`, prioridade e tarefas por lane no cadastro; UI de edição; herança do global. |
 | FRA-705 | Agenda sequencial/rodízio, prioridade, limites por projeto; distribuição de slots. |
+| FRA-706 | Simultâneo: vagas `(projeto, lane)`, mesma lane em dois projetos, promoção de Todo por projeto, janela/parada/recusa por sessão; limites de conta seguem globais por lane (por desenho). |
 | FRA-707 | Vigia percorre todos os projetos no tick, estado por projeto, merge/rebase por repo. |
 | FRA-708 | Página **Projetos**, seletor de principal, custo e fluxo por projeto, projeto na lane. |
 | FRA-709 | Custo e entregas por projeto no CLI/painel (dados). |
@@ -30,10 +31,9 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 
 ## Parcial / limitações conhecidas
 
-- **FRA-706**: execução simultânea é experimental; exige lane explícita; janela tmux por sessão, parada e recusa por sessão; limites de conta continuam globais por lane (correto).
 - **App**: build `branch-main-db07c6e` instalado e **aberto** após renovar o provisioning profile (`renovar-perfil.sh`); o profile vence em 30/11/2026.
 - **FRA-701**: norte atualizado; a proposta em `proposta-norte-multiprojeto.md` fica como registro.
 
 ## Pendente
 
-- limites/arquivos auxiliares namespaced (FRA-706) — melhoria incremental.
+- nada no escopo local. Distribuição notarizada é opt-in, documentada em `notarizacao.md`.
