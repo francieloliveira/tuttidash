@@ -23,6 +23,7 @@ from . import doutor as doutormod
 from . import eventos as eventosmod
 from . import fluxo as fluxomod
 from . import integracoes as integracoesmod
+from . import isolamento as isolamentomod
 from . import ledger as ledgermod
 from . import projetos as projetosmod
 from . import report
@@ -162,6 +163,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hoje", type=_date, metavar="AAAA-MM-DD", help=argparse.SUPPRESS)
     p.add_argument("--json", action="store_true")
 
+    p = sub.add_parser("isolamento", help="audita a fronteira de projeto de cada lane")
+    _common(p)
+    p.add_argument("--json", action="store_true")
+
     p = sub.add_parser("seguranca", help="audita permissões do estado/config/ledger")
     _common(p)
     p.add_argument("--corrigir", action="store_true", help="aplica 0700/0600")
@@ -247,6 +252,20 @@ def main(argv: Optional[list] = None, out=None, err=None) -> int:
         return 0
 
     try:
+        if args.cmd == "isolamento":
+            try:
+                projetosmod.recarregar()
+                lista_projetos = projetosmod.projetos()
+            except Exception:  # noqa: BLE001
+                lista_projetos = []
+            achados = isolamentomod.revisar(vals["state_dir"], lista_projetos,
+                                            log_dir=vals["logs_dir"])
+            resumo = isolamentomod.resumo(achados)
+            if args.json:
+                _print_json(resumo, out)
+            else:
+                out.write(isolamentomod.texto(achados) + "\n")
+            return 1 if resumo["erros"] else 0
         if args.cmd == "seguranca":
             achados = segurancamod.revisar(vals["state_dir"], config=resolved["config_file"],
                                            ledger=vals["ledger"], corrigir=args.corrigir)

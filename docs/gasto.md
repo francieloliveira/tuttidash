@@ -112,6 +112,7 @@ python3 gasto.py auditoria --projeto <id> --etapa finalize
 python3 gasto.py planejamento               # ordem, ocupação, custo, fluxo e sinais
 python3 gasto.py retencao --eventos-dias 30 --ledger-dias 365 --aplicar
 python3 gasto.py seguranca --corrigir      # 0700 nas pastas, 0600 nos arquivos
+python3 gasto.py isolamento                # worktree/log/claim pertencem ao projeto
 python3 gasto.py notificar --texto "alô"    # webhook configurado em integracoes.webhook
 python3 gasto.py semanal --enviar           # relatório também vai ao webhook
 python3 gasto.py backup --destino ~/backup-tuttidash.tar.gz

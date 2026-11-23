@@ -24,18 +24,17 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 | FRA-717 | `gasto backup`/`restaurar`, `gasto doutor`, `gasto retencao`, `gasto seguranca`. |
 | FRA-721 | Webhook `gasto notificar` e `semanal --enviar`. |
 | FRA-718 | `agenda.headless`: app sai, proxy e agentes continuam; dispatcher/vigia aceitam proxy vivo; testado com app fechado. |
+| FRA-719 | Isolamento **lógico por projeto** na mesma conta do Mac: worktree/log/claim/estado do projeto, `gasto isolamento`, R10 no norte. Sem sandbox de SO (decisão do dono). |
 | FRA-722 | Guia do portfólio e docs de operação. |
 
 ## Parcial / limitações conhecidas
 
 - **FRA-706**: execução simultânea é experimental; exige lane explícita; janela tmux por sessão, parada e recusa por sessão; limites de conta continuam globais por lane (correto).
 - **App**: build `branch-main-fb256fe` instalado e **aberto** após renovar o provisioning profile (`renovar-perfil.sh`); o profile vence em 30/11/2026.
-- **FRA-719**: há auditoria de permissões, mas **não** isolamento real da lane (mesmo usuário, `~/.ssh` acessível). Fase 5 pendente.
 - **FRA-720**: build assinado e `tools/release.sh`; **não notarizado** (sem perfil/certificado).
 - **FRA-701**: norte atualizado; a proposta em `proposta-norte-multiprojeto.md` fica como registro.
 
 ## Pendente
 
 - limites/arquivos auxiliares namespaced (FRA-706);
-- isolamento real (FRA-719);
 - notarização/distribuição (FRA-720).

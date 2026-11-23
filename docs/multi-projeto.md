@@ -13,8 +13,8 @@ experimental, vigia por ciclo, multi-repo, página de portfólio e planejamento.
 Proposta aplicada: [proposta-norte-multiprojeto.md](proposta-norte-multiprojeto.md).
 Estado card a card: [backlog-status.md](backlog-status.md).
 
-Ainda fora desta entrega: alguns arquivos auxiliares globais, isolamento real
-(FRA-719) e distribuição notarizada (FRA-720). O guia de uso está em
+Ainda fora desta entrega: distribuição notarizada (FRA-720); o isolamento por
+projeto é lógico, na mesma conta do Mac (R10). O guia de uso está em
 [docs/produto/guia-portfolio.md](guia-portfolio.md).
 
 ## O que já funciona
@@ -41,6 +41,7 @@ Ainda fora desta entrega: alguns arquivos auxiliares globais, isolamento real
 | Segurança | `gasto_lanes/seguranca.py` | `gasto seguranca` audita 0700/0600 e symlinks no estado/config/ledger; `--corrigir` aplica. |
 | Release | `tools/release.sh` | Build assinado, zip e SHA-256; `--notarizar` usa `notarytool` quando há perfil. |
 | Headless | `lanes/dispatcher.py`, `bots/watch.py`, `AppDelegate.swift` | `agenda.headless: true` mantém o proxy do Linear ao sair do app e deixa dispatcher/vigia trabalharem pelo proxy vivo; sem app e sem proxy, nada roda. |
+| Isolamento | `gasto_lanes/isolamento.py`, R10 | Fronteira lógica por projeto na mesma conta do Mac; `gasto isolamento` confere worktree/log/claim/estado. |
 | Multi-repo | `gasto_lanes/projetos.py` | Cadastro `repos`, claim pelo rótulo `repo:<slug>`, `repo_slug` no estado e vigia revisando/mergeando cada repo do projeto. |
 
 ## Como ligar a agenda
