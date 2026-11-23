@@ -571,6 +571,26 @@ private struct LinhaProjeto: View {
                 TextField(String(localized: "Início (AAAA-MM-DD)"), text: $linha.rascunho.planejamento.inicio)
                 TextField(String(localized: "Alvo (AAAA-MM-DD)"), text: $linha.rascunho.planejamento.alvo)
             }
+            Text(String(localized: "Marcos")).font(.caption).foregroundStyle(.secondary)
+            ForEach(linha.rascunho.planejamento.marcos.indices, id: \.self) { i in
+                HStack(spacing: 6) {
+                    TextField(String(localized: "Marco"), text: $linha.rascunho.planejamento.marcos[i].nome)
+                    TextField(String(localized: "AAAA-MM-DD"), text: $linha.rascunho.planejamento.marcos[i].data)
+                        .frame(width: 110)
+                    Toggle(String(localized: "feito"), isOn: $linha.rascunho.planejamento.marcos[i].feito)
+                        .toggleStyle(.checkbox)
+                    Button {
+                        linha.rascunho.planejamento.marcos.remove(at: i)
+                    } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                }
+            }
+            Button {
+                linha.rascunho.planejamento.marcos.append(MarcoCadastro(nome: ""))
+            } label: {
+                Label(String(localized: "Adicionar marco"), systemImage: "plus")
+            }
+            .buttonStyle(.borderless)
             TextField(String(localized: "Conferência antes do push"), text: $linha.rascunho.antesDoPush,
                       prompt: Text(String(localized: "comando; vazio = nenhuma")))
             CampoLinhas(titulo: String(localized: "Caminhos protegidos"),
