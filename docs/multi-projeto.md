@@ -13,9 +13,8 @@ experimental, vigia por ciclo, multi-repo, página de portfólio e planejamento.
 Proposta aplicada: [proposta-norte-multiprojeto.md](proposta-norte-multiprojeto.md).
 Estado card a card: [backlog-status.md](backlog-status.md).
 
-Ainda fora desta entrega: janela tmux para as duas sessões da mesma lane, alguns
-arquivos auxiliares ainda globais, headless (FRA-718), isolamento real (FRA-719)
-e distribuição notarizada (FRA-720). O guia de uso está em
+Ainda fora desta entrega: alguns arquivos auxiliares globais, headless (FRA-718),
+isolamento real (FRA-719) e distribuição notarizada (FRA-720). O guia de uso está em
 [docs/produto/guia-portfolio.md](guia-portfolio.md).
 
 ## O que já funciona
@@ -72,8 +71,8 @@ Com `agenda.simultaneo: true`, o dispatcher tenta assumir, no mesmo ciclo, um ca
 In Progress por lane livre, de projetos diferentes, e puxa **um card do Todo por
 projeto** quando sobra vaga. Ele **só usa lane explícita** (não escolhe lane
 automática). O estado e a sessão da mesma lane levam o slug do projeto
-(`lane-<projeto>-<lane>.json` e sessão `lane-<projeto>-<lane>`); a janela única de tmux
-ainda mostra só uma delas. Sem a flag, nada muda.
+(`lane-<projeto>-<lane>.json` e sessão `lane-<projeto>-<lane>`); a janela de tmux
+ganha um painel para cada sessão namespaced. Sem a flag, nada muda.
 A flag aparece em Ajustes › Lanes › Projetos.
 
 ```json
@@ -81,13 +80,13 @@ A flag aparece em Ajustes › Lanes › Projetos.
 ```
 
 A mesma lane pode ter uma vaga em cada projeto; a promoção do Todo é um card por
-projeto por ciclo. A janela única de tmux ainda mostra só uma das sessões; o
-painel do app lê as duas.
+projeto por ciclo. A janela de tmux mostra um painel por sessão; o painel do app
+também lê as duas.
 
 ## Limites conhecidos desta fase
 
-- **Simultâneo é experimental.** Exige lane explícita; a janela única de tmux não
-  mostra duas sessões da mesma lane.
+- **Simultâneo é experimental.** Exige lane explícita; a janela de tmux cria um
+  painel extra para a sessão namespaced.
 - **Arquivos auxiliares.** Stop já é por sessão; alguns limites/marcadores ainda
   são globais por lane.
 - **O vigia percorre todos os projetos ativos no tick.** Cada um tem seu

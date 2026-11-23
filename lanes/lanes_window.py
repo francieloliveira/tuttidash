@@ -122,13 +122,27 @@ def _task_cmd(lane: str, session: str, card: str) -> str:
 
 
 def _panes() -> dict:
-    out = _tmux("list-panes", "-t", SESSION, "-F", "#{pane_id} #{@lane}")
+    """Painéis normais (uma lane por painel); ignora os namespaced (têm @session)."""
+    out = _tmux("list-panes", "-t", SESSION, "-F", "#{pane_id} #{@lane} #{@session}")
     found = {}
     for line in out.splitlines():
-        pid, _, lane = line.partition(" ")
-        if lane in LANES:
+        partes = line.split(" ")
+        if len(partes) < 2:
+            continue
+        pid, lane = partes[0], partes[1]
+        sess = partes[2] if len(partes) > 2 else ""
+        if lane in LANES and not sess:
             found[lane] = pid
     return found
+
+
+def _pane_da_sessao(session: str) -> str:
+    out = _tmux("list-panes", "-t", SESSION, "-F", "#{pane_id} #{@session}")
+    for linha in out.splitlines():
+        partes = linha.split(" ")
+        if len(partes) >= 3 and partes[2] == session:
+            return partes[0]
+    return ""
 
 
 def _exists(session: str) -> bool:
@@ -183,17 +197,29 @@ def show_task(lane: str, session: str, card: str) -> bool:
     ficou mesmo com a tarefa; quem chama tenta de novo no próximo ciclo."""
     _tmux("set-option", "-t", session, "@card", card)
     plain_nested(session)
-    pane = ensure_session().get(lane)
+    normal = session == f"lane-{lane}"
+    if normal:
+        pane = ensure_session().get(lane)
+    else:
+        ensure_session()
+        pane = _pane_da_sessao(session)
+        if not pane:
+            ref = next(iter(_panes().values()), SESSION)
+            pane = _tmux("split-window", "-v", "-P", "-F", "#{pane_id}", "-t", ref,
+                         _task_cmd(lane, session, card))
+            _tmux("set-option", "-p", "-t", pane, "@lane", lane)
+            _tmux("set-option", "-p", "-t", pane, "@session", session)
+            _tmux("select-layout", "-t", SESSION, "even-vertical")
     if not pane:
         return False
     _tmux("respawn-pane", "-k", "-t", pane, _task_cmd(lane, session, card))
     _tmux("select-pane", "-t", pane, "-T", task_title(lane, card))
-    return showing(lane, card)
+    return showing(lane, card, session=session)
 
 
-def showing(lane: str, card: str) -> bool:
+def showing(lane: str, card: str, session: str = "") -> bool:
     """O painel da lane está mostrando este card?"""
-    pane = _panes().get(lane)
+    pane = _pane_da_sessao(session) if session and session != f"lane-{lane}" else _panes().get(lane)
     return bool(pane) and _tmux("display", "-p", "-t", pane, "#{pane_title}") == task_title(lane, card)
 
 

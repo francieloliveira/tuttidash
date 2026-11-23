@@ -2883,9 +2883,8 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "",
             shlex.quote(cli or lane),
         ])])
     # Janela única 'lanes' (claude em cima, grok embaixo). Fechar não para a lane.
-    # Sessão namespaced (mesma lane em outro projeto) fica fora da janela única.
-    st["window_ok"] = (_show_in_lanes_window(lane, session, ident)
-                       if session == f"lane-{lane}" else False)
+    # Sessão namespaced ganha um painel próprio, com @session.
+    st["window_ok"] = _show_in_lanes_window(lane, session, ident)
     save_state(lane, st)
     # Cache de títulos para o painel (FRA-563): grava o título do card para que
     # o painel possa exibi-lo mesmo quando a lane não está rodando.
@@ -5417,8 +5416,7 @@ def watch(lane: str, st: dict) -> None:
         log(f"lane:{lane} {st.get('card')}: exit_code é symlink; recusado")
         return
     parada = stop_file(lane, st.get("session") or "")
-    if (not exit_file.exists() and tmux_alive(st["session"]) and not st.get("window_ok")
-            and st.get("session") == f"lane-{lane}"):
+    if (not exit_file.exists() and tmux_alive(st["session"]) and not st.get("window_ok")):
         st["window_ok"] = _show_in_lanes_window(lane, st["session"], st["card"])
         save_state(lane, st)
     if not exit_file.exists():

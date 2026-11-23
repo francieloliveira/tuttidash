@@ -27,7 +27,7 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 
 ## Parcial / limitações conhecidas
 
-- **FRA-706**: execução simultânea é experimental; exige lane explícita; a janela tmux única não mostra duas sessões da mesma lane; alguns arquivos auxiliares ainda são globais.
+- **FRA-706**: execução simultânea é experimental; exige lane explícita; a janela tmux já cria um painel por sessão; alguns arquivos auxiliares ainda são globais.
 - **App**: build `branch-main-526ebed` instalado e **aberto** após renovar o provisioning profile (`renovar-perfil.sh`); o profile vence em 30/11/2026.
 - **FRA-719**: há auditoria de permissões, mas **não** isolamento real da lane (mesmo usuário, `~/.ssh` acessível). Fase 5 pendente.
 - **FRA-720**: build assinado e `tools/release.sh`; **não notarizado** (sem perfil/certificado).
@@ -35,7 +35,7 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 
 ## Pendente
 
-- janela tmux/limites auxiliares namespaced (FRA-706);
+- limites/arquivos auxiliares namespaced (FRA-706);
 - headless sem app (FRA-718);
 - isolamento real (FRA-719);
 - notarização/distribuição (FRA-720).
