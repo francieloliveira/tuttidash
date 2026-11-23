@@ -42,6 +42,6 @@ Para uso local, isso não impede o app de abrir enquanto o profile estiver váli
 
 ## Recomendação
 
-Se o TuttiDash é para uso próprio neste Mac, **não notarizar agora**: basta
-renovar o profile periodicamente. Se for entregar para outra pessoa, vale abrir
-a conta paga e seguir os passos acima.
+Se o TuttiDash é para uso próprio neste Mac, **não notarizar agora**: use
+`tools/release.sh --local` e renove o profile periodicamente. Se for entregar
+para outra pessoa, vale abrir a conta paga e seguir os passos acima.

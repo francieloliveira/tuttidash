@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Empacota o TuttiDash para distribuição. Não publica nada.
 #
-#   tools/release.sh [--sem-testes] [--notarizar PERFIL]
+#   tools/release.sh [--sem-testes] [--local] [--notarizar PERFIL]
 #
 # - exige árvore git limpa (senão o .zip não corresponde ao commit);
 # - roda as suítes Python/Swift (salvo --sem-testes);
@@ -16,9 +16,11 @@ ROOT="$(cd "$HERE/.." && pwd)"
 DIST="$ROOT/dist"
 TESTES=1
 PERFIL=""
+MODO_LOCAL=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sem-testes) TESTES=0; shift ;;
+    --local) MODO_LOCAL=1; shift ;;
     --notarizar) PERFIL="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "release: argumento desconhecido: $1" >&2; exit 2 ;;
@@ -50,6 +52,10 @@ shasum -a 256 "$ZIP" > "$ZIP.sha256"
 echo "==> $ZIP"
 cat "$ZIP.sha256"
 if [[ -n "$PERFIL" ]]; then
+  if [[ "$MODO_LOCAL" == "1" ]]; then
+    echo "release: --local e --notarizar são exclusivos" >&2
+    exit 2
+  fi
   command -v xcrun >/dev/null || { echo "release: xcrun não encontrado" >&2; exit 1; }
   echo "==> notarização ($PERFIL)"
   xcrun notarytool submit "$ZIP" --keychain-profile "$PERFIL" --wait
@@ -57,5 +63,6 @@ if [[ -n "$PERFIL" ]]; then
   xcrun stapler validate "$APP"
   echo "==> notarizado e grampeado"
 else
-  echo "release: sem --notarizar; o .zip está assinado, mas não notarizado." >&2
+  echo "release: modo local; o .zip está assinado, mas não notarizado." >&2
+  echo "release: para distribuir a outros Macs, veja docs/produto/notarizacao.md." >&2
 fi

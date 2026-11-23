@@ -109,14 +109,14 @@ e a instalação da main usa o repo do último merge.
 ## 8. Empacotar uma versão
 
 ```bash
-tools/release.sh
+tools/release.sh --local
 tools/release.sh --notarizar <perfil-do-notarytool>
 ```
 
 O script exige árvore git limpa, roda as suítes, chama o build assinado, gera
-`dist/TuttiDash-<versão>-<build>.zip` e o SHA-256. Sem `--notarizar`, o zip fica
-assinado mas não notarizado. Veja [notarizacao.md](notarizacao.md) para quando
-isso importa.
+`dist/TuttiDash-<versão>-<build>.zip` e o SHA-256. `--local` deixa explícito o
+uso neste Mac: zip assinado, sem notarização. `--notarizar` é para distribuir a
+outros Macs; veja [notarizacao.md](notarizacao.md).
 
 ## 9. O que ainda não existe
 
