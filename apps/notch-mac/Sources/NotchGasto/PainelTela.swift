@@ -134,7 +134,15 @@ struct PaginaProjetosComInstalar: View {
     var body: some View {
         VStack(spacing: 0) {
             PaginaProjetos(modelo: modelo)
-            Divider().overlay(PV.divisor).padding(.vertical, 4)
+            HStack(spacing: 10) {
+                Text("Instalação").fontePainel(15, .semibold)
+                Text("configurada em Ajustes › Lanes › Projetos")
+                    .fontePainel(11.5).foregroundStyle(PV.mudo)
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 18)
+            .padding(.bottom, 4)
             PaginaInstalar(modelo: modelo)
         }
     }

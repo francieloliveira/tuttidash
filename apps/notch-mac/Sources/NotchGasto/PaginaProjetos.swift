@@ -15,10 +15,22 @@ struct PaginaProjetos: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 15)) { ctx in
-            HStack(alignment: .top, spacing: 13) {
+            VStack(alignment: .leading, spacing: 13) {
+                resumoTopo
+                HStack(alignment: .top, spacing: 13) {
                 cartaoPagina("Portfólio", direita: {
-                    Text("\(projetos.count) cadastrados · \(ativos) ligados")
-                        .fontePainel(11.5).foregroundStyle(PV.mudo)
+                    HStack(spacing: 10) {
+                        Text("\(projetos.count) cadastrados · \(ativos) ligados")
+                            .fontePainel(11.5).foregroundStyle(PV.mudo)
+                        Button {
+                            NavegacaoPainel.compartilhada.abrirBloco(.lanes,
+                                                                      grupo: String(localized: "Projetos"))
+                        } label: {
+                            Label("Adicionar projeto", systemImage: "plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }) {
                     if projetos.isEmpty {
                         Text("Nenhum projeto cadastrado. Abra Ajustes › Projetos para ligar o primeiro.")
@@ -63,28 +75,37 @@ struct PaginaProjetos: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    cartaoPagina("Como ligar") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Button {
-                                NavegacaoPainel.compartilhada.abrirBloco(.lanes,
-                                                                          grupo: String(localized: "Projetos"))
-                            } label: {
-                                Label("Adicionar projeto", systemImage: "plus")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            Text("Ajustes › Lanes: ligue os projetos e a agenda multi-projeto.")
-                                .fontePainel(12).foregroundStyle(PV.texto)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text("A agenda só deve ser ligada quando o vigia e o painel multi-projeto estiverem fechados. Hoje ela é sequencial.")
-                                .fontePainel(11.5).foregroundStyle(PV.mudo)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
                 }
                 .frame(width: 420)
+                }
+                .padding(.top, 0)
             }
             .padding(.top, 10)
         }
+    }
+
+    /// Resumo do portfólio no topo: números grandes e o atalho para gerenciar.
+    private var resumoTopo: some View {
+        let principal = ProjetosConfig.padrao(projetos)?.nome ?? "sem principal"
+        let rodando = modelo.snapshot?.lanes.filter { $0.estado == .rodando }.count ?? 0
+        let fila = modelo.snapshot?.filaPronta.count ?? 0
+        return HStack(spacing: 0) {
+            statPV("Projetos", "\(projetos.count)", cor: PV.texto)
+            statPV("Ligados", "\(ativos)", cor: ativos > 0 ? Aurora.verde : PV.mudo)
+            statPV("Principal", principal, cor: PV.texto)
+            statPV("Rodando", "\(rodando)", cor: rodando > 0 ? Aurora.verde : PV.mudo)
+            statPV("Fila", "\(fila)", cor: fila > 0 ? Aurora.azul : PV.mudo)
+            Button {
+                NavegacaoPainel.compartilhada.abrirBloco(.lanes,
+                                                          grupo: String(localized: "Projetos"))
+            } label: {
+                Label("Gerenciar", systemImage: "slider.horizontal.3")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .padding(.horizontal, 10)
+        }
+        .linhaPV()
     }
 
     private func linha(_ p: ProjetoCadastro, agora: Date) -> some View {
