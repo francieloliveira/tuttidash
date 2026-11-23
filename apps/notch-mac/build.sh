@@ -16,13 +16,13 @@ APP="$OUT/$APP_NAME.app"
 
 if [[ "${1:-}" == "--testes" ]]; then
   echo "==> swift test"
-  swift test
+  swift test --disable-sandbox
 fi
 
 echo "==> swift build -c release"
 # Sem cache de manifesto: um cache antigo ainda pode trazer o alvo GastoPrivado de antes.
-swift build -c release --manifest-cache none --product "$EXEC"
-BIN_DIR="$(swift build -c release --manifest-cache none --show-bin-path)"
+swift build -c release --disable-sandbox --manifest-cache none --product "$EXEC"
+BIN_DIR="$(swift build -c release --disable-sandbox --manifest-cache none --show-bin-path)"
 
 echo "==> empacotando $APP"
 rm -rf "$APP"
