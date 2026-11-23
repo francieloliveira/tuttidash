@@ -11,6 +11,7 @@ custo por projeto, limites por projeto, agenda sequencial, vigia por ciclo e pá
 portfólio. A agenda continua **desligada por padrão** e o norte não foi alterado.
 
 Proposta de mudança do norte: [proposta-norte-multiprojeto.md](proposta-norte-multiprojeto.md).
+Estado card a card: [backlog-status.md](backlog-status.md).
 
 Ainda fora desta entrega: slots simultâneos (FRA-706), nome de sessão por projeto,
 multi-repo (FRA-711), headless (FRA-718), segurança (FRA-719) e distribuição (FRA-720).
