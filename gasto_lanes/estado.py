@@ -60,6 +60,7 @@ def read_state(state_dir: Path) -> dict:
         if not is_lane_state(f.name, st):
             continue   # não é estado de lane: ignora em silêncio
         out["lanes"][st["lane"]] = {k: _texto(st.get(k)) for k in
-                                    ("card", "title", "effort", "started_at", "log", "stuck")}
+                                    ("card", "title", "effort", "started_at", "log", "stuck",
+                                     "projeto", "projeto_nome")}
         out["logs_em_andamento"].add(_basename(st["log"]))
     return out

@@ -358,7 +358,8 @@ public enum LeitorPainelDisco {
             provas: provas, simulador: simulador.flatMap { $0.isEmpty ? nil : $0 },
             instalacoes: instalacoes, limitesAte: limites, logTexto: logTexto,
             fechamentos: fechamentos, textoModelo: modelos.texto, avisoModelo: modelos.aviso,
-            pastasLane: pastasLane, provasRemotas: LeitorProvasRemotas.ler(pasta: pasta))
+            pastasLane: pastasLane, provasRemotas: LeitorProvasRemotas.ler(pasta: pasta),
+            eventos: LeitorEventos.ler(url: pasta.appendingPathComponent("eventos.jsonl")))
     }
 
     /// Pasta `.lane` do worktree da lane (`worktree` no `lane-<lane>.json`).

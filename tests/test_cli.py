@@ -41,7 +41,7 @@ class CLI(unittest.TestCase):
         code, out, _ = self.run_cli("relatorio", "--json", "--hoje", "2026-10-04")
         self.assertEqual(code, 0)
         data = json.loads(out)
-        self.assertEqual(set(data["por"]), {"dia", "semana", "card", "lane"})
+        self.assertEqual(set(data["por"]), set(__import__("gasto_lanes.report", fromlist=["DIMENSOES"]).DIMENSOES))
         self.assertEqual(data["total"]["execucoes_custo_desconhecido"], 4)
         self.assertIsNone(data["teto"])
         self.assertEqual(data["estado"]["lanes"]["claude"]["card"], "FRA-253")
@@ -51,6 +51,57 @@ class CLI(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("grok", out)
         self.assertNotIn("claude  ", out)
+
+    def test_relatorio_filtra_e_agrupa_por_projeto(self):
+        arq = self.sb.logs / "FRA-999-claude-20261006-120000.jsonl"
+        arq.write_text(
+            json.dumps({"type": "tutti_projeto", "projeto": "p1", "nome": "Projeto 1"}) + "\n"
+            + json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                          "num_turns": 1, "duration_ms": 1000, "total_cost_usd": 0.1}) + "\n",
+            encoding="utf-8")
+        code, out, _ = self.run_cli("relatorio", "--projeto", "p1", "--json")
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertEqual(data["total"]["execucoes"], 1)
+        self.assertEqual([r["grupo"] for r in data["por"]["projeto"]], ["Projeto 1"])
+        code, out, _ = self.run_cli("relatorio", "--projeto", "nao-existe", "--json")
+        self.assertEqual(json.loads(out)["total"]["execucoes"], 0)
+
+    def test_eventos_le_e_filtra(self):
+        from gasto_lanes import eventos
+        arq = self.sb.estado / "eventos.jsonl"
+        eventos.registrar(arq, projeto="p1", card="FRA-1", lane="claude", etapa="claim")
+        eventos.registrar(arq, projeto="p2", card="FRA-2", lane="grok", etapa="merge")
+        code, out, _ = self.run_cli("eventos", "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(json.loads(out)), 2)
+        code, out, _ = self.run_cli("eventos", "--projeto", "p1", "--json")
+        self.assertEqual([e["card"] for e in json.loads(out)], ["FRA-1"])
+        code, out, _ = self.run_cli("eventos", "--card", "FRA-2")
+        self.assertIn("merge", out)
+        self.assertNotIn("FRA-1", out)
+
+    def test_semanal_por_projeto(self):
+        code, out, _ = self.run_cli("semanal", "--json", "--hoje", "2026-10-04")
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertEqual(data["semana"], "2026-09-28 a 2026-10-04")
+        self.assertTrue(data["projetos"])
+        code, out, _ = self.run_cli("semanal", "--hoje", "2026-10-04")
+        self.assertIn("Relatório semanal", out)
+
+    def test_fluxo_resume_eventos(self):
+        from gasto_lanes import eventos
+        arq = self.sb.estado / "eventos.jsonl"
+        eventos.registrar(arq, projeto="p1", card="FRA-1", lane="claude", etapa="claim",
+                          quando=__import__("datetime").datetime(2026, 11, 22, 20, 0, 0))
+        eventos.registrar(arq, projeto="p1", card="FRA-1", lane="claude", etapa="finalize",
+                          status="In Review", quando=__import__("datetime").datetime(2026, 11, 22, 20, 30, 0))
+        code, out, _ = self.run_cli("fluxo", "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["projetos"][0]["duracao_media_min"], 30.0)
+        code, out, _ = self.run_cli("fluxo")
+        self.assertIn("p1: 1 claims", out)
 
     def test_relatorio_dimensao_invalida(self):
         code, _, err = self.run_cli("relatorio", "--por", "mes")

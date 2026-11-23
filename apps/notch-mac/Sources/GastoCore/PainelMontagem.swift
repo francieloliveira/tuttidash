@@ -78,7 +78,8 @@ public enum MontadorPainel {
             buildsHoje: Indicadores.buildsDeHoje(execucoes, ordinais: numeros, agora: agora, calendario: calendario,
                                                  fechamentos: entrada.fechamentos, lockLane: dono?.lane,
                                                  lockCard: dono?.card, titulos: entrada.titulos),
-            esperandoVoce: esperandoVoce(entrada.fechamentos))
+            esperandoVoce: esperandoVoce(entrada.fechamentos),
+            fluxo: Fluxo.resumo(entrada.eventos, calendario: calendario))
         snapshot.provasRemotasEmCurso = provasRemotasEmCurso(entrada.rodando)
         return snapshot
     }
@@ -138,7 +139,7 @@ public enum MontadorPainel {
                            agora: Date, calendario: Calendar) -> [LinhaLane] {
         let porLane = Dictionary(uniqueKeysWithValues: entrada.rodando.map { ($0.lane, $0) })
         let ligadas = entrada.habilitadas ?? entrada.heartbeat.map { Set($0.habilitadas) }
-        return LanesPainel.ordem.map { lane in
+        let base = LanesPainel.ordem.map { lane in
             let medida = medidas.first { $0.lane == lane }
             let prova = provas.first { $0.lane == lane }
             let ocupada = porLane[lane]
@@ -194,6 +195,13 @@ public enum MontadorPainel {
             return LinhaLane(lane: lane, estado: .livre, card: nil, descricao: "livre, sem card pronto",
                              detalhe: "pode assumir card", pct: medida?.pct, janela: medida?.janela,
                              plano: plano, segundosNoCard: nil)
+        }
+        return base.map { linha in
+            guard let p = porLane[linha.lane] else { return linha }
+            var x = linha
+            x.projeto = p.projeto
+            x.projetoNome = p.projetoNome
+            return x
         }
     }
 
@@ -374,6 +382,7 @@ public enum MontadorPainel {
             dias.append(GastoDiaPainel(rotulo: rotulo, total: 0, ehHoje: off == 0))
         }
         var porLane: [String: (custo: Double, teve: Bool, desc: Int)] = [:]
+        var porProjeto: [String: (nome: String?, custo: Double, teve: Bool, desc: Int, exec: Int)] = [:]
         var hojeSoma = 0.0, hojeTeve = false, hojeDesc = 0
         var semanaSoma = 0.0, semanaTeve = false, semanaDesc = 0
         for ex in execucoes {
@@ -386,6 +395,12 @@ public enum MontadorPainel {
                 var lane = porLane[ex.lane] ?? (0, false, 0)
                 if let conhecido { lane.custo += conhecido; lane.teve = true } else { lane.desc += 1 }
                 porLane[ex.lane] = lane
+                let chave = ex.projeto ?? ""
+                var proj = porProjeto[chave] ?? (nil, 0, false, 0, 0)
+                proj.nome = proj.nome ?? ex.projetoNome
+                proj.exec += 1
+                if let conhecido { proj.custo += conhecido; proj.teve = true } else { proj.desc += 1 }
+                porProjeto[chave] = proj
                 if let conhecido { semanaSoma += conhecido; semanaTeve = true } else { semanaDesc += 1 }
             }
         }
@@ -395,7 +410,13 @@ public enum MontadorPainel {
                                    desconhecidas: item?.desc ?? 0, plano: entrada.planos[lane])
         }
         let caros = Self.top(execucoes.filter { indice[$0.dia] != nil }, titulos: entrada.titulos, calendario: calendario)
-        let painel = CustosPainel(porLane: gastosLane, hoje: hojeTeve ? hojeSoma : nil, semana: semanaTeve ? semanaSoma : nil,
+        let gastosProjeto = porProjeto.map { chave, item in
+            GastoProjetoPainel(projeto: chave, nome: item.nome,
+                               custoUSD: item.teve ? item.custo : nil,
+                               desconhecidas: item.desc, execucoes: item.exec)
+        }.sorted { ($0.custoUSD ?? -1) > ($1.custoUSD ?? -1) }
+        let painel = CustosPainel(porLane: gastosLane, porProjeto: gastosProjeto,
+                                  hoje: hojeTeve ? hojeSoma : nil, semana: semanaTeve ? semanaSoma : nil,
                                   desconhecidasHoje: hojeDesc, desconhecidasSemana: semanaDesc, dias: dias,
                                   uso: medidas, top: Array(caros.prefix(5)), moeda: moeda)
         return (painel: painel, buildsSemana: ListaBuilds.porRecencia(caros))

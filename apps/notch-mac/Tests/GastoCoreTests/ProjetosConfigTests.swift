@@ -82,6 +82,54 @@ final class ProjetosConfigTests: XCTestCase {
         XCTAssertEqual(ProjetosConfig.ler(d).first?.copiarParaWorktree, ["AGENTS.md"])
     }
 
+    func testReposVaoEVoltam() {
+        var d: [String: Any] = [:]
+        let repos = [RepositorioCadastro(slug: "app", repo: "~/a", github: "dono/a"),
+                     RepositorioCadastro(slug: "api", repo: "~/b", github: "dono/b", prova: "go test {suite}")]
+        ProjetosConfig.gravar([ProjetoCadastro(projetoID: notch, repo: "~/a", repos: repos)], em: &d)
+        let lido = ProjetosConfig.ler(d)[0]
+        XCTAssertEqual(lido.repos.map(\.slug), ["app", "api"])
+        XCTAssertEqual(lido.repos.last?.repo, "~/b")
+        XCTAssertEqual(lido.repos.last?.prova, "go test {suite}")
+    }
+
+    func testPlanejamentoVaiEVolta() {
+        var d: [String: Any] = [:]
+        let pl = PlanejamentoCadastro(objetivo: "entregar", situacao: "em dia",
+                                      inicio: "2026-11-01", alvo: "2026-12-01",
+                                      marcos: [MarcoCadastro(nome: "beta", data: "2026-11-20", feito: true)])
+        ProjetosConfig.gravar([ProjetoCadastro(projetoID: notch, repo: "~/r", planejamento: pl)], em: &d)
+        let lido = ProjetosConfig.ler(d)[0]
+        XCTAssertEqual(lido.planejamento.objetivo, "entregar")
+        XCTAssertEqual(lido.planejamento.situacao, "em dia")
+        XCTAssertEqual(lido.planejamento.alvo, "2026-12-01")
+        XCTAssertEqual(lido.planejamento.marcos.first?.nome, "beta")
+    }
+
+    /// Agenda e limites por projeto: o app não pode apagar o que o Python usa.
+    func testPrioridadeEOperacaoVaoEVoltam() {
+        var d: [String: Any] = [:]
+        let p = ProjetoCadastro(projetoID: notch, repo: "~/r", prioridade: 3,
+                                budgetUSD: ["medio": 5], laneTimeoutMin: 30,
+                                proofTimeoutMin: 45, maxLanes: 2, maxTarefasPorLane: 1)
+        ProjetosConfig.gravar([p], em: &d)
+        let lista = d["projetos"] as? [[String: Any]] ?? []
+        XCTAssertEqual(lista[0]["prioridade"] as? Int, 3)
+        let op = lista[0]["operacao"] as? [String: Any] ?? [:]
+        XCTAssertEqual((op["budget_usd"] as? [String: Double])?["medio"], 5)
+        XCTAssertEqual(op["lane_timeout_min"] as? Int, 30)
+        XCTAssertEqual(op["proof_timeout_min"] as? Int, 45)
+        XCTAssertEqual(op["max_lanes"] as? Int, 2)
+        XCTAssertEqual(op["max_tarefas_por_lane"] as? Int, 1)
+        let lido = ProjetosConfig.ler(d)[0]
+        XCTAssertEqual(lido.prioridade, 3)
+        XCTAssertEqual(lido.budgetUSD["medio"], 5)
+        XCTAssertEqual(lido.laneTimeoutMin, 30)
+        XCTAssertEqual(lido.proofTimeoutMin, 45)
+        XCTAssertEqual(lido.maxLanes, 2)
+        XCTAssertEqual(lido.maxTarefasPorLane, 1)
+    }
+
     /// Conferência antes do push: vai e volta, e vazio não vai para o arquivo.
     func testAntesDoPushVaiEVolta() {
         var d: [String: Any] = [:]

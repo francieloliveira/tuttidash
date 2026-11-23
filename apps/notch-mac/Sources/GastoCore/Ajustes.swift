@@ -112,6 +112,10 @@ public enum CatalogoAjustes {
                 CampoAjuste("lanes.proof_timeout_min", String(localized: "Tempo máximo da prova (min)"), n(5, 1440), "150"),
                 CampoAjuste("lanes.proof_default_suites", String(localized: "Suítes padrão da prova (vírgula)"), .lista, ""),
                 CampoAjuste("lanes.effort_default", String(localized: "Esforço padrão"), .escolha(esforcos), "medio"),
+                CampoAjuste("agenda.multiprojeto", String(localized: "Agenda multi-projeto (rodízio entre os projetos ativos)"), .booleano, "false",
+                            ajuda: String(localized: "Desligado, o dispatcher trabalha só o projeto principal. Ligado, ele alterna os projetos ativos; a lane em andamento continua sendo do projeto dela.")),
+                CampoAjuste("agenda.simultaneo", String(localized: "Execução simultânea (experimental)"), .booleano, "false",
+                            ajuda: String(localized: "Tenta assumir um card In Progress por lane livre, de projetos diferentes. Só usa lane explícita; a mesma lane ainda não roda em dois projetos.")),
             ], nota: String(localized: "O repositório de onde a lane trabalha, a pasta de worktrees, a prova e o freio de caminho protegido saem do cadastro de projetos, abaixo. O modelo de cada lane fica no bloco acima: automático pelo peso do card, ou um modelo fixo."), lanesHabilitadas: true, projetos: true, modelosLane: true),
             AbaAjustes(nome: String(localized: "Bots e revisão"), simbolo: "checkmark.seal", campos: camposRevisao() + [
                 CampoAjuste("watch.ordem_needs", String(localized: "Vigia: ordem na conferência da etiqueta do dono (vírgulas)"), .texto, "ollama, opencode, claude"),

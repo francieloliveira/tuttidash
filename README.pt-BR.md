@@ -122,6 +122,10 @@ detectado não é publicado, e o dono é chamado. O comentário `[Revisor]` traz
 completo. A proteção da branch precisa exigir o check `revisao-ia`; este repositório
 não cria esse ruleset. Check vermelho bloqueia o merge.
 
+## Guia do portfólio
+
+Para cadastrar e operar mais de um projeto, veja [docs/produto/guia-portfolio.md](docs/produto/guia-portfolio.md).
+
 ## Estrutura
 
 ```

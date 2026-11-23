@@ -155,7 +155,8 @@ extension CatalogoAjustes {
                          subtitulo: String(localized: "Projetos, quais lanes pegam card, com que modelo e quanto cada card pode gastar"), grupos: [
                 GrupoAjustes(String(localized: "Projetos"),
                              ajuda: String(localized: "Cada projeto do Linear ligado ao repositório do GitHub em que as lanes trabalham."),
-                             blocos: [.projetos]),
+                             blocos: [.projetos],
+                             campos: [campo("agenda.multiprojeto"), campo("agenda.simultaneo")]),
                 GrupoAjustes(String(localized: "Lanes ligadas"), ajuda: ClarezaCota.ajudaLanesLigadas,
                              blocos: [.lanesHabilitadas]),
                 GrupoAjustes(String(localized: "Modelo de cada lane"),

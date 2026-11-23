@@ -186,6 +186,88 @@ public struct InstalacaoCadastro: Equatable, Sendable {
     }
 }
 
+/// Marco de planejamento do projeto. Não muda a execução; só o retrato de gestão.
+public struct MarcoCadastro: Equatable, Sendable {
+    public var nome: String
+    public var data: String
+    public var feito: Bool
+
+    public init(nome: String, data: String = "", feito: Bool = false) {
+        self.nome = nome
+        self.data = data
+        self.feito = feito
+    }
+}
+
+public struct PlanejamentoCadastro: Equatable, Sendable {
+    public var objetivo: String
+    public var situacao: String
+    public var inicio: String
+    public var alvo: String
+    public var marcos: [MarcoCadastro]
+
+    public init(objetivo: String = "", situacao: String = "", inicio: String = "",
+                alvo: String = "", marcos: [MarcoCadastro] = []) {
+        self.objetivo = objetivo
+        self.situacao = situacao
+        self.inicio = inicio
+        self.alvo = alvo
+        self.marcos = marcos
+    }
+
+    public var vazio: Bool {
+        objetivo.isEmpty && situacao.isEmpty && inicio.isEmpty && alvo.isEmpty && marcos.isEmpty
+    }
+
+    public static func ler(_ bruto: [String: Any]?) -> PlanejamentoCadastro {
+        guard let bruto else { return PlanejamentoCadastro() }
+        let marcos = (bruto["marcos"] as? [[String: Any]] ?? []).compactMap { m -> MarcoCadastro? in
+            guard let nome = JV.texto(m["nome"]), !nome.isEmpty else { return nil }
+            return MarcoCadastro(nome: nome, data: JV.texto(m["data"]) ?? "",
+                                 feito: JV.verdadeiro(m["feito"]))
+        }
+        return PlanejamentoCadastro(objetivo: JV.texto(bruto["objetivo"]) ?? "",
+                                    situacao: JV.texto(bruto["situacao"]) ?? "",
+                                    inicio: JV.texto(bruto["inicio"]) ?? "",
+                                    alvo: JV.texto(bruto["alvo"]) ?? "",
+                                    marcos: Array(marcos.prefix(30)))
+    }
+
+    public func dict() -> [String: Any]? {
+        if vazio { return nil }
+        var d: [String: Any] = [:]
+        if !objetivo.isEmpty { d["objetivo"] = objetivo }
+        if !situacao.isEmpty { d["situacao"] = situacao }
+        if !inicio.isEmpty { d["inicio"] = inicio }
+        if !alvo.isEmpty { d["alvo"] = alvo }
+        if !marcos.isEmpty {
+            d["marcos"] = marcos.map { ["nome": $0.nome, "data": $0.data, "feito": $0.feito] }
+        }
+        return d
+    }
+}
+
+public struct RepositorioCadastro: Equatable, Sendable {
+    public var slug: String
+    public var github: String
+    public var repo: String
+    public var worktrees: String
+    public var prova: String
+    public var protegidos: [String]
+    public var pastasDoApp: [String]
+
+    public init(slug: String, repo: String, github: String = "", worktrees: String = "",
+                prova: String = "", protegidos: [String] = [], pastasDoApp: [String] = []) {
+        self.slug = slug
+        self.repo = repo
+        self.github = github
+        self.worktrees = worktrees
+        self.prova = prova
+        self.protegidos = protegidos
+        self.pastasDoApp = pastasDoApp
+    }
+}
+
 public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     public var id: String            { projetoID }
     /// UUID do projeto no Linear. É a chave; duas entradas com o mesmo id não fazem sentido.
@@ -196,6 +278,14 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     /// O projeto que o dispatcher trabalha neste ciclo. Sem ninguém marcado, vale o
     /// primeiro ativo da lista — a ordem da lista é a ordem de preferência.
     public var padrao: Bool
+    /// Ordem inicial da agenda multi-projeto; maior primeiro. 0 = padrão.
+    public var prioridade: Int
+    /// Limites deste projeto; vazio/0 herda o global (`lanes.*`).
+    public var budgetUSD: [String: Double]
+    public var laneTimeoutMin: Int
+    public var proofTimeoutMin: Int
+    public var maxLanes: Int
+    public var maxTarefasPorLane: Int
     public var repo: String
     /// Vazio = `<repo>-worktrees`.
     public var worktrees: String
@@ -231,6 +321,10 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
     public var norte: String
     /// FRA-698: como o projeto se instala (serviço, artefato ou nenhuma).
     public var instalacao: InstalacaoCadastro
+    /// Metadados de planejamento (FRA-715); não alteram a execução.
+    public var planejamento: PlanejamentoCadastro
+    /// Repositórios do projeto (FRA-711); vazio = repo único.
+    public var repos: [RepositorioCadastro]
 
     /// Freio padrão quando o projeto não declara o seu: a config dos agentes do projeto
     /// (igual ao `PROTEGIDOS_PADRAO` do `projetos.py`).
@@ -241,11 +335,21 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
                 provaTentativas: Int = 1, protegidos: [String] = [], copiarParaWorktree: [String] = [],
                 antesDoPush: String = "", github: String = "", suites: [String] = [],
                 bancada: Bool = false, pastasDoApp: [String] = [], norte: String = "",
-                instalacao: InstalacaoCadastro = InstalacaoCadastro()) {
+                instalacao: InstalacaoCadastro = InstalacaoCadastro(), prioridade: Int = 0,
+                budgetUSD: [String: Double] = [:], laneTimeoutMin: Int = 0,
+                proofTimeoutMin: Int = 0, maxLanes: Int = 0, maxTarefasPorLane: Int = 0,
+                planejamento: PlanejamentoCadastro = PlanejamentoCadastro(),
+                repos: [RepositorioCadastro] = []) {
         self.projetoID = projetoID
         self.nome = nome.isEmpty ? projetoID : nome
         self.ativo = ativo
         self.padrao = padrao
+        self.prioridade = max(0, prioridade)
+        self.budgetUSD = budgetUSD.filter { $0.value > 0 }
+        self.laneTimeoutMin = max(0, laneTimeoutMin)
+        self.proofTimeoutMin = max(0, proofTimeoutMin)
+        self.maxLanes = max(0, maxLanes)
+        self.maxTarefasPorLane = max(0, maxTarefasPorLane)
         self.repo = repo
         self.worktrees = worktrees
         self.prova = prova
@@ -259,6 +363,8 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         self.pastasDoApp = pastasDoApp
         self.norte = Self.norteValido(norte)
         self.instalacao = instalacao
+        self.planejamento = planejamento
+        self.repos = repos
     }
 
     /// Mesma regra do `norte_valido` do `projetos.py`: relativo ao repo, sem `~`, `..`,
@@ -333,6 +439,26 @@ public enum ProjetosConfig {
             let prot = (item["protegidos"] as? [String]) ?? []
             let copiar = ((item["copiar_para_worktree"] as? [String]) ?? [])
                 .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let repos = (item["repos"] as? [[String: Any]] ?? []).compactMap { r -> RepositorioCadastro? in
+                guard let repo = JV.texto(r["repo"]), !repo.isEmpty else { return nil }
+                return RepositorioCadastro(slug: JV.texto(r["slug"]) ?? "",
+                                           repo: repo,
+                                           github: JV.texto(r["github"]) ?? "",
+                                           worktrees: JV.texto(r["worktrees"]) ?? "",
+                                           prova: JV.texto(r["prova"]) ?? "",
+                                           protegidos: (r["protegidos"] as? [String]) ?? [],
+                                           pastasDoApp: (r["pastas_do_app"] as? [String]) ?? [])
+            }
+            let op = item["operacao"] as? [String: Any] ?? [:]
+            var budget: [String: Double] = [:]
+            if let bruto = op["budget_usd"] as? [String: Any] {
+                for (k, v) in bruto {
+                    if let n = JV.numero(v), n > 0 { budget[k] = n }
+                }
+            }
+            func inteiro(_ chave: String) -> Int {
+                max(0, JV.inteiro(op[chave]) ?? 0)
+            }
             return ProjetoCadastro(projetoID: pid, nome: nome.isEmpty ? pid : nome,
                                    ativo: ativosBool, padrao: (item["padrao"] as? NSNumber)?.boolValue ?? false,
                                    repo: "\(item["repo"] ?? "")",
@@ -347,7 +473,15 @@ public enum ProjetosConfig {
                                        .map { JV.ehBool($0) && $0.boolValue } ?? false,
                                    pastasDoApp: ((item["prova_remota"] as? [String: Any])?["pastas_do_app"] as? [String]) ?? [],
                                    norte: (item["norte"] as? String) ?? "",
-                                   instalacao: InstalacaoCadastro.ler(item["entrega"] as? [String: Any]))
+                                   instalacao: InstalacaoCadastro.ler(item["entrega"] as? [String: Any]),
+                                   prioridade: (item["prioridade"] as? NSNumber)?.intValue ?? 0,
+                                   budgetUSD: budget,
+                                   laneTimeoutMin: inteiro("lane_timeout_min"),
+                                   proofTimeoutMin: inteiro("proof_timeout_min"),
+                                   maxLanes: inteiro("max_lanes"),
+                                   maxTarefasPorLane: inteiro("max_tarefas_por_lane"),
+                                   planejamento: PlanejamentoCadastro.ler(item["planejamento"] as? [String: Any]),
+                                   repos: repos)
         }.filter { $0.problema() == nil }
         return saida
     }
@@ -369,6 +503,26 @@ public enum ProjetosConfig {
             if !p.pastasDoApp.isEmpty { item["prova_remota"] = ["pastas_do_app": p.pastasDoApp] }
             if !p.norte.isEmpty { item["norte"] = p.norte }
             if let e = p.instalacao.dict() { item["entrega"] = e }
+            if p.prioridade > 0 { item["prioridade"] = p.prioridade }
+            var op: [String: Any] = [:]
+            if !p.budgetUSD.isEmpty { op["budget_usd"] = p.budgetUSD }
+            if p.laneTimeoutMin > 0 { op["lane_timeout_min"] = p.laneTimeoutMin }
+            if p.proofTimeoutMin > 0 { op["proof_timeout_min"] = p.proofTimeoutMin }
+            if p.maxLanes > 0 { op["max_lanes"] = p.maxLanes }
+            if p.maxTarefasPorLane > 0 { op["max_tarefas_por_lane"] = p.maxTarefasPorLane }
+            if !op.isEmpty { item["operacao"] = op }
+            if let pl = p.planejamento.dict() { item["planejamento"] = pl }
+            if !p.repos.isEmpty {
+                item["repos"] = p.repos.map { r in
+                    var d: [String: Any] = ["slug": r.slug, "repo": r.repo]
+                    if !r.github.isEmpty { d["github"] = r.github }
+                    if !r.worktrees.isEmpty { d["worktrees"] = r.worktrees }
+                    if !r.prova.isEmpty { d["prova"] = r.prova }
+                    if !r.protegidos.isEmpty { d["protegidos"] = r.protegidos }
+                    if !r.pastasDoApp.isEmpty { d["pastas_do_app"] = r.pastasDoApp }
+                    return d
+                }
+            }
             return item
         }
     }

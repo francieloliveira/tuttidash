@@ -3,18 +3,41 @@ import Foundation
 /// Leitura (só leitura) do estado das lanes: `heartbeat.json` e `lane-<lane>.json`.
 /// Porta do `gasto_lanes/estado.py`.
 public struct EstadoLanes: Equatable, Sendable {
+    public struct ProjetoResumo: Equatable, Sendable {
+        public var id: String
+        public var nome: String
+        public var ativo: Bool
+        public var prioridade: Int
+
+        public init(id: String, nome: String = "", ativo: Bool = true, prioridade: Int = 0) {
+            self.id = id
+            self.nome = nome.isEmpty ? id : nome
+            self.ativo = ativo
+            self.prioridade = max(0, prioridade)
+        }
+    }
+
     public struct Heartbeat: Equatable, Sendable {
         public var at: String
         public var dryRun: Bool
         public var habilitadas: [String]
         /// Lanes com execução real, quando o heartbeat traz `implemented`.
         public var implemented: [String] = []
+        /// Projeto do ciclo e modo da agenda (FRA-708). nil em heartbeat antigo.
+        public var project: String? = nil
+        public var projectName: String? = nil
+        public var agenda: Bool = false
+        /// Todos os projetos do cadastro, para a visão de portfólio.
+        public var projects: [ProjetoResumo] = []
     }
 
     public struct LaneRodando: Equatable, Sendable {
         public var lane: String
         public var card: String
         public var titulo: String?
+        /// Projeto dono da lane (FRA-702/707). nil em estado antigo.
+        public var projeto: String? = nil
+        public var projetoNome: String? = nil
         public var startedAt: String?
         public var log: String
         public var travada: Bool
@@ -89,7 +112,16 @@ public struct EstadoLanes: Equatable, Sendable {
         let hab = (d["enabled"] as? [Any] ?? []).compactMap { JV.texto($0) }
         let impl = (d["implemented"] as? [Any] ?? []).compactMap { JV.texto($0) }
         let dry = d["dry_run"].map { JV.verdadeiro($0) } ?? true
-        return Heartbeat(at: at, dryRun: dry, habilitadas: hab, implemented: impl)
+        let projetos = (d["projects"] as? [[String: Any]] ?? []).compactMap { item -> ProjetoResumo? in
+            guard let id = JV.texto(item["id"]) else { return nil }
+            return ProjetoResumo(id: id, nome: JV.texto(item["nome"]) ?? id,
+                                 ativo: item["ativo"].map { JV.verdadeiro($0) } ?? true,
+                                 prioridade: JV.inteiro(item["prioridade"]) ?? 0)
+        }
+        return Heartbeat(at: at, dryRun: dry, habilitadas: hab, implemented: impl,
+                         project: JV.texto(d["project"]), projectName: JV.texto(d["project_name"]),
+                         agenda: d["agenda"].map { JV.verdadeiro($0) } ?? false,
+                         projects: projetos)
     }
 
     public static func laneRodando(nomeArquivo: String, dados: Any?) -> LaneRodando? {
@@ -98,6 +130,7 @@ public struct EstadoLanes: Equatable, Sendable {
             return nil
         }
         return LaneRodando(lane: lane, card: card.uppercased(), titulo: JV.texto(d["title"]),
+                           projeto: JV.texto(d["projeto"]), projetoNome: JV.texto(d["projeto_nome"]),
                            startedAt: JV.texto(d["started_at"]), log: log,
                            travada: JV.verdadeiro(d["stuck"]), branch: JV.texto(d["branch"]),
                            effort: JV.texto(d["effort"]), modelo: JV.texto(d["modelo"]),

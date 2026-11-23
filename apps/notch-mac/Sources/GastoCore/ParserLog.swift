@@ -80,11 +80,20 @@ public enum ParserLog {
         var respostas: [String: Int] = [:]   // message.id -> tokens (a mesma mensagem repete por bloco)
         var anon = 0
         var outro = FormatoOutro()
+        var projeto: String?
+        var projetoNome: String?
 
         for linha in dados.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
             guard let ev = JV.objeto(Data(linha)) else { continue }   // não-JSON / não-objeto: ignora
             let tipo = ev["type"] as? String
-            if tipo == "assistant" {
+            if tipo == "tutti_projeto" {
+                if let p = ev["projeto"] as? String, !p.trimmingCharacters(in: .whitespaces).isEmpty {
+                    projeto = p.trimmingCharacters(in: .whitespaces)
+                }
+                if let n = ev["nome"] as? String, !n.trimmingCharacters(in: .whitespaces).isEmpty {
+                    projetoNome = n.trimmingCharacters(in: .whitespaces)
+                }
+            } else if tipo == "assistant" {
                 let pai = ev["parent_tool_use_id"]
                 let semPai = pai == nil || pai is NSNull || (pai as? String) == ""
                 guard semPai else { continue }
@@ -104,7 +113,7 @@ public enum ParserLog {
         }
 
         var ex = Execucao(id: meta.id, card: meta.card, lane: meta.lane, inicio: meta.inicio, dia: meta.dia,
-                          semana: meta.semana, status: .morta)
+                          semana: meta.semana, status: .morta, projeto: projeto, projetoNome: projetoNome)
         if let r = result {
             let subtipo = r["subtype"] as? String
             let erros = (r["errors"] as? [Any] ?? []).map { "\($0)" }

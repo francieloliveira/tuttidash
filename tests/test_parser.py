@@ -1,7 +1,11 @@
+import json
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 from gasto_lanes import parser as p
-from tests.helpers import Sandbox
+from tests.helpers import LOGS, Sandbox
 
 
 class Nome(unittest.TestCase):
@@ -21,6 +25,23 @@ class Nome(unittest.TestCase):
     def test_virada_de_semana_iso(self):
         self.assertEqual(p.parse_name("A-1-claude-20260927-235959.jsonl")["semana"], "2026-W39")
         self.assertEqual(p.parse_name("A-1-claude-20260928-000000.jsonl")["semana"], "2026-W40")
+
+    def test_projeto_no_cabecalho_do_log(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        arq = tmp / "FRA-1-claude-20261006-120000.jsonl"
+        arq.write_text(
+            json.dumps({"type": "tutti_projeto", "projeto": "proj-a", "nome": "Projeto A"}) + "\n"
+            + json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                          "num_turns": 1, "duration_ms": 1000,
+                          "total_cost_usd": 0.1}) + "\n", encoding="utf-8")
+        r = p.parse_log(arq)
+        self.assertEqual(r["projeto"], "proj-a")
+        self.assertEqual(r["projeto_nome"], "Projeto A")
+
+    def test_log_antigo_nao_inventa_projeto(self):
+        r = p.parse_log(LOGS / "FRA-250-claude-20261003-101500.jsonl")
+        self.assertNotIn("projeto", r)
 
 
 class Execucoes(unittest.TestCase):

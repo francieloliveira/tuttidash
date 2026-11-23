@@ -111,6 +111,7 @@ struct ConteudoPagina: View {
     var body: some View {
         switch pagina {
         case .dashboard: DashboardPainel(modelo: modelo, largura: largura, ir: ir)
+        case .projetos: PaginaProjetos(modelo: modelo)
         case .lanes: PaginaLanes(modelo: modelo)
         case .builds: PaginaBuilds(modelo: modelo)
         case .instalar: PaginaInstalar(modelo: modelo)
@@ -396,7 +397,7 @@ struct CabecalhoPainel: View {
     private var paginaTemBusca: Bool {
         switch pagina {
         case .lanes, .builds, .instalar, .entregas, .testes, .custos: return true
-        case .dashboard, .brainstorm, .esperando, .ajustes: return false
+        case .dashboard, .projetos, .brainstorm, .esperando, .ajustes: return false
         }
     }
 

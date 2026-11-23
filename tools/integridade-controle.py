@@ -54,6 +54,8 @@ COPIAS = (
     ("tools/lanes.command", "tools/lanes.command", 0o755),
     ("tools/script-controle.sh", "tools/script-controle.sh", 0o644),
     ("gasto_lanes/catalogo.py", "gasto_lanes/catalogo.py", 0o644),
+    ("gasto_lanes/agenda.py", "gasto_lanes/agenda.py", 0o644),
+    ("gasto_lanes/eventos.py", "gasto_lanes/eventos.py", 0o644),
     ("gasto_lanes/projetos.py", "gasto_lanes/projetos.py", 0o644),
     ("gasto_lanes/privacidade.py", "gasto_lanes/privacidade.py", 0o644),
     ("gasto_lanes/linear_ids.py", "gasto_lanes/linear_ids.py", 0o644),

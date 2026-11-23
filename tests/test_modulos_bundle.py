@@ -16,8 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = "/usr/bin/python3"
-MODULOS = ("catalogo.py", "projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
-           "proxy_linear.py", "revisao_ia.py", "erros_conhecidos.py", "instalar.py")
+MODULOS = ("catalogo.py", "agenda.py", "eventos.py", "projetos.py", "privacidade.py", "linear_ids.py", "fila.py",
+           "config.py", "proxy_linear.py", "revisao_ia.py", "erros_conhecidos.py", "instalar.py")
 
 GANCHO = (
     "\nimport os as _fra_os, sys as _fra_sys\n"
@@ -68,7 +68,7 @@ class ModulosDoBundle(unittest.TestCase):
         self.veneno = self.tmp / "veneno"
         for pasta in ("lanes", "bots", "tools", "gasto_lanes"):
             base = self.home / ".transcentia" / pasta
-            for nome in ("catalogo.py", "privacidade.py", "projetos.py", "linear_ids.py",
+            for nome in ("catalogo.py", "agenda.py", "eventos.py", "privacidade.py", "projetos.py", "linear_ids.py",
                          "fila.py", "config.py", "proxy_linear.py", "gasto_privado.py"):
                 _escrever(base / nome, VENENO)
 

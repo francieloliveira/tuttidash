@@ -242,6 +242,24 @@ final class PainelMontagemTests: XCTestCase {
         XCTAssertEqual(snap.geral, .atencao)
     }
 
+    func testCustoPorProjetoNaoSomaProjetosNemInventaMedida() {
+        var entrada = EntradaPainel.vazia
+        entrada.heartbeat = .init(at: "2026-10-16 17:59:00", dryRun: false, habilitadas: LanesPainel.ordem)
+        let execs = [
+            ex("FRA-1-claude-20261016-100000", custo: 2, projeto: "p1", projetoNome: "Projeto 1"),
+            ex("FRA-2-claude-20261016-100100", custo: 3, projeto: "p1", projetoNome: "Projeto 1"),
+            ex("FRA-3-grok-20261016-100200", custo: nil, projeto: "p2", projetoNome: "Projeto 2"),
+        ]
+        let porProjeto = montar(entrada, execucoes: execs).custos.porProjeto
+        let p1 = porProjeto.first { $0.projeto == "p1" }
+        let p2 = porProjeto.first { $0.projeto == "p2" }
+        XCTAssertEqual(p1?.custoUSD ?? 0, 5, accuracy: 0.001)
+        XCTAssertEqual(p1?.execucoes, 2)
+        XCTAssertNil(p2?.custoUSD)
+        XCTAssertEqual(p2?.desconhecidas, 1)
+        XCTAssertEqual(porProjeto.count, 2)
+    }
+
     func testTopCincoCalculadoComMotivoDeRepeticao() {
         var entrada = EntradaPainel.vazia
         entrada.heartbeat = .init(at: "2026-10-16 17:59:00", dryRun: false, habilitadas: LanesPainel.ordem)

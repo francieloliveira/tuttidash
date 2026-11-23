@@ -537,6 +537,40 @@ private struct LinhaProjeto: View {
             Stepper(value: $linha.rascunho.provaTentativas, in: 1...5) {
                 Text(String(localized: "Tentativas da prova: \(p.provaTentativas)"))
             }
+            Stepper(value: $linha.rascunho.prioridade, in: 0...9) {
+                Text(String(localized: "Prioridade na agenda: \(p.prioridade)"))
+            }
+            .help(String(localized: "Maior primeiro. Sem agenda multi-projeto, é só informativo."))
+            Stepper(value: $linha.rascunho.maxLanes, in: 0...20) {
+                Text(String(localized: "Máximo de lanes: \(p.maxLanes == 0 ? String(localized: "global") : "\(p.maxLanes)")"))
+            }
+            Stepper(value: $linha.rascunho.maxTarefasPorLane, in: 0...10) {
+                Text(String(localized: "Tarefas por lane: \(p.maxTarefasPorLane == 0 ? String(localized: "global") : "\(p.maxTarefasPorLane)")"))
+            }
+            Stepper(value: $linha.rascunho.laneTimeoutMin, in: 0...1440, step: 5) {
+                Text(String(localized: "Timeout da lane (min): \(p.laneTimeoutMin == 0 ? String(localized: "global") : "\(p.laneTimeoutMin)")"))
+            }
+            Stepper(value: $linha.rascunho.proofTimeoutMin, in: 0...1440, step: 5) {
+                Text(String(localized: "Timeout da prova (min): \(p.proofTimeoutMin == 0 ? String(localized: "global") : "\(p.proofTimeoutMin)")"))
+            }
+            ForEach(["baixo", "medio", "alto"], id: \.self) { esforco in
+                HStack(spacing: 8) {
+                    Text(String(localized: "Orçamento \(esforco) (US$)"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    TextField(String(localized: "global"), value: orcamento(esforco),
+                              format: .number.precision(.fractionLength(0...2)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                    Text(String(localized: "0 = global")).font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            TextField(String(localized: "Objetivo do projeto"), text: $linha.rascunho.planejamento.objetivo)
+            TextField(String(localized: "Situação"), text: $linha.rascunho.planejamento.situacao,
+                      prompt: Text(String(localized: "ex.: em dia, em risco, pausado")))
+            HStack(spacing: 8) {
+                TextField(String(localized: "Início (AAAA-MM-DD)"), text: $linha.rascunho.planejamento.inicio)
+                TextField(String(localized: "Alvo (AAAA-MM-DD)"), text: $linha.rascunho.planejamento.alvo)
+            }
             TextField(String(localized: "Conferência antes do push"), text: $linha.rascunho.antesDoPush,
                       prompt: Text(String(localized: "comando; vazio = nenhuma")))
             CampoLinhas(titulo: String(localized: "Caminhos protegidos"),
@@ -547,6 +581,16 @@ private struct LinhaProjeto: View {
                         valores: $linha.rascunho.copiarParaWorktree)
         }
         acoes
+    }
+
+    /// Orçamento por esforço deste projeto; 0 remove a chave e volta a herdar o global.
+    private func orcamento(_ esforco: String) -> Binding<Double> {
+        Binding(
+            get: { p.budgetUSD[esforco] ?? 0 },
+            set: { novo in
+                if novo > 0 { linha.rascunho.budgetUSD[esforco] = novo }
+                else { linha.rascunho.budgetUSD.removeValue(forKey: esforco) }
+            })
     }
 
     /// FRA-618: só libera; quem usa é o card com a etiqueta `lane:bancada`, na lane claude.
