@@ -206,10 +206,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timerUso?.tolerance = 15
     }
 
-    /// «Sair» encerra o trabalho automático junto com o app. Fechar o painel não.
+    /// «Sair» encerra o trabalho automático junto com o app — salvo `agenda.headless`,
+    /// que mantém o proxy do Linear e o trabalho de fundo sem a interface.
     func applicationWillTerminate(_ notification: Notification) {
-        proxy.parar()
-        PresencaDoApp.pararTudo()
+        let cfg = Configuracao.lerArquivo()
+        let headless = (Configuracao.valor("agenda.headless", em: cfg) as? Bool) == true
+        if !headless {
+            proxy.parar()
+            PresencaDoApp.pararTudo()
+        }
     }
 
     /// Fechar a janela do painel deixa a pílula. Não é «Sair».

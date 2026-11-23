@@ -36,7 +36,8 @@
   ],
   "agenda": {
     "multiprojeto": false,
-    "simultaneo": false
+    "simultaneo": false,
+    "headless": false
   },
   "lanes": {
     "budget_usd": {"baixo": 3, "medio": 8, "alto": 20},

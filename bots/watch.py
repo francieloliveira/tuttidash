@@ -80,8 +80,34 @@ STATE_DIR = HOME / ".transcentia" / "bots"
 APP_PID = HOME / ".transcentia" / "lanes" / "app.pid"
 
 
+PROXY_PID = STATE_DIR / "linear-proxy.pid"
+
+
+def proxy_vivo() -> bool:
+    try:
+        pid = int(PROXY_PID.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        args = subprocess.run(["/bin/ps", "-p", str(pid), "-o", "args="],
+                              capture_output=True, text=True, timeout=5, check=False).stdout
+    except Exception:  # noqa: BLE001
+        return False
+    return "proxy_linear.py" in args
+
+
 def app_aberta() -> bool:
-    """Sem o app do TuttiDash aberto, o vigia não publica nem mergeia."""
+    """Sem o app do TuttiDash aberto, o vigia não trabalha; com headless, o proxy vivo basta."""
+    if _cfg("agenda.headless", False) and proxy_vivo():
+        return True
     try:
         pid = int(APP_PID.read_text().split()[0])
     except (OSError, ValueError, IndexError):

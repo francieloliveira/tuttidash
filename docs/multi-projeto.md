@@ -13,8 +13,8 @@ experimental, vigia por ciclo, multi-repo, página de portfólio e planejamento.
 Proposta aplicada: [proposta-norte-multiprojeto.md](proposta-norte-multiprojeto.md).
 Estado card a card: [backlog-status.md](backlog-status.md).
 
-Ainda fora desta entrega: alguns arquivos auxiliares globais, headless (FRA-718),
-isolamento real (FRA-719) e distribuição notarizada (FRA-720). O guia de uso está em
+Ainda fora desta entrega: alguns arquivos auxiliares globais, isolamento real
+(FRA-719) e distribuição notarizada (FRA-720). O guia de uso está em
 [docs/produto/guia-portfolio.md](guia-portfolio.md).
 
 ## O que já funciona
@@ -40,6 +40,7 @@ isolamento real (FRA-719) e distribuição notarizada (FRA-720). O guia de uso e
 | Retenção | `gasto_lanes/retencao.py` | `gasto retencao` conta/poda eventos e ledger por data; sem `--aplicar` não grava e linha sem data é mantida. |
 | Segurança | `gasto_lanes/seguranca.py` | `gasto seguranca` audita 0700/0600 e symlinks no estado/config/ledger; `--corrigir` aplica. |
 | Release | `tools/release.sh` | Build assinado, zip e SHA-256; `--notarizar` usa `notarytool` quando há perfil. |
+| Headless | `lanes/dispatcher.py`, `bots/watch.py`, `AppDelegate.swift` | `agenda.headless: true` mantém o proxy do Linear ao sair do app e deixa dispatcher/vigia trabalharem pelo proxy vivo; sem app e sem proxy, nada roda. |
 | Multi-repo | `gasto_lanes/projetos.py` | Cadastro `repos`, claim pelo rótulo `repo:<slug>`, `repo_slug` no estado e vigia revisando/mergeando cada repo do projeto. |
 
 ## Como ligar a agenda
@@ -82,6 +83,17 @@ A flag aparece em Ajustes › Lanes › Projetos.
 A mesma lane pode ter uma vaga em cada projeto; a promoção do Todo é um card por
 projeto por ciclo. A janela de tmux mostra um painel por sessão; o painel do app
 também lê as duas.
+
+## Modo headless (experimental)
+
+Com `agenda.headless: true`, ao sair do app:
+
+- o app **não** mata o proxy do Linear nem os agentes;
+- o dispatcher e o vigia do launchd continuam, desde que o proxy esteja vivo;
+- o token continua só na memória do proxy; fechar o app não o devolve ao disco.
+
+Sem o proxy vivo (ou após reboot), o dispatcher e o vigia voltam a exigir o app.
+A opção fica em Ajustes › Lanes › Projetos.
 
 ## Limites conhecidos desta fase
 

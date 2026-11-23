@@ -442,8 +442,41 @@ APP_PID = STATE_DIR / "app.pid"
 VIEWER_FILE = STATE_DIR / "viewer-id"
 
 
+PROXY_PID = STATE_DIR / "linear-proxy.pid"
+
+
+def proxy_vivo() -> bool:
+    """Proxy do Linear vivo pelo pid; confere a linha de comando para não pegar PID reciclado."""
+    try:
+        pid = int(PROXY_PID.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        args = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        args = ""
+    if not args:
+        try:
+            import subprocess as _sp
+            args = _sp.run(["/bin/ps", "-p", str(pid), "-o", "args="],
+                           capture_output=True, text=True, timeout=5).stdout
+        except Exception:  # noqa: BLE001
+            args = ""
+    return "proxy_linear.py" in args
+
+
 def app_aberta() -> bool:
-    """O app TuttiDash é o dono do ciclo: sem o PID vivo, o dispatcher não trabalha."""
+    """O app TuttiDash é o dono do ciclo; com `agenda.headless`, o proxy vivo basta."""
+    if _cfg("agenda.headless", False) and proxy_vivo():
+        return True
     try:
         pid = int(APP_PID.read_text().split()[0])
     except (OSError, ValueError, IndexError):

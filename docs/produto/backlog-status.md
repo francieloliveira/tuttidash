@@ -23,6 +23,7 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 | FRA-716 | `gasto auditoria` por projeto/card/etapa/data. |
 | FRA-717 | `gasto backup`/`restaurar`, `gasto doutor`, `gasto retencao`, `gasto seguranca`. |
 | FRA-721 | Webhook `gasto notificar` e `semanal --enviar`. |
+| FRA-718 | `agenda.headless`: app sai, proxy e agentes continuam; dispatcher/vigia aceitam proxy vivo. |
 | FRA-722 | Guia do portfólio e docs de operação. |
 
 ## Parcial / limitações conhecidas
@@ -36,6 +37,5 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 ## Pendente
 
 - limites/arquivos auxiliares namespaced (FRA-706);
-- headless sem app (FRA-718);
 - isolamento real (FRA-719);
 - notarização/distribuição (FRA-720).

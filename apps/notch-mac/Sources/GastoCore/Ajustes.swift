@@ -114,6 +114,8 @@ public enum CatalogoAjustes {
                 CampoAjuste("lanes.effort_default", String(localized: "Esforço padrão"), .escolha(esforcos), "medio"),
                 CampoAjuste("agenda.multiprojeto", String(localized: "Agenda multi-projeto (rodízio entre os projetos ativos)"), .booleano, "false",
                             ajuda: String(localized: "Desligado, o dispatcher trabalha só o projeto principal. Ligado, ele alterna os projetos ativos; a lane em andamento continua sendo do projeto dela.")),
+                CampoAjuste("agenda.headless", String(localized: "Manter o proxy e o trabalho sem o app aberto (headless)"), .booleano, "false",
+                            ajuda: String(localized: "Ao sair do app, mantém o proxy do Linear e o dispatcher/vigia do launchd. O token fica só na memória do proxy.")),
                 CampoAjuste("agenda.simultaneo", String(localized: "Execução simultânea (experimental)"), .booleano, "false",
                             ajuda: String(localized: "Tenta assumir um card In Progress por lane livre, de projetos diferentes. Só usa lane explícita; o estado e a sessão da mesma lane são separados por projeto.")),
             ], nota: String(localized: "O repositório de onde a lane trabalha, a pasta de worktrees, a prova e o freio de caminho protegido saem do cadastro de projetos, abaixo. O modelo de cada lane fica no bloco acima: automático pelo peso do card, ou um modelo fixo."), lanesHabilitadas: true, projetos: true, modelosLane: true),
