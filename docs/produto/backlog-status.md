@@ -31,7 +31,7 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 
 ## Parcial / limitações conhecidas
 
-- **App**: build `branch-main-db07c6e` instalado e **aberto** após renovar o provisioning profile (`renovar-perfil.sh`); o profile vence em 30/11/2026.
+- **App**: build `branch-main-b418e88` instalado e **aberto** após renovar o provisioning profile (`renovar-perfil.sh`); o profile vence em 30/11/2026.
 - **FRA-701**: norte atualizado; a proposta em `proposta-norte-multiprojeto.md` fica como registro.
 
 ## Pendente
