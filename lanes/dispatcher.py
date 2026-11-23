@@ -5372,18 +5372,19 @@ RECUSA_LOG_S = 3600
 _ISSUE_RE = re.compile(r"[0-9a-fA-F-]{8,64}")
 
 
-def _arquivo_recusa(lane: str) -> Path:
-    return STATE_DIR / f"recusado-{lane}.json"
+def _arquivo_recusa(lane: str, slot: str = "") -> Path:
+    chave = slot if slot and slot != f"lane-{lane}" else lane
+    return STATE_DIR / f"recusado-{chave}.json"
 
 
-def limpar_recusa(lane: str) -> None:
-    _arquivo_recusa(lane).unlink(missing_ok=True)
+def limpar_recusa(lane: str, slot: str = "") -> None:
+    _arquivo_recusa(lane, slot).unlink(missing_ok=True)
 
 
 def avisar_estado_recusado(lane: str, st: dict, motivo: str, agora: Optional[float] = None) -> dict:
     """Registra a recusa, loga no máximo 1x/hora e avisa o dono 1x depois de RECUSA_AVISO_MIN."""
     agora = time.time() if agora is None else agora
-    f = _arquivo_recusa(lane)
+    f = _arquivo_recusa(lane, st.get("session") or "")
     try:
         reg = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError, UnicodeError):
@@ -5435,7 +5436,7 @@ def watch(lane: str, st: dict) -> None:
     if motivo:
         avisar_estado_recusado(lane, st, motivo)
         return
-    limpar_recusa(lane)
+    limpar_recusa(lane, st.get("session") or "")
     if st.get("stuck"):
         return  # precisa de ação humana: ver log; apagar lane-<x>.json libera a lane
     wt = Path(st["worktree"])

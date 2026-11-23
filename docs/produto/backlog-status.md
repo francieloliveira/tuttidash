@@ -28,7 +28,7 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 
 ## Parcial / limitações conhecidas
 
-- **FRA-706**: execução simultânea é experimental; exige lane explícita; a janela tmux já cria um painel por sessão; alguns arquivos auxiliares ainda são globais.
+- **FRA-706**: execução simultânea é experimental; exige lane explícita; janela tmux por sessão, parada e recusa por sessão; limites de conta continuam globais por lane (correto).
 - **App**: build `branch-main-51f672d` instalado e **aberto** após renovar o provisioning profile (`renovar-perfil.sh`); o profile vence em 30/11/2026.
 - **FRA-719**: há auditoria de permissões, mas **não** isolamento real da lane (mesmo usuário, `~/.ssh` acessível). Fase 5 pendente.
 - **FRA-720**: build assinado e `tools/release.sh`; **não notarizado** (sem perfil/certificado).
