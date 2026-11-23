@@ -1,34 +1,35 @@
-# Multi-projeto — fundação implementada
+# Multi-projeto — implementado
 
-> Documento técnico do que já existe no código. O norte (`docs/produto/caminho.md`)
-> continua dizendo «um projeto»; a agenda só liga por decisão do dono e o §1 ainda
-> precisa ser atualizado por ele. Este documento não muda o norte.
+> Documento técnico do que já existe no código. O norte foi atualizado em
+> 23/11/2026: o produto percorre um ou mais projetos e a lane é agnóstica de
+> projeto. A agenda continua **desligada por padrão**.
 
-## Estado (22/11/2026)
+## Estado (23/11/2026)
 
-O núcleo da fundação FRA-702..705 está no código e testado: projeto no estado/log/ledger,
-custo por projeto, limites por projeto, agenda sequencial, vigia por ciclo e página de
-portfólio. A agenda continua **desligada por padrão** e o norte não foi alterado.
+O núcleo FRA-702..715 está no código e testado: projeto no estado/log/ledger,
+custo por projeto, limites por projeto, agenda sequencial, modo simultâneo
+experimental, vigia por ciclo, multi-repo, página de portfólio e planejamento.
 
-Proposta de mudança do norte: [proposta-norte-multiprojeto.md](proposta-norte-multiprojeto.md).
+Proposta aplicada: [proposta-norte-multiprojeto.md](proposta-norte-multiprojeto.md).
 Estado card a card: [backlog-status.md](backlog-status.md).
 
-Ainda fora desta entrega: slots simultâneos (FRA-706), nome de sessão por projeto,
-multi-repo (FRA-711), headless (FRA-718), segurança (FRA-719) e distribuição (FRA-720).
-O guia de uso está em [docs/produto/guia-portfolio.md](guia-portfolio.md).
+Ainda fora desta entrega: janela tmux para as duas sessões da mesma lane, alguns
+arquivos auxiliares ainda globais, headless (FRA-718), isolamento real (FRA-719)
+e distribuição notarizada (FRA-720). O guia de uso está em
+[docs/produto/guia-portfolio.md](guia-portfolio.md).
 
 ## O que já funciona
 
 | Peça | Onde | Comportamento |
 |---|---|---|
-| Identidade no estado | `lanes/dispatcher.py`, `gasto_lanes/estado.py` | `lane-<lane>.json` e `claim-<lane>.json` gravam `projeto` e `projeto_nome`. |
+| Identidade no estado | `lanes/dispatcher.py`, `gasto_lanes/estado.py` | `lane-<lane>.json`/`claim-<lane>.json` gravam `projeto`/`projeto_nome`; no simultâneo viram `lane-<projeto>-<lane>.json`/`claim-<projeto>-<lane>.json`. |
 | Log atribuível | `lanes/run_lane.sh`, `gasto_lanes/parser.py` | O log começa com `{"type":"tutti_projeto","projeto":"<id>","nome":"<nome>"}`; log antigo fica sem projeto, sem ser descartado. |
 | Custo por projeto | `gasto_lanes/ledger.py`, `report.py`, `cli.py` | O ledger grava `projeto`/`projeto_nome`; `relatorio` tem a dimensão `projeto` e o filtro `--projeto ID,NOME`. |
 | Limites por projeto | `gasto_lanes/projetos.py`, `lanes/dispatcher.py` | `operacao.budget_usd`, `lane_timeout_min`, `proof_timeout_min`, `max_lanes` e `max_tarefas_por_lane`; vazio/0 herda o global `lanes.*`. |
 | Prioridade | `gasto_lanes/projetos.py` | `prioridade` (0–9) entra na ordem inicial da agenda; não dá exclusividade. |
 | Agenda | `gasto_lanes/agenda.py` | Rodízio entre projetos ativos, com prioridade na ordem inicial e lane em andamento mandando. Desligada por padrão. |
 | Vigia por ciclo | `bots/watch.py` | Com a agenda ligada, percorre todos os projetos ativos no mesmo tick, aponta `REPOS`/ids e isola o estado por projeto. |
-| Projeto no painel | `apps/notch-mac` | O topo mostra o projeto do ciclo; a página **Projetos** lista o cadastro, o estado ligado/desligado, a prioridade, quem está no ciclo e o custo conhecido dos últimos 7 dias por projeto, e permite tornar outro projeto principal. Lanes e histórico de entregas de outros ciclos ainda não aparecem. |
+| Projeto no painel | `apps/notch-mac` | O topo mostra o projeto do ciclo; a página **Projetos** lista cadastro, estado, prioridade, custo de 7 dias, fluxo e lanes/ocupação, e permite tornar outro projeto principal. A lane mostra o projeto no detalhe. |
 | Eventos | `gasto_lanes/eventos.py` | Claim, finalize e merge viram linhas JSONL com projeto/card/lane/etapa; `gasto eventos` lê e filtra. |
 | Fluxo | `gasto_lanes/fluxo.py` | `gasto fluxo` conta claims, finais, merges, falhas e paradas por projeto, com duração média claim→finalize; a página **Projetos** mostra o mesmo resumo. |
 | Relatório | `gasto_lanes/semanal.py` | `gasto semanal` gera o relatório dos últimos 7 dias por projeto, com custo, execuções, fluxo e «sem medida». |
@@ -79,19 +80,20 @@ A flag aparece em Ajustes › Lanes › Projetos.
 { "agenda": { "multiprojeto": true, "simultaneo": true } }
 ```
 
-Ainda falta namespacing de sessão/estado para a mesma lane e a promoção do Todo por
-projeto; por isso o modo é experimental e não está na interface.
+A mesma lane pode ter uma vaga em cada projeto; a promoção do Todo é um card por
+projeto por ciclo. A janela única de tmux ainda mostra só uma das sessões; o
+painel do app lê as duas.
 
 ## Limites conhecidos desta fase
 
-- **É sequencial.** Um projeto por vez; ainda não há slots simultâneos (FRA-706).
+- **Simultâneo é experimental.** Exige lane explícita; a janela única de tmux não
+  mostra duas sessões da mesma lane.
+- **Arquivos auxiliares.** Stop já é por sessão; alguns limites/marcadores ainda
+  são globais por lane.
 - **O vigia percorre todos os projetos ativos no tick.** Cada um tem seu
   `~/.transcentia/bots/projetos/<id>.json`; `watch.repos` manual não é usado nesse modo.
-- **Sessão e arquivos de estado ainda são globais.** Como só um projeto roda por
-  vez, não colidem; a identidade por sessão/arquivo é o FRA-702 completo.
-- **O painel ainda é single-project.** O heartbeat já traz `projects`, mas o notch
-  não usa (FRA-708).
-- **Nada disso muda o norte.** A mudança do §1 é o FRA-701, do dono.
+- **Multi-repo é por card.** O rótulo `repo:<slug>` escolhe o repo; sem rótulo, o principal.
+- **Isolamento real ainda não existe.** A lane roda com o usuário do Mac (FRA-719).
 
 ## Como conferir
 

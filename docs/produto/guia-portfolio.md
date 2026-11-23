@@ -3,9 +3,9 @@
 Este guia mostra como operar **vários projetos** no TuttiDash sem editar código.
 Ele pressupõe a instalação normal do app e das ferramentas (`tools/install.sh`).
 
-> O norte atual ainda descreve «um projeto por vez». A agenda multi-projeto é
-> opcional e sequencial; não trate o produto como multiusuário ou concorrente
-> enquanto o §1 do norte não for atualizado pelo dono.
+> O norte foi atualizado em 23/11/2026: o produto percorre um ou mais projetos e
+> a lane é agnóstica de projeto. O rodízio é o padrão; o modo simultâneo é
+> experimental. O produto continua local, para um desenvolvedor no Mac.
 
 ## 1. Cadastrar dois projetos
 

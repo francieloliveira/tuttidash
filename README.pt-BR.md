@@ -4,9 +4,10 @@ Vários agentes de código trabalhando em paralelo num backlog do Linear, acompa
 
 ![Painel do TuttiDash com dados de exemplo](docs/imagens/painel.png)
 
-O TuttiDash é um conjunto de ferramentas locais para tocar um projeto do Linear
-com agentes de código em **lanes** paralelas: um card, um worktree do git e um agente por lane de cada
-vez. Qualquer projeto com um projeto no Linear e um repositório no GitHub pode ser cadastrado. Ele é
+O TuttiDash é um conjunto de ferramentas locais para tocar **um ou mais projetos** do Linear
+com agentes de código em **lanes** paralelas: um card, um worktree do git e um agente por vaga de lane de cada
+vez. A lane é agnóstica de projeto: o dispatcher passa projeto, repositório e card. Qualquer projeto
+com um projeto no Linear e um ou mais repositórios no GitHub pode ser cadastrado. Ele é
 compartilhado como está, como exemplo que funciona, e nasceu no Mac e no jeito de trabalhar de um
 desenvolvedor, o que ainda aparece. [Read in English](README.md).
 

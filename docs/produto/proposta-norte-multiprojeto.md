@@ -1,10 +1,10 @@
 # Proposta: norte para vários projetos
 
-> Proposta ao dono. Este arquivo **não altera** `docs/produto/caminho.md`; a
-> mudança do norte é decisão do dono (R5). O card FRA-701 no Linear é o lugar da
-> decisão.
+> **Aplicada em 23/11/2026 com autorização do dono.** O §1 e o R1 de
+> `docs/produto/caminho.md` já foram atualizados; este arquivo fica como registro
+> da decisão e das limitações.
 
-## O que mudaria no §1
+## O que mudou no §1
 
 Texto atual: «…percorre um projeto do Linear… Serve a qualquer projeto cadastrado
 com um projeto no Linear e um repositório no GitHub…».
@@ -19,26 +19,25 @@ Proposta:
 > a qualquer projeto cadastrado com um projeto no Linear e um ou mais repositórios
 > no GitHub; é compartilhado como está.
 
-## O que precisaria entrar no §2
+## O que entrou no §2
 
-- **R1 (novo texto):** cada **vaga de lane** leva um card, um worktree git e um
-  agente por vez. Um mesmo agente pode ter uma vaga por projeto **quando o estado
-  e a sessão forem namespaced por projeto**; sem esse namespacing, a lane é global.
+- **R1 (texto aplicado):** cada **vaga de lane** leva um card, um worktree git e
+  um agente por vez. A lane não pertence a projeto; o projeto, o repositório e o
+  card vêm do dispatcher. A mesma lane pode ter uma vaga por projeto quando estado
+  e sessão forem namespaced por projeto.
 - **R3/R4:** continuam iguais (prova remota, revisor, freios e caminhos protegidos).
 - **R6:** a chave do Linear continua só no Keychain e no proxy; multi-projeto não
   cria uma segunda cópia.
 
-## Decisões que o dono precisa tomar
+## Decisões tomadas
 
-1. **Modo:** rodízio sequencial (padrão) ou execução simultânea (experimental)?
-2. **Concorrência da mesma lane:** permitir a mesma lane em dois projetos exige
-   namespacing de estado/sessão; o produto deve prometer isso ou manter uma vaga
-   global por agente?
-3. **Multi-repo:** um projeto pode ter vários repositórios; quantos e como o card
-   escolhe (`repo:<slug>`)?
-4. **Escopo local:** continua um desenvolvedor no Mac, ou passa a multiusuário?
-5. **Isolamento (FRA-719):** a lane ainda roda com o usuário do Mac; prometer
-   isolamento exige uma fase de segurança separada.
+1. **Modo:** rodízio sequencial é o padrão; simultâneo é experimental.
+2. **Lane agnóstica:** a lane não tem dono de projeto; o dispatcher passa projeto,
+   repositório e card. A mesma lane pode ter uma vaga por projeto com estado e
+   sessão namespaced (`lane-<projeto>-<lane>`).
+3. **Multi-repo:** o card escolhe pelo rótulo `repo:<slug>`; sem rótulo, o principal.
+4. **Escopo local:** continua um desenvolvedor no Mac.
+5. **Isolamento (FRA-719):** ainda pendente; a lane roda com o usuário do Mac.
 
 ## Enquanto a decisão não vem
 
