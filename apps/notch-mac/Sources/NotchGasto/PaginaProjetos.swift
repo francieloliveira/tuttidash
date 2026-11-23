@@ -6,6 +6,9 @@ import GastoCore
 /// «sem leitura neste ciclo».
 struct PaginaProjetos: View {
     @ObservedObject var modelo: ModeloNotch
+    /// A página Projetos é dona do cadastro; o botão do cabeçalho abre a linha nova
+    /// no gerenciador que fica logo abaixo.
+    var aoAdicionar: () -> Void = {}
     @State private var erro: String?
 
     private var projetos: [ProjetoCadastro] { modelo.config.projetos }
@@ -22,10 +25,7 @@ struct PaginaProjetos: View {
                     HStack(spacing: 10) {
                         Text("\(projetos.count) cadastrados · \(ativos) ligados")
                             .fontePainel(11.5).foregroundStyle(PV.mudo)
-                        Button {
-                            NavegacaoPainel.compartilhada.abrirBloco(.lanes,
-                                                                      grupo: String(localized: "Projetos"))
-                        } label: {
+                        Button(action: aoAdicionar) {
                             Label("Adicionar projeto", systemImage: "plus")
                         }
                         .buttonStyle(.bordered)
@@ -95,15 +95,6 @@ struct PaginaProjetos: View {
             statPV("Principal", principal, cor: PV.texto)
             statPV("Rodando", "\(rodando)", cor: rodando > 0 ? Aurora.verde : PV.mudo)
             statPV("Fila", "\(fila)", cor: fila > 0 ? Aurora.azul : PV.mudo)
-            Button {
-                NavegacaoPainel.compartilhada.abrirBloco(.lanes,
-                                                          grupo: String(localized: "Projetos"))
-            } label: {
-                Label("Gerenciar", systemImage: "slider.horizontal.3")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .padding(.horizontal, 10)
         }
         .linhaPV()
     }

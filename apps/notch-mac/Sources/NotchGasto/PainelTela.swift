@@ -130,13 +130,31 @@ struct ConteudoPagina: View {
 /// Portfólio + instalação na mesma página: o que é do projeto e o que se instala nele.
 struct PaginaProjetosComInstalar: View {
     @ObservedObject var modelo: ModeloNotch
+    @StateObject private var estadoProjetos: EstadoProjetos
+
+    init(modelo: ModeloNotch) {
+        self.modelo = modelo
+        _estadoProjetos = StateObject(wrappedValue: EstadoProjetos(modelo: ModeloAjustes()))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            PaginaProjetos(modelo: modelo)
+            PaginaProjetos(modelo: modelo, aoAdicionar: { estadoProjetos.adicionar() })
+            HStack(spacing: 10) {
+                Text("Gerenciar projetos").fontePainel(15, .semibold)
+                Text("cadastro, repositórios e instalação de cada projeto")
+                    .fontePainel(11.5).foregroundStyle(PV.mudo)
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 18)
+            .padding(.bottom, 4)
+            cartaoPagina("Projetos") {
+                SecaoProjetos(estado: estadoProjetos, embutido: true)
+            }
             HStack(spacing: 10) {
                 Text("Instalação").fontePainel(15, .semibold)
-                Text("configurada em Ajustes › Lanes › Projetos")
+                Text("configure no cadastro acima; execute aqui")
                     .fontePainel(11.5).foregroundStyle(PV.mudo)
                 Spacer()
             }
