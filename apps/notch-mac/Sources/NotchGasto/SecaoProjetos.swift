@@ -423,17 +423,46 @@ struct SecaoProjetos: View {
         } else if let a = estado.aviso {
             Label(a, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
         }
+        resumoGeral
         if estado.linhas.isEmpty {
-            Text(String(localized: "Nenhum projeto ainda. Adicione o primeiro: escolha o projeto do Linear e o repositório do GitHub em que as lanes vão trabalhar."))
-                .font(.callout).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "Nenhum projeto ainda.")).font(.callout.weight(.medium))
+                Text(String(localized: "Adicione o primeiro: escolha o projeto do Linear e o repositório do GitHub em que as lanes vão trabalhar."))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 6)
         }
         ForEach($estado.linhas) { $l in
             LinhaProjeto(linha: $l, estado: estado)
+            Divider().overlay(PV.divisor)
         }
-        Button { estado.adicionar() } label: {
-            Label(String(localized: "Adicionar projeto"), systemImage: "plus")
+    }
+
+    /// Resumo enxuto no topo: quantos projetos, quantos ligados, o principal e as classes
+    /// de instalação presentes. O botão de adicionar fica aqui, não no fim da lista.
+    private var resumoGeral: some View {
+        let projetos = estado.projetos
+        let ativos = projetos.filter(\.ativo).count
+        let principal = ProjetosConfig.padrao(projetos)?.nome
+        let classes = Set(projetos.map { $0.instalacao.classe.rotulo }).sorted()
+        return HStack(spacing: 10) {
+            Label("\(projetos.count) cadastrados", systemImage: "square.grid.2x2")
+            Label("\(ativos) ligados", systemImage: "checkmark.circle")
+            if let principal {
+                Label(principal, systemImage: "star.fill")
+            }
+            if !classes.isEmpty {
+                Text(classes.joined(separator: " · ")).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            Button { estado.adicionar() } label: {
+                Label(String(localized: "Adicionar projeto"), systemImage: "plus")
+            }
+            .disabled(estado.temNova)
         }
-        .disabled(estado.temNova)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 4)
     }
 
     private var rodape: some View {
@@ -516,7 +545,7 @@ private struct LinhaProjeto: View {
             ?? (p.projetoID.isEmpty ? String(localized: "Linear: escolha o projeto") : String(localized: "Linear: projeto escolhido"))
         let gh = p.github.isEmpty ? String(localized: "GitHub: escolha o repositório") : p.github
         let pasta = p.repo.isEmpty ? String(localized: "sem pasta") : p.repo
-        return [lin, gh, pasta].joined(separator: " · ")
+        return [lin, gh, pasta, p.instalacao.classe.rotulo].joined(separator: " · ")
     }
 
     // MARK: Formulário

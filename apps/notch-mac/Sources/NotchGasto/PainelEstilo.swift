@@ -69,7 +69,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     /// Páginas da lista de cima; Ajustes fica abaixo do divisor, com sub-seções.
-    static var principais: [PaginaPainel] { allCases.filter { $0 != .ajustes } }
+    static var principais: [PaginaPainel] { allCases.filter { $0 != .ajustes && $0 != .instalar } }
 
     var titulo: String {
         switch self {
@@ -90,7 +90,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
     var subtitulo: String {
         switch self {
         case .dashboard: return "Visão geral do ambiente de build, testes e entregas"
-        case .projetos: return "Portfólio: projetos ligados, prioridade e o ciclo atual"
+        case .projetos: return "Portfólio, ciclo atual e a instalação de cada projeto"
         case .lanes: return "Estado, branch e ações de cada lane"
         case .builds: return "Lock, fila, simulador e histórico de execuções"
         case .instalar: return "Como cada projeto se instala: serviço, artefato ou nenhuma"

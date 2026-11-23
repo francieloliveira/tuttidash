@@ -111,10 +111,9 @@ struct ConteudoPagina: View {
     var body: some View {
         switch pagina {
         case .dashboard: DashboardPainel(modelo: modelo, largura: largura, ir: ir)
-        case .projetos: PaginaProjetos(modelo: modelo)
+        case .projetos, .instalar: PaginaProjetosComInstalar(modelo: modelo)
         case .lanes: PaginaLanes(modelo: modelo)
         case .builds: PaginaBuilds(modelo: modelo)
-        case .instalar: PaginaInstalar(modelo: modelo)
         case .entregas: PaginaEntregas(modelo: modelo)
         case .testes: PaginaTestes(modelo: modelo)
         case .custos: PaginaCustos(modelo: modelo)
@@ -124,6 +123,19 @@ struct ConteudoPagina: View {
             if let s = CatalogoAjustes.secoes().first(where: { $0.id == NavegacaoPainel.compartilhada.secao }) {
                 PaginaAjustes(secao: s)
             }
+        }
+    }
+}
+
+/// Portfólio + instalação na mesma página: o que é do projeto e o que se instala nele.
+struct PaginaProjetosComInstalar: View {
+    @ObservedObject var modelo: ModeloNotch
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PaginaProjetos(modelo: modelo)
+            Divider().overlay(PV.divisor).padding(.vertical, 4)
+            PaginaInstalar(modelo: modelo)
         }
     }
 }
