@@ -17,6 +17,8 @@ class SlotDeLane(unittest.TestCase):
             self.assertEqual(d.state_file("claude", p).name, "lane-p1-claude.json")
         with mock.patch.object(d, "simultaneo_ligado", return_value=False):
             self.assertEqual(d.slot_de_lane("claude", p), "claude")
+        self.assertEqual(d.stop_file("claude", "lane-p1-claude").name, "stop-lane-p1-claude")
+        self.assertEqual(d.stop_file("claude", "lane-claude").name, "stop-claude")
 
 
 class RepoDoCard(unittest.TestCase):

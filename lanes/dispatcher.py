@@ -1608,6 +1608,12 @@ def claim_file(lane: str, p=None) -> Path:
     return STATE_DIR / f"claim-{slot_de_lane(lane, p)}.json"
 
 
+def stop_file(lane: str, session: str = "") -> Path:
+    """Pedido de parada da vaga. Sessão namespaced usa o nome completo."""
+    chave = session if isinstance(session, str) and session.startswith("lane-") and session != f"lane-{lane}" else lane
+    return STATE_DIR / f"stop-{chave}"
+
+
 def gravar_claim(lane: str, st: dict) -> None:
     """Par que o `claim` gravou. O JSON da lane não pode trocar estes campos."""
     dados = {k: st.get(k) for k in _CAMPOS_CLAIM}
@@ -4619,9 +4625,9 @@ def acompanhar_prova(st: dict, wt: Path, suites: list[str]) -> str:
     """
     prova = preparar_prova_dir(st, wt)
     _avisar_pid_da_worktree(wt)
-    stop_file = STATE_DIR / f"stop-{st['lane']}"
-    if stop_file.exists():
-        stop_file.unlink(missing_ok=True)
+    parada = stop_file(st["lane"], st.get("session") or "")
+    if parada.exists():
+        parada.unlink(missing_ok=True)
         matar_prova(st)
         return "stop"
     decisao = decidir_prova_morta(prova)
@@ -5314,7 +5320,7 @@ def log_sem_saida(log_path: str, agora: Optional[float] = None, limite: float = 
 def razao_sem_exit(st: dict, agora: Optional[float] = None) -> Optional[str]:
     """Por que a lane sem exit_code deve parar, ou None se ela segue."""
     agora = time.time() if agora is None else agora
-    if (STATE_DIR / f"stop-{st['lane']}").exists():
+    if stop_file(st["lane"], st.get("session") or "").exists() or (STATE_DIR / f"stop-{st['lane']}").exists():
         return "parada manual (menu)"
     if (agora - st["started"]) / 60 > limite_lane_min():
         return f"timeout de {limite_lane_min()} min"
@@ -5410,7 +5416,7 @@ def watch(lane: str, st: dict) -> None:
     if exit_file.is_symlink():
         log(f"lane:{lane} {st.get('card')}: exit_code é symlink; recusado")
         return
-    stop_file = STATE_DIR / f"stop-{lane}"
+    parada = stop_file(lane, st.get("session") or "")
     if (not exit_file.exists() and tmux_alive(st["session"]) and not st.get("window_ok")
             and st.get("session") == f"lane-{lane}"):
         st["window_ok"] = _show_in_lanes_window(lane, st["session"], st["card"])
@@ -5429,7 +5435,7 @@ def watch(lane: str, st: dict) -> None:
             escrever_exclusivo(exit_file, texto)
         kill_lane_tree(st["session"])
         matar_prova(st)
-        stop_file.unlink(missing_ok=True)
+        parada.unlink(missing_ok=True)
     try:
         outcome = finalize(st)
         if outcome is None:
