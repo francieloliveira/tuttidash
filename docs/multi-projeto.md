@@ -69,7 +69,9 @@ Desligada, o comportamento é o de antes: só o projeto `padrao` (ou o primeiro 
 Com `agenda.simultaneo: true`, o dispatcher tenta assumir, no mesmo ciclo, um card
 In Progress por lane livre, de projetos diferentes, e puxa **um card do Todo por
 projeto** quando sobra vaga. Ele **só usa lane explícita** (não escolhe lane
-automática) e **não roda a mesma lane em dois projetos**. Sem a flag, nada muda.
+automática). O estado e a sessão da mesma lane levam o slug do projeto
+(`lane-<projeto>-<lane>.json` e sessão `lane-<projeto>-<lane>`); a janela única de tmux
+ainda mostra só uma delas. Sem a flag, nada muda.
 A flag aparece em Ajustes › Lanes › Projetos.
 
 ```json

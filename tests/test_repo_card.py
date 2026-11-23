@@ -1,10 +1,22 @@
 """Roteamento de card para repositório (FRA-711)."""
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lanes"))
 import dispatcher as d  # noqa: E402
+
+
+class SlotDeLane(unittest.TestCase):
+    def test_slot_com_simultaneo(self):
+        p = d.projetos.Projeto(id="p1", repo="~/a")
+        with mock.patch.object(d, "simultaneo_ligado", return_value=True):
+            self.assertEqual(d.slot_de_lane("claude", p), "p1-claude")
+            self.assertTrue(d.sessao_de_lane("lane-p1-claude"))
+            self.assertEqual(d.state_file("claude", p).name, "lane-p1-claude.json")
+        with mock.patch.object(d, "simultaneo_ligado", return_value=False):
+            self.assertEqual(d.slot_de_lane("claude", p), "claude")
 
 
 class RepoDoCard(unittest.TestCase):

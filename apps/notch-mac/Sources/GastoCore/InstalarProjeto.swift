@@ -158,12 +158,13 @@ public enum InstalarProjeto {
         for nome in arquivos.sorted() where nome.hasPrefix("lane-") && nome.hasSuffix(".json") {
             guard let d = lerJSON(pasta.appendingPathComponent(nome)) else { continue }
             let dono = texto(d["projeto"])
+            let lane = texto(d["lane"])
+            let rotulo = lane.isEmpty ? nome.replacingOccurrences(of: "lane-", with: "")
+                .replacingOccurrences(of: ".json", with: "") : lane
             if !dono.isEmpty {
-                if dono == projetoID { rodando.append(nome.replacingOccurrences(of: "lane-", with: "")
-                                                        .replacingOccurrences(of: ".json", with: "")) }
+                if dono == projetoID { rodando.append(rotulo) }
             } else if projetoID == projetoPadraoID(home: home) {
-                rodando.append(nome.replacingOccurrences(of: "lane-", with: "")
-                                .replacingOccurrences(of: ".json", with: ""))
+                rodando.append(rotulo)
             }
         }
         return rodando.isEmpty ? "" : "lane rodando no projeto: " + rodando.joined(separator: ", ")

@@ -1622,10 +1622,27 @@ def rebase_dirty(st: dict, diary: list[str], repo_key: str = "app", repo: dict |
             REPOS["app"] = antigo
 
 
+def _estados_de_lane():
+    """(caminho, estado) de cada lane-*.json válido, aceitando nome com projeto."""
+    for arq in LANES_DIR.glob("lane-*.json"):
+        try:
+            st = json.loads(arq.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            continue
+        if isinstance(st, dict) and st.get("lane") in LANES_CONHECIDAS and st.get("card"):
+            yield arq, st
+
+
+def _estado_da_lane(lane: str) -> dict | None:
+    for _arq, st in _estados_de_lane():
+        if st.get("lane") == lane:
+            return st
+    return None
+
+
 def _rebase_dirty(st: dict, diary: list[str], repo_key: str) -> None:
     repo = REPOS["app"]
-    running = {json.loads(p.read_text()).get("card") for p in LANES_DIR.glob("lane-*.json")
-               if p.stem.split("-", 1)[1] in LANES_CONHECIDAS}
+    running = {st.get("card") for _arq, st in _estados_de_lane()}
     for pr in open_prs(repo):
         if pr.get("mergeStateStatus") != "DIRTY":
             continue
@@ -2511,8 +2528,7 @@ def heavier_conflict(ci: dict, files: set[str], others: list[tuple[dict, set[str
 
 
 def busy_lanes() -> set[str]:
-    return {p.stem.split("-", 1)[1] for p in LANES_DIR.glob("lane-*.json")
-            if p.stem.split("-", 1)[1] in LANES_CONHECIDAS}
+    return {str(st.get("lane")) for _arq, st in _estados_de_lane()}
 
 
 def lanes_ativas() -> set[str]:
@@ -2632,11 +2648,10 @@ def _keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     running = busy_lanes() & ativas
     running_cards: set[str] = set()
     for lane in running:
-        try:
-            card = json.loads((LANES_DIR / f"lane-{lane}.json").read_text()).get("card")
-            if card:
-                running_cards.add(card)
-        except (OSError, ValueError, AttributeError):
+        st = _estado_da_lane(lane)
+        if st and st.get("card"):
+            running_cards.add(st["card"])
+        elif st is None:
             log(f"fila: estado da lane {lane} ilegível; não conto como ocupada")
     waiting = [c for c in queue if c["identifier"] not in running_cards]
     todo = sorted([c for c in issues if c["state"]["name"] == "Todo" and is_ready(c)],
