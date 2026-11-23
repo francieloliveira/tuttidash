@@ -24,7 +24,8 @@ def _git(pasta: Path) -> bool:
 
 
 def checar(config, projetos, *, home: Path | None = None,
-           socket_linear: Path | None = None, gh: str | None = None) -> list:
+           socket_linear: Path | None = None, gh: str | None = None,
+           agenda_ligada: bool = False) -> list:
     """Lista de achados. `config` é `Configuracao` (app) ou objeto com os mesmos campos."""
     home = Path(home) if home else Path.home()
     out = []
@@ -84,8 +85,18 @@ def checar(config, projetos, *, home: Path | None = None,
             out.append(_item(NIVEL_AVISO, f"{nome}: pasta de worktrees ainda não existe ({wt})", pid))
         norte = str(getattr(p, "norte", "") or "")
         if norte:
-            if (repo / norte).is_file():
+            alvo = repo / norte
+            if alvo.is_file():
                 out.append(_item(NIVEL_OK, f"{nome}: norte {norte}", pid))
+                if agenda_ligada:
+                    try:
+                        texto = alvo.read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        texto = ""
+                    if "um projeto" in texto.lower():
+                        out.append(_item(NIVEL_AVISO,
+                                         f"{nome}: agenda multi-projeto ligada, mas o norte ainda diz «um projeto»",
+                                         pid))
             else:
                 out.append(_item(NIVEL_AVISO, f"{nome}: norte configurado não existe ({norte})", pid))
     return out

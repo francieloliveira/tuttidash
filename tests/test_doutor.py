@@ -50,6 +50,15 @@ class Doutor(unittest.TestCase):
         achados = doutor.checar(self.cfg, [self.p(ativo=False)], socket_linear=self.tmp / "sock", gh="/bin/gh")
         self.assertTrue(any(a["nivel"] == "aviso" and "inativo" in a["mensagem"] for a in achados))
 
+    def test_norte_de_um_projeto_com_agenda_ligada_avisa(self):
+        self.norte.write_text("O TuttiDash percorre um projeto do Linear.", encoding="utf-8")
+        achados = doutor.checar(self.cfg, [self.p()], socket_linear=self.tmp / "sock",
+                                gh="/bin/gh", agenda_ligada=True)
+        self.assertTrue(any("um projeto" in a["mensagem"] for a in achados))
+        sem = doutor.checar(self.cfg, [self.p()], socket_linear=self.tmp / "sock",
+                            gh="/bin/gh", agenda_ligada=False)
+        self.assertFalse(any("um projeto" in a["mensagem"] for a in sem))
+
     def test_sem_gh_e_erro(self):
         achados = doutor.checar(self.cfg, [], socket_linear=self.tmp / "sock", gh="")
         self.assertTrue(any(a["nivel"] == "erro" and "gh" in a["mensagem"] for a in achados))

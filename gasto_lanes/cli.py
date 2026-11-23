@@ -359,7 +359,11 @@ def main(argv: Optional[list] = None, out=None, err=None) -> int:
             cfg = types.SimpleNamespace(arquivoConfig=resolved["config_file"],
                                         stateDir=vals["state_dir"], logsDir=vals["logs_dir"],
                                         ledger=vals["ledger"])
-            achados = doutormod.checar(cfg, lista_projetos)
+            try:
+                agenda_ligada = bool(cfgmod.obter("agenda.multiprojeto", False))
+            except Exception:  # noqa: BLE001
+                agenda_ligada = False
+            achados = doutormod.checar(cfg, lista_projetos, agenda_ligada=agenda_ligada)
             resumo = doutormod.resumo(achados)
             if args.json:
                 _print_json(resumo, out)

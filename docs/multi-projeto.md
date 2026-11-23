@@ -10,6 +10,8 @@ O núcleo da fundação FRA-702..705 está no código e testado: projeto no esta
 custo por projeto, limites por projeto, agenda sequencial, vigia por ciclo e página de
 portfólio. A agenda continua **desligada por padrão** e o norte não foi alterado.
 
+Proposta de mudança do norte: [proposta-norte-multiprojeto.md](proposta-norte-multiprojeto.md).
+
 Ainda fora desta entrega: slots simultâneos (FRA-706), nome de sessão por projeto,
 multi-repo (FRA-711), headless (FRA-718), segurança (FRA-719) e distribuição (FRA-720).
 O guia de uso está em [docs/produto/guia-portfolio.md](guia-portfolio.md).
