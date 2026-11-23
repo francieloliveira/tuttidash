@@ -317,6 +317,11 @@ class Projeto:
         suíte, e só ela é escapada."""
         return self.prova.replace("{suite}", shlex.quote(suite))
 
+    @property
+    def slug(self) -> str:
+        """Identificador estável para nomes de arquivo/sessão (FRA-702)."""
+        return "".join(c for c in str(self.id) if c.isalnum() or c in "-")[:60]
+
     def repositorio(self, slug: str = ""):
         """Repositório pelo slug; sem slug, o primeiro. None se o projeto é single-repo."""
         if not self.repos:

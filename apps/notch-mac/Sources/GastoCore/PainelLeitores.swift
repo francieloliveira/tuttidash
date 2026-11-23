@@ -364,10 +364,17 @@ public enum LeitorPainelDisco {
 
     /// Pasta `.lane` do worktree da lane (`worktree` no `lane-<lane>.json`).
     static func pastaLane(_ lane: EstadoLanes.LaneRodando, pasta: URL) -> URL? {
-        guard let dados = lerJSON(pasta.appendingPathComponent("lane-\(lane.lane).json")),
-              let obj = (try? JSONSerialization.jsonObject(with: dados)) as? [String: Any],
-              let worktree = JV.texto(obj["worktree"]) else { return nil }
-        return URL(fileURLWithPath: worktree).appendingPathComponent(".lane")
+        let fm = FileManager.default
+        let nomes = ((try? fm.contentsOfDirectory(atPath: pasta.path)) ?? [])
+            .filter { $0.hasPrefix("lane-") && $0.hasSuffix(".json") }
+        for nome in nomes {
+            guard let dados = lerJSON(pasta.appendingPathComponent(nome)),
+                  let obj = (try? JSONSerialization.jsonObject(with: dados)) as? [String: Any],
+                  (obj["lane"] as? String) == lane.lane,
+                  let worktree = JV.texto(obj["worktree"]) else { continue }
+            return URL(fileURLWithPath: worktree).appendingPathComponent(".lane")
+        }
+        return nil
     }
 
     static func provaDaLane(_ lane: EstadoLanes.LaneRodando, base: URL, agora: Date) -> ProvaBruta? {

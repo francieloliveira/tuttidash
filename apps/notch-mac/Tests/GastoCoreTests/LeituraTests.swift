@@ -78,6 +78,13 @@ final class EstadoTests: XCTestCase {
                        "b.jsonl")
     }
 
+    func testEstadoComNomeDeProjetoEValido() {
+        let ok: [String: Any] = ["lane": "claude", "card": "FRA-1", "log": "/x/a.jsonl",
+                                 "projeto": "p1"]
+        XCTAssertTrue(EstadoLanes.ehEstadoDeLane(nomeArquivo: "lane-p1-claude.json", dados: ok))
+        XCTAssertTrue(EstadoLanes.ehEstadoDeLane(nomeArquivo: "lane-claude.json", dados: ok))
+    }
+
     func testProjetoNoEstadoDaLane() {
         let lane = EstadoLanes.laneRodando(nomeArquivo: "lane-claude.json", dados: [
             "lane": "claude", "card": "FRA-1", "log": "/x/a.jsonl",

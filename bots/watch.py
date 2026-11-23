@@ -286,7 +286,7 @@ def selecionar_projeto():
             st = json.loads(arq.read_text(encoding="utf-8"))
         except (OSError, ValueError, UnicodeError):
             continue
-        if not isinstance(st, dict) or st.get("lane") != nome[5:-5] or not st.get("card"):
+        if not isinstance(st, dict) or not st.get("lane") or not st.get("card"):
             continue
         pid = st.get("projeto")
         if isinstance(pid, str) and pid:

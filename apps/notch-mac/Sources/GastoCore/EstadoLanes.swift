@@ -83,10 +83,11 @@ public struct EstadoLanes: Equatable, Sendable {
         guard let d = dados as? [String: Any], nomeArquivo.hasPrefix("lane-"), nomeArquivo.hasSuffix(".json") else {
             return false
         }
+        // FRA-702: `lane-<lane>.json` ou `lane-<projeto>-<lane>.json`.
         let stem = String(nomeArquivo.dropFirst("lane-".count).dropLast(".json".count))
-        let ns = stem as NSString
-        guard nomeLane.firstMatch(in: stem, range: NSRange(location: 0, length: ns.length)) != nil else { return false }
-        guard (d["lane"] as? String) == stem else { return false }
+        guard let lane = JV.texto(d["lane"]), !lane.isEmpty else { return false }
+        guard stem == lane || stem.hasSuffix("-" + lane) else { return false }
+        guard nomeLane.firstMatch(in: lane, range: NSRange(location: 0, length: (lane as NSString).length)) != nil else { return false }
         return JV.texto(d["card"]) != nil && JV.texto(d["log"]) != nil
     }
 
