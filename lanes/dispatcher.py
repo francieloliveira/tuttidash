@@ -333,6 +333,10 @@ def definir_projeto(p) -> None:
     PROJETO_ATUAL = p
 
 
+def simultaneo_ligado() -> bool:
+    return agenda.habilitado(_cfg("agenda.simultaneo", False))
+
+
 def selecionar_projeto():
     """Projeto deste ciclo: o padrão, ou o próximo da agenda quando ela está ligada.
 
@@ -1543,8 +1547,18 @@ def texto_do_agente(lane: str, effort: str, prompt: Path,
 
 
 # --- Estado local das lanes --------------------------------------------------
-def state_file(lane: str) -> Path:
-    return STATE_DIR / f"lane-{lane}.json"
+def slot_de_lane(lane: str, p=None) -> str:
+    """Prefixo do estado/sessão por projeto.
+
+    Ainda devolve o nome antigo: o app e o vigia já leem `lane-<projeto>-<lane>`,
+    mas o despacho da mesma lane em dois projetos depende dos slots do FRA-706.
+    """
+    _ = p
+    return lane
+
+
+def state_file(lane: str, p=None) -> Path:
+    return STATE_DIR / f"lane-{slot_de_lane(lane, p)}.json"
 
 
 def load_state(lane: str) -> Optional[dict]:
@@ -1588,8 +1602,8 @@ _CAMPOS_CLAIM = ("card", "issue_id", "branch", "worktree", "base", "log", "sessi
                  "projeto", "projeto_nome", "repo_slug")
 
 
-def claim_file(lane: str) -> Path:
-    return STATE_DIR / f"claim-{lane}.json"
+def claim_file(lane: str, p=None) -> Path:
+    return STATE_DIR / f"claim-{slot_de_lane(lane, p)}.json"
 
 
 def gravar_claim(lane: str, st: dict) -> None:
@@ -1624,10 +1638,13 @@ def soltar_lane(lane: str) -> None:
 
 
 def sessao_de_lane(session: str) -> bool:
-    """`lane-<lane>` de uma lane conhecida. Outro nome não é sessão nossa."""
+    """`lane-<lane>` ou `lane-<projeto>-<lane>` de uma lane conhecida."""
     if not isinstance(session, str) or not session.startswith("lane-"):
         return False
-    return session[len("lane-"):] in LANES
+    resto = session[len("lane-"):]
+    if resto in LANES:
+        return True
+    return any(resto.endswith("-" + lane) for lane in LANES)
 
 
 def branch_valida(nome) -> bool:
@@ -1720,7 +1737,8 @@ def motivo_recusa_estado(lane: str, st: dict) -> Optional[str]:
         return str(st["_recusado"])
     if lane not in LANES or st.get("lane") != lane:
         return "lane diferente do arquivo"
-    if st.get("session") != f"lane-{lane}":
+    sess = st.get("session")
+    if not isinstance(sess, str) or not sess.endswith("-" + lane) or not sessao_de_lane(sess):
         return "sessão não é lane-<lane>"
     card = st.get("card")
     if not isinstance(card, str) or not _CARD_RE.fullmatch(card):
@@ -2819,7 +2837,7 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "",
           "modelo_fixo": aviso_modelo(lane, effort) == "modelo fixo",
           "aviso_modelo": aviso_modelo(lane, effort) if not modelo else "retry de modelo",
           "started": time.time(), "started_at": now(),
-          "log": str(lane_log), "session": f"lane-{lane}",
+          "log": str(lane_log), "session": f"lane-{slot_de_lane(lane)}",
           "run_id": run_id, "agent_cmd": str(cmd_path), "bancada": bancada}
     save_state(lane, st)
     gravar_claim(lane, st)
