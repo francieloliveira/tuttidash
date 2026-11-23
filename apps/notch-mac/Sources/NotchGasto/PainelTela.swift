@@ -139,19 +139,11 @@ struct PaginaProjetosComInstalar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PaginaProjetos(modelo: modelo, aoAdicionar: { estadoProjetos.adicionar() })
-            HStack(spacing: 10) {
-                Text("Gerenciar projetos").fontePainel(15, .semibold)
-                Text("cadastro, repositórios e instalação de cada projeto")
-                    .fontePainel(11.5).foregroundStyle(PV.mudo)
-                Spacer()
-            }
-            .padding(.horizontal, 4)
-            .padding(.top, 18)
-            .padding(.bottom, 4)
-            cartaoPagina("Projetos") {
+            PaginaProjetos(modelo: modelo)
+            cartaoPagina("Gerenciar projetos") {
                 SecaoProjetos(estado: estadoProjetos, embutido: true)
             }
+            .padding(.top, 14)
             HStack(spacing: 10) {
                 Text("Instalação").fontePainel(15, .semibold)
                 Text("configure no cadastro acima; execute aqui")

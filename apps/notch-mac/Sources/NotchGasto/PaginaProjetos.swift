@@ -6,9 +6,6 @@ import GastoCore
 /// «sem leitura neste ciclo».
 struct PaginaProjetos: View {
     @ObservedObject var modelo: ModeloNotch
-    /// A página Projetos é dona do cadastro; o botão do cabeçalho abre a linha nova
-    /// no gerenciador que fica logo abaixo.
-    var aoAdicionar: () -> Void = {}
     @State private var erro: String?
 
     private var projetos: [ProjetoCadastro] { modelo.config.projetos }
@@ -22,15 +19,8 @@ struct PaginaProjetos: View {
                 resumoTopo
                 HStack(alignment: .top, spacing: 13) {
                 cartaoPagina("Portfólio", direita: {
-                    HStack(spacing: 10) {
-                        Text("\(projetos.count) cadastrados · \(ativos) ligados")
-                            .fontePainel(11.5).foregroundStyle(PV.mudo)
-                        Button(action: aoAdicionar) {
-                            Label("Adicionar projeto", systemImage: "plus")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
+                    Text("\(projetos.count) cadastrados · \(ativos) ligados")
+                        .fontePainel(11.5).foregroundStyle(PV.mudo)
                 }) {
                     if projetos.isEmpty {
                         Text("Nenhum projeto cadastrado. Abra Ajustes › Projetos para ligar o primeiro.")

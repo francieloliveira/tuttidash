@@ -385,8 +385,10 @@ struct SecaoProjetos: View {
     var body: some View {
         Group {
             if embutido {
-                conteudo
-                rodape
+                VStack(alignment: .leading, spacing: 8) {
+                    conteudo
+                    rodape
+                }
             } else {
                 Section {
                     conteudo
@@ -437,14 +439,12 @@ struct SecaoProjetos: View {
             }
             .padding(.vertical, 6)
         }
-        ForEach($estado.linhas) { $l in
-            LinhaProjeto(linha: $l, estado: estado)
-            Divider().overlay(PV.divisor)
+        VStack(spacing: 0) {
+            ForEach(Array(estado.linhas.indices), id: \.self) { i in
+                if i > 0 { Divider().overlay(PV.divisor) }
+                LinhaProjeto(linha: $estado.linhas[i], estado: estado)
+            }
         }
-        Button { estado.adicionar() } label: {
-            Label(String(localized: "Adicionar projeto"), systemImage: "plus")
-        }
-        .disabled(estado.temNova)
     }
 
     /// Resumo enxuto no topo: quantos projetos, quantos ligados, o principal e as classes
@@ -500,6 +500,10 @@ private struct LinhaProjeto: View {
 
     private var cabecalho: some View {
         HStack(spacing: 10) {
+            Image(systemName: linha.aberto ? "chevron.down" : "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 10)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(linha.nova ? String(localized: "Projeto novo") : (linha.salvo?.nome ?? p.nome))
@@ -511,7 +515,6 @@ private struct LinhaProjeto: View {
                 Text(resumo).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             .contentShape(Rectangle())
-            .onTapGesture { estado.alternarAberto(linha.id) }
             Spacer()
             if let s = linha.salvo {
                 Toggle(String(localized: "Ligado"), isOn: Binding(get: { s.ativo }, set: { estado.alternarAtivo(linha.id, $0) }))
@@ -538,6 +541,8 @@ private struct LinhaProjeto: View {
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .help(String(localized: "Mais ações"))
         }
+        .contentShape(Rectangle())
+        .onTapGesture { estado.alternarAberto(linha.id) }
         .confirmationDialog(String(localized: "Remover \(linha.salvo?.nome ?? "") do cadastro?"), isPresented: $confirmarRemocao) {
             Button(String(localized: "Remover"), role: .destructive) { estado.remover(linha.id) }
         } message: {
