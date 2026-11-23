@@ -31,7 +31,7 @@ Atualizado em 23/11/2026. Commits relevantes: `5c28e9a`, `30774de`, `50c4cf9`,
 
 - **FRA-706**: execução simultânea é experimental; exige lane explícita; janela tmux por sessão, parada e recusa por sessão; limites de conta continuam globais por lane (correto).
 - **App**: build `branch-main-fb256fe` instalado e **aberto** após renovar o provisioning profile (`renovar-perfil.sh`); o profile vence em 30/11/2026.
-- **FRA-720**: build assinado e `tools/release.sh`; **não notarizado** (sem perfil/certificado).
+- **FRA-720**: build assinado e `tools/release.sh`; **não notarizado**. Explicação e passos em `notarizacao.md`; decisão depende de distribuir ou não.
 - **FRA-701**: norte atualizado; a proposta em `proposta-norte-multiprojeto.md` fica como registro.
 
 ## Pendente

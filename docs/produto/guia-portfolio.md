@@ -115,7 +115,8 @@ tools/release.sh --notarizar <perfil-do-notarytool>
 
 O script exige árvore git limpa, roda as suítes, chama o build assinado, gera
 `dist/TuttiDash-<versão>-<build>.zip` e o SHA-256. Sem `--notarizar`, o zip fica
-assinado mas não notarizado.
+assinado mas não notarizado. Veja [notarizacao.md](notarizacao.md) para quando
+isso importa.
 
 ## 9. O que ainda não existe
 
