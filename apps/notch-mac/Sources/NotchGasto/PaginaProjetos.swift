@@ -65,6 +65,13 @@ struct PaginaProjetos: View {
                     }
                     cartaoPagina("Como ligar") {
                         VStack(alignment: .leading, spacing: 8) {
+                            Button {
+                                NavegacaoPainel.compartilhada.abrirBloco(.lanes,
+                                                                          grupo: String(localized: "Projetos"))
+                            } label: {
+                                Label("Adicionar projeto", systemImage: "plus")
+                            }
+                            .buttonStyle(.borderedProminent)
                             Text("Ajustes › Lanes: ligue os projetos e a agenda multi-projeto.")
                                 .fontePainel(12).foregroundStyle(PV.texto)
                                 .fixedSize(horizontal: false, vertical: true)

@@ -424,6 +424,11 @@ struct SecaoProjetos: View {
             Label(a, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
         }
         resumoGeral
+        Button { estado.adicionar() } label: {
+            Label(String(localized: "Adicionar projeto"), systemImage: "plus")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(estado.temNova)
         if estado.linhas.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text(String(localized: "Nenhum projeto ainda.")).font(.callout.weight(.medium))
@@ -436,6 +441,10 @@ struct SecaoProjetos: View {
             LinhaProjeto(linha: $l, estado: estado)
             Divider().overlay(PV.divisor)
         }
+        Button { estado.adicionar() } label: {
+            Label(String(localized: "Adicionar projeto"), systemImage: "plus")
+        }
+        .disabled(estado.temNova)
     }
 
     /// Resumo enxuto no topo: quantos projetos, quantos ligados, o principal e as classes
@@ -455,10 +464,6 @@ struct SecaoProjetos: View {
                 Text(classes.joined(separator: " · ")).lineLimit(1)
             }
             Spacer(minLength: 6)
-            Button { estado.adicionar() } label: {
-                Label(String(localized: "Adicionar projeto"), systemImage: "plus")
-            }
-            .disabled(estado.temNova)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
