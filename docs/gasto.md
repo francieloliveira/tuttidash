@@ -102,8 +102,8 @@ python3 gasto.py relatorio                     # coleta e mostra dia, semana, pr
 python3 gasto.py relatorio --por semana,lane   # só algumas dimensões
 python3 gasto.py relatorio --ultimos-dias 7 --lane claude
 python3 gasto.py relatorio --card FRA-259 --json
-python3 gasto.py relatorio --projeto 11343fb5-0ee8-453b-ba58-dffaae07e82d
-python3 gasto.py eventos --projeto 11343fb5-0ee8-453b-ba58-dffaae07e82d --limite 20
+python3 gasto.py relatorio --projeto 00000000-0000-0000-0000-000000000000
+python3 gasto.py eventos --projeto 00000000-0000-0000-0000-000000000000 --limite 20
 python3 gasto.py fluxo                     # claims, finais, merges e duração por projeto
 python3 gasto.py semanal                   # relatório dos últimos 7 dias por projeto
 python3 gasto.py semanal --json --hoje 2026-11-22

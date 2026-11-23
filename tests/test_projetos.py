@@ -132,8 +132,8 @@ class Cadastro(Base):
         self.assertEqual((p.lane_timeout_min, p.proof_timeout_min), (0, 0))
 
     def test_slug_estavel(self):
-        p = P.Projeto(id="5f8bff08-72d9-4293-b1ab-17cef0af2c29", repo="~/x")
-        self.assertEqual(p.slug, "5f8bff08-72d9-4293-b1ab-17cef0af2c29")
+        p = P.Projeto(id="p1", repo="~/x")
+        self.assertEqual(p.slug, "p1")
         self.assertEqual(P.Projeto(id="x/y z", repo="~/x").slug, "xyz")
 
     def test_multi_repo_modelo_e_copia(self):
