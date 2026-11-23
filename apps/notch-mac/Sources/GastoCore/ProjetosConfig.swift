@@ -255,9 +255,11 @@ public struct RepositorioCadastro: Equatable, Sendable {
     public var prova: String
     public var protegidos: [String]
     public var pastasDoApp: [String]
+    public var instalacao: InstalacaoCadastro
 
     public init(slug: String, repo: String, github: String = "", worktrees: String = "",
-                prova: String = "", protegidos: [String] = [], pastasDoApp: [String] = []) {
+                prova: String = "", protegidos: [String] = [], pastasDoApp: [String] = [],
+                instalacao: InstalacaoCadastro = InstalacaoCadastro()) {
         self.slug = slug
         self.repo = repo
         self.github = github
@@ -265,6 +267,7 @@ public struct RepositorioCadastro: Equatable, Sendable {
         self.prova = prova
         self.protegidos = protegidos
         self.pastasDoApp = pastasDoApp
+        self.instalacao = instalacao
     }
 }
 
@@ -447,7 +450,8 @@ public enum ProjetosConfig {
                                            worktrees: JV.texto(r["worktrees"]) ?? "",
                                            prova: JV.texto(r["prova"]) ?? "",
                                            protegidos: (r["protegidos"] as? [String]) ?? [],
-                                           pastasDoApp: (r["pastas_do_app"] as? [String]) ?? [])
+                                           pastasDoApp: (r["pastas_do_app"] as? [String]) ?? [],
+                                           instalacao: InstalacaoCadastro.ler(r["entrega"] as? [String: Any]))
             }
             let op = item["operacao"] as? [String: Any] ?? [:]
             var budget: [String: Double] = [:]
@@ -520,6 +524,7 @@ public enum ProjetosConfig {
                     if !r.prova.isEmpty { d["prova"] = r.prova }
                     if !r.protegidos.isEmpty { d["protegidos"] = r.protegidos }
                     if !r.pastasDoApp.isEmpty { d["pastas_do_app"] = r.pastasDoApp }
+                    if let e = r.instalacao.dict() { d["entrega"] = e }
                     return d
                 }
             }

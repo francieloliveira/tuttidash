@@ -134,13 +134,15 @@ class Cadastro(Base):
     def test_multi_repo_modelo_e_copia(self):
         p = P.Projeto(id="x", repo="~/a", github="dono/a", repos=[
             {"slug": "app", "repo": "~/a", "github": "dono/a"},
-            {"slug": "api", "repo": "~/b", "github": "dono/b", "prova": "go test {suite}"},
+            {"slug": "api", "repo": "~/b", "github": "dono/b", "prova": "go test {suite}",
+             "entrega": {"classe": "servico", "subir": "python3 app.py"}},
         ])
         self.assertEqual([r.slug for r in p.repos], ["app", "api"])
         api = p.com_repositorio("api")
         self.assertEqual(api.repo.name, "b")
         self.assertEqual(api.github, "dono/b")
         self.assertEqual(api.prova, "go test {suite}")
+        self.assertEqual(api.instalacao["classe"], "servico")
         self.assertEqual(api.repos, p.repos)
         self.assertEqual(p.com_repositorio("nao"), p)
 

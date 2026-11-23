@@ -103,7 +103,8 @@ O cadastro aceita `repos` (lista com `slug`, `repo`, `github`, `worktrees`,
 o card escolhe o repositório pelo rótulo `repo:<slug>`; sem rótulo, usa o principal.
 O estado grava `repo_slug` e o dispatcher acompanha a lane no repositório certo.
 O vigia revisa e mergeia **cada repo do projeto** no tick, com chave de estado
-`app` para o primeiro e `<slug>` para os demais.
+`app` para o primeiro e `<slug>` para os demais. Cada repo pode ter seu `entrega`
+e a instalação da main usa o repo do último merge.
 
 ## 8. Empacotar uma versão
 

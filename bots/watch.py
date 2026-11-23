@@ -1523,6 +1523,7 @@ def _merge_ready(st: dict, diary: list[str], repo_key: str) -> None:
         move_done(ci, f"PR #{pr['number']} mergeado com a prova do dispatcher verde e revisão APROVADO", diary)
         st["installs"]["pendente_main"] = True
         st["installs"]["card_main"] = ci["id"]
+        st["installs"]["repo_main"] = repo_key
         return  # um merge por vez
 
 
@@ -1674,8 +1675,16 @@ def _rebase_dirty(st: dict, diary: list[str], repo_key: str) -> None:
 
 
 def install_main_if_pending(st: dict, diary: list[str]) -> None:
-    if st["installs"].get("pendente_main") and start_install("main", "main", st["installs"].get("card_main"), st, diary):
+    if not st["installs"].get("pendente_main"):
+        return
+    chave = str(st["installs"].get("repo_main") or "app")
+    p = projeto()
+    if getattr(p, "repos", None):
+        p = p.com_repositorio(chave)
+    definir_projeto(p)
+    if start_install("main", "main", st["installs"].get("card_main"), st, diary):
         st["installs"]["pendente_main"] = False
+        st["installs"].pop("repo_main", None)
 
 
 # ---------- 2. mergeado e não Done ----------

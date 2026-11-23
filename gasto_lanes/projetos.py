@@ -193,10 +193,11 @@ def _prioridade(valor) -> int:
 class Repositorio:
     """Um repositório de um projeto (FRA-711)."""
 
-    __slots__ = ("slug", "github", "repo", "worktrees", "prova", "protegidos", "pastas_do_app")
+    __slots__ = ("slug", "github", "repo", "worktrees", "prova", "protegidos", "pastas_do_app",
+                 "instalacao")
 
     def __init__(self, slug: str, repo: str, github: str = "", worktrees: str = "",
-                 prova: str = "", protegidos=None, pastas_do_app=None):
+                 prova: str = "", protegidos=None, pastas_do_app=None, instalacao=None):
         self.slug = _texto_curto(slug, 60)
         self.repo = _expandir(repo) if repo else Path("")
         self.github = normalizar_github(github)
@@ -206,6 +207,7 @@ class Repositorio:
         self.protegidos = [str(x) for x in (protegidos or []) if str(x).strip()]
         self.pastas_do_app = [str(x).strip().strip("/") for x in (pastas_do_app or [])
                               if str(x).strip().strip("/") and ".." not in str(x)]
+        self.instalacao = dict(instalacao) if isinstance(instalacao, dict) else {}
 
     def __eq__(self, outro):
         return isinstance(outro, Repositorio) and all(
@@ -236,7 +238,8 @@ def _repositorios(bruto, repo, github, worktrees, prova, protegidos, pastas) -> 
                                str(item.get("worktrees") or ""),
                                str(item.get("prova") or ""),
                                item.get("protegidos"),
-                               item.get("pastas_do_app")))
+                               item.get("pastas_do_app"),
+                               item.get("entrega")))
     return out
 
 
@@ -340,6 +343,8 @@ class Projeto:
             p.protegidos = list(r.protegidos)
         if r.pastas_do_app:
             p.pastas_do_app = list(r.pastas_do_app)
+        if r.instalacao:
+            p.instalacao = dict(r.instalacao)
         return p
 
     def __repr__(self) -> str:  # pragma: no cover - só para log
