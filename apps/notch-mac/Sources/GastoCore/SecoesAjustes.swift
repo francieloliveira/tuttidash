@@ -136,14 +136,17 @@ extension CatalogoAjustes {
         let esf = nomesEsforco
         return [
             SecaoAjustes(id: .geral, nome: String(localized: "Geral"), simbolo: "gearshape",
-                         subtitulo: String(localized: "Quando o TuttiDash abre, a troca de telas e o que cada lane mostra"), grupos: [
+                         subtitulo: String(localized: "Ferramentas, logins, contas, abertura e janela das lanes"), grupos: [
                 GrupoAjustes(String(localized: "Ferramentas e logins"),
-                             ajuda: String(localized: "O que precisa estar instalado e conectado para as lanes funcionarem."),
-                             blocos: [.ferramentas]),
-                GrupoAjustes(String(localized: "Abertura"), campos: [
+                             ajuda: String(localized: "O que precisa estar instalado e conectado, o teto de gasto, as contas e o Linear — tudo num lugar só."),
+                             blocos: [.ferramentas, .contas, .linear],
+                             campos: [
+                                 campo("teto_semanal_usd", ajuda: String(localized: "Quanto você aceita gastar por semana. 0 desliga o teto.")),
+                                 campo("aviso_pct", ajuda: String(localized: "O app avisa quando o gasto chega nesta % do teto.")),
+                                 campo("uso_contas", ajuda: String(localized: "Lê a % de uso de cada conta para equilibrar as lanes.")),
+                             ]),
+                GrupoAjustes(String(localized: "Abertura e telas"), campos: [
                     campo("geral.abrir_no_login", ajuda: String(localized: "O TuttiDash abre sozinho quando você entra no Mac.")),
-                ]),
-                GrupoAjustes(String(localized: "Telas"), campos: [
                     campo("geral.transicao_telas"),
                 ]),
                 GrupoAjustes(String(localized: "Janela de cada lane"), ajuda: String(localized: "Vale na próxima tarefa que a lane pegar."), campos: [
@@ -167,16 +170,6 @@ extension CatalogoAjustes {
                     campo("lanes.budget_usd.alto", rotulo: String(localized: "Card de esforço alto (US$)")),
                     campo("lanes.effort_default", ajuda: String(localized: "Usado quando o card não diz o esforço."), rotulos: esf),
                 ]),
-            ]),
-            SecaoAjustes(id: .contas, nome: String(localized: "Contas"), simbolo: "person.crop.circle",
-                         subtitulo: String(localized: "Teto de gasto, limites das contas e o Linear"), grupos: [
-                GrupoAjustes(String(localized: "Teto de gasto"), campos: [
-                    campo("teto_semanal_usd", ajuda: String(localized: "Quanto você aceita gastar por semana. 0 desliga o teto.")),
-                    campo("aviso_pct", ajuda: String(localized: "O app avisa quando o gasto chega nesta % do teto.")),
-                ]),
-                GrupoAjustes(String(localized: "Contas das lanes"), ajuda: String(localized: "Quanto de cada conta já foi usado. SuperGrok (via Cursor) e Grok CLI são cotas separadas."),
-                             blocos: [.contas], campos: [campo("uso_contas", ajuda: String(localized: "Lê a % de uso de cada conta para equilibrar as lanes."))]),
-                GrupoAjustes(String(localized: "Linear"), ajuda: String(localized: "A chave fica no Keychain do app (proteção de dados), nunca no arquivo. O dispatcher e o vigia usam o proxy local."), blocos: [.linear]),
             ]),
             SecaoAjustes(id: .revisao, nome: String(localized: "Revisão"), simbolo: "checkmark.seal",
                          subtitulo: String(localized: "Quem revisa os PRs antes do merge"), grupos: [
@@ -228,7 +221,7 @@ extension CatalogoAjustes {
                              ajuda: String(localized: "Onde o app acha o login de cada ferramenta. Vazio usa o padrão."),
                              campos: credenciaisContas(), recolhido: true),
                 GrupoAjustes(String(localized: "Detalhes do Linear"),
-                             ajuda: String(localized: "Preenchidos pela conexão em Contas. Só leitura."), blocos: [.linearLeitura], recolhido: true),
+                             ajuda: String(localized: "Preenchidos pela conexão em Geral › Ferramentas e logins. Só leitura."), blocos: [.linearLeitura], recolhido: true),
                 GrupoAjustes(String(localized: "Pastas do app"), campos: [c("logs_dir"), c("state_dir"), c("ledger")], recolhido: true),
                 GrupoAjustes(String(localized: "Janela de cada lane: linhas"), campos: [
                     c("lane_view.pensamento_linhas"), c("lane_view.diff_linhas"),
@@ -255,8 +248,8 @@ extension CatalogoAjustes {
 
     /// Seção antiga (FRA-524, 8 seções) -> seção nova. Para o PR e para quem abre um atalho antigo.
     public static let secaoNovaDaAntiga: [String: IdSecaoAjustes] = [
-        "lanes": .lanes, "contas": .contas, "revisao": .revisao, "agentes": .automacao,
-        "agendas": .avancado, "maquinas": .avancado, "integracoes": .contas, "painel": .geral,
+        "lanes": .lanes, "contas": .geral, "revisao": .revisao, "agentes": .automacao,
+        "agendas": .avancado, "maquinas": .avancado, "integracoes": .geral, "painel": .geral,
     ]
 
     /// Rótulo do botão que devolve só os campos do grupo ao padrão. Não restaura bloco.

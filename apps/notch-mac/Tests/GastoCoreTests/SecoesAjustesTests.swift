@@ -14,10 +14,12 @@ final class SecoesAjustesTests: XCTestCase {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// FRA-531: 6 seções para quem usa o app, o técnico em «Avançado».
-    func testSeisSecoesEmPortugues() {
-        XCTAssertEqual(CatalogoAjustes.secoes().map(\.nome), ["Geral", "Lanes", "Contas", "Revisão", "Automação", "Avançado"])
-        XCTAssertEqual(CatalogoAjustes.secoes().map(\.id), IdSecaoAjustes.allCases)
+    /// FRA-531: 5 seções para quem usa o app, o técnico em «Avançado».
+    /// Contas foi absorvida por Geral › Ferramentas e logins.
+    func testCincoSecoesEmPortugues() {
+        XCTAssertEqual(CatalogoAjustes.secoes().map(\.nome), ["Geral", "Lanes", "Revisão", "Automação", "Avançado"])
+        XCTAssertEqual(CatalogoAjustes.secoes().map(\.id),
+                       [.geral, .lanes, .revisao, .automacao, .avancado])
     }
 
     /// Toda opção da janela antiga continua alcançável, exceto as aposentadas (saíram de propósito).
@@ -109,6 +111,8 @@ final class SecoesAjustesTests: XCTestCase {
             XCTAssertNotNil(CatalogoAjustes.secaoNovaDaAntiga[antiga], antiga)
         }
         XCTAssertEqual(CatalogoAjustes.secaoNovaDaAntiga["agentes"], .automacao)
+        XCTAssertEqual(CatalogoAjustes.secaoNovaDaAntiga["contas"], .geral)
+        XCTAssertEqual(CatalogoAjustes.secaoNovaDaAntiga["integracoes"], .geral)
     }
 
     func testBuscaIgnoraAcentoEMaiuscula() {
@@ -123,8 +127,8 @@ final class SecoesAjustesTests: XCTestCase {
     /// O cadastro de projetos não está mais na busca dos Ajustes.
     func testBuscaLevaAoBlocoSemPrometerReset() {
         let contas = CatalogoAjustes.buscar("Contas acompanhadas").filter { $0.bloco == .contas }
-        XCTAssertEqual(contas.first?.secao, .contas)
-        XCTAssertEqual(contas.first?.grupo, "Contas das lanes")
+        XCTAssertEqual(contas.first?.secao, .geral)
+        XCTAssertEqual(contas.first?.grupo, "Ferramentas e logins")
         XCTAssertNil(contas.first?.campo)
         XCTAssertEqual(BlocoAjustes.projetos.chaves, [])
         XCTAssertEqual(BlocoAjustes.contas.chaves, [])
