@@ -61,6 +61,12 @@ class EstadoDasLanes(unittest.TestCase):
         self.assertEqual(sorted(st["lanes"]), ["claude", "grok"])
         self.assertIn("FRA-300-grok-20261005-210000.jsonl", st["logs_em_andamento"])
 
+    def test_projeto_aparece_no_estado_da_lane(self):
+        self.write("lane-grok.json", {**ESTADO_OK, "projeto": "p1", "projeto_nome": "Projeto 1"})
+        st = read_state(self.sb.estado)
+        self.assertEqual(st["lanes"]["grok"]["projeto"], "p1")
+        self.assertEqual(st["lanes"]["grok"]["projeto_nome"], "Projeto 1")
+
     def test_texto_nunca_imprime_none(self):
         sem_inicio = {k: v for k, v in ESTADO_OK.items() if k not in ("started_at",)}
         self.write("lane-grok.json", sem_inicio)

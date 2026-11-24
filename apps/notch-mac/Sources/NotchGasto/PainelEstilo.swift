@@ -65,15 +65,16 @@ enum PV {
 
 /// Páginas da barra lateral.
 enum PaginaPainel: String, CaseIterable, Identifiable {
-    case dashboard, lanes, brainstorm, builds, instalar, entregas, testes, custos, esperando, ajustes
+    case dashboard, projetos, lanes, brainstorm, builds, instalar, entregas, testes, custos, esperando, ajustes
 
     var id: String { rawValue }
     /// Páginas da lista de cima; Ajustes fica abaixo do divisor, com sub-seções.
-    static var principais: [PaginaPainel] { allCases.filter { $0 != .ajustes } }
+    static var principais: [PaginaPainel] { allCases.filter { $0 != .ajustes && $0 != .instalar } }
 
     var titulo: String {
         switch self {
         case .dashboard: return "Dashboard"
+        case .projetos: return "Projetos"
         case .lanes: return "Lanes"
         case .builds: return "Builds"
         case .instalar: return "Instalar"
@@ -89,6 +90,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
     var subtitulo: String {
         switch self {
         case .dashboard: return "Visão geral do ambiente de build, testes e entregas"
+        case .projetos: return "Portfólio, ciclo atual e a instalação de cada projeto"
         case .lanes: return "Estado, branch e ações de cada lane"
         case .builds: return "Lock, fila, simulador e histórico de execuções"
         case .instalar: return "Como cada projeto se instala: serviço, artefato ou nenhuma"
@@ -104,6 +106,7 @@ enum PaginaPainel: String, CaseIterable, Identifiable {
     var simbolo: String {
         switch self {
         case .dashboard: return "house.fill"
+        case .projetos: return "square.grid.2x2"
         case .lanes: return "list.bullet.rectangle"
         case .builds: return "server.rack"
         case .instalar: return "shippingbox"

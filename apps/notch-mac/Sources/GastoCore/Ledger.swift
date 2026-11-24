@@ -48,6 +48,6 @@ public enum Ledger {
             custoUSD: custoUSD, custo: custo, turnos: JV.inteiro(r["turnos"]),
             duracaoMs: JV.inteiro(r["duracao_ms"]), duracaoEstimadaMs: JV.inteiro(r["duracao_estimada_ms"]),
             respostasParciais: JV.inteiro(parcial?["respostas"]), tokensTotal: JV.inteiro(tokens?["total"]),
-            fonte: fonte)
+            fonte: fonte, projeto: JV.texto(r["projeto"]), projetoNome: JV.texto(r["projeto_nome"]))
     }
 }

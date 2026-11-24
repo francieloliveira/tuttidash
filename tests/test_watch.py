@@ -241,6 +241,107 @@ class MelhoriasDe21Out(unittest.TestCase):
         self.assertEqual(watch.limpar_saida("\x1b[0m> plan\n[Revisor] REVISOR: APROVADO\nok"), "[Revisor] REVISOR: APROVADO\nok")
 
 
+class MainTodosProjetos(unittest.TestCase):
+    def test_agenda_liga_visita_todos_os_ativos(self):
+        from unittest import mock
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        a = watch.projetos.Projeto(id="a", nome="A", repo=str(tmp / "a"))
+        b = watch.projetos.Projeto(id="b", nome="B", repo=str(tmp / "b"))
+        chamadas = []
+        with mock.patch.object(watch, "app_aberta", return_value=True), \
+             mock.patch.object(watch, "STATE_DIR", tmp), \
+             mock.patch.object(watch.projetos, "recarregar"), \
+             mock.patch.object(watch.projetos, "configurado", return_value=True), \
+             mock.patch.object(watch.projetos, "ativos", return_value=[a, b]), \
+             mock.patch.object(watch, "agenda_ligada", return_value=True), \
+             mock.patch.object(watch, "main", side_effect=lambda p, _lock: chamadas.append((p.id, _lock))):
+            self.assertEqual(watch.main_todos(), 0)
+        self.assertEqual(chamadas, [("a", False), ("b", False)])
+
+    def test_sem_agenda_so_o_principal(self):
+        from unittest import mock
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        a = watch.projetos.Projeto(id="a", nome="A", repo=str(tmp / "a"))
+        chamadas = []
+        with mock.patch.object(watch, "app_aberta", return_value=True), \
+             mock.patch.object(watch, "STATE_DIR", tmp), \
+             mock.patch.object(watch.projetos, "recarregar"), \
+             mock.patch.object(watch.projetos, "configurado", return_value=True), \
+             mock.patch.object(watch, "agenda_ligada", return_value=False), \
+             mock.patch.object(watch, "selecionar_projeto", return_value=a), \
+             mock.patch.object(watch, "main", side_effect=lambda p, _lock: chamadas.append((p.id, _lock))):
+            self.assertEqual(watch.main_todos(), 0)
+        self.assertEqual(chamadas, [("a", False)])
+
+
+class AgendaDoVigia(unittest.TestCase):
+    """FRA-707: o vigia escolhe um projeto por ciclo quando a agenda liga."""
+
+    def setUp(self):
+        from unittest import mock
+        self.mock = mock
+        self.tmp = Path(tempfile.mkdtemp())
+        self.lanes = self.tmp / "lanes"
+        self.lanes.mkdir()
+        self.a = watch.projetos.Projeto(id="a", nome="A", repo=str(self.tmp / "a"))
+        self.b = watch.projetos.Projeto(id="b", nome="B", repo=str(self.tmp / "b"))
+        self.antes = (watch.agenda_ligada, watch.projetos.projetos, watch.projetos.padrao,
+                      watch.STATE_DIR, watch.LANES_DIR, watch.WATCH_PROJETO,
+                      watch.agenda.ler_ultimo, watch.agenda.gravar_ultimo)
+        watch.STATE_DIR = self.tmp / "bots"
+        watch.STATE_DIR.mkdir()
+        watch.LANES_DIR = self.lanes
+        watch.WATCH_PROJETO = None
+        watch.agenda_ligada = lambda: True
+        watch.projetos.projetos = lambda: [self.a, self.b]
+        watch.projetos.padrao = lambda: self.a
+        watch.agenda.ler_ultimo = lambda _p: ""
+        watch.agenda.gravar_ultimo = lambda _p, _i: None
+        self.addCleanup(self._restaurar)
+
+    def _restaurar(self):
+        import shutil
+        (watch.agenda_ligada, watch.projetos.projetos, watch.projetos.padrao,
+         watch.STATE_DIR, watch.LANES_DIR, watch.WATCH_PROJETO,
+         watch.agenda.ler_ultimo, watch.agenda.gravar_ultimo) = self.antes
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_desligada_usa_o_padrao(self):
+        watch.agenda_ligada = lambda: False
+        self.assertIs(watch.selecionar_projeto(), self.a)
+
+    def test_ligada_alterna(self):
+        self.assertIs(watch.selecionar_projeto(), self.a)
+        watch.agenda.ler_ultimo = lambda _p: "a"
+        self.assertIs(watch.selecionar_projeto(), self.b)
+
+    def test_lane_em_andamento_manda(self):
+        (self.lanes / "lane-claude.json").write_text(
+            '{"lane": "claude", "card": "FRA-1", "projeto": "b"}', encoding="utf-8")
+        self.assertIs(watch.selecionar_projeto(), self.b)
+
+    def test_estado_do_projeto_e_por_id(self):
+        caminho = watch._estado_do_projeto(self.b)
+        self.assertEqual(caminho, watch.STATE_DIR / "projetos" / "b.json")
+        watch.agenda_ligada = lambda: False
+        self.assertEqual(watch._estado_do_projeto(self.b), watch.STATE_FILE_PADRAO)
+
+    def test_repos_do_projeto_usa_o_repo_do_projeto(self):
+        repos = watch._repos_do_ciclo(self.b)
+        self.assertEqual(repos["app"]["dir"], Path(self.b.repo))
+
+    def test_repos_do_projeto_com_multiplos_repos(self):
+        p = watch.projetos.Projeto(id="p", repo=str(self.tmp / "a"), repos=[
+            {"slug": "app", "repo": str(self.tmp / "a")},
+            {"slug": "api", "repo": str(self.tmp / "b")},
+        ])
+        repos = watch._repos_do_projeto(p)
+        self.assertEqual(sorted(repos), ["api", "app"])
+        self.assertEqual(repos["api"]["dir"], self.tmp / "b")
+
+
 
 class ManterMapaTest(unittest.TestCase):
     """PRD do norte: o vigia mantém a parte gerada do mapa, sem pressa e sem tocar o norte."""

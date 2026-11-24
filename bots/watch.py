@@ -66,6 +66,10 @@ def _cfg(chave, padrao):
     try:
         import runpy
         v = runpy.run_path(str(_caminho_cfg()))["get"](chave, padrao)
+        if isinstance(padrao, bool):
+            if isinstance(v, str):
+                return v.strip().lower() in ("1", "true", "sim", "on", "ligado")
+            return bool(v)
         return type(padrao)(v) if padrao is not None and not isinstance(padrao, (list, set, dict)) else v
     except Exception:
         return padrao
@@ -76,8 +80,34 @@ STATE_DIR = HOME / ".transcentia" / "bots"
 APP_PID = HOME / ".transcentia" / "lanes" / "app.pid"
 
 
+PROXY_PID = STATE_DIR / "linear-proxy.pid"
+
+
+def proxy_vivo() -> bool:
+    try:
+        pid = int(PROXY_PID.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        args = subprocess.run(["/bin/ps", "-p", str(pid), "-o", "args="],
+                              capture_output=True, text=True, timeout=5, check=False).stdout
+    except Exception:  # noqa: BLE001
+        return False
+    return "proxy_linear.py" in args
+
+
 def app_aberta() -> bool:
-    """Sem o app do TuttiDash aberto, o vigia não publica nem mergeia."""
+    """Sem o app do TuttiDash aberto, o vigia não trabalha; com headless, o proxy vivo basta."""
+    if _cfg("agenda.headless", False) and proxy_vivo():
+        return True
     try:
         pid = int(APP_PID.read_text().split()[0])
     except (OSError, ValueError, IndexError):
@@ -93,7 +123,8 @@ def app_aberta() -> bool:
     return True
 
 
-STATE_FILE = STATE_DIR / "state.json"
+STATE_FILE_PADRAO = STATE_DIR / "state.json"
+STATE_FILE = STATE_FILE_PADRAO
 PROMPTS_DIR = STATE_DIR / "prompts"
 LANES_DIR = HOME / ".transcentia" / "lanes"
 SAUDE_LANES = LANES_DIR / "saude-lanes.json"
@@ -180,8 +211,9 @@ def _ativar_modulos() -> Path:
     catalogo = (pasta / "catalogo.py").resolve()
     if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
         sys.exit("catalogo não está no bundle; import recusado")
-    for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
-                 "proxy_linear.py", "revisao_ia.py", "erros_conhecidos.py", "gasto_privado.py"):
+    for nome in ("agenda.py", "eventos.py", "projetos.py", "privacidade.py", "linear_ids.py",
+                 "fila.py", "config.py", "proxy_linear.py", "revisao_ia.py",
+                 "erros_conhecidos.py", "gasto_privado.py"):
         arq = pasta / nome
         if not arq.exists():
             continue
@@ -205,7 +237,9 @@ def _ativar_modulos() -> Path:
 
 _ativar_modulos()
 try:
+    import agenda  # noqa: E402
     import catalogo  # noqa: E402
+    import eventos  # noqa: E402
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import erros_conhecidos  # noqa: E402  fonte única de erros conhecidos (FRA-668)
@@ -226,10 +260,77 @@ import caixa_leitura as caixa  # noqa: E402  caixa do revisor (FRA-599)
 # --- Projeto em que o vigia trabalha ----------------------------------------
 # Vem do cadastro `projetos` da config do TuttiDash, o mesmo que o dispatcher
 # lê. Sem a chave não há projeto e o vigia não faz nada (FRA-565).
+WATCH_PROJETO = None
+
+
 def projeto():
     """Projeto em que este ciclo trabalha. A config é lida uma vez por ciclo —
     quem chama `recarregar()` no começo dele."""
-    return projetos.padrao()
+    return WATCH_PROJETO or projetos.padrao()
+
+
+def definir_projeto(p) -> None:
+    global WATCH_PROJETO
+    WATCH_PROJETO = p
+
+
+def agenda_ligada() -> bool:
+    return agenda.habilitado(_cfg("agenda.multiprojeto", False))
+
+
+def _estado_do_projeto(p) -> Path:
+    """Arquivo de estado do projeto quando a agenda liga; o antigo state.json fica no padrão."""
+    if not agenda_ligada() or not getattr(p, "id", ""):
+        return STATE_FILE_PADRAO
+    seguro = "".join(c for c in str(p.id) if c.isalnum() or c in "-")
+    return STATE_DIR / "projetos" / f"{seguro}.json"
+
+
+def _repos_do_projeto(p) -> dict:
+    """Todos os repos do projeto. Sem `repos`, um só com a chave `app` (compatível)."""
+    if getattr(p, "repos", None):
+        saida = {}
+        for i, r in enumerate(p.repos):
+            # O primeiro usa a chave histórica `app`; os demais, o slug.
+            chave = "app" if i == 0 else (r.slug or f"repo{i + 1}")
+            saida[chave] = {"dir": Path(r.repo), "slug": r.github or _slug_git(Path(r.repo))}
+        return saida
+    return {"app": {"dir": Path(p.repo), "slug": p.github or _slug_git(Path(p.repo))}}
+
+
+def selecionar_projeto():
+    """Projeto do ciclo do vigia. Sem a agenda, é o `padrao()` de sempre."""
+    if not agenda_ligada():
+        return projetos.padrao()
+    ocupados: set[str] = set()
+    for arq in LANES_DIR.glob("lane-*.json"):
+        # `lane-mcp.json`, `lane-prompt*.md` e lixo não são estado de lane.
+        nome = arq.name
+        if not nome.startswith("lane-") or not nome.endswith(".json"):
+            continue
+        try:
+            st = json.loads(arq.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            continue
+        if not isinstance(st, dict) or not st.get("lane") or not st.get("card"):
+            continue
+        pid = st.get("projeto")
+        if isinstance(pid, str) and pid:
+            ocupados.add(pid)
+        else:
+            return projetos.padrao()   # estado antigo sem dono: não troca
+    ultimo = agenda.ler_ultimo(STATE_DIR / "agenda.json")
+    escolhido = agenda.escolher(projetos.projetos(), ultimo, ocupados)
+    if escolhido is None:
+        return projetos.padrao()
+    agenda.gravar_ultimo(STATE_DIR / "agenda.json", escolhido.id)
+    return escolhido
+
+
+def _repos_do_ciclo(p) -> dict:
+    if agenda_ligada():
+        return _repos_do_projeto(p)
+    return _repos()
 
 
 def _slug_git(pasta: Path) -> str:
@@ -435,8 +536,14 @@ def sh(args: list[str], cwd: Path | None = None, timeout: int = 120, inp: str | 
 
 
 def load_state() -> dict:
+    caminho = STATE_FILE
+    # Migração silenciosa do estado antigo para o projeto padrão na primeira agenda.
+    if not caminho.exists() and agenda_ligada():
+        if (getattr(projeto(), "id", "") == getattr(projetos.padrao(), "id", "")
+                and STATE_FILE_PADRAO.exists()):
+            caminho = STATE_FILE_PADRAO
     try:
-        st = json.loads(STATE_FILE.read_text())
+        st = json.loads(caminho.read_text())
     except Exception:  # noqa: BLE001
         st = {}
     for k in ("reviewed", "alerts", "done_moves", "stops", "needs_checked", "merged", "installs", "formato_falhas", "analise_falhas", "conflitos", "rebases", "bloqueios", "removidas_pelo_vigia", "sem_revisao", "erros_revisao", "caixa_analise", "caixa_desde", "cancelados_limpos", "hooks_dono"):
@@ -445,6 +552,7 @@ def load_state() -> dict:
 
 
 def save_state(st: dict) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATE_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(st, indent=1, ensure_ascii=False))
     tmp.replace(STATE_FILE)
@@ -1355,7 +1463,18 @@ def exige_revisao_ia(repo: dict) -> bool:
     return True
 
 
-def merge_ready(st: dict, diary: list[str]) -> None:
+def merge_ready(st: dict, diary: list[str], repo_key: str = "app", repo: dict | None = None) -> None:
+    repo = repo or REPOS.get(repo_key) or REPOS["app"]
+    antigo = REPOS.get("app")
+    REPOS["app"] = repo
+    try:
+        _merge_ready(st, diary, repo_key)
+    finally:
+        if antigo is not None:
+            REPOS["app"] = antigo
+
+
+def _merge_ready(st: dict, diary: list[str], repo_key: str) -> None:
     repo = REPOS["app"]
     prs = {card_of(p["title"], p["headRefName"]): p for p in open_prs(repo)}
     for ci in sorted(project_issues(["In Review"]), key=lambda c: c.get("sortOrder") or 0):
@@ -1366,7 +1485,7 @@ def merge_ready(st: dict, diary: list[str]) -> None:
             # FRA-611: rascunho espera a prova remota. Não mergeia.
             continue
         if waiting_device_test(ci, pr):
-            key = f"{pr['number']}@{pr['headRefOid'][:7]}"
+            key = f"{repo_key}#{pr['number']}@{pr['headRefOid'][:7]}"
             if st["installs"].get("branch_feita") != key and start_install(
                     f"branch:{pr['headRefName']}", f"pr{pr['number']}", ci["id"], st, diary):
                 st["installs"]["branch_feita"] = key
@@ -1421,11 +1540,16 @@ def merge_ready(st: dict, diary: list[str]) -> None:
             continue
         sh(["gh", "pr", "merge", str(pr["number"]), "--squash", "--match-head-commit", pr["headRefOid"]],
            cwd=repo["dir"], timeout=180)
-        st["merged"][str(pr["number"])] = datetime.now().isoformat(timespec="seconds")
-        st["done_moves"][f"app#{pr['number']}"] = ci["identifier"]
+        st["merged"][f"{repo_key}#{pr['number']}"] = datetime.now().isoformat(timespec="seconds")
+        st["done_moves"][f"{repo_key}#{pr['number']}"] = ci["identifier"]
+        eventos.registrar(LANES_DIR / "eventos.jsonl", projeto=projeto().id,
+                          card=ci["identifier"], lane=lane_of(ci) or "revisor",
+                          etapa="merge", status="mergeado", sha=str(pr.get("headRefOid") or ""),
+                          pr=f"#{pr['number']}")
         move_done(ci, f"PR #{pr['number']} mergeado com a prova do dispatcher verde e revisão APROVADO", diary)
         st["installs"]["pendente_main"] = True
         st["installs"]["card_main"] = ci["id"]
+        st["installs"]["repo_main"] = repo_key
         return  # um merge por vez
 
 
@@ -1512,18 +1636,61 @@ def hold_for_heavier(ci: dict, pr: dict, st: dict, diary: list[str]) -> bool:
     return True
 
 
-def rebase_dirty(st: dict, diary: list[str]) -> None:
-    """PR em conflito com a main (DIRTY): o vigia junta a main no worktree do card (deixando os
-    conflitos marcados, se houver), escreve a rodada de conflito no topo do card e devolve o card
-    à fila da mesma lane. A lane resolve, commita, roda a prova e o dispatcher fecha de novo."""
+def rebase_dirty(st: dict, diary: list[str], repo_key: str = "app", repo: dict | None = None) -> None:
+    """PR em conflito com a main (DIRTY) no repo indicado."""
+    repo = repo or REPOS.get(repo_key) or REPOS["app"]
+    antigo = REPOS.get("app")
+    REPOS["app"] = repo
+    try:
+        _rebase_dirty(st, diary, repo_key)
+    finally:
+        if antigo is not None:
+            REPOS["app"] = antigo
+
+
+def _lane_do_arquivo(arq: Path) -> str:
+    """Lane pelo campo ou, em estado antigo, pelo nome `lane-<lane>.json`/namespaced."""
+    stem = arq.stem
+    if not stem.startswith("lane-"):
+        return ""
+    resto = stem[len("lane-"):]
+    for lane in LANES_CONHECIDAS:
+        if resto == lane or resto.endswith("-" + lane):
+            return lane
+    return ""
+
+
+def _estados_de_lane():
+    """(caminho, estado) de cada lane-*.json válido, aceitando nome com projeto."""
+    for arq in LANES_DIR.glob("lane-*.json"):
+        try:
+            st = json.loads(arq.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            continue
+        if not isinstance(st, dict) or not st.get("card"):
+            continue
+        lane = st.get("lane") or _lane_do_arquivo(arq)
+        if lane in LANES_CONHECIDAS:
+            st = dict(st)
+            st["lane"] = lane
+            yield arq, st
+
+
+def _estado_da_lane(lane: str) -> dict | None:
+    for _arq, st in _estados_de_lane():
+        if st.get("lane") == lane:
+            return st
+    return None
+
+
+def _rebase_dirty(st: dict, diary: list[str], repo_key: str) -> None:
     repo = REPOS["app"]
-    running = {json.loads(p.read_text()).get("card") for p in LANES_DIR.glob("lane-*.json")
-               if p.stem.split("-", 1)[1] in LANES_CONHECIDAS}
+    running = {st.get("card") for _arq, st in _estados_de_lane()}
     for pr in open_prs(repo):
         if pr.get("mergeStateStatus") != "DIRTY":
             continue
         card = card_of(pr["title"], pr["headRefName"])
-        key = f"{pr['number']}@{pr['headRefOid'][:7]}"
+        key = f"{repo_key}#{pr['number']}@{pr['headRefOid'][:7]}"
         if not card or card in running or key in st["rebases"]:
             continue
         ci = issue(card)
@@ -1568,8 +1735,16 @@ def rebase_dirty(st: dict, diary: list[str]) -> None:
 
 
 def install_main_if_pending(st: dict, diary: list[str]) -> None:
-    if st["installs"].get("pendente_main") and start_install("main", "main", st["installs"].get("card_main"), st, diary):
+    if not st["installs"].get("pendente_main"):
+        return
+    chave = str(st["installs"].get("repo_main") or "app")
+    p = projeto()
+    if getattr(p, "repos", None):
+        p = p.com_repositorio(chave)
+    definir_projeto(p)
+    if start_install("main", "main", st["installs"].get("card_main"), st, diary):
         st["installs"]["pendente_main"] = False
+        st["installs"].pop("repo_main", None)
 
 
 # ---------- 2. mergeado e não Done ----------
@@ -2396,8 +2571,7 @@ def heavier_conflict(ci: dict, files: set[str], others: list[tuple[dict, set[str
 
 
 def busy_lanes() -> set[str]:
-    return {p.stem.split("-", 1)[1] for p in LANES_DIR.glob("lane-*.json")
-            if p.stem.split("-", 1)[1] in LANES_CONHECIDAS}
+    return {str(st.get("lane")) for _arq, st in _estados_de_lane()}
 
 
 def lanes_ativas() -> set[str]:
@@ -2517,11 +2691,10 @@ def _keep_lanes_busy(issues: list[dict], st: dict, diary: list[str]) -> None:
     running = busy_lanes() & ativas
     running_cards: set[str] = set()
     for lane in running:
-        try:
-            card = json.loads((LANES_DIR / f"lane-{lane}.json").read_text()).get("card")
-            if card:
-                running_cards.add(card)
-        except (OSError, ValueError, AttributeError):
+        st = _estado_da_lane(lane)
+        if st and st.get("card"):
+            running_cards.add(st["card"])
+        elif st is None:
             log(f"fila: estado da lane {lane} ilegível; não conto como ocupada")
     waiting = [c for c in queue if c["identifier"] not in running_cards]
     todo = sorted([c for c in issues if c["state"]["name"] == "Todo" and is_ready(c)],
@@ -3202,7 +3375,7 @@ def pausado_pelo_dono() -> bool:
     return (STATE_DIR / "PAUSE.manual").exists()
 
 
-def main() -> int:
+def main(projeto_especifico=None, _lock: bool = True) -> int:
     if not app_aberta():
         return 0
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -3211,13 +3384,19 @@ def main() -> int:
         return 0  # sem projeto cadastrado: nada a vigiar
     if pausado_pelo_dono():
         return 0  # pausa do dono
-    lock = open(STATE_DIR / "watch.lock", "w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        return 0
-    global REPOS
-    REPOS = _repos()
+    lock = None
+    if _lock:
+        lock = open(STATE_DIR / "watch.lock", "w")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock.close()
+            return 0
+    global REPOS, STATE_FILE
+    definir_projeto(projeto_especifico or selecionar_projeto())
+    STATE_FILE = _estado_do_projeto(projeto())
+    REPOS = _repos_do_ciclo(projeto())
+    _aplicar_ids(linear_ids.carregar(_cfg, project_id=projeto().id))
     garantir_ids()
     first_run = not STATE_FILE.exists()
     st = load_state()
@@ -3243,8 +3422,9 @@ def main() -> int:
             step("revisao (remota + fallback)", garantir_revisao, repo, st, diary)
         limpar_revisoes_fechadas(st, heads_abertos)
 
-        step("merge", merge_ready, st, diary)
-        step("conflito", rebase_dirty, st, diary)
+        for repo_key, repo_dict in REPOS.items():
+            step(f"merge {repo_key}", merge_ready, st, diary, repo_key, repo_dict)
+            step(f"conflito {repo_key}", rebase_dirty, st, diary, repo_key, repo_dict)
         step("instalar main", install_main_if_pending, st, diary)
         step("mergeado e não Done", merged_not_done, st, diary)
         issues = project_issues()
@@ -3273,8 +3453,50 @@ def main() -> int:
     finally:
         save_state(st)
         diary_append(diary)
+        if lock is not None:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            lock.close()
+    return 0
+
+
+def main_todos() -> int:
+    """Um tick para todos os projetos ativos (ou só o principal, sem agenda).
+
+    O lock é tomado uma vez; cada projeto tem seu state.json e seu repo. Uma
+    falha em um projeto não impede os outros.
+    """
+    if not app_aberta():
+        return 0
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    projetos.recarregar()
+    if not projetos.configurado():
+        return 0
+    if pausado_pelo_dono():
+        return 0
+    lock = open(STATE_DIR / "watch.lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        return 0
+    try:
+        lista = projetos.ativos() if agenda_ligada() else [selecionar_projeto()]
+        for p in lista:
+            try:
+                main(p, _lock=False)
+            except Exception as exc:  # noqa: BLE001 — um projeto não para os outros
+                log(f"{getattr(p, 'nome', p)}: tick falhou: {exc}")
+    finally:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        lock.close()
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main_todos())

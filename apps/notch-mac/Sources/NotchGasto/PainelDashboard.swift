@@ -795,6 +795,9 @@ struct DetalheLane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let nome = linha.projetoNome, !nome.isEmpty {
+                Text("projeto \(nome)").fontePainel(11.5, .semibold).foregroundStyle(PV.mudo).lineLimit(1)
+            }
             if let texto = linha.textoModelo {
                 Text(texto).fontePainel(12, .semibold).lineLimit(1)
             }

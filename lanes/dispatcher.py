@@ -62,8 +62,8 @@ def _ativar_modulos() -> Path:
     catalogo = (pasta / "catalogo.py").resolve()
     if ".transcentia" in str(pasta) or ".transcentia" in str(catalogo) or not catalogo.is_file():
         sys.exit("catalogo não está no bundle; import recusado")
-    for nome in ("projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
-                 "proxy_linear.py", "gasto_privado.py"):
+    for nome in ("agenda.py", "eventos.py", "projetos.py", "privacidade.py", "linear_ids.py",
+                 "fila.py", "config.py", "proxy_linear.py", "gasto_privado.py"):
         arq = pasta / nome
         if not arq.exists():
             continue
@@ -89,7 +89,9 @@ _ativar_modulos()
 import permissao  # noqa: E402  glob de Bash do CLI (um só lugar)
 import lanes_window  # noqa: E402  janela única das lanes
 try:
+    import agenda  # noqa: E402
     import catalogo  # noqa: E402
+    import eventos  # noqa: E402
     import fila  # noqa: E402
     import linear_ids  # noqa: E402
     import projetos  # noqa: E402
@@ -246,6 +248,11 @@ def _cfg(chave, padrao):
     try:
         import runpy
         v = runpy.run_path(str(_caminho_cfg()))["get"](chave, padrao)
+        if isinstance(padrao, bool):
+            # `bool("false")` seria True: config lida como texto precisa da mesma régua.
+            if isinstance(v, str):
+                return v.strip().lower() in ("1", "true", "sim", "on", "ligado")
+            return bool(v)
         return type(padrao)(v) if padrao is not None and not isinstance(padrao, (list, set, dict)) else v
     except Exception:  # noqa: BLE001
         return padrao
@@ -310,10 +317,88 @@ def mudar_estado(issue_id: str, state_id: str) -> bool:
 _aplicar_ids(linear_ids.carregar(_cfg, project_id=projetos.padrao().id))  # sem rede: config e cache
 
 
+# Projeto escolhido para este ciclo. None = ainda não escolhido; cai no `padrao()`
+# para preservar o comportamento antigo quando `agenda.multiprojeto` está desligado.
+PROJETO_ATUAL = None
+
+
 def projeto():
     """Projeto em que este ciclo trabalha. A config é lida uma vez por ciclo —
     quem chama `recarregar()` no começo dele."""
-    return projetos.padrao()
+    return PROJETO_ATUAL or projetos.padrao()
+
+
+def definir_projeto(p) -> None:
+    global PROJETO_ATUAL
+    PROJETO_ATUAL = p
+
+
+def simultaneo_ligado() -> bool:
+    return agenda.habilitado(_cfg("agenda.simultaneo", False))
+
+
+def selecionar_projeto():
+    """Projeto deste ciclo: o padrão, ou o próximo da agenda quando ela está ligada.
+
+    Com lane em andamento, a agenda devolve o projeto dono da lane (mesmo inativo):
+    trocar no meio usaria o worktree/prova errados. Estado antigo sem `projeto`
+    não permite saber o dono; nesse caso, volta ao padrão e não troca.
+    """
+    if not agenda.habilitado(_cfg("agenda.multiprojeto", False)):
+        return projetos.padrao()
+    ocupados: set[str] = set()
+    for lane in LANES:
+        st = load_state(lane)
+        if not st:
+            continue
+        pid = st.get("projeto")
+        if isinstance(pid, str) and pid:
+            ocupados.add(pid)
+        else:
+            return projetos.padrao()
+    ultimo = agenda.ler_ultimo(STATE_DIR / "agenda.json")
+    escolhido = agenda.escolher(projetos.projetos(), ultimo, ocupados)
+    if escolhido is None:
+        return projetos.padrao()
+    agenda.gravar_ultimo(STATE_DIR / "agenda.json", escolhido.id)
+    return escolhido
+
+
+def teto_gasto(effort: str) -> float:
+    """Teto em US$ do card: o do projeto, ou o global `BUDGET_USD` quando ausente."""
+    tabela = getattr(projeto(), "budget_usd", None) or {}
+    valor = tabela.get(effort)
+    if isinstance(valor, (int, float)) and not isinstance(valor, bool) and valor > 0:
+        return float(valor)
+    return float(BUDGET_USD.get(effort, BUDGET_USD["medio"]))
+
+
+def _limite_projeto(nome: str) -> int:
+    """Inteiro do projeto, ou 0. `projeto()` mockado em teste não pode derrubar o ciclo."""
+    try:
+        valor = int(getattr(projeto(), nome, 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+    return valor if valor > 0 else 0
+
+
+def limite_lane_min() -> int:
+    return _limite_projeto("lane_timeout_min") or LANE_TIMEOUT_MIN
+
+
+def limite_prova_min() -> int:
+    return _limite_projeto("proof_timeout_min") or PROOF_TIMEOUT_MIN
+
+
+def max_por_lane_projeto() -> int:
+    return _limite_projeto("max_tarefas_por_lane") or MAX_PER_LANE
+
+
+def projeto_do_estado(st: dict):
+    """Projeto do estado, com o repositório escolhido pelo card (FRA-711)."""
+    p = projetos.por_id(str(st.get("projeto") or "")) or projetos.padrao()
+    slug = st.get("repo_slug") or ""
+    return p.com_repositorio(slug) if slug else p
 
 
 def projeto_repo() -> Path:
@@ -357,8 +442,41 @@ APP_PID = STATE_DIR / "app.pid"
 VIEWER_FILE = STATE_DIR / "viewer-id"
 
 
+PROXY_PID = STATE_DIR / "linear-proxy.pid"
+
+
+def proxy_vivo() -> bool:
+    """Proxy do Linear vivo pelo pid; confere a linha de comando para não pegar PID reciclado."""
+    try:
+        pid = int(PROXY_PID.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        args = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        args = ""
+    if not args:
+        try:
+            import subprocess as _sp
+            args = _sp.run(["/bin/ps", "-p", str(pid), "-o", "args="],
+                           capture_output=True, text=True, timeout=5).stdout
+        except Exception:  # noqa: BLE001
+            args = ""
+    return "proxy_linear.py" in args
+
+
 def app_aberta() -> bool:
-    """O app TuttiDash é o dono do ciclo: sem o PID vivo, o dispatcher não trabalha."""
+    """O app TuttiDash é o dono do ciclo; com `agenda.headless`, o proxy vivo basta."""
+    if _cfg("agenda.headless", False) and proxy_vivo():
+        return True
     try:
         pid = int(APP_PID.read_text().split()[0])
     except (OSError, ValueError, IndexError):
@@ -1364,7 +1482,7 @@ def agent_command(lane: str, effort: str, prompt: Optional[Path] = None,
             "--permission-mode", MODO_PERMISSAO,
             "--settings", str(settings or caminho_settings()),
             "--strict-mcp-config", "--mcp-config", str(caminho_controle("lane-mcp.json")),
-            "--max-budget-usd", str(BUDGET_USD[effort]),
+            "--max-budget-usd", str(teto_gasto(effort)),
             *flags_da_lane(lane, effort, modelo),
         ]
     if cli == "grok":
@@ -1440,7 +1558,7 @@ def comando_acp(lane: str, inst: dict, settings: Optional[Path] = None,
         raise RuntimeError("acp_runner.py não está no bundle; lane ACP fechada")
     cmd = ["/usr/bin/python3", str(runner), "--lane", lane, "--agente", inst["agente"],
            "--worktree", ".", "--settings", str(settings or caminho_settings()),
-           "--espera", str(LANE_TIMEOUT_MIN * 60)]
+           "--espera", str(limite_lane_min() * 60)]
     modelo = modelo_da_lane(lane, effort)   # "auto" resolve pelo peso do card
     if modelo:
         cmd += ["--modelo", modelo]
@@ -1462,8 +1580,20 @@ def texto_do_agente(lane: str, effort: str, prompt: Path,
 
 
 # --- Estado local das lanes --------------------------------------------------
-def state_file(lane: str) -> Path:
-    return STATE_DIR / f"lane-{lane}.json"
+def slot_de_lane(lane: str, p=None) -> str:
+    """Prefixo do estado/sessão por projeto.
+
+    Ainda devolve o nome antigo: o app e o vigia já leem `lane-<projeto>-<lane>`,
+    mas o despacho da mesma lane em dois projetos depende dos slots do FRA-706.
+    """
+    p = p or projeto()
+    if simultaneo_ligado() and getattr(p, "slug", ""):
+        return f"{p.slug}-{lane}"
+    return lane
+
+
+def state_file(lane: str, p=None) -> Path:
+    return STATE_DIR / f"lane-{slot_de_lane(lane, p)}.json"
 
 
 def load_state(lane: str) -> Optional[dict]:
@@ -1503,11 +1633,18 @@ def save_state(lane: str, st: dict) -> None:
 _CARD_RE = re.compile(r"^[A-Za-z]+-\d+$")
 _BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
-_CAMPOS_CLAIM = ("card", "issue_id", "branch", "worktree", "base", "log", "session")
+_CAMPOS_CLAIM = ("card", "issue_id", "branch", "worktree", "base", "log", "session",
+                 "projeto", "projeto_nome", "repo_slug")
 
 
-def claim_file(lane: str) -> Path:
-    return STATE_DIR / f"claim-{lane}.json"
+def claim_file(lane: str, p=None) -> Path:
+    return STATE_DIR / f"claim-{slot_de_lane(lane, p)}.json"
+
+
+def stop_file(lane: str, session: str = "") -> Path:
+    """Pedido de parada da vaga. Sessão namespaced usa o nome completo."""
+    chave = session if isinstance(session, str) and session.startswith("lane-") and session != f"lane-{lane}" else lane
+    return STATE_DIR / f"stop-{chave}"
 
 
 def gravar_claim(lane: str, st: dict) -> None:
@@ -1542,10 +1679,13 @@ def soltar_lane(lane: str) -> None:
 
 
 def sessao_de_lane(session: str) -> bool:
-    """`lane-<lane>` de uma lane conhecida. Outro nome não é sessão nossa."""
+    """`lane-<lane>` ou `lane-<projeto>-<lane>` de uma lane conhecida."""
     if not isinstance(session, str) or not session.startswith("lane-"):
         return False
-    return session[len("lane-"):] in LANES
+    resto = session[len("lane-"):]
+    if resto in LANES:
+        return True
+    return any(resto.endswith("-" + lane) for lane in LANES)
 
 
 def branch_valida(nome) -> bool:
@@ -1638,7 +1778,8 @@ def motivo_recusa_estado(lane: str, st: dict) -> Optional[str]:
         return str(st["_recusado"])
     if lane not in LANES or st.get("lane") != lane:
         return "lane diferente do arquivo"
-    if st.get("session") != f"lane-{lane}":
+    sess = st.get("session")
+    if not isinstance(sess, str) or not sess.endswith("-" + lane) or not sessao_de_lane(sess):
         return "sessão não é lane-<lane>"
     card = st.get("card")
     if not isinstance(card, str) or not _CARD_RE.fullmatch(card):
@@ -2561,7 +2702,7 @@ def limit_text(lane: str, effort: str) -> str:
         return f"limite {GROK_MAX_TURNS[effort]} turnos"
     if cli == "dsh":
         return "sem teto de gasto no CLI"
-    return f"teto US$ {BUDGET_USD[effort]}"
+    return f"teto US$ {teto_gasto(effort):g}"
 
 
 def montar_prompt(template: str, *, ident: str, lane: str, branch: str, wt: Path) -> str:
@@ -2637,10 +2778,26 @@ def bloco_dos_comentarios(card: dict) -> str:
             f"<comentarios>\n{texto}\n</comentarios>\n")
 
 
+def repo_do_card(card: dict) -> str:
+    """Slug do rótulo `repo:<slug>` (FRA-711); vazio = repo principal."""
+    for no in (card.get("labels") or {}).get("nodes") or []:
+        nome = str(no.get("name") or "")
+        if nome.startswith("repo:"):
+            slug = nome[len("repo:"):].strip()
+            if slug and all(c.isalnum() or c in "-_" for c in slug):
+                return slug
+    return ""
+
+
 def claim(lane: str, issue: dict, effort: str, measure: str = "",
           modelo: Optional[str] = None) -> None:
     card = linear(QUERY_ISSUE, {"id": issue["id"]})["issue"]
     ident = card["identifier"]
+    repo_slug = repo_do_card(card)
+    if repo_slug:
+        escolhido = projeto().com_repositorio(repo_slug)
+        if escolhido is not projeto():
+            definir_projeto(escolhido)
     branch = branch_segura(card["branchName"], ident)
     nota_branch = ("" if branch == card["branchName"] else
                    f"- a branch do Linear (`{card['branchName']}`) tem caractere que o git das lanes "
@@ -2715,21 +2872,24 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "",
     base = sh([GIT, "rev-parse", "HEAD"], cwd=wt)
     st = {"lane": lane, "card": ident, "issue_id": card["id"], "title": card["title"],
           "url": card["url"], "branch": branch, "worktree": str(wt), "base": base,
-          "projeto": projeto().id,
+          "projeto": projeto().id, "projeto_nome": projeto().nome,
+          "repo_slug": repo_slug,
           "effort": effort, "modelo": modelo or modelo_da_lane(lane, effort),
           "modelo_fixo": aviso_modelo(lane, effort) == "modelo fixo",
           "aviso_modelo": aviso_modelo(lane, effort) if not modelo else "retry de modelo",
           "started": time.time(), "started_at": now(),
-          "log": str(lane_log), "session": f"lane-{lane}",
+          "log": str(lane_log), "session": f"lane-{slot_de_lane(lane)}",
           "run_id": run_id, "agent_cmd": str(cmd_path), "bancada": bancada}
     save_state(lane, st)
     gravar_claim(lane, st)
+    eventos.registrar(STATE_DIR / "eventos.jsonl", projeto=st["projeto"], card=ident,
+                      lane=lane, etapa="claim", status="iniciado", sha=base)
 
     flags = (deepseek_resumo(effort, lane) if cli == "dsh"
              else " ".join(flags_da_lane(lane, effort, modelo)) or "padrão do CLI")
     linear(MUT_COMMENT, {"id": card["id"], "body":
         f"▶️ **lane:{lane}** assumiu o card ({now()}).\n\n"
-        f"- esforço `{effort}` → `{flags}`, {limit_text(lane, effort)}, timeout {LANE_TIMEOUT_MIN} min\n"
+        f"- esforço `{effort}` → `{flags}`, {limit_text(lane, effort)}, timeout {limite_lane_min()} min\n"
         f"- branch `{branch}`, worktree local\n"
         + nota_branch
         + linha_main
@@ -2744,14 +2904,19 @@ def claim(lane: str, issue: dict, effort: str, measure: str = "",
     if tmux_alive(session):
         sh([TMUX, "kill-session", "-t", session], check=False)
     runner = caminho_runner()
+    cmd_prefix = ""
+    if st.get("projeto"):
+        cmd_prefix = (f"TUTTIDASH_PROJETO={shlex.quote(str(st['projeto']))} "
+                      f"TUTTIDASH_PROJETO_NOME={shlex.quote(str(st.get('projeto_nome') or ''))} ")
     sh([TMUX, "new-session", "-d", "-s", session, "-c", str(wt),
-        " ".join([
+        cmd_prefix + " ".join([
             "bash", shlex.quote(str(runner)),
             shlex.quote(lane), shlex.quote(str(wt)), shlex.quote(ident),
             shlex.quote(str(lane_log)), shlex.quote(str(cmd_path)), shlex.quote(str(prova)),
             shlex.quote(cli or lane),
         ])])
     # Janela única 'lanes' (claude em cima, grok embaixo). Fechar não para a lane.
+    # Sessão namespaced ganha um painel próprio, com @session.
     st["window_ok"] = _show_in_lanes_window(lane, session, ident)
     save_state(lane, st)
     # Cache de títulos para o painel (FRA-563): grava o título do card para que
@@ -4492,9 +4657,9 @@ def acompanhar_prova(st: dict, wt: Path, suites: list[str]) -> str:
     """
     prova = preparar_prova_dir(st, wt)
     _avisar_pid_da_worktree(wt)
-    stop_file = STATE_DIR / f"stop-{st['lane']}"
-    if stop_file.exists():
-        stop_file.unlink(missing_ok=True)
+    parada = stop_file(st["lane"], st.get("session") or "")
+    if parada.exists():
+        parada.unlink(missing_ok=True)
         matar_prova(st)
         return "stop"
     decisao = decidir_prova_morta(prova)
@@ -4517,7 +4682,7 @@ def acompanhar_prova(st: dict, wt: Path, suites: list[str]) -> str:
             started = float(ler_sem_seguir(prova / "proof_started") or 0)
         except (OSError, RuntimeError, ValueError):
             started = 0.0
-        if started and (time.time() - started) / 60 > PROOF_TIMEOUT_MIN:
+        if started and (time.time() - started) / 60 > limite_prova_min():
             matar_prova(st)
             return "timeout"
         return "rodando"
@@ -5187,10 +5352,10 @@ def log_sem_saida(log_path: str, agora: Optional[float] = None, limite: float = 
 def razao_sem_exit(st: dict, agora: Optional[float] = None) -> Optional[str]:
     """Por que a lane sem exit_code deve parar, ou None se ela segue."""
     agora = time.time() if agora is None else agora
-    if (STATE_DIR / f"stop-{st['lane']}").exists():
+    if stop_file(st["lane"], st.get("session") or "").exists() or (STATE_DIR / f"stop-{st['lane']}").exists():
         return "parada manual (menu)"
-    if (agora - st["started"]) / 60 > LANE_TIMEOUT_MIN:
-        return f"timeout de {LANE_TIMEOUT_MIN} min"
+    if (agora - st["started"]) / 60 > limite_lane_min():
+        return f"timeout de {limite_lane_min()} min"
     if not tmux_alive(st["session"]):
         return "sessão tmux sumiu sem código de saída"
     if log_sem_saida(st.get("log") or "", agora):
@@ -5207,18 +5372,19 @@ RECUSA_LOG_S = 3600
 _ISSUE_RE = re.compile(r"[0-9a-fA-F-]{8,64}")
 
 
-def _arquivo_recusa(lane: str) -> Path:
-    return STATE_DIR / f"recusado-{lane}.json"
+def _arquivo_recusa(lane: str, slot: str = "") -> Path:
+    chave = slot if slot and slot != f"lane-{lane}" else lane
+    return STATE_DIR / f"recusado-{chave}.json"
 
 
-def limpar_recusa(lane: str) -> None:
-    _arquivo_recusa(lane).unlink(missing_ok=True)
+def limpar_recusa(lane: str, slot: str = "") -> None:
+    _arquivo_recusa(lane, slot).unlink(missing_ok=True)
 
 
 def avisar_estado_recusado(lane: str, st: dict, motivo: str, agora: Optional[float] = None) -> dict:
     """Registra a recusa, loga no máximo 1x/hora e avisa o dono 1x depois de RECUSA_AVISO_MIN."""
     agora = time.time() if agora is None else agora
-    f = _arquivo_recusa(lane)
+    f = _arquivo_recusa(lane, st.get("session") or "")
     try:
         reg = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError, UnicodeError):
@@ -5270,7 +5436,7 @@ def watch(lane: str, st: dict) -> None:
     if motivo:
         avisar_estado_recusado(lane, st, motivo)
         return
-    limpar_recusa(lane)
+    limpar_recusa(lane, st.get("session") or "")
     if st.get("stuck"):
         return  # precisa de ação humana: ver log; apagar lane-<x>.json libera a lane
     wt = Path(st["worktree"])
@@ -5283,8 +5449,8 @@ def watch(lane: str, st: dict) -> None:
     if exit_file.is_symlink():
         log(f"lane:{lane} {st.get('card')}: exit_code é symlink; recusado")
         return
-    stop_file = STATE_DIR / f"stop-{lane}"
-    if not exit_file.exists() and tmux_alive(st["session"]) and not st.get("window_ok"):
+    parada = stop_file(lane, st.get("session") or "")
+    if (not exit_file.exists() and tmux_alive(st["session"]) and not st.get("window_ok")):
         st["window_ok"] = _show_in_lanes_window(lane, st["session"], st["card"])
         save_state(lane, st)
     if not exit_file.exists():
@@ -5301,7 +5467,7 @@ def watch(lane: str, st: dict) -> None:
             escrever_exclusivo(exit_file, texto)
         kill_lane_tree(st["session"])
         matar_prova(st)
-        stop_file.unlink(missing_ok=True)
+        parada.unlink(missing_ok=True)
     try:
         outcome = finalize(st)
         if outcome is None:
@@ -5363,6 +5529,9 @@ def watch(lane: str, st: dict) -> None:
         archive_old_proofs(prova, st["card"])
     except Exception as exc:  # noqa: BLE001 — o fechamento não pode falhar por causa do histórico
         log(f"lane:{lane} {st['card']}: não arquivei a prova ({exc})")
+    eventos.registrar(STATE_DIR / "eventos.jsonl", projeto=st.get("projeto") or projeto().id,
+                      card=st["card"], lane=lane, etapa="finalize", status=outcome,
+                      motivo=outcome)
     soltar_lane(lane)
     log(f"lane:{lane} FECHOU {st['card']} → {outcome}")
 
@@ -5635,6 +5804,182 @@ def keep_awake(has_work: bool) -> None:
         log(f"mantendo acordado: caffeinate {proc.pid} por {CAFFEINATE_SECONDS} s, renovado a cada ciclo")
 
 
+def _ciclo_simultaneo(real: bool, verbose: bool) -> int:
+    """Ciclo com vários projetos e uma vaga por (projeto, lane).
+
+    Com `agenda.simultaneo`, o estado e a sessão levam o slug do projeto
+    (`lane-<projeto>-<lane>`), então a mesma lane pode rodar em dois projetos.
+    Sem a flag, o ciclo antigo continua intacto.
+    """
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    if not app_aberta():
+        # Encerra todas as vagas, inclusive as namespaced.
+        for arq in STATE_DIR.glob("lane-*.json"):
+            try:
+                st = json.loads(arq.read_text(encoding="utf-8"))
+            except (OSError, ValueError, UnicodeError):
+                continue
+            sess = st.get("session") if isinstance(st, dict) else ""
+            if isinstance(sess, str) and sess:
+                try:
+                    kill_lane_tree(sess)
+                except Exception:  # noqa: BLE001
+                    pass
+        return 0
+    projetos.recarregar()
+    definir_projeto(None)
+    if not projetos.configurado():
+        return 0
+    lanes_on, _ignored = effective_lanes(enabled_lanes()) if real else (set(), [])
+    if real:
+        garantir_ids()
+    ativos = projetos.ativos()
+    HEARTBEAT_FILE.write_text(json.dumps({
+        "at": now(), "dry_run": not real, "enabled": sorted(lanes_on),
+        "agenda": True, "simultaneo": True,
+        "projects": [{"id": p.id, "nome": p.nome, "ativo": p.ativo, "prioridade": p.prioridade}
+                     for p in projetos.projetos()],
+        "implemented": [l for l in LANES if lane_runnable(l)]}))
+    _privar(HEARTBEAT_FILE)
+
+    # 1. Acompanha cada vaga rodando, com o projeto dono.
+    running: dict[tuple[str, str], dict] = {}
+    if real:
+        for p in ativos:
+            definir_projeto(p)
+            _aplicar_ids(linear_ids.carregar(_cfg, project_id=p.id))
+            for lane in LANES:
+                st = load_state(lane)
+                if not st:
+                    continue
+                running[(p.id, lane)] = st
+                try:
+                    watch(lane, st)
+                except Exception as exc:  # noqa: BLE001
+                    log(f"lane:{slot_de_lane(lane, p)} ERRO ao acompanhar: {type(exc).__name__}: {exc}")
+
+    if PAUSE_FILE.exists():
+        return 0
+
+    # 2. Vagas livres por (projeto, lane), com limite de conta global por lane.
+    limited = {l: u for l in LANES if (u := lane_limited_conta(l))}
+    vagas: list[tuple[object, str]] = []
+    for p in ativos:
+        for lane in LANES:
+            if lane not in lanes_on or (p.id, lane) in running or lane in limited:
+                continue
+            vagas.append((p, lane))
+    if not vagas:
+        return 0
+    busy = {c for l in LANES for p in ativos
+            if (st := running.get((p.id, l))) and (c := card_confiavel(l, st))}
+    medidas = measures_cached(real) if real else None
+    limite_projeto = {p.id: (p.max_lanes or len(LANES)) for p in ativos}
+    por_projeto = {p.id: sum(1 for (pid, _l) in running if pid == p.id) for p in ativos}
+    usadas: set[tuple[str, str]] = set()
+
+    # 3. Candidatos In Progress, por projeto, com o contexto certo.
+    candidatos = []
+    for p in ativos:
+        definir_projeto(p)
+        _aplicar_ids(linear_ids.carregar(_cfg, project_id=p.id))
+        try:
+            issues = linear(QUERY_CANDIDATES, {"project": p.id,
+                                               "state": STATE_IN_PROGRESS_ID})["issues"]["nodes"]
+        except Exception as exc:  # noqa: BLE001
+            log(f"{p.nome}: não li candidatos ({exc})")
+            continue
+        for it in issues:
+            if it.get("identifier") in busy:
+                continue
+            lane, effort, why = classify(it)
+            if why or not lane or lane == AUTO_LANE:
+                continue
+            if (p.id, lane) not in {(x.id, l) for x, l in vagas}:
+                continue
+            if medidas is not None and (not fila.cota_ok(lane, effort, medidas)
+                                        or headroom_block(lane, effort, medidas)):
+                continue
+            candidatos.append((p, it, lane, effort))
+    candidatos.sort(key=lambda x: (x[1].get("priority") or 0, x[1].get("sortOrder") or 0))
+
+    escolhidos = []
+    for p, it, lane, effort in candidatos:
+        chave = (p.id, lane)
+        if chave in usadas or por_projeto.get(p.id, 0) >= limite_projeto.get(p.id, len(LANES)):
+            continue
+        if chave not in {(x.id, l) for x, l in vagas}:
+            continue
+        usadas.add(chave)
+        por_projeto[p.id] = por_projeto.get(p.id, 0) + 1
+        escolhidos.append((p, it, lane, effort))
+        if len(escolhidos) >= len(vagas):
+            break
+
+    # 4. Um card do Todo por projeto, se houver vaga (lane explícita).
+    if real and len(escolhidos) < len(vagas):
+        for p in ativos:
+            if len(escolhidos) >= len(vagas):
+                break
+            if por_projeto.get(p.id, 0) >= limite_projeto.get(p.id, len(LANES)):
+                continue
+            definir_projeto(p)
+            _aplicar_ids(linear_ids.carregar(_cfg, project_id=p.id))
+            if not STATE_TODO_ID:
+                continue
+            try:
+                todos = linear(QUERY_CANDIDATES, {"project": p.id,
+                                                  "state": STATE_TODO_ID})["issues"]["nodes"]
+            except Exception as exc:  # noqa: BLE001
+                log(f"{p.nome}: não li o Todo ({exc})")
+                continue
+            for it in todos:
+                if len(escolhidos) >= len(vagas):
+                    break
+                if por_projeto.get(p.id, 0) >= limite_projeto.get(p.id, len(LANES)):
+                    break
+                if motivo_que_segura_todo(it):
+                    continue
+                lane, effort, why = classify(it)
+                chave = (p.id, lane) if lane else None
+                if why or not lane or lane == AUTO_LANE or chave in usadas:
+                    continue
+                if chave not in {(x.id, l) for x, l in vagas}:
+                    continue
+                if medidas is not None and (not fila.cota_ok(lane, effort, medidas)
+                                            or headroom_block(lane, effort, medidas)):
+                    continue
+                try:
+                    mudar_estado(it["id"], STATE_IN_PROGRESS_ID)
+                    linear(MUT_COMMENT, {"id": it["id"], "body":
+                        f"▶️ Fila simultânea: **{it['identifier']}** subiu do Todo para In Progress "
+                        f"({now()}) no projeto **{p.nome}**, porque havia lane ociosa."})
+                except Exception as exc:  # noqa: BLE001
+                    log(f"{p.nome}: {it['identifier']} não subiu do Todo ({exc})")
+                    continue
+                usadas.add(chave)
+                por_projeto[p.id] = por_projeto.get(p.id, 0) + 1
+                escolhidos.append((p, it, lane, effort))
+                break
+
+    # 5. Assume, com o contexto do projeto e o slot namespaced.
+    for p, issue, lane, effort in escolhidos:
+        definir_projeto(p)
+        _aplicar_ids(linear_ids.carregar(_cfg, project_id=p.id))
+        log(f"{'[SIMULAÇÃO] ' if not real else ''}lane:{slot_de_lane(lane, p)} → "
+            f"{issue['identifier']} ({p.nome}, esforço {effort})")
+        if not real:
+            continue
+        try:
+            claim(lane, issue, effort)
+        except Exception as exc:  # noqa: BLE001
+            log(f"lane:{slot_de_lane(lane, p)} ERRO no claim de {issue['identifier']}: {exc}")
+            try:
+                aplicar_label(issue["id"], LABEL_LANE_FALHOU_ID, linear_ids.FALHOU)
+            except Exception:  # noqa: BLE001
+                pass
+    return 0
+
 def run(real: bool, verbose: bool) -> int:
     """Um ciclo por vez. Sem o lock, dois launchd se atropelam e matam a sessão um do outro."""
     fh = _trava_ciclo()
@@ -5649,6 +5994,8 @@ def run(real: bool, verbose: bool) -> int:
 
 
 def _ciclo(real: bool, verbose: bool) -> int:
+    if agenda.habilitado(_cfg("agenda.simultaneo", False)):
+        return _ciclo_simultaneo(real, verbose)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     if not app_aberta():
         # Boot sem o app, ou app encerrado/caiu: interrompe o que tiver ficado e sai.
@@ -5661,6 +6008,7 @@ def _ciclo(real: bool, verbose: bool) -> int:
                     pass
         return 0
     projetos.recarregar()   # cadastro lido uma vez por ciclo: mexer na config vale no ciclo seguinte
+    definir_projeto(None)
     if not projetos.configurado():
         aviso = "sem projeto: cadastre um em Ajustes › Avançado › Projetos (chave `projetos` da config)"
         previous = MODE_FILE.read_text().strip() if MODE_FILE.exists() else ""
@@ -5669,6 +6017,9 @@ def _ciclo(real: bool, verbose: bool) -> int:
             MODE_FILE.write_text(aviso)
             _privar(MODE_FILE)
         return 0
+    definir_projeto(selecionar_projeto())
+    # A agenda pode trocar de projeto: os ids e o cache do Linear são do projeto escolhido.
+    _aplicar_ids(linear_ids.carregar(_cfg, project_id=projeto().id))
     lanes_on, ignored = effective_lanes(enabled_lanes()) if real else (set(), [])
     try:
         prev_at = json.loads(HEARTBEAT_FILE.read_text()).get("at") if HEARTBEAT_FILE.exists() else None
@@ -5688,6 +6039,10 @@ def _ciclo(real: bool, verbose: bool) -> int:
                                           "enabled": sorted(lanes_on),
                                           "project": projeto().id,
                                           "project_name": projeto().nome,
+                                          "agenda": agenda.habilitado(_cfg("agenda.multiprojeto", False)),
+                                          "projects": [{"id": p.id, "nome": p.nome, "ativo": p.ativo,
+                                                        "prioridade": p.prioridade}
+                                                       for p in projetos.projetos()],
                                           "implemented": [l for l in LANES if lane_runnable(l)]}))
     _privar(HEARTBEAT_FILE)
     mode = (f"{'real' if real else 'simulação'} · projeto: {projeto().nome} · "
@@ -5705,6 +6060,8 @@ def _ciclo(real: bool, verbose: bool) -> int:
             try:
                 st = load_state(lane)
                 if st:
+                    definir_projeto(projeto_do_estado(st))
+                    _aplicar_ids(linear_ids.carregar(_cfg, project_id=projeto().id))
                     watch(lane, st)
             except Exception as exc:  # noqa: BLE001
                 log(f"lane:{lane} ERRO ao acompanhar: {type(exc).__name__}: {exc}")
@@ -5761,7 +6118,7 @@ def _ciclo(real: bool, verbose: bool) -> int:
         freio_linhas = retirar_travados(auto, per_lane, real)
         cands = (lanes_on if real else set(LANES)) - set(limited)
         auto_lines = assign_auto_lanes(auto, per_lane, cands, real, busy=running_lanes,
-                                       max_per_lane=MAX_PER_LANE)
+                                       max_per_lane=max_por_lane_projeto())
         lines, to_claim = [], []
         lines.extend(fila_linhas)
         lines.extend(freio_linhas)

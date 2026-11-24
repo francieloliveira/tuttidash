@@ -85,6 +85,18 @@ class Ledger(unittest.TestCase):
         self.assertFalse(s["logs_dir_existe"])
         self.assertFalse(self.sb.ledger.exists())   # não cria ledger vazio
 
+    def test_projeto_do_cabecalho_vai_para_o_ledger(self):
+        arq = self.sb.logs / "FRA-999-claude-20261006-120000.jsonl"
+        arq.write_text(
+            json.dumps({"type": "tutti_projeto", "projeto": "p1", "nome": "Projeto 1"}) + "\n"
+            + json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                          "num_turns": 1, "duration_ms": 1000, "total_cost_usd": 0.1}) + "\n",
+            encoding="utf-8")
+        self.collect()
+        r = L.load(self.sb.ledger)["FRA-999-claude-20261006-120000"]
+        self.assertEqual(r["projeto"], "p1")
+        self.assertEqual(r["projeto_nome"], "Projeto 1")
+
 
 if __name__ == "__main__":
     unittest.main()

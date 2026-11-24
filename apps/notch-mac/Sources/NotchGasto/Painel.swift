@@ -54,7 +54,7 @@ struct Painel: View {
                 let vivo = dispatcherVivo(agora: ctx.date)
                 Circle().fill(vivo ? Tema.ok : Tema.t4).frame(width: 6, height: 6)
                     .shadow(color: vivo ? Tema.ok : .clear, radius: 3)
-                Text("TuttiDash · lanes")
+                Text(projectLabel)
                 Spacer(minLength: modelo.temNotch ? modelo.larguraNotch : 12)
                 if let erro = modelo.config.erro {
                     Text(erro).foregroundStyle(Tema.bad).lineLimit(1).truncationMode(.middle)
@@ -67,6 +67,13 @@ struct Painel: View {
             .padding(.horizontal, 4)
             .frame(height: modelo.alturaNotch)
         }
+    }
+
+    private var projectLabel: String {
+        guard let nome = modelo.resumo?.heartbeat?.projectName, !nome.isEmpty else {
+            return "TuttiDash · lanes"
+        }
+        return "TuttiDash · \(nome)"
     }
 
     private func dispatcherVivo(agora: Date) -> Bool {

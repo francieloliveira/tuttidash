@@ -16,13 +16,13 @@ APP="$OUT/$APP_NAME.app"
 
 if [[ "${1:-}" == "--testes" ]]; then
   echo "==> swift test"
-  swift test
+  swift test --disable-sandbox
 fi
 
 echo "==> swift build -c release"
 # Sem cache de manifesto: um cache antigo ainda pode trazer o alvo GastoPrivado de antes.
-swift build -c release --manifest-cache none --product "$EXEC"
-BIN_DIR="$(swift build -c release --manifest-cache none --show-bin-path)"
+swift build -c release --disable-sandbox --manifest-cache none --product "$EXEC"
+BIN_DIR="$(swift build -c release --disable-sandbox --manifest-cache none --show-bin-path)"
 
 echo "==> empacotando $APP"
 rm -rf "$APP"
@@ -105,7 +105,7 @@ echo "==> módulos Python (controle/gasto_lanes, FRA-615)"
 # Uma cópia só: dispatcher, vigia, janela e ListaModelos leem esta pasta.
 # gasto_privado.py é do build pessoal; sem o arquivo a instalação pública segue.
 mkdir -p "$CTRL/gasto_lanes"
-for mod in catalogo.py projetos.py privacidade.py linear_ids.py fila.py config.py proxy_linear.py revisao_ia.py erros_conhecidos.py acp.py politica_acp.py mapa.py instalar.py; do
+for mod in catalogo.py agenda.py eventos.py projetos.py privacidade.py linear_ids.py fila.py config.py proxy_linear.py revisao_ia.py erros_conhecidos.py acp.py politica_acp.py mapa.py instalar.py; do
   install -m 644 "$REPO/gasto_lanes/$mod" "$CTRL/gasto_lanes/$mod"
 done
 PRIVADO_PY="$REPO/apps/notch-mac/Privado/python/gasto_privado.py"

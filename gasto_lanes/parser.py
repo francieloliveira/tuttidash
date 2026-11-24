@@ -205,6 +205,8 @@ def parse_log(path: Path, running: Optional[set] = None) -> Optional[dict]:
     partial_usage: dict = {}      # message.id -> tokens (a mesma mensagem se repete por bloco)
     anon_responses = 0
     outro = FormatoOutro()
+    projeto = ""
+    projeto_nome = ""
 
     with path.open("r", encoding="utf-8", errors="replace") as fh:
         for raw in fh:
@@ -220,7 +222,15 @@ def parse_log(path: Path, running: Optional[set] = None) -> Optional[dict]:
                 invalid += 1
                 continue
             t = ev.get("type")
-            if t == "system" and ev.get("subtype") == "init" and init is None:
+            if t == "tutti_projeto":
+                # Cabeçalho gravado pelo run_lane.sh antes do stream do agente.
+                valor = ev.get("projeto")
+                if isinstance(valor, str) and valor.strip():
+                    projeto = valor.strip()
+                nome = ev.get("nome")
+                if isinstance(nome, str) and nome.strip():
+                    projeto_nome = nome.strip()
+            elif t == "system" and ev.get("subtype") == "init" and init is None:
                 init = ev
             elif t == "assistant" and ev.get("parent_tool_use_id") in (None, ""):
                 msg = ev.get("message") or {}
@@ -293,4 +303,8 @@ def parse_log(path: Path, running: Optional[set] = None) -> Optional[dict]:
 
     rec["linhas_invalidas"] = invalid
     rec["fonte"] = {"tamanho": st.st_size, "mtime": round(st.st_mtime, 3)}
+    if projeto:
+        rec["projeto"] = projeto
+    if projeto_nome:
+        rec["projeto_nome"] = projeto_nome
     return rec

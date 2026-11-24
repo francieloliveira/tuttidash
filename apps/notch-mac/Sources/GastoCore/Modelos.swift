@@ -45,6 +45,9 @@ public struct Execucao: Equatable, Sendable {
     public var id: String
     public var card: String
     public var lane: String
+    /// Projeto dono da execução, lido do cabeçalho `tutti_projeto` do log. nil em log antigo.
+    public var projeto: String?
+    public var projetoNome: String?
     /// Início pelo nome do arquivo (relógio local do Mac, sem fuso), `AAAA-MM-DDTHH:MM:SS`.
     public var inicio: String
     /// `AAAA-MM-DD`
@@ -69,8 +72,10 @@ public struct Execucao: Equatable, Sendable {
                 status: StatusExecucao, subtipo: String? = nil, erros: [String] = [],
                 custoUSD: Double? = nil, custo: TipoCusto = .desconhecido, turnos: Int? = nil,
                 duracaoMs: Int? = nil, duracaoEstimadaMs: Int? = nil, respostasParciais: Int? = nil,
-                tokensTotal: Int? = nil, fonte: Fonte? = nil) {
-        self.id = id; self.card = card; self.lane = lane; self.inicio = inicio; self.dia = dia
+                tokensTotal: Int? = nil, fonte: Fonte? = nil, projeto: String? = nil,
+                projetoNome: String? = nil) {
+        self.id = id; self.card = card; self.lane = lane; self.projeto = projeto
+        self.projetoNome = projetoNome; self.inicio = inicio; self.dia = dia
         self.semana = semana; self.status = status; self.subtipo = subtipo; self.erros = erros
         self.custoUSD = custoUSD; self.custo = custo; self.turnos = turnos; self.duracaoMs = duracaoMs
         self.duracaoEstimadaMs = duracaoEstimadaMs; self.respostasParciais = respostasParciais

@@ -76,6 +76,9 @@ DEFAULTS = {
     "estresse": {"saida": "~/Library/Logs/TuttiDash/carga-mac.tsv", "intervalo_s": 15},
     "preflight": {"min_free_gb": 10, "warn_free_gb": 40, "max_load": 16, "external_nvme": "",
                   "jobs": 2, "scheme": "", "skip_preflight_first": True},
+    # FRA-705: desligado, o dispatcher segue no projeto `padrao`. Ligado, faz rodízio
+    # entre os projetos ativos respeitando lane em andamento.
+    "agenda": {"multiprojeto": False, "simultaneo": False, "headless": False},
     "lanes": {"budget_usd": {"baixo": 3, "medio": 8, "alto": 20},
               "grok_max_turns": {"baixo": 30, "medio": 60, "alto": 100},
               "lane_timeout_min": 90, "proof_timeout_min": 150,

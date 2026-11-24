@@ -272,7 +272,8 @@ class ContratoDoBuild(unittest.TestCase):
         self.assertLess(modulos, verifica)
         self.assertIn('install -m 644 "$REPO/gasto_lanes/', texto)
         for nome in (
-            "catalogo.py", "projetos.py", "privacidade.py", "linear_ids.py", "fila.py", "config.py",
+            "catalogo.py", "agenda.py", "eventos.py", "projetos.py", "privacidade.py", "linear_ids.py",
+            "fila.py", "config.py",
         ):
             self.assertIn(nome, texto)
         self.assertIn('if [[ -f "$PRIVADO_PY" ]]', texto)

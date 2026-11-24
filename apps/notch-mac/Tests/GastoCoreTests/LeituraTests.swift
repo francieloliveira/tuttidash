@@ -41,6 +41,30 @@ final class EstadoTests: XCTestCase {
         XCTAssertEqual(e.heartbeat?.habilitadas, ["claude", "grok"])
     }
 
+    func testHeartbeatComProjetoEProjetos() {
+        let hb = EstadoLanes.heartbeat([
+            "at": "2026-11-22 22:00:00", "project": "p1", "project_name": "Projeto A",
+            "agenda": true,
+            "projects": [
+                ["id": "p1", "nome": "Projeto A", "ativo": true, "prioridade": 2],
+                ["id": "p2", "nome": "Projeto B", "ativo": false],
+            ],
+        ])
+        XCTAssertEqual(hb?.project, "p1")
+        XCTAssertEqual(hb?.projectName, "Projeto A")
+        XCTAssertEqual(hb?.agenda, true)
+        XCTAssertEqual(hb?.projects.map(\.id), ["p1", "p2"])
+        XCTAssertEqual(hb?.projects.first?.prioridade, 2)
+        XCTAssertEqual(hb?.projects.last?.ativo, false)
+    }
+
+    func testHeartbeatAntigoNaoInventaProjeto() {
+        let hb = EstadoLanes.heartbeat(["at": "2026-11-22 22:00:00", "dry_run": false, "enabled": ["claude"]])
+        XCTAssertNil(hb?.project)
+        XCTAssertEqual(hb?.projects, [])
+        XCTAssertFalse(hb?.agenda ?? true)
+    }
+
     func testFormaDoEstado() {
         let ok: [String: Any] = ["lane": "grok", "card": "FRA-1", "log": "/x/FRA-1-grok-20261005-100000.jsonl"]
         XCTAssertTrue(EstadoLanes.ehEstadoDeLane(nomeArquivo: "lane-grok.json", dados: ok))
@@ -52,6 +76,22 @@ final class EstadoTests: XCTestCase {
         XCTAssertEqual(EstadoLanes.laneRodando(nomeArquivo: "lane-grok.json",
                                                dados: ["lane": "grok", "card": "FRA-1", "log": "C:\\a\\b.jsonl"])?.nomeLog,
                        "b.jsonl")
+    }
+
+    func testEstadoComNomeDeProjetoEValido() {
+        let ok: [String: Any] = ["lane": "claude", "card": "FRA-1", "log": "/x/a.jsonl",
+                                 "projeto": "p1"]
+        XCTAssertTrue(EstadoLanes.ehEstadoDeLane(nomeArquivo: "lane-p1-claude.json", dados: ok))
+        XCTAssertTrue(EstadoLanes.ehEstadoDeLane(nomeArquivo: "lane-claude.json", dados: ok))
+    }
+
+    func testProjetoNoEstadoDaLane() {
+        let lane = EstadoLanes.laneRodando(nomeArquivo: "lane-claude.json", dados: [
+            "lane": "claude", "card": "FRA-1", "log": "/x/a.jsonl",
+            "projeto": "p1", "projeto_nome": "Projeto 1",
+        ])
+        XCTAssertEqual(lane?.projeto, "p1")
+        XCTAssertEqual(lane?.projetoNome, "Projeto 1")
     }
 
     func testProvaRemotaNoEstadoDaLane() {

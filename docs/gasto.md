@@ -1,7 +1,7 @@
 # `gasto`: controle de gasto das lanes
 
 Lê os logs de execução das lanes (agentes headless disparados pelo dispatcher em `lanes/`)
-e responde quanto cada execução gastou, por dia, semana, card e lane.
+e responde quanto cada execução gastou, por dia, semana, projeto, card e lane.
 
 O que faz:
 
@@ -98,10 +98,25 @@ indicada por flag ou variável precisa existir. Em outros sistemas (Linux) valem
 
 ```bash
 python3 gasto.py coletar                       # lê os logs e atualiza o ledger
-python3 gasto.py relatorio                     # coleta e mostra dia, semana, card e lane
+python3 gasto.py relatorio                     # coleta e mostra dia, semana, projeto, card e lane
 python3 gasto.py relatorio --por semana,lane   # só algumas dimensões
 python3 gasto.py relatorio --ultimos-dias 7 --lane claude
 python3 gasto.py relatorio --card FRA-259 --json
+python3 gasto.py relatorio --projeto 00000000-0000-0000-0000-000000000000
+python3 gasto.py eventos --projeto 00000000-0000-0000-0000-000000000000 --limite 20
+python3 gasto.py fluxo                     # claims, finais, merges e duração por projeto
+python3 gasto.py semanal                   # relatório dos últimos 7 dias por projeto
+python3 gasto.py semanal --json --hoje 2026-11-22
+python3 gasto.py doutor                     # confere config, pastas, repos, proxy e gh
+python3 gasto.py auditoria --projeto <id> --etapa finalize
+python3 gasto.py planejamento               # ordem, ocupação, custo, fluxo e sinais
+python3 gasto.py retencao --eventos-dias 30 --ledger-dias 365 --aplicar
+python3 gasto.py seguranca --corrigir      # 0700 nas pastas, 0600 nos arquivos
+python3 gasto.py isolamento                # worktree/log/claim pertencem ao projeto
+python3 gasto.py notificar --texto "alô"    # webhook configurado em integracoes.webhook
+python3 gasto.py semanal --enviar           # relatório também vai ao webhook
+python3 gasto.py backup --destino ~/backup-tuttidash.tar.gz
+python3 gasto.py restaurar --arquivo ~/backup-tuttidash.tar.gz
 python3 gasto.py execucoes --limite 20         # uma linha por execução
 python3 gasto.py teto --teto-semanal 100       # só o aviso do teto (para agendar)
 python3 gasto.py config                        # caminhos resolvidos
@@ -110,8 +125,8 @@ python3 gasto.py config                        # caminhos resolvidos
 Também roda como módulo: `python3 -m gasto_lanes relatorio` (de dentro da pasta do repo).
 
 Filtros de `relatorio` e `execucoes`: `--desde AAAA-MM-DD`, `--ate AAAA-MM-DD`,
-`--ultimos-dias N`, `--lane claude,grok`, `--card FRA-1,FRA-2`, `--sem-coletar` (usa só o
-ledger, sem ler logs). Semana é ISO (segunda a domingo), rótulo `2026-W41`, pela data do
+`--ultimos-dias N`, `--lane claude,grok`, `--card FRA-1,FRA-2`, `--projeto ID,NOME`,
+`--sem-coletar` (usa só o ledger, sem ler logs). Semana é ISO (segunda a domingo), rótulo `2026-W41`, pela data do
 início da execução (horário local do Mac, que é o do nome do arquivo).
 
 ### Status de uma execução
@@ -161,6 +176,7 @@ semana inteira, independente dos filtros de data).
 ### Ledger
 
 `ledger.jsonl`, uma linha por execução, chave = nome do log (`id`). Campos principais: `card`,
+`projeto`, `projeto_nome`,
 `lane`, `inicio`, `dia`, `semana`, `status`, `subtipo`, `erros`, `modelo`, `auth`, `custo_usd`,
 `custo`, `turnos`, `duracao_ms`, `duracao_estimada_ms`, `tokens` (`entrada`, `saida`,
 `cache_leitura`, `cache_criacao`, `total`), `parcial`, `linhas_invalidas`, `fonte` (tamanho e

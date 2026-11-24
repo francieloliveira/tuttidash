@@ -25,6 +25,25 @@ case "$CLI" in
       esac;;
   *) echo "run_lane.sh: cli desconhecido: $CLI" >&2; exit 1;;
 esac
+# Cabeçalho de projeto no log: o parser e o ledger leem daqui, sem adivinhar pelo nome.
+# O dispatcher passa TUTTIDASH_PROJETO/TUTTIDASH_PROJETO_NOME; sem eles (execução antiga,
+# teste), o log continua no formato antigo e o registro fica «sem projeto».
+PROJETO="${TUTTIDASH_PROJETO:-}"
+PROJETO_NOME="${TUTTIDASH_PROJETO_NOME:-}"
+if [ -L "$LOG" ]; then
+  echo "run_lane.sh: log é symlink; recusado" >&2
+  exit 1
+fi
+: > "$LOG" || { echo "run_lane.sh: não consegui criar o log" >&2; exit 1; }
+if [ -n "$PROJETO" ]; then
+  /usr/bin/python3 - "$LOG" "$PROJETO" "$PROJETO_NOME" <<'PY' || true
+import json, sys
+log, projeto, nome = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(log, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({"type": "tutti_projeto", "projeto": projeto, "nome": nome},
+                        ensure_ascii=False) + "\n")
+PY
+fi
 # Este script e o lane_view.py vêm do mesmo diretório (repo ou bundle assinado).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # zdotdir é estado. Escrever dentro do .app quebraria o codesign.
@@ -87,7 +106,7 @@ os.dup2(fd, 0)
 if fd > 0:
     os.close(fd)
 os.execv("/bin/bash", ["/bin/bash", "--noprofile", "--norc", "-c", cmd])
-' "$PROMPT" "$AGENT_CMD" 2>&1 | tee "$LOG" | /usr/bin/python3 "$SCRIPT_DIR/lane_view.py"
+' "$PROMPT" "$AGENT_CMD" 2>&1 | tee -a "$LOG" | /usr/bin/python3 "$SCRIPT_DIR/lane_view.py"
 rc=${PIPESTATUS[0]}
 # Não sobrescreve: se o dispatcher parou a lane, o motivo dele já está lá.
 # O_EXCL recusa arquivo plantado e não segue symlink. O código fica no RUN_DIR.

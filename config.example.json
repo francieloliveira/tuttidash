@@ -23,9 +23,22 @@
       "prova": "./scripts/testar.sh {suite}",
       "prova_tentativas": 1,
       "protegidos": [".github/workflows/*", "scripts/release.sh"],
-      "norte": "docs/produto/caminho.md"
+      "norte": "docs/produto/caminho.md",
+      "prioridade": 0,
+      "operacao": {
+        "budget_usd": {"baixo": 3, "medio": 8, "alto": 20},
+        "lane_timeout_min": 90,
+        "proof_timeout_min": 150,
+        "max_lanes": 2,
+        "max_tarefas_por_lane": 2
+      }
     }
   ],
+  "agenda": {
+    "multiprojeto": false,
+    "simultaneo": false,
+    "headless": false
+  },
   "lanes": {
     "budget_usd": {"baixo": 3, "medio": 8, "alto": 20},
     "lane_timeout_min": 90,

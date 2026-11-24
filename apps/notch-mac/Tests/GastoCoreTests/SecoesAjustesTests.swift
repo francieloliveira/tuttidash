@@ -56,10 +56,11 @@ final class SecoesAjustesTests: XCTestCase {
         XCTAssertEqual(CatalogoAjustes.buscar("Tela").filter { $0.campo?.chave == "geral.tela" }.count, 0)
     }
 
-    /// Os blocos próprios (lanes ligadas, modelos, projetos, contas, Linear, agentes, manifestos...) continuam lá.
+    /// Os blocos próprios continuam nos Ajustes; o cadastro de projetos foi movido
+    /// para a página Projetos do painel.
     func testTodoBlocoTemLugar() {
         let blocos = CatalogoAjustes.secoes().flatMap(\.blocos)
-        for b: BlocoAjustes in [.lanesHabilitadas, .modeloLanes, .projetos, .contas, .agentesSegundoPlano,
+        for b: BlocoAjustes in [.lanesHabilitadas, .modeloLanes, .contas, .agentesSegundoPlano,
                                 .jobsAgendados, .linear, .linearLeitura, .manifestos, .ferramentas] {
             XCTAssertEqual(blocos.filter { $0 == b }.count, 1, "\(b)")
         }
@@ -119,11 +120,8 @@ final class SecoesAjustesTests: XCTestCase {
     }
 
     /// FRA-608: a busca acha o bloco pelo nome e pelo título do grupo, e leva à seção.
+    /// O cadastro de projetos não está mais na busca dos Ajustes.
     func testBuscaLevaAoBlocoSemPrometerReset() {
-        let projetos = CatalogoAjustes.buscar("Projetos").filter { $0.bloco == .projetos }
-        XCTAssertEqual(projetos.map(\.secao), [.lanes])
-        XCTAssertEqual(projetos.map(\.grupo), ["Projetos"])
-        XCTAssertTrue(projetos.allSatisfy { $0.campo == nil })
         let contas = CatalogoAjustes.buscar("Contas acompanhadas").filter { $0.bloco == .contas }
         XCTAssertEqual(contas.first?.secao, .contas)
         XCTAssertEqual(contas.first?.grupo, "Contas das lanes")
@@ -136,9 +134,6 @@ final class SecoesAjustesTests: XCTestCase {
 
     /// Várias palavras: cada uma pode estar num texto diferente do item, em qualquer ordem.
     func testBuscaAceitaVariasPalavras() {
-        // «lane projetos»: «lane» no grupo/seção, «projetos» no bloco.
-        let projetos = CatalogoAjustes.buscar("lane projetos").filter { $0.bloco == .projetos }
-        XCTAssertFalse(projetos.isEmpty)
         // A ordem das palavras não muda o resultado.
         let invertido = CatalogoAjustes.buscar("acompanhadas contas")
         let normal = CatalogoAjustes.buscar("Contas acompanhadas")

@@ -5,11 +5,11 @@
 
 ## §1 Objetivo
 
-O TuttiDash é um conjunto de ferramentas locais com que um desenvolvedor, no Mac dele, percorre um projeto do Linear com agentes de código em lanes paralelas: um card, um worktree git e um agente por lane de cada vez. O dispatcher leva o card até um PR em rascunho, o vigia só faz merge com prova remota e revisão aprovadas, e o notch mostra lanes, builds, testes, entregas, custo e cota. Serve a qualquer projeto cadastrado com um projeto no Linear e um repositório no GitHub; é compartilhado como está.
+O TuttiDash é um conjunto de ferramentas locais com que um desenvolvedor, no Mac dele, percorre **um ou mais projetos do Linear** com agentes de código em lanes paralelas: um card, um worktree git e um agente por vaga de lane de cada vez. A lane é **agnóstica de projeto**: ela não guarda dono nem configuração de projeto; o dispatcher decide, a cada card, qual projeto e qual repositório ela executa. O dispatcher leva o card até um PR em rascunho, o vigia só faz merge com prova remota e revisão aprovadas, e o notch mostra lanes, builds, testes, entregas, custo e cota. O rodízio entre projetos é sequencial por padrão; a execução simultânea é experimental e usa uma vaga por projeto. Serve a qualquer projeto cadastrado com um projeto no Linear e um ou mais repositórios no GitHub; é compartilhado como está.
 
 ## §2 Restrições inegociáveis
 
-- R1: Cada lane leva um card, um worktree git e um agente por vez.
+- R1: Cada vaga de lane leva um card, um worktree git e um agente por vez. A lane não pertence a projeto; o projeto, o repositório e o card vêm do dispatcher. A mesma lane pode ter uma vaga por projeto quando estado e sessão forem namespaced por projeto.
 - R2: O agente da lane não fala com o Linear nem com o GitHub; quem move o card, comenta e abre o PR é o dispatcher.
 - R3: O card só vai para In Review, e só há merge, com a prova-remota verde no SHA completo da head e a aprovação do [Revisor] nessa head (e a revisao-ia, quando a main tem esse workflow). Exceção: pedido direto do dono pode pular a aprovação do [Revisor] e o rito do card, desde que a prova esteja verde e não haja caminho protegido, segredo ou dado pessoal no diff; o merge e o motivo ficam registrados.
 - R4: Os freios por card (tentativas, gasto, tempo) e os caminhos protegidos valem acima de concluir o card.
@@ -18,6 +18,7 @@ O TuttiDash é um conjunto de ferramentas locais com que um desenvolvedor, no Ma
 - R7: Limite de conta só aparece com fonte oficial ou local; leitura não oficial fica desligada por conta até "nao_oficial": true.
 - R8: Nada pessoal vai para o repositório público.
 - R9: A execução obedece à cópia assinada no bundle, nunca a arquivos que a lane consegue reescrever.
+- R10: O isolamento é **lógico e por projeto**, com a mesma conta do macOS: cada lane usa worktree, log, claim e estado do projeto do card. Não há serviço paralelo nem usuário separado; as credenciais do Mac são compartilhadas.
 
 ## §3 Desempate
 
@@ -39,7 +40,8 @@ O TuttiDash é um conjunto de ferramentas locais com que um desenvolvedor, no Ma
 
 ## §5 Glossário
 
-- lane: faixa com um card, um worktree git e um agente por vez.
+- lane: faixa que executa um card no contexto de um projeto; agnóstica de projeto, recebe projeto/card do dispatcher.
+- isolamento: fronteira lógica por projeto (worktree/log/claim), na mesma conta do Mac; não é sandbox de SO.
 - dispatcher: a cada 60 s pega um card pronto, cria o worktree, roda o agente sem interface no tmux, faz push e abre PR em rascunho. Timeout ou erro marca o card com lane:parada ou lane:falhou.
 - vigia: faz o merge com prova remota e revisão aprovadas, tria lanes paradas ou com falha e devolve o card à fila; na 3ª parada pelo mesmo motivo chama o dono.
 - prova-remota: check remoto que precisa estar verde no SHA completo da head; é a prova para In Review e para o merge.

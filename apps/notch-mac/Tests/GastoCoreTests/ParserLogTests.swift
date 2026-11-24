@@ -70,6 +70,20 @@ final class ParserLogTests: XCTestCase {
         XCTAssertEqual(e.status, .emAndamento); XCTAssertEqual(e.respostasParciais, 1); XCTAssertNil(e.custoUSD)
     }
 
+    func testCabecalhoDoProjetoNoLog() {
+        let meta = ParserLog.lerNome("FRA-9-claude-20261005-100000.jsonl", calendario: calendarioFixo())!
+        let linhas = """
+        {"type":"tutti_projeto","projeto":"p1","nome":"Projeto 1"}
+        {"type":"result","subtype":"success","is_error":false,"num_turns":1,"duration_ms":1000,"total_cost_usd":0.1}
+        """
+        let e = ParserLog.interpretar(dados: Data(linhas.utf8), meta: meta,
+                                      nomeArquivo: "FRA-9-claude-20261005-100000.jsonl",
+                                      emAndamento: [], mtime: meta.dataInicio, tamanho: 1)
+        XCTAssertEqual(e.projeto, "p1")
+        XCTAssertEqual(e.projetoNome, "Projeto 1")
+        XCTAssertEqual(e.status, .ok)
+    }
+
     func testCustoParcialOuIncompletoEhDesconhecido() {
         XCTAssertEqual(ParserLog.classificarCusto(lane: "claude", result: ["total_cost_usd": 1.0, "cost_is_partial": true]).1,
                        .desconhecido)

@@ -63,11 +63,13 @@ func data(_ s: String) -> Date {
 }
 
 func ex(_ id: String, custo: Double?, status: StatusExecucao = .ok, tipo: TipoCusto? = nil,
-        duracaoMs: Int? = 60_000, estimadaMs: Int? = nil, respostas: Int? = nil) -> Execucao {
+        duracaoMs: Int? = 60_000, estimadaMs: Int? = nil, respostas: Int? = nil,
+        projeto: String? = nil, projetoNome: String? = nil) -> Execucao {
     let meta = ParserLog.lerNome(id + ".jsonl", calendario: calendarioFixo())!
     let t: TipoCusto = tipo ?? (custo == nil ? .desconhecido
         : (Agentes.custoEstimado.contains(meta.lane) ? .estimado : .informado))
     return Execucao(id: meta.id, card: meta.card, lane: meta.lane, inicio: meta.inicio, dia: meta.dia,
                     semana: meta.semana, status: status, custoUSD: custo, custo: t, duracaoMs: duracaoMs,
-                    duracaoEstimadaMs: estimadaMs, respostasParciais: respostas)
+                    duracaoEstimadaMs: estimadaMs, respostasParciais: respostas,
+                    projeto: projeto, projetoNome: projetoNome)
 }

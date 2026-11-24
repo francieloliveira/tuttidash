@@ -385,8 +385,10 @@ struct SecaoProjetos: View {
     var body: some View {
         Group {
             if embutido {
-                conteudo
-                rodape
+                VStack(alignment: .leading, spacing: 8) {
+                    conteudo
+                    rodape
+                }
             } else {
                 Section {
                     conteudo
@@ -423,17 +425,49 @@ struct SecaoProjetos: View {
         } else if let a = estado.aviso {
             Label(a, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
         }
-        if estado.linhas.isEmpty {
-            Text(String(localized: "Nenhum projeto ainda. Adicione o primeiro: escolha o projeto do Linear e o repositório do GitHub em que as lanes vão trabalhar."))
-                .font(.callout).foregroundStyle(.secondary)
-        }
-        ForEach($estado.linhas) { $l in
-            LinhaProjeto(linha: $l, estado: estado)
-        }
+        resumoGeral
         Button { estado.adicionar() } label: {
             Label(String(localized: "Adicionar projeto"), systemImage: "plus")
         }
+        .buttonStyle(.borderedProminent)
         .disabled(estado.temNova)
+        if estado.linhas.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "Nenhum projeto ainda.")).font(.callout.weight(.medium))
+                Text(String(localized: "Adicione o primeiro: escolha o projeto do Linear e o repositório do GitHub em que as lanes vão trabalhar."))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 6)
+        }
+        VStack(spacing: 0) {
+            ForEach(Array(estado.linhas.indices), id: \.self) { i in
+                if i > 0 { Divider().overlay(PV.divisor) }
+                LinhaProjeto(linha: $estado.linhas[i], estado: estado)
+            }
+        }
+    }
+
+    /// Resumo enxuto no topo: quantos projetos, quantos ligados, o principal e as classes
+    /// de instalação presentes. O botão de adicionar fica aqui, não no fim da lista.
+    private var resumoGeral: some View {
+        let projetos = estado.projetos
+        let ativos = projetos.filter(\.ativo).count
+        let principal = ProjetosConfig.padrao(projetos)?.nome
+        let classes = Set(projetos.map { $0.instalacao.classe.rotulo }).sorted()
+        return HStack(spacing: 10) {
+            Label("\(projetos.count) cadastrados", systemImage: "square.grid.2x2")
+            Label("\(ativos) ligados", systemImage: "checkmark.circle")
+            if let principal {
+                Label(principal, systemImage: "star.fill")
+            }
+            if !classes.isEmpty {
+                Text(classes.joined(separator: " · ")).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 4)
     }
 
     private var rodape: some View {
@@ -466,6 +500,10 @@ private struct LinhaProjeto: View {
 
     private var cabecalho: some View {
         HStack(spacing: 10) {
+            Image(systemName: linha.aberto ? "chevron.down" : "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 10)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(linha.nova ? String(localized: "Projeto novo") : (linha.salvo?.nome ?? p.nome))
@@ -477,7 +515,6 @@ private struct LinhaProjeto: View {
                 Text(resumo).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             .contentShape(Rectangle())
-            .onTapGesture { estado.alternarAberto(linha.id) }
             Spacer()
             if let s = linha.salvo {
                 Toggle(String(localized: "Ligado"), isOn: Binding(get: { s.ativo }, set: { estado.alternarAtivo(linha.id, $0) }))
@@ -504,6 +541,8 @@ private struct LinhaProjeto: View {
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .help(String(localized: "Mais ações"))
         }
+        .contentShape(Rectangle())
+        .onTapGesture { estado.alternarAberto(linha.id) }
         .confirmationDialog(String(localized: "Remover \(linha.salvo?.nome ?? "") do cadastro?"), isPresented: $confirmarRemocao) {
             Button(String(localized: "Remover"), role: .destructive) { estado.remover(linha.id) }
         } message: {
@@ -516,7 +555,7 @@ private struct LinhaProjeto: View {
             ?? (p.projetoID.isEmpty ? String(localized: "Linear: escolha o projeto") : String(localized: "Linear: projeto escolhido"))
         let gh = p.github.isEmpty ? String(localized: "GitHub: escolha o repositório") : p.github
         let pasta = p.repo.isEmpty ? String(localized: "sem pasta") : p.repo
-        return [lin, gh, pasta].joined(separator: " · ")
+        return [lin, gh, pasta, p.instalacao.classe.rotulo].joined(separator: " · ")
     }
 
     // MARK: Formulário
@@ -537,6 +576,60 @@ private struct LinhaProjeto: View {
             Stepper(value: $linha.rascunho.provaTentativas, in: 1...5) {
                 Text(String(localized: "Tentativas da prova: \(p.provaTentativas)"))
             }
+            Stepper(value: $linha.rascunho.prioridade, in: 0...9) {
+                Text(String(localized: "Prioridade na agenda: \(p.prioridade)"))
+            }
+            .help(String(localized: "Maior primeiro. Sem agenda multi-projeto, é só informativo."))
+            Stepper(value: $linha.rascunho.maxLanes, in: 0...20) {
+                Text(String(localized: "Máximo de lanes: \(p.maxLanes == 0 ? String(localized: "global") : "\(p.maxLanes)")"))
+            }
+            Stepper(value: $linha.rascunho.maxTarefasPorLane, in: 0...10) {
+                Text(String(localized: "Tarefas por lane: \(p.maxTarefasPorLane == 0 ? String(localized: "global") : "\(p.maxTarefasPorLane)")"))
+            }
+            Stepper(value: $linha.rascunho.laneTimeoutMin, in: 0...1440, step: 5) {
+                Text(String(localized: "Timeout da lane (min): \(p.laneTimeoutMin == 0 ? String(localized: "global") : "\(p.laneTimeoutMin)")"))
+            }
+            Stepper(value: $linha.rascunho.proofTimeoutMin, in: 0...1440, step: 5) {
+                Text(String(localized: "Timeout da prova (min): \(p.proofTimeoutMin == 0 ? String(localized: "global") : "\(p.proofTimeoutMin)")"))
+            }
+            ForEach(["baixo", "medio", "alto"], id: \.self) { esforco in
+                HStack(spacing: 8) {
+                    Text(String(localized: "Orçamento \(esforco) (US$)"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    TextField(String(localized: "global"), value: orcamento(esforco),
+                              format: .number.precision(.fractionLength(0...2)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                    Text(String(localized: "0 = global")).font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            TextField(String(localized: "Objetivo do projeto"), text: $linha.rascunho.planejamento.objetivo)
+            TextField(String(localized: "Situação"), text: $linha.rascunho.planejamento.situacao,
+                      prompt: Text(String(localized: "ex.: em dia, em risco, pausado")))
+            HStack(spacing: 8) {
+                TextField(String(localized: "Início (AAAA-MM-DD)"), text: $linha.rascunho.planejamento.inicio)
+                TextField(String(localized: "Alvo (AAAA-MM-DD)"), text: $linha.rascunho.planejamento.alvo)
+            }
+            Text(String(localized: "Marcos")).font(.caption).foregroundStyle(.secondary)
+            ForEach(linha.rascunho.planejamento.marcos.indices, id: \.self) { i in
+                HStack(spacing: 6) {
+                    TextField(String(localized: "Marco"), text: $linha.rascunho.planejamento.marcos[i].nome)
+                    TextField(String(localized: "AAAA-MM-DD"), text: $linha.rascunho.planejamento.marcos[i].data)
+                        .frame(width: 110)
+                    Toggle(String(localized: "feito"), isOn: $linha.rascunho.planejamento.marcos[i].feito)
+                        .toggleStyle(.checkbox)
+                    Button {
+                        linha.rascunho.planejamento.marcos.remove(at: i)
+                    } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                }
+            }
+            Button {
+                linha.rascunho.planejamento.marcos.append(MarcoCadastro(nome: ""))
+            } label: {
+                Label(String(localized: "Adicionar marco"), systemImage: "plus")
+            }
+            .buttonStyle(.borderless)
             TextField(String(localized: "Conferência antes do push"), text: $linha.rascunho.antesDoPush,
                       prompt: Text(String(localized: "comando; vazio = nenhuma")))
             CampoLinhas(titulo: String(localized: "Caminhos protegidos"),
@@ -547,6 +640,16 @@ private struct LinhaProjeto: View {
                         valores: $linha.rascunho.copiarParaWorktree)
         }
         acoes
+    }
+
+    /// Orçamento por esforço deste projeto; 0 remove a chave e volta a herdar o global.
+    private func orcamento(_ esforco: String) -> Binding<Double> {
+        Binding(
+            get: { p.budgetUSD[esforco] ?? 0 },
+            set: { novo in
+                if novo > 0 { linha.rascunho.budgetUSD[esforco] = novo }
+                else { linha.rascunho.budgetUSD.removeValue(forKey: esforco) }
+            })
     }
 
     /// FRA-618: só libera; quem usa é o card com a etiqueta `lane:bancada`, na lane claude.

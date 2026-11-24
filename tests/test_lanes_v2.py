@@ -218,6 +218,28 @@ class RunLaneCliTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("cli desconhecido", r.stderr)
 
+    def test_cabecalho_do_projeto_no_log(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        wt, run = tmp / "wt", tmp / "run"
+        wt.mkdir(); run.mkdir()
+        (run / "prompt.md").write_text("oi\n", encoding="utf-8")
+        (run / "agent_cmd").write_text("true\n", encoding="utf-8")
+        (run / "finalized").write_text("ok\n", encoding="utf-8")
+        log = tmp / "FRA-1-claude-20261122-120000.jsonl"
+        env = {**os.environ, "HOME": str(tmp), "TUTTIDASH_PROJETO": "proj-a",
+               "TUTTIDASH_PROJETO_NOME": "Projeto A"}
+        try:
+            subprocess.run(["/bin/bash", str(RAIZ / "lanes/run_lane.sh"), "claude", str(wt), "FRA-1",
+                            str(log), str(run / "agent_cmd"), str(run), "claude"],
+                           cwd=wt, env=env, capture_output=True, text=True, timeout=5)
+        except subprocess.TimeoutExpired:
+            pass  # a lane fica viva no tmux de propósito; o cabeçalho já foi gravado
+        linhas = log.read_text(encoding="utf-8").splitlines()
+        self.assertTrue(linhas)
+        cab = json.loads(linhas[0])
+        self.assertEqual(cab, {"type": "tutti_projeto", "projeto": "proj-a", "nome": "Projeto A"})
+
 
 import datetime as dt  # noqa: E402
 

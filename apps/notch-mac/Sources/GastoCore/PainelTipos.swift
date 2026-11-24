@@ -281,6 +281,9 @@ public struct LinhaLane: Equatable, Sendable {
     public var urlProvaRemota: String? = nil
     /// Check `prova-remota` no GitHub, quando o dispatcher já tem o link.
     public var urlCheckRemoto: String? = nil
+    /// Projeto dono da lane, quando o estado traz.
+    public var projeto: String? = nil
+    public var projetoNome: String? = nil
 }
 
 public struct EstadoNotch: Equatable, Sendable {
@@ -355,8 +358,19 @@ public enum MoedaPainel: Equatable, Sendable {
     }
 }
 
+public struct GastoProjetoPainel: Equatable, Sendable {
+    public var projeto: String
+    public var nome: String?
+    public var custoUSD: Double?
+    public var desconhecidas: Int
+    public var execucoes: Int
+}
+
 public struct CustosPainel: Equatable, Sendable {
     public var porLane: [GastoLanePainel]
+    /// Custo conhecido dos últimos 7 dias por projeto. Projeto sem execução não entra;
+    /// a tela mostra «sem medida».
+    public var porProjeto: [GastoProjetoPainel] = []
     public var hoje: Double?
     /// Gasto conhecido dos últimos 7 dias (hoje + 6). O nome ficou do tempo da semana ISO.
     public var semana: Double?
@@ -439,6 +453,8 @@ public struct SnapshotPainel: Equatable, Sendable {
     public var esperandoVoce: Int = 0
     /// Lanes com PR esperando o check `prova-remota` (tela Testes).
     public var provasRemotasEmCurso: [ProvaRemota] = []
+    /// Fluxo por projeto, calculado dos eventos (FRA-712/713).
+    public var fluxo: [FluxoProjeto] = []
 
     /// As últimas `n` linhas do log do dispatcher (só leitura).
     public func ultimasLinhasLog(_ n: Int = 10) -> [String] {
@@ -485,6 +501,8 @@ public struct EntradaPainel: Equatable, Sendable {
     public var pastasLane: [URL] = []
     /// Desfechos da prova remota (`provas-remotas.jsonl`), o mais novo primeiro.
     public var provasRemotas: [ProvaRemota] = []
+    /// Eventos de fluxo (`eventos.jsonl`), na ordem do arquivo.
+    public var eventos: [EventoFluxo] = []
 
     public static let vazia = EntradaPainel(
         heartbeat: nil, rodando: [], titulos: [:], habilitadas: nil, desligadasPeloUsuario: [],

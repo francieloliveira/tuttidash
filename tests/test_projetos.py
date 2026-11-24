@@ -114,6 +114,69 @@ class Cadastro(Base):
             {"id": NOTCH, "repo": "~/Developer/tuttidash"}]))
         self.assertTrue(ps[0].ativo)
 
+    def test_limites_por_projeto(self):
+        p = P.ler_registro([self.config(lista=[{
+            "id": NOTCH, "repo": "~/x",
+            "operacao": {"budget_usd": {"baixo": 1.5, "alto": "20", "medio": -1, "x": 9},
+                          "lane_timeout_min": 30, "proof_timeout_min": "45",
+                          "max_lanes": 2, "max_tarefas_por_lane": 1}}])])[0]
+        self.assertEqual(p.budget_usd, {"baixo": 1.5, "alto": 20.0})
+        self.assertEqual((p.lane_timeout_min, p.proof_timeout_min), (30, 45))
+        self.assertEqual((p.max_lanes, p.max_tarefas_por_lane), (2, 1))
+
+    def test_limites_invalidos_herdam(self):
+        p = P.Projeto(id="x", repo="~/x", operacao={"budget_usd": "x",
+                                                   "lane_timeout_min": -1,
+                                                   "proof_timeout_min": "abc"})
+        self.assertEqual(p.budget_usd, {})
+        self.assertEqual((p.lane_timeout_min, p.proof_timeout_min), (0, 0))
+
+    def test_slug_estavel(self):
+        p = P.Projeto(id="p1", repo="~/x")
+        self.assertEqual(p.slug, "p1")
+        self.assertEqual(P.Projeto(id="x/y z", repo="~/x").slug, "xyz")
+
+    def test_multi_repo_modelo_e_copia(self):
+        p = P.Projeto(id="x", repo="~/a", github="dono/a", repos=[
+            {"slug": "app", "repo": "~/a", "github": "dono/a"},
+            {"slug": "api", "repo": "~/b", "github": "dono/b", "prova": "go test {suite}",
+             "entrega": {"classe": "servico", "subir": "python3 app.py"}},
+        ])
+        self.assertEqual([r.slug for r in p.repos], ["app", "api"])
+        api = p.com_repositorio("api")
+        self.assertEqual(api.repo.name, "b")
+        self.assertEqual(api.github, "dono/b")
+        self.assertEqual(api.prova, "go test {suite}")
+        self.assertEqual(api.instalacao["classe"], "servico")
+        self.assertEqual(api.repos, p.repos)
+        self.assertEqual(p.com_repositorio("nao"), p)
+
+    def test_planejamento_metadados(self):
+        p = P.ler_registro([self.config(lista=[{
+            "id": NOTCH, "repo": "~/x",
+            "planejamento": {"objetivo": "  entregar  o  app  ", "situacao": "em dia",
+                              "inicio": "2026-11-01", "alvo": "2026-12-01",
+                              "marcos": [{"nome": " beta ", "data": "2026-11-20", "feito": True},
+                                         {"nome": "", "data": "2026-11-21"},
+                                         {"nome": "ruim", "data": "2026-13-01"}]}}])])[0]
+        self.assertEqual(p.objetivo, "entregar o app")
+        self.assertEqual(p.situacao, "em dia")
+        self.assertEqual((p.inicio, p.alvo), ("2026-11-01", "2026-12-01"))
+        self.assertEqual(p.marcos, [{"nome": "beta", "data": "2026-11-20", "feito": True},
+                                    {"nome": "ruim", "data": "", "feito": False}])
+
+    def test_planejamento_invalido_nao_derruba(self):
+        p = P.Projeto(id="x", repo="~/x", planejamento={"objetivo": 42, "inicio": "ontem",
+                                                        "alvo": "2026-13-01", "marcos": "x"})
+        self.assertEqual((p.objetivo, p.inicio, p.alvo, p.marcos), ("", "", "", []))
+
+    def test_prioridade_e_inteiro_nao_negativo(self):
+        ps = self.usar(self.config(lista=[
+            {"id": IOS, "repo": "~/a", "prioridade": 2},
+            {"id": NOTCH, "repo": "~/b", "prioridade": -3},
+            {"id": NOTCH + "x", "repo": "~/c", "prioridade": "alta"}]))
+        self.assertEqual([p.prioridade for p in ps], [2, 0, 0])
+
     def test_copiar_para_worktree_e_lido_e_vazio_por_padrao(self):
         ps = self.usar(self.config(lista=[
             {"id": NOTCH, "repo": "~/Developer/tuttidash", "copiar_para_worktree": ["AGENTS.md", " "]},

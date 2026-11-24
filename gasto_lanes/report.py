@@ -7,7 +7,7 @@ from typing import Iterable, Optional
 from .parser import (CUSTO_DESCONHECIDO, CUSTO_ESTIMADO, CUSTO_INFORMADO, STATUS_ANDAMENTO,
                      STATUS_CANCELADA, STATUS_ERRO, STATUS_MORTA, STATUS_OK, week_label)
 
-DIMENSOES = ("dia", "semana", "card", "lane")
+DIMENSOES = ("dia", "semana", "projeto", "card", "lane")
 STATUSES = (STATUS_OK, STATUS_ERRO, STATUS_MORTA, STATUS_ANDAMENTO, STATUS_CANCELADA)
 
 TETO_OK = "ok"
@@ -17,7 +17,8 @@ EXIT_TETO = {TETO_OK: 0, TETO_PERTO: 3, TETO_ESTOURADO: 4}
 
 
 def filtrar(recs: Iterable[dict], desde: Optional[dt.date] = None, ate: Optional[dt.date] = None,
-            lanes: Optional[set] = None, cards: Optional[set] = None) -> list:
+            lanes: Optional[set] = None, cards: Optional[set] = None,
+            projetos: Optional[set] = None) -> list:
     out = []
     for r in recs:
         dia = dt.date.fromisoformat(r["dia"])
@@ -29,6 +30,11 @@ def filtrar(recs: Iterable[dict], desde: Optional[dt.date] = None, ate: Optional
             continue
         if cards and r.get("card") not in cards:
             continue
+        if projetos:
+            pid = r.get("projeto") or ""
+            nome = r.get("projeto_nome") or ""
+            if not any(p in (pid, nome) for p in projetos):
+                continue
         out.append(r)
     return sorted(out, key=lambda r: (r.get("inicio") or "", r.get("id") or ""))
 
@@ -79,7 +85,10 @@ def _arredonda(row: dict) -> dict:
 def agrupar(recs: list, dim: str) -> list:
     rows: dict = {}
     for r in recs:
-        k = r.get(dim) or "?"
+        if dim == "projeto":
+            k = r.get("projeto_nome") or r.get("projeto") or "sem projeto"
+        else:
+            k = r.get(dim) or "?"
         rows.setdefault(k, _vazio(k))
         _soma(rows[k], r)
     if dim in ("dia", "semana"):
@@ -259,7 +268,9 @@ def render_json(recs: list, dims: list, teto: Optional[dict], estado: Optional[d
 
 
 def execucoes_txt(recs: list) -> str:
-    head = ("início", "card", "lane", "status", "custo", "turnos", "duração", "tokens", "modelo")
+    tem_projeto = any(r.get("projeto") for r in recs)
+    head = (("início", "projeto") if tem_projeto else ("início",)) + (
+        "card", "lane", "status", "custo", "turnos", "duração", "tokens", "modelo")
     body = []
     for r in recs:
         if r.get("custo_usd") is None:
@@ -283,8 +294,11 @@ def execucoes_txt(recs: list) -> str:
         status = r.get("status", "?")
         if r.get("subtipo") and status == STATUS_ERRO:
             status += f" ({r['subtipo']})"
-        body.append((r["inicio"].replace("T", " "), r["card"], r["lane"], status, c, ttn, dtxt, ttxt,
-                     r.get("modelo") or "?"))
+        linha = (r["inicio"].replace("T", " "), r["card"], r["lane"], status, c, ttn, dtxt, ttxt,
+                 r.get("modelo") or "?")
+        if tem_projeto:
+            linha = (linha[0], r.get("projeto_nome") or r.get("projeto") or "—") + linha[1:]
+        body.append(linha)
     if not body:
         return "Nenhuma execução encontrada."
     widths = [max(len(x[i]) for x in [head] + body) for i in range(len(head))]

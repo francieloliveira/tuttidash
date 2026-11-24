@@ -35,6 +35,22 @@ Regras:
   - `padrao: true` marca o projeto que o dispatcher trabalha neste ciclo. Sem
     `padrao`, vale o primeiro `ativo` da lista — a ordem da lista é a ordem de
     preferência, então mover um projeto para o topo o coloca na frente.
+  - `prioridade`: inteiro >= 0 (padrão 0). Com `agenda.multiprojeto` ligado, a
+    agenda começa pelos projetos de prioridade maior e faz rodízio entre eles;
+    prioridade não dá exclusividade. Sem a agenda, o campo é só informativo.
+  - `operacao`: limites deste projeto, por cima do global. Campo ausente herda o
+    global (`lanes.*`); 0 também herda. `budget_usd` por esforço,
+    `lane_timeout_min`, `proof_timeout_min`, `max_lanes` e
+    `max_tarefas_por_lane`. Valor inválido é ignorado com o padrão, nunca vira
+    silenciosamente um limite enorme.
+  - `repos`: opcional, lista de repositórios do projeto (FRA-711). Cada item
+    `{"slug","github","repo","worktrees","prova","protegidos","pastas_do_app"}`.
+    Ausente = o `repo` único de sempre. O primeiro é o padrão; o card escolhe
+    pelo rótulo `repo:<slug>`. A execução multi-repo ainda é a próxima fase.
+  - `planejamento`: metadados de gestão, sem efeito na execução:
+    `objetivo` (texto curto), `situacao` (texto curto, ex.: «em dia»),
+    `inicio`/`alvo` (`AAAA-MM-DD`) e `marcos` (`[{"nome","data","feito"}]`).
+    Data inválida é descartada; marco sem nome é ignorado.
   - `worktrees` default: `<repo>-worktrees`.
   - `prova` é o comando da prova do dispatcher, com `{suite}` para a suíte que o
     agente pediu em `.lane/result.json`. Default `python3 {suite}`.
@@ -103,22 +119,154 @@ def _expandir(valor: str) -> Path:
     return Path(s).expanduser()
 
 
+def _inteiro_positivo(valor) -> int:
+    """Inteiro > 0, ou 0 (herdar). Texto numérico vale; qualquer outra coisa = 0."""
+    try:
+        n = int(valor)
+    except (TypeError, ValueError):
+        return 0
+    return n if n > 0 else 0
+
+
+def _budget(bruto) -> dict:
+    """Orçamento por esforço, só com as três chaves do fluxo e valores > 0."""
+    if not isinstance(bruto, dict):
+        return {}
+    out = {}
+    for k in ("baixo", "medio", "alto"):
+        v = bruto.get(k)
+        if isinstance(v, bool):
+            continue
+        try:
+            n = float(v)
+        except (TypeError, ValueError):
+            continue
+        if n > 0:
+            out[k] = n
+    return out
+
+
+def _texto_curto(valor, teto: int = 500) -> str:
+    if not isinstance(valor, str):
+        return ""
+    return " ".join(valor.split())[:teto]
+
+
+def _data_iso(valor) -> str:
+    if not isinstance(valor, str):
+        return ""
+    s = valor.strip()
+    if len(s) != 10:
+        return ""
+    try:
+        import datetime as _dt
+        _dt.date.fromisoformat(s)
+    except ValueError:
+        return ""
+    return s
+
+
+def _marcos(bruto) -> list:
+    if not isinstance(bruto, list):
+        return []
+    out = []
+    for item in bruto:
+        if not isinstance(item, dict):
+            continue
+        nome = _texto_curto(item.get("nome"), 120)
+        if not nome:
+            continue
+        out.append({"nome": nome, "data": _data_iso(item.get("data")),
+                    "feito": item.get("feito") is True})
+    return out[:30]
+
+
+def _prioridade(valor) -> int:
+    """Inteiro >= 0. Qualquer outra coisa vira 0: o cadastro não derruba o ciclo."""
+    try:
+        n = int(valor)
+    except (TypeError, ValueError):
+        return 0
+    return n if n > 0 else 0
+
+
+class Repositorio:
+    """Um repositório de um projeto (FRA-711)."""
+
+    __slots__ = ("slug", "github", "repo", "worktrees", "prova", "protegidos", "pastas_do_app",
+                 "instalacao")
+
+    def __init__(self, slug: str, repo: str, github: str = "", worktrees: str = "",
+                 prova: str = "", protegidos=None, pastas_do_app=None, instalacao=None):
+        self.slug = _texto_curto(slug, 60)
+        self.repo = _expandir(repo) if repo else Path("")
+        self.github = normalizar_github(github)
+        self.worktrees = _expandir(worktrees) if worktrees else (
+            Path(str(self.repo) + "-worktrees") if repo else Path(""))
+        self.prova = _texto_curto(prova, 500)
+        self.protegidos = [str(x) for x in (protegidos or []) if str(x).strip()]
+        self.pastas_do_app = [str(x).strip().strip("/") for x in (pastas_do_app or [])
+                              if str(x).strip().strip("/") and ".." not in str(x)]
+        self.instalacao = dict(instalacao) if isinstance(instalacao, dict) else {}
+
+    def __eq__(self, outro):
+        return isinstance(outro, Repositorio) and all(
+            getattr(self, x) == getattr(outro, x) for x in self.__slots__)
+
+
+def _repositorios(bruto, repo, github, worktrees, prova, protegidos, pastas) -> list:
+    if not isinstance(bruto, list) or not bruto:
+        return []
+    out = []
+    vistos = set()
+    for item in bruto:
+        if isinstance(item, Repositorio):
+            if item.slug not in vistos:
+                vistos.add(item.slug)
+                out.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        r = str(item.get("repo") or "").strip()
+        if not r:
+            continue
+        slug = _texto_curto(item.get("slug"), 60) or f"repo{len(out) + 1}"
+        if slug in vistos:
+            continue
+        vistos.add(slug)
+        out.append(Repositorio(slug, r, str(item.get("github") or ""),
+                               str(item.get("worktrees") or ""),
+                               str(item.get("prova") or ""),
+                               item.get("protegidos"),
+                               item.get("pastas_do_app"),
+                               item.get("entrega")))
+    return out
+
+
 class Projeto:
     """Um projeto que o dispatcher pode trabalhar."""
 
-    __slots__ = ("id", "nome", "ativo", "padrao", "repo", "github", "worktrees",
+    __slots__ = ("id", "nome", "ativo", "padrao", "prioridade", "repo", "github", "worktrees",
                  "prova", "prova_tentativas", "suites", "protegidos", "copiar_para_worktree", "antes_do_push",
-                 "bancada", "pastas_do_app", "norte", "instalacao")
+                 "bancada", "pastas_do_app", "norte", "instalacao",
+                 "budget_usd", "lane_timeout_min", "proof_timeout_min",
+                 "max_lanes", "max_tarefas_por_lane",
+                 "objetivo", "situacao", "inicio", "alvo", "marcos",
+                 "repos")
 
     def __init__(self, id: str, nome: str = "", ativo: bool = True, padrao: bool = False,
-                 repo: str = "", worktrees: str = "", github: str = "", prova: str = "python3 {suite}",
-                 prova_tentativas: int = 1, suites=None, protegidos=None, copiar_para_worktree=None,
-                 antes_do_push: str = "", bancada: bool = False, pastas_do_app=None,
-                 norte="", instalacao=None):
+                 prioridade=0, repo: str = "", worktrees: str = "", github: str = "",
+                 prova: str = "python3 {suite}", prova_tentativas: int = 1, suites=None, protegidos=None,
+                 copiar_para_worktree=None, antes_do_push: str = "", bancada: bool = False, pastas_do_app=None,
+                 norte="", instalacao=None, operacao=None, budget_usd=None,
+                 lane_timeout_min=0, proof_timeout_min=0, max_lanes=0,
+                 max_tarefas_por_lane=0, planejamento=None, objetivo="", situacao="",
+                 inicio="", alvo="", marcos=None, repos=None):
         self.id = id
         self.nome = nome or id
         self.ativo = ativo
         self.padrao = padrao
+        self.prioridade = _prioridade(prioridade)
         self.repo = _expandir(repo) if repo else Path("")
         self.github = normalizar_github(github)
         self.worktrees = _expandir(worktrees) if worktrees else (
@@ -143,6 +291,23 @@ class Projeto:
         # FRA-698: o cadastro da entrega é interpretado por `gasto_lanes/instalar.py`.
         # Aqui ele só é guardado (ditado); classe desconhecida é reportada por lá.
         self.instalacao = dict(instalacao) if isinstance(instalacao, dict) else {}
+        self.repos = _repositorios(repos, repo, github, worktrees, prova, protegidos, pastas_do_app)
+        # FRA-704: limites por projeto. Vazio/0 = herda o global (lanes.*).
+        op = operacao if isinstance(operacao, dict) else {}
+        self.budget_usd = _budget(budget_usd if budget_usd is not None else op.get("budget_usd"))
+        self.lane_timeout_min = _inteiro_positivo(
+            lane_timeout_min or op.get("lane_timeout_min"))
+        self.proof_timeout_min = _inteiro_positivo(
+            proof_timeout_min or op.get("proof_timeout_min"))
+        self.max_lanes = _inteiro_positivo(max_lanes or op.get("max_lanes"))
+        self.max_tarefas_por_lane = _inteiro_positivo(
+            max_tarefas_por_lane or op.get("max_tarefas_por_lane"))
+        pl = planejamento if isinstance(planejamento, dict) else {}
+        self.objetivo = _texto_curto(objetivo or pl.get("objetivo"))
+        self.situacao = _texto_curto(situacao or pl.get("situacao"), 80)
+        self.inicio = _data_iso(inicio or pl.get("inicio"))
+        self.alvo = _data_iso(alvo or pl.get("alvo"))
+        self.marcos = _marcos(marcos if marcos is not None else pl.get("marcos"))
 
     def comando_prova(self, suite: str) -> str:
         """Comando completo da prova de uma suíte, já com o placeholder trocado.
@@ -151,6 +316,41 @@ class Projeto:
         então sai sem aspas: quem a executa é o shell. O que entra de fora é a
         suíte, e só ela é escapada."""
         return self.prova.replace("{suite}", shlex.quote(suite))
+
+    @property
+    def slug(self) -> str:
+        """Identificador estável para nomes de arquivo/sessão (FRA-702)."""
+        return "".join(c for c in str(self.id) if c.isalnum() or c in "-")[:60]
+
+    def repositorio(self, slug: str = ""):
+        """Repositório pelo slug; sem slug, o primeiro. None se o projeto é single-repo."""
+        if not self.repos:
+            return None
+        if not slug:
+            return self.repos[0]
+        for r in self.repos:
+            if r.slug == slug:
+                return r
+        return None
+
+    def com_repositorio(self, slug: str = ""):
+        """Cópia do projeto com repo/worktrees/github/prova do repositório escolhido."""
+        r = self.repositorio(slug)
+        if r is None:
+            return self
+        p = self.copia()
+        p.repo = r.repo
+        p.worktrees = r.worktrees
+        p.github = r.github
+        if r.prova:
+            p.prova = r.prova
+        if r.protegidos:
+            p.protegidos = list(r.protegidos)
+        if r.pastas_do_app:
+            p.pastas_do_app = list(r.pastas_do_app)
+        if r.instalacao:
+            p.instalacao = dict(r.instalacao)
+        return p
 
     def __repr__(self) -> str:  # pragma: no cover - só para log
         return f"Projeto({self.nome!r}, repo={self.repo}, padrao={self.padrao})"
@@ -222,6 +422,7 @@ def _do_registro(bruto: dict) -> list:
             nome=str(item.get("nome") or pid),
             ativo=True if ativos is None else bool(ativos),
             padrao=bool(item.get("padrao")),
+            prioridade=item.get("prioridade"),
             repo=repo,
             github=str(item.get("github") or ""),
             worktrees=str(item.get("worktrees") or ""),
@@ -234,7 +435,10 @@ def _do_registro(bruto: dict) -> list:
             bancada=_bancada_ativa(item.get("bancada")),
             pastas_do_app=_pastas_do_app(item.get("prova_remota")),
             norte=item.get("norte"),
-            instalacao=item.get("entrega")))
+            instalacao=item.get("entrega"),
+            operacao=item.get("operacao"),
+            planejamento=item.get("planejamento"),
+            repos=item.get("repos")))
     return saida
 
 
