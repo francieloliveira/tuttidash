@@ -376,6 +376,8 @@ struct SecaoProjetos: View {
     @StateObject var estado: EstadoProjetos
     /// Embutido nos Ajustes: o título vem do grupo, não de outro Section.
     var embutido = false
+    /// Cadastro novo abre num popup; a lista só mostra o que já foi salvo.
+    @State private var novoPopup: NovoProjeto?
 
     init(estado: @autoclosure @escaping () -> EstadoProjetos, embutido: Bool = false) {
         _estado = StateObject(wrappedValue: estado())
@@ -410,6 +412,20 @@ struct SecaoProjetos: View {
         .sheet(item: $estado.criacao) { c in
             CriarProjetoSheet(estado: estado, linhaID: c.linhaID, timeSugerido: timeDoRascunho(c.linhaID))
         }
+        .sheet(item: $novoPopup, onDismiss: {
+            if let n = novoPopup, let i = estado.indice(n.id), estado.linhas[i].nova {
+                estado.cancelar(n.id)
+            }
+        }) { n in
+            if let i = estado.indice(n.id) {
+                EditorProjetoPopup(linha: $estado.linhas[i], estado: estado,
+                                   fechar: { novoPopup = nil },
+                                   cancelar: {
+                                       estado.cancelar(n.id)
+                                       novoPopup = nil
+                                   })
+            }
+        }
     }
 
     /// Time do projeto já escolhido na linha (vazio se ainda não há projeto).
@@ -426,7 +442,12 @@ struct SecaoProjetos: View {
             Label(a, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
         }
         resumoGeral
-        Button { estado.adicionar() } label: {
+        Button {
+            estado.adicionar()
+            if let nova = estado.linhas.last(where: \.nova) {
+                novoPopup = NovoProjeto(id: nova.id)
+            }
+        } label: {
             Label(String(localized: "Adicionar projeto"), systemImage: "plus")
         }
         .buttonStyle(.borderedProminent)
@@ -482,6 +503,9 @@ struct SecaoProjetos: View {
 private struct LinhaProjeto: View {
     @Binding var linha: LinhaCadastro
     @ObservedObject var estado: EstadoProjetos
+    /// No popup, quem fecha é a folha; na lista, nil usa o comportamento normal.
+    var aoSalvar: (() -> Void)? = nil
+    var aoCancelar: (() -> Void)? = nil
     @State private var confirmarRemocao = false
 
     private var p: ProjetoCadastro { linha.rascunho }
@@ -925,10 +949,15 @@ private struct LinhaProjeto: View {
                 Label(motivo, systemImage: "info.circle").font(.caption).foregroundStyle(.orange)
             }
             Spacer()
-            Button(String(localized: "Cancelar")) { estado.cancelar(linha.id) }
-            Button(linha.nova ? String(localized: "Adicionar") : String(localized: "Salvar")) { estado.salvar(linha.id) }
-                .buttonStyle(.borderedProminent)
-                .disabled(motivo != nil || !linha.mudou)
+            Button(String(localized: "Cancelar")) {
+                if let aoCancelar { aoCancelar() } else { estado.cancelar(linha.id) }
+            }
+            Button(linha.nova ? String(localized: "Adicionar") : String(localized: "Salvar")) {
+                estado.salvar(linha.id)
+                aoSalvar?()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(motivo != nil || !linha.mudou)
         }
     }
 }
@@ -1076,6 +1105,44 @@ private struct CampoLinhas: View {
         }
         .onChange(of: valores) { _, novos in
             if Self.lista(texto) != novos { texto = novos.joined(separator: "\n") }
+        }
+    }
+}
+
+
+/// Identificador do popup de projeto novo.
+private struct NovoProjeto: Identifiable {
+    let id: UUID
+}
+
+/// Popup de cadastro novo: reusa o mesmo formulário da linha, sem abrir a lista.
+private struct EditorProjetoPopup: View {
+    @Binding var linha: LinhaCadastro
+    @ObservedObject var estado: EstadoProjetos
+    var fechar: () -> Void
+    var cancelar: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(String(localized: "Novo projeto")).font(.title3.weight(.semibold))
+                Spacer()
+                Button(String(localized: "Fechar")) { fechar() }
+            }
+            Text(String(localized: "Escolha o projeto do Linear, o repositório do GitHub e a pasta deste Mac."))
+                .font(.callout).foregroundStyle(.secondary)
+            ScrollView {
+                LinhaProjeto(linha: $linha, estado: estado,
+                             aoSalvar: fechar, aoCancelar: cancelar)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 760, minHeight: 620)
+        .onChange(of: linha.salvo != nil) { _, salvo in
+            if salvo { fechar() }
+        }
+        .onChange(of: linha.aberto) { _, aberto in
+            if !aberto { fechar() }
         }
     }
 }
