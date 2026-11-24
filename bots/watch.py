@@ -1648,6 +1648,18 @@ def rebase_dirty(st: dict, diary: list[str], repo_key: str = "app", repo: dict |
             REPOS["app"] = antigo
 
 
+def _lane_do_arquivo(arq: Path) -> str:
+    """Lane pelo campo ou, em estado antigo, pelo nome `lane-<lane>.json`/namespaced."""
+    stem = arq.stem
+    if not stem.startswith("lane-"):
+        return ""
+    resto = stem[len("lane-"):]
+    for lane in LANES_CONHECIDAS:
+        if resto == lane or resto.endswith("-" + lane):
+            return lane
+    return ""
+
+
 def _estados_de_lane():
     """(caminho, estado) de cada lane-*.json válido, aceitando nome com projeto."""
     for arq in LANES_DIR.glob("lane-*.json"):
@@ -1655,7 +1667,12 @@ def _estados_de_lane():
             st = json.loads(arq.read_text(encoding="utf-8"))
         except (OSError, ValueError, UnicodeError):
             continue
-        if isinstance(st, dict) and st.get("lane") in LANES_CONHECIDAS and st.get("card"):
+        if not isinstance(st, dict) or not st.get("card"):
+            continue
+        lane = st.get("lane") or _lane_do_arquivo(arq)
+        if lane in LANES_CONHECIDAS:
+            st = dict(st)
+            st["lane"] = lane
             yield arq, st
 
 
