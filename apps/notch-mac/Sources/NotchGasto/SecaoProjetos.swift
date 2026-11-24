@@ -460,9 +460,10 @@ struct SecaoProjetos: View {
             }
             .padding(.vertical, 6)
         }
+        let visiveis = estado.linhas.indices.filter { !estado.linhas[$0].nova }
         VStack(spacing: 0) {
-            ForEach(Array(estado.linhas.indices), id: \.self) { i in
-                if i > 0 { Divider().overlay(PV.divisor) }
+            ForEach(visiveis, id: \.self) { i in
+                if i != visiveis.first { Divider().overlay(PV.divisor) }
                 LinhaProjeto(linha: $estado.linhas[i], estado: estado)
             }
         }
@@ -506,6 +507,8 @@ private struct LinhaProjeto: View {
     /// No popup, quem fecha é a folha; na lista, nil usa o comportamento normal.
     var aoSalvar: (() -> Void)? = nil
     var aoCancelar: (() -> Void)? = nil
+    /// O popup já tem título próprio; não repete o cabeçalho de linha.
+    var mostrarCabecalho = true
     @State private var confirmarRemocao = false
 
     private var p: ProjetoCadastro { linha.rascunho }
@@ -516,7 +519,7 @@ private struct LinhaProjeto: View {
     private var posicao: Int { estado.indice(linha.id) ?? 0 }
 
     var body: some View {
-        cabecalho
+        if mostrarCabecalho { cabecalho }
         if linha.aberto { formulario }
     }
 
@@ -1123,21 +1126,39 @@ private struct EditorProjetoPopup: View {
     var cancelar: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(String(localized: "Novo projeto")).font(.title3.weight(.semibold))
-                Spacer()
-                Button(String(localized: "Fechar")) { fechar() }
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .frame(width: 36, height: 36)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(localized: "Novo projeto")).font(.title3.weight(.semibold))
+                    Text(String(localized: "Escolha o projeto do Linear, o repositório do GitHub e a pasta deste Mac."))
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button { fechar() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(String(localized: "Fechar"))
             }
-            Text(String(localized: "Escolha o projeto do Linear, o repositório do GitHub e a pasta deste Mac."))
-                .font(.callout).foregroundStyle(.secondary)
-            ScrollView {
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
+            Divider()
+            Form {
                 LinhaProjeto(linha: $linha, estado: estado,
-                             aoSalvar: fechar, aoCancelar: cancelar)
+                             aoSalvar: fechar, aoCancelar: cancelar,
+                             mostrarCabecalho: false)
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
-        .padding(20)
-        .frame(minWidth: 760, minHeight: 620)
+        .frame(minWidth: 760, minHeight: 680)
         .onChange(of: linha.salvo != nil) { _, salvo in
             if salvo { fechar() }
         }
