@@ -21,6 +21,7 @@ jobs:
       - name: Testes Python
         run: |
           python3 -m unittest discover -s tests -t .
+          python3 -m unittest tests.test_multiprojeto
           python3 -m unittest lanes.test_lanes
       - name: Testes Swift
         working-directory: apps/notch-mac
