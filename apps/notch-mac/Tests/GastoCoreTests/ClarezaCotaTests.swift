@@ -125,8 +125,16 @@ final class ClarezaCotaTests: XCTestCase {
     func testAjustesExplicamASeparacaoNoCabecalho() {
         let lanes = CatalogoAjustes.secoes().first { $0.id == .lanes }!
         XCTAssertTrue(lanes.subtitulo.contains("pegam card"))
-        let contas = CatalogoAjustes.secoes().first { $0.id == .contas }!
-        let grupo = contas.grupos.first { $0.nome == "Contas das lanes" }
-        XCTAssertEqual(grupo?.ajuda, "Quanto de cada conta já foi usado. SuperGrok (via Cursor) e Grok CLI são cotas separadas.")
+        // Desde a reorganização dos Ajustes, as contas são bloco de Geral › Ferramentas
+        // e logins, junto do Linear: a seção própria «Contas» deixou de existir.
+        let secoes = CatalogoAjustes.secoes()
+        XCTAssertNil(secoes.first { $0.id == .contas }, "contas virou bloco de Geral")
+        let geral = secoes.first { $0.id == .geral }!
+        let grupo = geral.grupos.first { $0.blocos.contains(.contas) }
+        XCTAssertNotNil(grupo, "o bloco das contas fica em Geral")
+        XCTAssertTrue(grupo?.ajuda?.contains("contas") ?? false, "o grupo diz que as contas estão ali")
+        XCTAssertTrue(grupo?.blocos.contains(.linear) == true, "e o Linear no mesmo grupo")
+        // A separação SuperGrok × Grok CLI continua explícita nas notas das contas.
+        XCTAssertTrue(ClarezaCota.notaSuperGrok.contains("Não compartilha cota nem crédito com o Grok CLI"))
     }
 }
