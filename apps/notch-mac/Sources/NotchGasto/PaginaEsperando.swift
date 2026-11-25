@@ -178,60 +178,75 @@ struct PaginaEsperando: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 7) {
-                    RotuloSecao(titulo: "Respostas em aberto", icone: "tray.full", cor: Aurora.ambar)
-                    Text("\(caixa.abertas)")
-                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(Aurora.ambar)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1.5)
-                        .background(Capsule().fill(Aurora.ambar.opacity(0.15)))
+        Group {
+            if caixa.itens.isEmpty {
+                vazio
+            } else {
+            HStack(alignment: .top, spacing: 13) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 7) {
+                        RotuloSecao(titulo: "Respostas em aberto", icone: "tray.full", cor: Aurora.ambar)
+                        Text("\(caixa.abertas)")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Aurora.ambar)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(Aurora.ambar.opacity(0.15)))
+                        Spacer(minLength: 0)
+                    }
+                    ForEach(caixa.itens) { item in linhaLista(item) }
                     Spacer(minLength: 0)
                 }
-                if caixa.itens.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "checkmark.seal")
-                            .font(.system(size: 20, weight: .light))
-                            .foregroundStyle(Aurora.verde.opacity(0.8))
-                        Text(String(localized: "Nada esperando por você agora."))
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(Aurora.mudo)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 22)
-                }
-                ForEach(caixa.itens) { item in linhaLista(item) }
-                Spacer(minLength: 0)
-            }
-            .padding(14)
-            .frame(width: 320, alignment: .topLeading)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .cartaoVivo()
+                .padding(14)
+                .frame(width: 320, alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .cartaoVivo()
 
-            Group {
-                if let item = atual { detalhe(item) } else {
-                    VStack(spacing: 10) {
-                        Image(systemName: "tray")
-                            .font(.system(size: 24, weight: .light))
-                            .foregroundStyle(Aurora.apagado)
-                        Text(String(localized: "Quando um card precisar de você, a pendência e as decisões aparecem aqui."))
-                            .font(.system(size: 12.5, design: .rounded))
-                            .foregroundStyle(Aurora.mudo)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 340)
+                Group {
+                    if let item = atual { detalhe(item) } else {
+                        VStack(spacing: 10) {
+                            Image(systemName: "tray")
+                                .font(.system(size: 24, weight: .light))
+                                .foregroundStyle(Aurora.apagado)
+                            Text(String(localized: "Quando um card precisar de você, a pendência e as decisões aparecem aqui."))
+                                .font(.system(size: 12.5, design: .rounded))
+                                .foregroundStyle(Aurora.mudo)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 340)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .cartaoVivo()
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .cartaoVivo()
+            }
         }
         .onAppear { caixa.iniciar() }
+    }
+
+    /// Sem pendência não há o que escolher à direita: um cartão só, em vez de dois vazios.
+    private var vazio: some View {
+        cartaoPagina("Esperando você", direita: {
+            SeloPV(texto: "0 respostas em aberto", cor: Aurora.ambar)
+        }) {
+            VStack(spacing: 8) {
+                Image(systemName: "checkmark.seal")
+                    .font(.system(size: 20, weight: .light))
+                    .foregroundStyle(Aurora.verde.opacity(0.8))
+                Text(String(localized: "Nada esperando por você agora."))
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(Aurora.texto2)
+                Text(String(localized: "Quando um card precisar de você, a pendência e as decisões aparecem aqui."))
+                    .font(.system(size: 11.5, design: .rounded))
+                    .foregroundStyle(Aurora.mudo)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 26)
+        }
     }
 
     private func linhaLista(_ item: ItemCaixa) -> some View {
