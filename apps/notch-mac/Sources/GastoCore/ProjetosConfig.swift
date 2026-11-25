@@ -269,6 +269,47 @@ public struct RepositorioCadastro: Equatable, Sendable {
         self.pastasDoApp = pastasDoApp
         self.instalacao = instalacao
     }
+
+    /// Etiqueta que escolhe este repositório no card (FRA-711). É o nome que o dispatcher
+    /// procura (`repo_do_card`), não o id: a etiqueta precisa existir no Linear.
+    public var nomeDaEtiqueta: String { "repo:\(slug)" }
+
+    /// Mesma regra do `repo_do_card` do dispatcher: só alfanumérico, `-` e `_`.
+    /// Slug fora disso não vira etiqueta — o card cairia no repositório principal.
+    public static func slugValido(_ slug: String) -> Bool {
+        guard !slug.isEmpty else { return false }
+        return slug.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+
+    /// Espelho do `_texto_curto(slug, 60)` do `projetos.py`: espaços colapsados, 60 no máximo.
+    public static func slugNormalizado(_ bruto: String) -> String {
+        let colapsado = bruto.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return String(colapsado.prefix(60))
+    }
+
+    /// Espelho do `_repositorios` do `projetos.py`: item sem `repo` é ignorado, slug vazio
+    /// vira `repo<N>` (contando só os aceitos) e slug repetido fica o primeiro. O app e o
+    /// dispatcher têm de concordar no slug, senão a etiqueta aponta para outro repositório.
+    public static func ler(_ bruto: Any?) -> [RepositorioCadastro] {
+        guard let lista = bruto as? [[String: Any]] else { return [] }
+        var vistos = Set<String>()
+        var saida: [RepositorioCadastro] = []
+        for item in lista {
+            guard let repo = JV.texto(item["repo"]), !repo.isEmpty else { continue }
+            let declarado = slugNormalizado(JV.texto(item["slug"]) ?? "")
+            let slug = declarado.isEmpty ? "repo\(saida.count + 1)" : declarado
+            guard vistos.insert(slug).inserted else { continue }
+            saida.append(RepositorioCadastro(
+                slug: slug, repo: repo,
+                github: JV.texto(item["github"]) ?? "",
+                worktrees: JV.texto(item["worktrees"]) ?? "",
+                prova: JV.texto(item["prova"]) ?? "",
+                protegidos: (item["protegidos"] as? [String]) ?? [],
+                pastasDoApp: (item["pastas_do_app"] as? [String]) ?? [],
+                instalacao: InstalacaoCadastro.ler(item["entrega"] as? [String: Any])))
+        }
+        return saida
+    }
 }
 
 public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
@@ -387,6 +428,20 @@ public struct ProjetoCadastro: Identifiable, Equatable, Sendable {
         return repo.hasSuffix("-worktrees") ? repo : repo + "-worktrees"
     }
 
+    /// Repositório do projeto pelo slug (FRA-711). `nil` = sem lista, sem slug ou slug
+    /// desconhecido — o card então vale no repositório principal, como no dispatcher.
+    /// Slug que não vira etiqueta também não conta: o dispatcher não conseguiria escolher.
+    public func repositorio(_ slug: String) -> RepositorioCadastro? {
+        let limpo = slug.trimmingCharacters(in: .whitespaces)
+        guard RepositorioCadastro.slugValido(limpo) else { return nil }
+        return repos.first { $0.slug == limpo }
+    }
+
+    /// Pasta do repositório escolhido; sem escolha válida, a do projeto.
+    public func repoEfetivo(_ slug: String) -> String {
+        repositorio(slug)?.repo ?? repo
+    }
+
     /// Freio efetivo: o declarado ou a lista padrão, mais o norte (que o declarado nunca tira).
     public var protegidosEfetivos: [String] {
         var base = protegidos.isEmpty ? Self.protegidosPadrao : protegidos
@@ -442,17 +497,7 @@ public enum ProjetosConfig {
             let prot = (item["protegidos"] as? [String]) ?? []
             let copiar = ((item["copiar_para_worktree"] as? [String]) ?? [])
                 .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            let repos = (item["repos"] as? [[String: Any]] ?? []).compactMap { r -> RepositorioCadastro? in
-                guard let repo = JV.texto(r["repo"]), !repo.isEmpty else { return nil }
-                return RepositorioCadastro(slug: JV.texto(r["slug"]) ?? "",
-                                           repo: repo,
-                                           github: JV.texto(r["github"]) ?? "",
-                                           worktrees: JV.texto(r["worktrees"]) ?? "",
-                                           prova: JV.texto(r["prova"]) ?? "",
-                                           protegidos: (r["protegidos"] as? [String]) ?? [],
-                                           pastasDoApp: (r["pastas_do_app"] as? [String]) ?? [],
-                                           instalacao: InstalacaoCadastro.ler(r["entrega"] as? [String: Any]))
-            }
+            let repos = RepositorioCadastro.ler(item["repos"])
             let op = item["operacao"] as? [String: Any] ?? [:]
             var budget: [String: Double] = [:]
             if let bruto = op["budget_usd"] as? [String: Any] {
@@ -559,5 +604,14 @@ public enum ProjetosConfig {
         let ativos = projetos.filter(\.ativo)
         if ativos.isEmpty { return nil }
         return ativos.first(where: \.padrao) ?? ativos[0]
+    }
+
+    /// Projeto do contexto de uma tela que escolhe o seu (o Brainstorm): o escolhido,
+    /// mesmo parado, senão o `padrao`. A escolha é da tela; não muda quem o dispatcher
+    /// trabalha. Id que saiu do cadastro volta a cair no `padrao`.
+    public static func contexto(_ projetos: [ProjetoCadastro], escolhido: String) -> ProjetoCadastro? {
+        let id = escolhido.trimmingCharacters(in: .whitespaces)
+        if !id.isEmpty, let p = projetos.first(where: { $0.projetoID == id }) { return p }
+        return padrao(projetos)
     }
 }

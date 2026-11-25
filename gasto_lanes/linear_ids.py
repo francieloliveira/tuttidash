@@ -37,11 +37,14 @@ PARADA = "lane:parada"
 DONO_PADRAO = "needs:dono"
 GRUPO_ESFORCO = "esforco"
 GRUPO_LANE = "lane"
+#: Prefixo da etiqueta que escolhe o repositório do card (FRA-711): `repo:<slug>`.
+PREFIXO_REPO = "repo:"
 ESFORCOS = ("baixo", "medio", "alto")
 
 
 def vazio() -> dict:
-    return {"estados": {k: "" for k in ESTADOS}, "labels": {}, "esforco": {}, "lanes": {}}
+    return {"estados": {k: "" for k in ESTADOS}, "labels": {}, "esforco": {}, "lanes": {},
+            "repos": {}}
 
 
 def _texto(v) -> str:
@@ -59,7 +62,7 @@ def _juntar(base: dict, por_cima: dict) -> dict:
     saida = vazio()
     for k in ESTADOS:
         saida["estados"][k] = por_cima["estados"].get(k) or base["estados"].get(k) or ""
-    for campo in ("labels", "esforco", "lanes"):
+    for campo in ("labels", "esforco", "lanes", "repos"):
         saida[campo] = {**base.get(campo, {}), **por_cima.get(campo, {})}
     return saida
 
@@ -89,7 +92,7 @@ def ler_cache(caminho: Optional[Path] = None, project_id: str = "") -> dict:
     estados = bruto.get("estados") if isinstance(bruto.get("estados"), dict) else {}
     for k in ESTADOS:
         d["estados"][k] = _texto(estados.get(k))
-    for campo in ("labels", "esforco", "lanes"):
+    for campo in ("labels", "esforco", "lanes", "repos"):
         d[campo] = _mapa(bruto.get(campo))
     return d
 
@@ -107,12 +110,16 @@ def carregar(get: Callable, caminho: Optional[Path] = None, project_id: str = ""
     return _juntar(ler_cache(caminho, project_id), da_config(get))
 
 
-def faltando(ids: dict, dono: str, lanes=()) -> list:
-    """O que ainda não tem id, para decidir se vale ir à API."""
+def faltando(ids: dict, dono: str, lanes=(), repos=()) -> list:
+    """O que ainda não tem id, para decidir se vale ir à API.
+
+    `repos`: slugs dos repositórios (FRA-711). Cada um precisa da etiqueta
+    `repo:<slug>`, que é como o dispatcher escolhe o repositório do card."""
     falta = [f"estado:{k}" for k in ESTADOS if not ids["estados"].get(k)]
     falta += [f"label:{n}" for n in (dono, FALHOU, PARADA) if n and not ids["labels"].get(n)]
     falta += [f"esforco:{e}" for e in ESFORCOS if not ids["esforco"].get(e)]
     falta += [f"lane:{l}" for l in lanes if not ids["lanes"].get(l)]
+    falta += [f"repo:{s}" for s in repos if s and not ids["repos"].get(s)]
     return falta
 
 
@@ -125,7 +132,8 @@ M_CRIAR_LABEL = ("mutation($input: IssueLabelCreateInput!) { issueLabelCreate(in
 
 #: Cores das etiquetas que o TuttiDash cria (FRA-569); as do Linear, sem importância para o fluxo.
 CORES = {"dono": "#F2994A", FALHOU: "#EB5757", PARADA: "#F2994A",
-         "alto": "#EB5757", "medio": "#F2C94C", "baixo": "#4CB782", "lane": "#26B5CE"}
+         "alto": "#EB5757", "medio": "#F2C94C", "baixo": "#4CB782", "lane": "#26B5CE",
+         "repo": "#8E8E93"}
 
 
 def time_do_projeto(consultar: Callable[[str, dict], dict], project_id: str) -> str:
@@ -159,7 +167,7 @@ def _achar(etiquetas: list, time: str, nome: str, grupo: Optional[str], so_grupo
 
 
 def resolver(consultar: Callable[[str, dict], dict], *, team_id: str = "", project_id: str = "",
-             dono: str = DONO_PADRAO, lanes=(), nomes_estado: Optional[dict] = None,
+             dono: str = DONO_PADRAO, lanes=(), repos=(), nomes_estado: Optional[dict] = None,
              etiquetas: Optional[list] = None) -> dict:
     """Busca pelo nome os IDs que faltam. `consultar(query, variaveis)` devolve o `data` do GraphQL.
 
@@ -185,11 +193,15 @@ def resolver(consultar: Callable[[str, dict], dict], *, team_id: str = "", proje
     for lane in lanes:
         if i := _achar(etiquetas, time, lane, GRUPO_LANE):
             d["lanes"][lane] = i
+    for slug in repos:
+        # Solta e sem grupo: o nome é `repo:<slug>`, como o dispatcher lê o card (FRA-711).
+        if slug and (i := _achar(etiquetas, time, f"{PREFIXO_REPO}{slug}", None)):
+            d["repos"][slug] = i
     return d
 
 
 def criar_faltando(consultar: Callable[[str, dict], dict], *, project_id: str, dono: str, lanes=(),
-                   log: Callable[[str], None] = lambda _m: None) -> list:
+                   repos=(), log: Callable[[str], None] = lambda _m: None) -> list:
     """Cria no time do projeto as etiquetas e os grupos que o fluxo usa e que não existem (FRA-569).
 
     Só cria o que a busca pelo nome, feita agora, confirmou que falta: com erro de rede a
@@ -229,41 +241,46 @@ def criar_faltando(consultar: Callable[[str, dict], dict], *, project_id: str, d
             continue
         for f in faltam:
             criar(f, CORES.get(f, CORES["lane"]), pai=pai)
+    for slug in repos:
+        nome = f"{PREFIXO_REPO}{slug}"
+        if slug and not _achar(etiquetas, time, nome, None):
+            criar(nome, CORES["repo"])
     if criadas:
         log(f"linear: etiquetas criadas no time do projeto: {', '.join(criadas)}")
     return criadas
 
 
 def garantir(get: Callable, consultar: Callable[[str, dict], dict], *, dono: str, lanes=(),
-             project_id: str = "", caminho: Optional[Path] = None,
+             repos=(), project_id: str = "", caminho: Optional[Path] = None,
              log: Callable[[str], None] = lambda _m: None, criar: bool = True) -> dict:
     """Carrega; se faltar algo, resolve pela API, junta e grava o cache. Erro de rede não derruba.
 
     Com `criar`, as etiquetas e os grupos que faltam no time do projeto são criados (FRA-569)."""
     ids = carregar(get, caminho, project_id)
-    falta = faltando(ids, dono, lanes)
+    falta = faltando(ids, dono, lanes, repos)
     if not falta:
         return ids
     try:
         # O time sai do projeto (FRA-567): sem `linear.team_id` global.
-        novos = resolver(consultar, project_id=project_id, dono=dono, lanes=lanes)
+        novos = resolver(consultar, project_id=project_id, dono=dono, lanes=lanes, repos=repos)
     except Exception as exc:  # noqa: BLE001 — sem rede, fica o que já tinha
         log(f"linear: não resolvi os ids pelo nome ({exc}); faltam {', '.join(falta)}")
         return ids
     cache = _juntar(ler_cache(caminho, project_id), novos)
     gravar_cache(cache, caminho, project_id)
     ids = _juntar(cache, da_config(get))
-    ainda = [f for f in faltando(ids, dono, lanes) if not f.startswith("estado:")]
+    ainda = [f for f in faltando(ids, dono, lanes, repos) if not f.startswith("estado:")]
     if ainda and criar and project_id:
         try:
-            if criar_faltando(consultar, project_id=project_id, dono=dono, lanes=lanes, log=log):
-                novos = resolver(consultar, project_id=project_id, dono=dono, lanes=lanes)
+            if criar_faltando(consultar, project_id=project_id, dono=dono, lanes=lanes,
+                              repos=repos, log=log):
+                novos = resolver(consultar, project_id=project_id, dono=dono, lanes=lanes, repos=repos)
                 cache = _juntar(ler_cache(caminho, project_id), novos)
                 gravar_cache(cache, caminho, project_id)
                 ids = _juntar(cache, da_config(get))
         except Exception as exc:  # noqa: BLE001 — sem permissão ou sem rede: avisa e segue
             log(f"linear: não consegui criar as etiquetas que faltam ({exc})")
-    ainda = faltando(ids, dono, lanes)
+    ainda = faltando(ids, dono, lanes, repos)
     if ainda:
         log(f"linear: sem id no Linear para {', '.join(ainda)} (crie com esse nome ou ponha em linear.labels)")
     return ids

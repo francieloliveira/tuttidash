@@ -16,8 +16,13 @@ final class SessaoBrainstorm: ObservableObject {
     @Published var stories: [UserStory] = []
     @Published var isGenerating = false
     @Published var status = "Pronto"
-    @Published var projectId = ""
-    @Published var projectName = ""
+    /// Projeto do contexto desta tela (id do Linear). Vazio = o principal da config.
+    /// A escolha é da tela: guardada no app, não na config, e não troca o projeto que o
+    /// dispatcher trabalha (Ajustes › Projetos é quem diz isso).
+    @Published var projetoEscolhido = ""
+    /// Repositório do contexto quando o projeto tem mais de um (FRA-711): o slug vai no
+    /// card como etiqueta `repo:<slug>`; vazio = o repositório principal do projeto.
+    @Published var repositorioEscolhido = ""
     @Published var editingStory: UserStory?
     /// Perguntas cuja resposta ainda não voltou.
     @Published var perguntasEmVoo = 0
@@ -31,13 +36,28 @@ final class SessaoBrainstorm: ObservableObject {
     /// Itens marcados que já foram para o esboço.
     @Published var itensNaIdeia: Set<String> = []
 
+    static let chaveProjeto = "brainstorm.projeto"
+    static let chaveRepositorio = "brainstorm.repo"
+
     private init() {
         messages = [ChatMessage(isAgent: true, text: Self.textoInicial)]
-        let cfg = Configuracao.resolver()
-        if let p = cfg.projetoPadrao {
-            projectId = p.projetoID
-            projectName = p.nome
-        }
+        projetoEscolhido = UserDefaults.standard.string(forKey: Self.chaveProjeto) ?? ""
+        repositorioEscolhido = UserDefaults.standard.string(forKey: Self.chaveRepositorio) ?? ""
+    }
+
+    /// Contexto escolhido nesta tela. Fica guardado para a próxima abertura; projeto
+    /// que saiu do cadastro volta a cair no principal.
+    func escolherProjeto(_ id: String) {
+        projetoEscolhido = id
+        UserDefaults.standard.set(id, forKey: Self.chaveProjeto)
+        // O slug era do projeto anterior: trocar de projeto também volta ao principal.
+        escolherRepositorio("")
+    }
+
+    /// Repositório do contexto dentro do projeto (slug). Vazio = o principal.
+    func escolherRepositorio(_ slug: String) {
+        repositorioEscolhido = slug
+        UserDefaults.standard.set(slug, forKey: Self.chaveRepositorio)
     }
 }
 
@@ -46,6 +66,8 @@ final class SessaoBrainstorm: ObservableObject {
 struct PaginaBrainstorm: View {
     var modelo: ModeloNotch
     @ObservedObject private var sessao = SessaoBrainstorm.compartilhada
+    /// Troca à espera de confirmação: o que está na tela é do contexto anterior.
+    @State private var trocaPendente: TrocaContexto?
 
     private static let textoInicial = SessaoBrainstorm.textoInicial
 
@@ -77,13 +99,26 @@ struct PaginaBrainstorm: View {
         get { sessao.status }
         nonmutating set { sessao.status = newValue }
     }
-    private var projectId: String {
-        get { sessao.projectId }
-        nonmutating set { sessao.projectId = newValue }
+    /// Projetos do cadastro. A tela escolhe entre eles sem mexer no principal.
+    private var projetos: [ProjetoCadastro] { modelo.config.projetos }
+    /// Contexto do Brainstorm: é este projeto que dá o repositório, o norte e o
+    /// projeto do Linear onde os cards nascem.
+    private var projetoAtual: ProjetoCadastro? {
+        ProjetosConfig.contexto(projetos, escolhido: sessao.projetoEscolhido)
     }
-    private var projectName: String {
-        get { sessao.projectName }
-        nonmutating set { sessao.projectName = newValue }
+    /// Repositórios que viram etiqueta `repo:<slug>` (só valem os do projeto atual).
+    private var repositorios: [RepositorioCadastro] {
+        (projetoAtual?.repos ?? []).filter { RepositorioCadastro.slugValido($0.slug) }
+    }
+    /// Repositório do contexto quando o projeto tem mais de um; `nil` = o principal.
+    /// Não usa `contexto`: ele é que monta o contexto a partir daqui (laço infinito).
+    private var repositorioAtual: RepositorioCadastro? {
+        guard repositorios.count > 1 else { return nil }
+        return repositorios.first { $0.slug == sessao.repositorioEscolhido }
+    }
+    /// O que os agentes leem e o que vai na etiqueta do card.
+    private var contexto: ContextoBrainstorm {
+        ContextoBrainstorm(projeto: projetoAtual, repositorio: repositorioAtual)
     }
     private var editingStory: UserStory? {
         get { sessao.editingStory }
@@ -119,9 +154,17 @@ struct PaginaBrainstorm: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     passosFluxo
-                    chatSection
-                    ideaSection
-                    gerarBar
+                    avisosDoContexto
+                    // Chat e ideia lado a lado: a conversa alimenta a caixa da direita,
+                    // e a página deixa de empilhar dois blocos que ficavam quase vazios.
+                    HStack(alignment: .top, spacing: 14) {
+                        chatSection
+                        VStack(spacing: 14) {
+                            ideaSection
+                            gerarBar
+                        }
+                        .frame(width: 460)
+                    }
                     storiesSection
                 }
                 .padding(.horizontal, 22)
@@ -133,11 +176,20 @@ struct PaginaBrainstorm: View {
                 footerBar
             }
         }
-        .task {
-            // Confere o norte do projeto padrão ao abrir (busca a main); não trava a tela.
-            guard let p = Configuracao.resolver().projetoPadrao else { sessao.avisoNorte = nil; return }
+        .task(id: projetoAtual?.projetoID ?? "") {
+            // Confere o norte do projeto do contexto ao abrir e ao trocar de projeto
+            // (busca a main); não trava a tela.
+            guard let p = projetoAtual else { sessao.avisoNorte = nil; return }
             let e = await Task.detached { NorteProjeto.estado(p, buscar: true) }.value
             sessao.avisoNorte = NorteProjeto.avisoBrainstorm(e)
+        }
+        .alert("Trocar o contexto do Brainstorm?", isPresented: trocandoContexto) {
+            Button("Cancelar", role: .cancel) { trocaPendente = nil }
+            Button("Trocar", role: .destructive) {
+                if let t = trocaPendente { aplicarTroca(t) }
+            }
+        } message: {
+            Text(mensagemTrocaContexto)
         }
         .sheet(item: $sessao.editingStory) { story in
             let nova = !stories.contains { $0.id == story.id }
@@ -174,9 +226,8 @@ struct PaginaBrainstorm: View {
             chevron
             passo(3, "Linear")
             Spacer(minLength: 8)
-            if !projectName.isEmpty {
-                EtiquetaAurora(texto: projectName, cor: Aurora.azul)
-            }
+            seletorProjeto
+            seletorRepositorio
             Button { limparConversa() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "trash").font(.system(size: 9.5, weight: .semibold))
@@ -193,6 +244,183 @@ struct PaginaBrainstorm: View {
         }
         .padding(.horizontal, 2)
         .padding(.bottom, 2)
+    }
+
+    // MARK: - Contexto (projeto e repositório)
+
+    /// Troca pedida na tela, à espera de confirmação: o que está em cima é do contexto anterior.
+    private enum TrocaContexto: Equatable {
+        case projeto(ProjetoCadastro)
+        /// `nil` = voltar ao repositório principal.
+        case repositorio(RepositorioCadastro?)
+    }
+
+    /// O que o contexto não entrega. Some quando está tudo no lugar: nada trava a tela,
+    /// mas o dono sabe por que o card não anda.
+    @ViewBuilder
+    private var avisosDoContexto: some View {
+        if let p = projetoAtual {
+            if contexto.repo.trimmingCharacters(in: .whitespaces).isEmpty {
+                Label("Contexto \(p.nome) sem pasta: o chat e as histórias precisam do repositório. Defina em Ajustes › Projetos.",
+                      systemImage: "folder.badge.questionmark")
+                    .fontePainel(11.5)
+                    .foregroundStyle(TemaPainel.amarelo)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !p.ativo {
+                Label("Contexto em \(p.nome), que está parado: os cards saem no Linear, mas o dispatcher não pega eles até o projeto ser ligado.",
+                      systemImage: "pause.circle")
+                    .fontePainel(11.5)
+                    .foregroundStyle(TemaPainel.amarelo)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Projeto do contexto: o repositório lido pelo agente, o norte dos cards e o
+    /// projeto do Linear onde eles nascem. Só esta tela muda; o dispatcher continua
+    /// no principal de Ajustes › Projetos.
+    private var seletorProjeto: some View {
+        Menu {
+            if projetos.isEmpty {
+                Text("Nenhum projeto em Ajustes › Projetos")
+            } else {
+                ForEach(projetos) { p in
+                    Button { pedirTroca(.projeto(p)) } label: {
+                        if p.projetoID == projetoAtual?.projetoID {
+                            Label(rotuloProjeto(p), systemImage: "checkmark")
+                        } else {
+                            Text(rotuloProjeto(p))
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "folder").font(.system(size: 9, weight: .semibold))
+                Text(projetoAtual?.nome ?? "Sem projeto")
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 200, alignment: .leading)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(Aurora.azul)
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(Capsule().fill(Aurora.azul.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(Aurora.azul.opacity(0.28), lineWidth: 1))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Projeto do contexto: o norte e o projeto do Linear dos cards. Não troca o principal que o dispatcher trabalha.")
+    }
+
+    /// Repositório do card quando o projeto tem mais de um (FRA-711). O slug vai na
+    /// etiqueta `repo:<slug>` do card; é assim que o dispatcher escolhe a pasta.
+    @ViewBuilder
+    private var seletorRepositorio: some View {
+        if contexto.temEscolhaDeRepositorio {
+            Menu {
+                Button { pedirTroca(.repositorio(nil)) } label: {
+                    if repositorioAtual == nil {
+                        Label("principal (sem etiqueta)", systemImage: "checkmark")
+                    } else {
+                        Text("principal (sem etiqueta)")
+                    }
+                }
+                ForEach(repositorios, id: \.slug) { r in
+                    Button { pedirTroca(.repositorio(r)) } label: {
+                        if r.slug == repositorioAtual?.slug {
+                            Label(r.slug, systemImage: "checkmark")
+                        } else {
+                            Text(r.slug)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "shippingbox").font(.system(size: 9, weight: .semibold))
+                    Text(repositorioAtual.map { "repo:\($0.slug)" } ?? "repo principal")
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 150, alignment: .leading)
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                }
+                .foregroundStyle(Aurora.violeta)
+                .padding(.horizontal, 9)
+                .frame(height: 24)
+                .background(Capsule().fill(Aurora.violeta.opacity(0.12)))
+                .overlay(Capsule().strokeBorder(Aurora.violeta.opacity(0.28), lineWidth: 1))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Repositório deste contexto: a pasta que o agente lê e a etiqueta repo:<slug> do card. Sem escolha, vale o principal.")
+        }
+    }
+
+    /// Nome no menu: diz quem é o principal (dispatcher) e quem está parado.
+    private func rotuloProjeto(_ p: ProjetoCadastro) -> String {
+        var partes = [p.nome]
+        if p.projetoID == ProjetosConfig.padrao(projetos)?.projetoID { partes.append("principal") }
+        if !p.ativo { partes.append("parado") }
+        return partes.joined(separator: " · ")
+    }
+
+    private var mensagemTrocaContexto: String {
+        switch trocaPendente {
+        case .projeto(let p):
+            let de = projetoAtual?.nome ?? "o projeto atual"
+            var tem = [String]()
+            if !stories.isEmpty { tem.append("\(stories.count) história(s)") }
+            if !ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { tem.append("a idéia") }
+            if messages.count > 1 { tem.append("o chat") }
+            let oQue = tem.isEmpty ? "O que está nesta tela" : tem.joined(separator: ", ")
+            return "\(oQue) é de \(de). Ao trocar para \(p.nome), o chat, a idéia e o quadro são zerados para não mandar card para o projeto errado."
+        case .repositorio(let r):
+            let de = repositorioAtual?.slug ?? "o principal"
+            let para = r?.slug ?? "o principal"
+            return "As \(stories.count) história(s) do quadro foram geradas a partir do repositório \(de). Ao trocar para \(para), o quadro é zerado para não mandar card ao repositório errado. O chat e a idéia ficam."
+        case nil:
+            return ""
+        }
+    }
+
+    private var trocandoContexto: Binding<Bool> {
+        Binding(get: { trocaPendente != nil },
+                set: { if !$0 { trocaPendente = nil } })
+    }
+
+    /// Troca de projeto zera tudo; troca de repositório zera o quadro. Sem nada a perder, troca direto.
+    private func pedirTroca(_ troca: TrocaContexto) {
+        switch troca {
+        case .projeto(let p):
+            guard p.projetoID != projetoAtual?.projetoID else { return }
+            let vazio = stories.isEmpty
+                && ideaSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && messages.count <= 1
+            if vazio { aplicarTroca(troca) } else { trocaPendente = troca }
+        case .repositorio(let r):
+            guard r?.slug != repositorioAtual?.slug else { return }
+            if stories.isEmpty { aplicarTroca(troca) } else { trocaPendente = troca }
+        }
+    }
+
+    private func aplicarTroca(_ troca: TrocaContexto) {
+        switch troca {
+        case .projeto(let p):
+            sessao.escolherProjeto(p.projetoID)
+            limparConversa()
+            stories = []
+            status = "Contexto: \(p.nome)"
+        case .repositorio(let r):
+            sessao.escolherRepositorio(r?.slug ?? "")
+            stories = []
+            status = r.map { "Repositório: \($0.slug)" } ?? "Repositório: o principal"
+        }
+        trocaPendente = nil
     }
 
     private var chevron: some View {
@@ -450,7 +678,7 @@ struct PaginaBrainstorm: View {
         chatInput = ""
         let historico = messages
         let historias = stories.map { "\($0.title) [\($0.esforco.rawValue)/\($0.lane)]" }
-        let repo = AgenteBrainstorm.repoDoProjeto()
+        let contexto = self.contexto
         let geracao = conversaGeracao
         perguntasEmVoo += 1
         Task {
@@ -458,7 +686,7 @@ struct PaginaBrainstorm: View {
             do {
                 resp = try await AgenteBrainstorm.responder(
                     mensagem: digitado, ideia: ideia,
-                    historias: historias, historico: historico, repo: repo)
+                    historias: historias, historico: historico, contexto: contexto)
             } catch {
                 resp = error.localizedDescription
             }
@@ -527,12 +755,12 @@ struct PaginaBrainstorm: View {
         let base = ideaSummary
         reescrevendo = true
         let geracao = conversaGeracao
-        let repo = AgenteBrainstorm.repoDoProjeto()
+        let contexto = self.contexto
         Task {
             let resultado: Result<String, Error>
             do {
                 resultado = .success(try await AgenteBrainstorm.reescrever(
-                    ideia: base, conversa: conversa, itens: novos, repo: repo))
+                    ideia: base, conversa: conversa, itens: novos, contexto: contexto))
             } catch {
                 resultado = .failure(error)
             }
@@ -782,12 +1010,13 @@ struct PaginaBrainstorm: View {
         isGenerating = true
         status = "Gerando…"
         let geracao = conversaGeracao
-        let repo = AgenteBrainstorm.repoDoProjeto()
+        let contexto = self.contexto
 
         Task {
             let resultado: Result<[BrainstormCLI.HistoriaGerada], Error>
             do {
-                let lista = try await AgenteBrainstorm.gerarHistorias(ideia: trimmed, etiquetas: etiquetas, repo: repo)
+                let lista = try await AgenteBrainstorm.gerarHistorias(ideia: trimmed, etiquetas: etiquetas,
+                                                                      contexto: contexto)
                 resultado = .success(lista)
             } catch {
                 resultado = .failure(error)
@@ -805,7 +1034,9 @@ struct PaginaBrainstorm: View {
                         return
                     }
                     stories = cards
-                    let semNorte = repo.map { CardBrainstorm.contexto(repo: $0, norte: Configuracao.resolver().projetoPadrao?.norte ?? "").norte == nil } ?? true
+                    let semNorte = AgenteBrainstorm.repoDo(contexto).map {
+                        CardBrainstorm.contexto(repo: $0, norte: contexto.norte).norte == nil
+                    } ?? true
                     status = semNorte
                         ? "\(cards.count) histórias. Projeto sem norte: crie em Ajustes › Projetos."
                         : "\(cards.count) histórias ancoradas no norte"
@@ -882,20 +1113,27 @@ struct PaginaBrainstorm: View {
             CentralAvisos.compartilhada.info("Nenhuma história aprovada")
             return
         }
-        guard !projectId.isEmpty else {
+        guard let projeto = projetoAtual else {
             status = "Cadastre um projeto em Ajustes"
-            CentralAvisos.compartilhada.erro("Sem projeto Linear", "Defina o projeto padrão em Ajustes › Projetos.")
+            CentralAvisos.compartilhada.erro("Sem projeto Linear",
+                                             "Cadastre a pasta e o projeto do Linear em Ajustes › Projetos.")
             return
         }
+        let projetoID = projeto.projetoID
+        let nomeProjeto = projeto.nome
+        // Repositório escolhido: vira a etiqueta `repo:<slug>` do card (FRA-711).
+        let slug = contexto.slug
+        let onde = slug.isEmpty ? nomeProjeto : "\(nomeProjeto) · \(slug)"
 
         isGenerating = true
-        status = "Enviando \(approved.count)…"
+        status = "Enviando \(approved.count) para \(onde)…"
 
         Task {
             let ids: IdsBrainstorm
             do {
                 ids = try await Self.idsGarantidos(
-                    projetoID: projectId, lanes: Set(approved.map(\.lane)).sorted())
+                    projetoID: projetoID, lanes: Set(approved.map(\.lane)).sorted(),
+                    repos: slug.isEmpty ? [] : [slug])
             } catch {
                 await MainActor.run {
                     isGenerating = false
@@ -925,10 +1163,18 @@ struct PaginaBrainstorm: View {
                     falhas.append("\(s.title): faltam IDs de \(s.esforco.rawValue)/\(s.lane)")
                     continue
                 }
+                if !slug.isEmpty {
+                    // Sem a etiqueta o card cairia no repositório principal: melhor não criar.
+                    guard let repoID = ids.repos[slug] else {
+                        falhas.append("\(s.title): a etiqueta repo:\(slug) não existe no Linear")
+                        continue
+                    }
+                    labelIds.append(repoID)
+                }
                 let input: [String: Any] = [
                     "title": s.title,
                     "description": s.descricaoLinear,
-                    "projectId": projectId,
+                    "projectId": projetoID,
                     "teamId": ids.time,
                     "stateId": stateTodo,
                     "priority": min(max(s.priority, 1), 4),
@@ -949,11 +1195,11 @@ struct PaginaBrainstorm: View {
                     let enviados = Set(okIds)
                     stories.removeAll { enviados.contains($0.id) }
                     status = falhas.isEmpty
-                        ? "\(okIds.count) cards no Linear"
-                        : "\(okIds.count) ok, \(falhas.count) falha(s)"
+                        ? "\(okIds.count) cards no Linear · \(onde)"
+                        : "\(okIds.count) ok, \(falhas.count) falha(s) · \(onde)"
                     CentralAvisos.compartilhada.ok(
                         "\(okIds.count) card(s) no Linear",
-                        falhas.isEmpty ? nil : falhas.joined(separator: "\n"))
+                        falhas.isEmpty ? "Projeto: \(onde)" : falhas.joined(separator: "\n"))
                 } else {
                     status = "Falha no envio"
                     CentralAvisos.compartilhada.erro("Nada foi criado", falhas.joined(separator: "\n"))
@@ -970,15 +1216,19 @@ struct PaginaBrainstorm: View {
         var time: String
         var esforco: [String: String]
         var lanes: [String: String]
+        /// Id da etiqueta `repo:<slug>` por slug (FRA-711).
+        var repos: [String: String]
     }
 
     /// IDs do estado Todo, do esforço e das lanes, mais o time do projeto. Usa a mesma regra do
     /// dispatcher (`linear_ids.garantir`): cache do projeto, depois a API pelo nome, e cria o que
     /// não existir. Antes o app lia só o cache: uma lane sem id (ou um projeto novo, sem cache)
     /// fazia o envio inteiro parar em «Falha no envio».
-    private static func idsGarantidos(projetoID: String, lanes: [String]) async throws -> IdsBrainstorm {
+    private static func idsGarantidos(projetoID: String, lanes: [String],
+                                      repos: [String] = []) async throws -> IdsBrainstorm {
         let pasta = try pastaDoProxy()
-        let payload = try JSONSerialization.data(withJSONObject: ["projeto": projetoID, "lanes": lanes])
+        let payload = try JSONSerialization.data(withJSONObject: ["projeto": projetoID, "lanes": lanes,
+                                                                  "repos": repos])
         guard let payloadTexto = String(data: payload, encoding: .utf8) else {
             throw ErroLinear.resposta("JSON inválido")
         }
@@ -991,7 +1241,8 @@ struct PaginaBrainstorm: View {
             projeto = pedido.get("projeto") or ""
             dono = config.obter("linear.owner_label", "needs:dono") or "needs:dono"
             ids = linear_ids.garantir(config.obter, proxy_linear.executar_consulta, dono=dono,
-                                      lanes=pedido.get("lanes") or [], project_id=projeto)
+                                      lanes=pedido.get("lanes") or [], repos=pedido.get("repos") or [],
+                                      project_id=projeto)
             time = linear_ids.time_do_projeto(proxy_linear.executar_consulta, projeto)
             print(json.dumps({"ok": True, "time": time, "ids": ids}, ensure_ascii=False))
         except Exception as e:
@@ -1006,7 +1257,8 @@ struct PaginaBrainstorm: View {
         return IdsBrainstorm(todo: (estados["todo"] as? String) ?? "",
                              time: (obj["time"] as? String) ?? "",
                              esforco: raiz["esforco"] as? [String: String] ?? [:],
-                             lanes: raiz["lanes"] as? [String: String] ?? [:])
+                             lanes: raiz["lanes"] as? [String: String] ?? [:],
+                             repos: raiz["repos"] as? [String: String] ?? [:])
     }
 
     private static func criarIssue(input: [String: Any]) async throws {
@@ -1129,9 +1381,10 @@ enum AgenteBrainstorm {
     /// Claude sem login, ou o binário recusou o comando. Não entra nas próximas perguntas.
     private static var claudeFora = false
 
-    static func repoDoProjeto() -> URL? {
-        let cru = Configuracao.resolver().projetoPadrao?.repo
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    /// Pasta do contexto: o repositório escolhido, senão o principal do projeto.
+    /// `nil` = contexto sem pasta, ou pasta que não existe neste Mac.
+    static func repoDo(_ contexto: ContextoBrainstorm) -> URL? {
+        let cru = contexto.repo.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cru.isEmpty else { return nil }
         let caminho = (cru as NSString).expandingTildeInPath
         var dir: ObjCBool = false
@@ -1142,8 +1395,8 @@ enum AgenteBrainstorm {
     }
 
     static func responder(mensagem: String, ideia: String, historias: [String],
-                          historico: [ChatMessage], repo: URL?) async throws -> String {
-        guard let repo else { throw Falha.semRepo }
+                          historico: [ChatMessage], contexto: ContextoBrainstorm) async throws -> String {
+        guard let repo = repoDo(contexto) else { throw Falha.semRepo }
         let fala = historico.map { (agente: $0.isAgent, texto: $0.text) }
         let completo = BrainstormCLI.prompt(mensagem: mensagem, ideia: ideia, historias: historias,
                                              historico: fala, retomando: false)
@@ -1164,8 +1417,9 @@ enum AgenteBrainstorm {
     }
 
     /// Agente à parte: só reescreve a idéia. A sessão dele não é a do chat.
-    static func reescrever(ideia: String, conversa: String, itens: [String], repo: URL?) async throws -> String {
-        guard let repo else { throw Falha.semRepo }
+    static func reescrever(ideia: String, conversa: String, itens: [String],
+                           contexto: ContextoBrainstorm) async throws -> String {
+        guard let repo = repoDo(contexto) else { throw Falha.semRepo }
         let pedido = BrainstormCLI.promptReescrita(ideia: ideia, conversa: conversa, itens: itens)
         let preferida = cliPreferido()
         return try await withCheckedThrowingContinuation { cont in
@@ -1183,10 +1437,11 @@ enum AgenteBrainstorm {
     }
 
     /// Agente à parte: quebra a idéia em histórias e só aceita pares lane/esforço do catálogo.
+    /// O norte e o mapa são os do projeto do contexto.
     static func gerarHistorias(ideia: String, etiquetas: [BrainstormCLI.EtiquetaLane],
-                               repo: URL?) async throws -> [BrainstormCLI.HistoriaGerada] {
-        guard let repo else { throw Falha.semRepo }
-        let ctx = CardBrainstorm.contexto(repo: repo, norte: Configuracao.resolver().projetoPadrao?.norte ?? "")
+                               contexto: ContextoBrainstorm) async throws -> [BrainstormCLI.HistoriaGerada] {
+        guard let repo = repoDo(contexto) else { throw Falha.semRepo }
+        let ctx = CardBrainstorm.contexto(repo: repo, norte: contexto.norte)
         let pedido = BrainstormCLI.promptHistorias(ideia: ideia, etiquetas: etiquetas, norte: ctx.norte, mapa: ctx.mapa)
         let preferida = cliPreferido()
         return try await withCheckedThrowingContinuation { cont in
