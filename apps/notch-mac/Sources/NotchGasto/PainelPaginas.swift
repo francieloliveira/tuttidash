@@ -18,6 +18,24 @@ func cartaoPagina<C: View>(_ titulo: String, @ViewBuilder direita: () -> some Vi
     .cartaoVivo()
 }
 
+/// Faixa de resumo no topo da página: números em linha, sem cartão. Substitui os
+/// blocos de cartões grandes que repetiam o que as listas já mostram.
+func faixaPagina<C: View, D: View>(@ViewBuilder conteudo: () -> C,
+                                  @ViewBuilder direita: () -> D) -> some View {
+    HStack(spacing: 8) {
+        conteudo()
+        Spacer(minLength: 10)
+        direita()
+    }
+    .padding(.horizontal, 2)
+    .frame(minHeight: 30)
+}
+
+/// Ponto separador das faixas de resumo.
+struct PontoFaixa: View {
+    var body: some View { Circle().fill(PV.apagado).frame(width: 2.5, height: 2.5) }
+}
+
 private func par(_ nome: String, _ valor: String, cor: Color = PV.texto) -> some View {
     HStack {
         Text(nome).foregroundStyle(PV.mudo)
@@ -83,97 +101,110 @@ struct PaginaLanes: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
-            HStack(alignment: .top, spacing: 13) {
-                cartaoPagina("Todas as lanes") {
-                    let linhasFiltradas = FiltroBusca(busca.texto).filtrar(modelo.snapshot?.lanes ?? []) { l in
-                        [l.lane, l.card, l.descricao] }
-                    if !linhasFiltradas.isEmpty {
-                        VStack(spacing: 6) {
-                            ForEach(linhasFiltradas, id: \.lane) { linha in
-                                LinhaLaneDashboard(linha: linha, modelo: modelo, agora: ctx.date,
-                                                   aberta: !fechadas.contains(linha.lane), alternar: {
-                                    if fechadas.contains(linha.lane) { fechadas.remove(linha.lane) } else { fechadas.insert(linha.lane) }
-                                }, mostrarUso: true)
-                            }
-                        }
-                    } else if modelo.snapshot == nil {
-                        VStack(spacing: 6) { ForEach(0..<4, id: \.self) { _ in Esqueleto(altura: 51) } }
-                    } else {
-                        ListaVazia(mensagem: "Sem leitura das lanes", busca: busca)
-                    }
-                }
-                VStack(spacing: 12) {
-                    cartaoPagina("Resumo das lanes", direita: {
-                        Text("conta e estado").fontePainel(11.5).foregroundStyle(PV.mudo)
-                    }) {
-                        let linhas = modelo.snapshot?.lanes ?? []
-                        HStack(spacing: 8) {
-                            stat("Rodando", "\(linhas.filter { $0.estado == .rodando }.count)", cor: Aurora.verde)
-                            stat("Livres", "\(linhas.filter { $0.estado == .livre }.count)", cor: Aurora.azul)
-                            stat("Esperando", "\(linhas.filter { $0.estado == .esperando || $0.estado == .semFolga }.count)",
-                                 cor: Aurora.ambar)
-                            stat("Desligadas", "\(linhas.filter { $0.estado == .desligada }.count)", cor: Aurora.mudo)
-                        }
-                        if let maior = linhas.compactMap({ l in l.pct.map { (lane: l.lane, pct: $0) } })
-                            .max(by: { $0.pct < $1.pct }) {
-                            HStack(spacing: 10) {
-                                Text("Maior uso").fontePainel(12).foregroundStyle(PV.mudo)
-                                Text(maior.lane).fontePainel(12.5, .semibold)
-                                BarraPV(fracao: min(max(maior.pct / 100, 0), 1),
-                                        cor: maior.pct >= Uso.pctAtencao ? PV.vermelho : PV.azulIcone,
-                                        altura: 6, trilho: PV.trilho)
-                                Text(Formato.pct(maior.pct))
-                                    .fontePainel(12.5, .semibold)
-                                    .monospacedDigit()
-                                    .foregroundStyle(maior.pct >= Uso.pctAtencao ? PV.vermelho : PV.texto)
-                                    .frame(width: 46, alignment: .trailing)
-                            }
-                            .padding(.top, 10)
-                        }
-                    }
-                    cartaoPagina("Parou · retomar", direita: {
-                        Text("últimos 7 dias").fontePainel(11.5).foregroundStyle(PV.mudo)
-                    }) {
-                        // Card cancelado não é retomado (caixa do dono, 29/10): o vigia já limpou as pendências.
-                        let retomadas = modelo.retomadas.filter { !EstadoCaixa.compartilhada.arquivo.cancelados.contains($0.card) }
-                        if retomadas.isEmpty {
-                            Text("Nenhuma lane parou sem fechar o card.").fontePainel(12.5).foregroundStyle(PV.mudo)
-                        } else {
-                            ForEach(Array(retomadas.enumerated()), id: \.offset) { _, r in
-                                HStack(spacing: 10) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 6) {
-                                            Text(r.card).fontePainel(12.5, .semibold).foregroundStyle(PV.azul)
-                                            Text("· \(r.lane)").fontePainel(12.5)
-                                        }
-                                        Text("\(r.rotulo) · \(haPainel(r.inicio, agora: ctx.date) ?? "")")
-                                            .fontePainel(11.5)
-                                            .foregroundStyle(r.rotulo == "lane:falhou" ? Aurora.rosa : PV.ambar)
-                                        if let m = r.motivo {
-                                            Text(m).fontePainel(11).foregroundStyle(PV.mudo).lineLimit(1)
-                                        }
-                                    }
-                                    Spacer(minLength: 6)
-                                    BotaoVer(texto: "retomar", pequeno: true) { modelo.copiar(r.comando) }
-                                        .help(r.comando)
+            VStack(spacing: 13) {
+                faixaResumo
+                HStack(alignment: .top, spacing: 13) {
+                    cartaoPagina("Todas as lanes") {
+                        let linhasFiltradas = FiltroBusca(busca.texto).filtrar(modelo.snapshot?.lanes ?? []) { l in
+                            [l.lane, l.card, l.descricao] }
+                        if !linhasFiltradas.isEmpty {
+                            VStack(spacing: 6) {
+                                ForEach(linhasFiltradas, id: \.lane) { linha in
+                                    LinhaLaneDashboard(linha: linha, modelo: modelo, agora: ctx.date,
+                                                       aberta: !fechadas.contains(linha.lane), alternar: {
+                                        if fechadas.contains(linha.lane) { fechadas.remove(linha.lane) } else { fechadas.insert(linha.lane) }
+                                    }, mostrarUso: true)
                                 }
-                                .padding(.horizontal, 12).padding(.vertical, 10)
-                                .linhaPV(borda: false)
                             }
-                            Text("retomar copia o comando para a área de transferência.")
-                                .fontePainel(11.5).foregroundStyle(Aurora.mudo)
+                        } else if modelo.snapshot == nil {
+                            VStack(spacing: 6) { ForEach(0..<4, id: \.self) { _ in Esqueleto(altura: 51) } }
+                        } else {
+                            ListaVazia(mensagem: "Sem leitura das lanes", busca: busca)
                         }
                     }
-                    cartaoPagina("Ferramentas") {
-                        HStack(spacing: 8) {
-                            BotaoPV(texto: "Abrir janela das lanes") { AbrirComando.janelaLanes() }
-                            BotaoPV(texto: "Abrir painel de logs") { AbrirComando.painelLogs() }
+                    VStack(spacing: 12) {
+                        cartaoPagina("Parou · retomar", direita: {
+                            Text("últimos 7 dias").fontePainel(11.5).foregroundStyle(PV.mudo)
+                        }) {
+                            // Card cancelado não é retomado (caixa do dono, 29/10): o vigia já limpou as pendências.
+                            let retomadas = modelo.retomadas.filter { !EstadoCaixa.compartilhada.arquivo.cancelados.contains($0.card) }
+                            if retomadas.isEmpty {
+                                Text("Nenhuma lane parou sem fechar o card.").fontePainel(12.5).foregroundStyle(PV.mudo)
+                            } else {
+                                ForEach(Array(retomadas.enumerated()), id: \.offset) { _, r in
+                                    HStack(spacing: 10) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            HStack(spacing: 6) {
+                                                Text(r.card).fontePainel(12.5, .semibold).foregroundStyle(PV.azul)
+                                                Text("· \(r.lane)").fontePainel(12.5)
+                                            }
+                                            Text("\(r.rotulo) · \(haPainel(r.inicio, agora: ctx.date) ?? "")")
+                                                .fontePainel(11.5)
+                                                .foregroundStyle(r.rotulo == "lane:falhou" ? Aurora.rosa : PV.ambar)
+                                            if let m = r.motivo {
+                                                Text(m).fontePainel(11).foregroundStyle(PV.mudo).lineLimit(1)
+                                            }
+                                        }
+                                        Spacer(minLength: 6)
+                                        BotaoVer(texto: "retomar", pequeno: true) { modelo.copiar(r.comando) }
+                                            .help(r.comando)
+                                    }
+                                    .padding(.horizontal, 12).padding(.vertical, 10)
+                                    .linhaPV(borda: false)
+                                }
+                                Text("retomar copia o comando para a área de transferência.")
+                                    .fontePainel(11.5).foregroundStyle(Aurora.mudo)
+                            }
+                        }
+                        cartaoPagina("Ferramentas") {
+                            HStack(spacing: 8) {
+                                BotaoPV(texto: "Abrir janela das lanes") { AbrirComando.janelaLanes() }
+                                BotaoPV(texto: "Abrir painel de logs") { AbrirComando.painelLogs() }
+                            }
                         }
                     }
+                .frame(width: 380)
                 }
-                .frame(width: 420)
             }
             .padding(.top, 10)
+        }
+    }
+
+    /// Resumo em linha: quantas lanes e em que estado, com o maior uso à direita.
+    private var faixaResumo: some View {
+        let linhas = modelo.snapshot?.lanes ?? []
+        let ativas = linhas.filter { $0.estado != .desligada }.count
+        let rodando = linhas.filter { $0.estado == .rodando }.count
+        let esperando = linhas.filter { $0.estado == .esperando || $0.estado == .semFolga }.count
+        let desligadas = linhas.filter { $0.estado == .desligada }.count
+        let maior = linhas.compactMap { l in l.pct.map { (lane: l.lane, pct: $0) } }.max { $0.pct < $1.pct }
+        return faixaPagina {
+            Text(Formato.plural(linhas.count, "lane", "lanes"))
+                .fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
+            PontoFaixa()
+            Text("\(ativas) ativas").fontePainel(12.5)
+                .foregroundStyle(ativas > 0 ? Aurora.verde : PV.mudo)
+            PontoFaixa()
+            Text("\(rodando) rodando").fontePainel(12.5)
+                .foregroundStyle(rodando > 0 ? Aurora.verde : PV.mudo)
+            PontoFaixa()
+            Text("\(esperando) esperando").fontePainel(12.5)
+                .foregroundStyle(esperando > 0 ? Aurora.ambar : PV.mudo)
+            PontoFaixa()
+            Text("\(desligadas) desligadas").fontePainel(12.5).foregroundStyle(PV.mudo)
+        } direita: {
+            if let maior {
+                HStack(spacing: 8) {
+                    Text("maior uso").fontePainel(11.5).foregroundStyle(PV.mudo)
+                    Text(maior.lane).fontePainel(12, .semibold).foregroundStyle(PV.texto2)
+                    BarraPV(fracao: min(max(maior.pct / 100, 0), 1),
+                            cor: maior.pct >= Uso.pctAtencao ? PV.vermelho : PV.azulIcone,
+                            altura: 5, trilho: PV.trilho)
+                        .frame(width: 84)
+                    Text(Formato.pct(maior.pct)).fontePainel(12, .semibold).monospacedDigit()
+                        .foregroundStyle(maior.pct >= Uso.pctAtencao ? PV.vermelho : PV.texto)
+                }
+            }
         }
     }
 }
@@ -187,147 +218,174 @@ struct PaginaBuilds: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
-            HStack(alignment: .top, spacing: 13) {
-                VStack(spacing: 12) {
-                    cartaoPagina("Lock de build") {
-                        par("Dono do lock", ResumoLock.dono(lockLane: snap?.lockLane, lockCard: snap?.lockCard),
-                            cor: snap?.lockLane == nil ? PV.verdeClaro : PV.ambar)
-                        par("Há quanto tempo", snap?.lockSegundos.map { Formato.relogio($0) } ?? "—")
-                        if let s = snap?.lockSegundos {
-                            BarraProgresso(progresso: ProgressoProcesso(fracao: min(Double(s) / 600, 1), etapa: String(localized: "na prova"),
-                                                                        inicio: ctx.date.addingTimeInterval(-Double(s))),
-                                           cor: s >= LanesPainel.alertaProvaSegundos ? PV.ambar : PV.azulIcone)
-                        } else {
-                            BarraPV(fracao: 0, cor: PV.azulIcone, altura: 6, trilho: PV.trilho)
-                        }
-                        if let ctx = ResumoLock.contexto(lockLane: snap?.lockLane, rodando: snap?.lanes ?? []) {
-                            Text(ctx).fontePainel(11.5).foregroundStyle(PV.mudo)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        if let s = snap?.simulador, s != "sem leitura ainda" {
-                            par("Simulador dedicado", s)
-                        }
-                    }
-                    cartaoPagina("Esperando o lock (\(fila.count))", direita: {
-                        Text("uma prova por vez").fontePainel(11.5).foregroundStyle(PV.mudo)
-                    }) {
-                        if fila.isEmpty {
-                            Text("Nenhuma prova esperando para compilar.").fontePainel(12.5).foregroundStyle(PV.mudo)
-                        }
-                        ForEach(Array(fila.enumerated()), id: \.offset) { _, carta in
-                            HStack(spacing: 10) {
-                                Text("#—").foregroundStyle(PV.mudo).frame(width: 46, alignment: .leading)
-                                Text("\(carta.lane) · \(carta.card)").lineLimit(1)
-                                Spacer(minLength: 6)
-                                Text("aguardando · \(carta.posicaoFila ?? 0)º").fontePainel(10).foregroundStyle(PV.mudo)
-                                    .padding(.horizontal, 7).padding(.vertical, 3)
-                                    .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
-                            }
-                            .fontePainel(12.5)
-                            .padding(.horizontal, 12).padding(.vertical, 10)
-                            .linhaPV(borda: false)
-                        }
-                    }
-                    cartaoPagina("Próximos cards do Linear") {
-                        par("Prontos para uma lane", snap?.filaPronta.isEmpty == false ? snap!.filaPronta.joined(separator: ", ") : "nenhum")
-                        par("Próxima decisão", snap?.proximaDecisao ?? "sem decisão nova")
-                    }
-                }
-                .frame(width: 420)
-
-                VStack(spacing: 12) {
-                    cartaoPagina("Builds de hoje", direita: {
-                        Text(resumoBuilds).fontePainel(11.5).foregroundStyle(PV.mudo)
-                    }) {
-                        let builds = FiltroBusca(busca.texto).filtrar(snap?.buildsHoje ?? []) { b in
-                            [b.card, b.titulo, b.lane] }
-                        if builds.isEmpty {
-                            ListaVazia(mensagem: "Nenhuma build hoje", busca: busca)
-                        } else {
-                            HStack(spacing: 0) {
-                                RotuloColuna(texto: "Build").frame(width: 80, alignment: .leading)
-                                RotuloColuna(texto: "Card").frame(width: 100, alignment: .leading)
-                                RotuloColuna(texto: "Título").frame(maxWidth: .infinity, alignment: .leading)
-                                RotuloColuna(texto: "Lane").frame(width: 100, alignment: .leading)
-                                RotuloColuna(texto: "Status").frame(width: 100, alignment: .leading)
-                                RotuloColuna(texto: "Duração").frame(width: 90, alignment: .leading)
-                                RotuloColuna(texto: "Custo").frame(width: 110, alignment: .trailing)
-                            }
-                            .padding(.horizontal, 10)
-                            ForEach(Array(builds.enumerated()), id: \.offset) { _, b in
-                                HStack(alignment: .center, spacing: 0) {
-                                    Text(verbatim: b.numero.map { "#" + String($0) } ?? "—").frame(width: 80, alignment: .leading)
-                                    Button { modelo.abrirCard(b.card) } label: {
-                                        Text(b.card)
-                                            .fontePainel(12.5, .semibold)
-                                            .foregroundStyle(PV.azul)
-                                            .frame(width: 100, alignment: .leading)
-                                            .contentShape(Rectangle())
+            VStack(spacing: 13) {
+                faixaResumo
+                HStack(alignment: .top, spacing: 13) {
+                    VStack(spacing: 12) {
+                        cartaoPagina("Builds de hoje", direita: {
+                            Text("\(concluidas) concluídas").fontePainel(11.5).foregroundStyle(PV.mudo)
+                        }) {
+                            let builds = FiltroBusca(busca.texto).filtrar(snap?.buildsHoje ?? []) { b in
+                                [b.card, b.titulo, b.lane] }
+                            if builds.isEmpty {
+                                ListaVazia(mensagem: "Nenhuma build hoje", busca: busca)
+                            } else {
+                                HStack(spacing: 0) {
+                                    RotuloColuna(texto: "Build").frame(width: 80, alignment: .leading)
+                                    RotuloColuna(texto: "Card").frame(width: 100, alignment: .leading)
+                                    RotuloColuna(texto: "Título").frame(maxWidth: .infinity, alignment: .leading)
+                                    RotuloColuna(texto: "Lane").frame(width: 100, alignment: .leading)
+                                    RotuloColuna(texto: "Status").frame(width: 100, alignment: .leading)
+                                    RotuloColuna(texto: "Duração").frame(width: 90, alignment: .leading)
+                                    RotuloColuna(texto: "Custo").frame(width: 110, alignment: .trailing)
+                                }
+                                .padding(.horizontal, 10)
+                                ForEach(Array(builds.enumerated()), id: \.offset) { _, b in
+                                    HStack(alignment: .center, spacing: 0) {
+                                        Text(verbatim: b.numero.map { "#" + String($0) } ?? "—").frame(width: 80, alignment: .leading)
+                                        Button { modelo.abrirCard(b.card) } label: {
+                                            Text(b.card)
+                                                .fontePainel(12.5, .semibold)
+                                                .foregroundStyle(PV.azul)
+                                                .frame(width: 100, alignment: .leading)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityAddTraits(.isLink)
+                                        .help("Abrir \(b.card) no Linear")
+                                        Text(b.titulo ?? b.card)
+                                            .foregroundStyle(PV.texto2)
+                                            .lineLimit(1)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Text(b.lane).frame(width: 100, alignment: .leading)
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(b.textoStatus).foregroundStyle(b.naProva ? PV.ambar : cor(b.status))
+                                            if let d = b.desfecho {
+                                                Text(d).fontePainel(10).foregroundStyle(PV.mudo).lineLimit(1)
+                                            }
+                                        }
+                                        .frame(width: 100, alignment: .leading)
+                                        Text(b.duracaoMs.map { Formato.relogio($0 / 1000) } ?? "—").frame(width: 90, alignment: .leading)
+                                        Text(b.textoCusto(snap?.custos.moeda ?? .usd))
+                                            .foregroundStyle(b.custo.rotuloFixo == nil && b.custoUSD != nil ? PV.texto : PV.mudo)
+                                            .frame(width: 110, alignment: .trailing)
                                     }
-                                    .buttonStyle(.plain)
-                                    .accessibilityAddTraits(.isLink)
-                                    .help("Abrir \(b.card) no Linear")
-                                    Text(b.titulo ?? b.card)
-                                        .foregroundStyle(PV.texto2)
-                                        .lineLimit(1)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    Text(b.lane).frame(width: 100, alignment: .leading)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(b.textoStatus).foregroundStyle(b.naProva ? PV.ambar : cor(b.status))
-                                        if let d = b.desfecho {
-                                            Text(d).fontePainel(10).foregroundStyle(PV.mudo).lineLimit(1)
+                                    .fontePainel(12.5)
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 40)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(PV.linha))
+                                    .overlay(alignment: .bottom) {
+                                        if let p = b.progresso(tipica: BuildPainel.duracaoTipica(builds), agora: ctx.date) {
+                                            BarraProgresso(progresso: p, cor: b.naProva ? PV.ambar : PV.verde, altura: 2, mostrarLegenda: false)
+                                                .padding(.horizontal, 10)
+                                                .help(p.legenda(agora: ctx.date))
                                         }
                                     }
-                                    .frame(width: 100, alignment: .leading)
-                                    Text(b.duracaoMs.map { Formato.relogio($0 / 1000) } ?? "—").frame(width: 90, alignment: .leading)
-                                    Text(b.textoCusto(snap?.custos.moeda ?? .usd))
-                                        .foregroundStyle(b.custo.rotuloFixo == nil && b.custoUSD != nil ? PV.texto : PV.mudo)
-                                        .frame(width: 110, alignment: .trailing)
+                                    .linhaPV(borda: false)
+                                }
+                            }
+                        }
+                        cartaoPagina("Log do dispatcher", direita: {
+                            Text("só leitura").fontePainel(11.5).foregroundStyle(PV.mudo)
+                            BotaoVer(texto: modelo.logDetalhado ? "Ocultar log detalhado" : "Ver log detalhado", pequeno: true) {
+                                modelo.logDetalhado.toggle()
+                            }
+                        }) {
+                            if modelo.logDetalhado {
+                                ScrollView {
+                                    Text(snap?.logTexto.isEmpty == false ? snap!.logTexto : "O log do dispatcher ainda não existe.")
+                                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(PV.texto2)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .textSelection(.enabled)
+                                }
+                                .frame(height: 260)
+                                .padding(10)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(PV.lateral))
+                            } else {
+                                let linhas = snap?.ultimasLinhasLog(10) ?? []
+                                Text(linhas.isEmpty ? "O log do dispatcher ainda não existe." : linhas.joined(separator: "\n"))
+                                    .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(PV.texto2)
+                                    .lineLimit(nil).frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                                    .padding(10)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(PV.lateral))
+                            }
+                        }
+                    }
+                    VStack(spacing: 12) {
+                        cartaoPagina("Lock de build") {
+                            par("Dono do lock", ResumoLock.dono(lockLane: snap?.lockLane, lockCard: snap?.lockCard),
+                                cor: snap?.lockLane == nil ? PV.verdeClaro : PV.ambar)
+                            par("Há quanto tempo", snap?.lockSegundos.map { Formato.relogio($0) } ?? "—")
+                            if let s = snap?.lockSegundos {
+                                BarraProgresso(progresso: ProgressoProcesso(fracao: min(Double(s) / 600, 1), etapa: String(localized: "na prova"),
+                                                                            inicio: ctx.date.addingTimeInterval(-Double(s))),
+                                               cor: s >= LanesPainel.alertaProvaSegundos ? PV.ambar : PV.azulIcone)
+                            } else {
+                                BarraPV(fracao: 0, cor: PV.azulIcone, altura: 6, trilho: PV.trilho)
+                            }
+                            if let ctx = ResumoLock.contexto(lockLane: snap?.lockLane, rodando: snap?.lanes ?? []) {
+                                Text(ctx).fontePainel(11.5).foregroundStyle(PV.mudo)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if let s = snap?.simulador, s != "sem leitura ainda" {
+                                par("Simulador dedicado", s)
+                            }
+                        }
+                        cartaoPagina("Esperando o lock (\(fila.count))", direita: {
+                            Text("uma prova por vez").fontePainel(11.5).foregroundStyle(PV.mudo)
+                        }) {
+                            if fila.isEmpty {
+                                Text("Nenhuma prova esperando para compilar.").fontePainel(12.5).foregroundStyle(PV.mudo)
+                            }
+                            ForEach(Array(fila.enumerated()), id: \.offset) { _, carta in
+                                HStack(spacing: 10) {
+                                    Text("#—").foregroundStyle(PV.mudo).frame(width: 46, alignment: .leading)
+                                    Text("\(carta.lane) · \(carta.card)").lineLimit(1)
+                                    Spacer(minLength: 6)
+                                    Text("aguardando · \(carta.posicaoFila ?? 0)º").fontePainel(10).foregroundStyle(PV.mudo)
+                                        .padding(.horizontal, 7).padding(.vertical, 3)
+                                        .background(RoundedRectangle(cornerRadius: 4).fill(PV.tag))
                                 }
                                 .fontePainel(12.5)
-                                .padding(.horizontal, 10)
-                                .frame(height: 40)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(PV.linha))
-                                .overlay(alignment: .bottom) {
-                                    if let p = b.progresso(tipica: BuildPainel.duracaoTipica(builds), agora: ctx.date) {
-                                        BarraProgresso(progresso: p, cor: b.naProva ? PV.ambar : PV.verde, altura: 2, mostrarLegenda: false)
-                                            .padding(.horizontal, 10)
-                                            .help(p.legenda(agora: ctx.date))
-                                    }
-                                }
+                                .padding(.horizontal, 12).padding(.vertical, 10)
                                 .linhaPV(borda: false)
                             }
                         }
-                    }
-                    cartaoPagina("Log do dispatcher", direita: {
-                        Text("só leitura").fontePainel(11.5).foregroundStyle(PV.mudo)
-                        BotaoVer(texto: modelo.logDetalhado ? "Ocultar log detalhado" : "Ver log detalhado", pequeno: true) {
-                            modelo.logDetalhado.toggle()
-                        }
-                    }) {
-                        if modelo.logDetalhado {
-                            ScrollView {
-                                Text(snap?.logTexto.isEmpty == false ? snap!.logTexto : "O log do dispatcher ainda não existe.")
-                                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(PV.texto2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .textSelection(.enabled)
-                            }
-                            .frame(height: 260)
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(PV.lateral))
-                        } else {
-                            let linhas = snap?.ultimasLinhasLog(10) ?? []
-                            Text(linhas.isEmpty ? "O log do dispatcher ainda não existe." : linhas.joined(separator: "\n"))
-                                .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(PV.texto2)
-                                .lineLimit(nil).frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                                .padding(10)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(PV.lateral))
+                        cartaoPagina("Próximos cards do Linear") {
+                            par("Prontos para uma lane", snap?.filaPronta.isEmpty == false ? snap!.filaPronta.joined(separator: ", ") : "nenhum")
+                            par("Próxima decisão", snap?.proximaDecisao ?? "sem decisão nova")
                         }
                     }
+                .frame(width: 380)
                 }
             }
             .padding(.top, 10)
+        }
+    }
+
+    /// Resumo em linha: estado do lock, builds de hoje e a próxima decisão.
+    private var faixaResumo: some View {
+        let builds = snap?.buildsHoje ?? []
+        let falhas = builds.filter { $0.status == .erro || $0.status == .morta }.count
+        return faixaPagina {
+            Text(snap?.lockLane == nil ? "lock livre" : "lock ocupado")
+                .fontePainel(12.5, .semibold)
+                .foregroundStyle(snap?.lockLane == nil ? Aurora.verde : Aurora.ambar)
+            PontoFaixa()
+            Text(Formato.plural(builds.count, "build hoje", "builds hoje"))
+                .fontePainel(12.5).foregroundStyle(PV.texto2)
+            if falhas > 0 {
+                PontoFaixa()
+                Text(Formato.plural(falhas, "falha", "falhas"))
+                    .fontePainel(12.5).foregroundStyle(Aurora.vermelho)
+            }
+            PontoFaixa()
+            Text(snap?.proximaDecisao ?? "sem decisão nova")
+                .fontePainel(12.5).foregroundStyle(PV.mudo)
+                .lineLimit(1)
+        } direita: {
+            Text("uma prova por vez").fontePainel(11.5).foregroundStyle(PV.mudo)
         }
     }
 
@@ -340,11 +398,8 @@ struct PaginaBuilds: View {
         return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
     }
 
-    private var resumoBuilds: String {
-        let b = snap?.buildsHoje ?? []
-        let ok = b.filter { $0.status == .ok }.count
-        let falhou = b.filter { $0.status == .erro || $0.status == .morta }.count
-        return "\(b.count) hoje · \(ok) concluídas · \(falhou) com falha"
+    private var concluidas: Int {
+        (snap?.buildsHoje ?? []).filter { $0.status == .ok }.count
     }
 
     private func cor(_ s: StatusExecucao) -> Color {
@@ -371,22 +426,7 @@ struct PaginaEntregas: View {
             let resumo = ResumoEntregas.contar(entregas, agora: ctx.date)
             let fatia = ListaPaginada.cortar(entregas, numero: pagina, vazio: "0 entregas")
             VStack(spacing: 13) {
-                HStack(alignment: .top, spacing: 13) {
-                    cartaoPagina("Resumo") {
-                        HStack(spacing: 8) {
-                            stat("Fechadas hoje", "\(resumo.hoje)", cor: PV.texto)
-                            stat("Fechadas na semana", "\(resumo.semana)", cor: PV.texto)
-                            stat("No registro", "\(resumo.registro)", cor: PV.texto)
-                        }
-                    }
-                    cartaoPagina("Instalado nos aparelhos") {
-                        stat("iPhone", modelo.snapshot?.iphone ?? "sem leitura ainda",
-                             cor: modelo.snapshot?.iphone == "sem leitura ainda" ? PV.mudo : PV.verde)
-                        stat("Apple Watch", modelo.snapshot?.relogio ?? "sem leitura ainda",
-                             cor: modelo.snapshot?.relogio == "sem leitura ainda" ? PV.mudo : PV.verde)
-                    }
-                    .frame(width: 380)
-                }
+                faixaResumo(resumo)
                 cartaoPagina("Entregas") {
                     if fatia.total == 0 {
                         ListaVazia(mensagem: "Nenhum card fechado neste registro", busca: busca)
@@ -406,6 +446,33 @@ struct PaginaEntregas: View {
         }
         // Página 1 quando o filtro muda: sem isto, limpar a busca voltava para a página antiga.
         .onChange(of: busca.texto) { _, _ in pagina = 1 }
+    }
+
+    /// Resumo em linha: os mesmos números que os cartões grandes mostravam.
+    private func faixaResumo(_ resumo: ResumoEntregas) -> some View {
+        faixaPagina {
+            Text(Formato.plural(resumo.hoje, "fechada hoje", "fechadas hoje"))
+                .fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
+            PontoFaixa()
+            Text(Formato.plural(resumo.semana, "na semana", "na semana"))
+                .fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
+            PontoFaixa()
+            Text("\(resumo.registro) no registro")
+                .fontePainel(12.5).foregroundStyle(PV.mudo)
+        } direita: {
+            HStack(spacing: 8) {
+                Text("iPhone").fontePainel(11.5).foregroundStyle(PV.mudo)
+                Text(modelo.snapshot?.iphone ?? "sem leitura ainda")
+                    .fontePainel(11.5, .semibold)
+                    .foregroundStyle(modelo.snapshot?.iphone == "sem leitura ainda" ? PV.mudo : PV.verde)
+                PontoFaixa()
+                Text("Watch").fontePainel(11.5).foregroundStyle(PV.mudo)
+                Text(modelo.snapshot?.relogio ?? "sem leitura ainda")
+                    .fontePainel(11.5, .semibold)
+                    .foregroundStyle(modelo.snapshot?.relogio == "sem leitura ainda" ? PV.mudo : PV.verde)
+            }
+            .help("O que está instalado nos aparelhos, pelo estado da instalação.")
+        }
     }
 
     private func controles(_ fatia: ListaPaginada<EntregaPainel>) -> some View {
@@ -444,6 +511,7 @@ private struct TabelaEntregas: View {
                     Text(entrega.titulo ?? entrega.card)
                         .foregroundStyle(entrega.titulo == nil ? PV.mudo : PV.texto2)
                         .lineLimit(1)
+                        .padding(.trailing, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(entrega.lane).frame(width: 120, alignment: .leading)
                     celulaPR(entrega)
@@ -513,20 +581,44 @@ struct PaginaCustos: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
             VStack(spacing: 13) {
+                faixaResumo
                 HStack(alignment: .top, spacing: 13) {
-                    cartaoPagina("Resumo", direita: {
-                        Text(moeda.detalhe).fontePainel(11.5).foregroundStyle(PV.mudo)
-                    }) {
-                        HStack(spacing: 8) {
-                            stat("Gasto de hoje", snap?.custos.hoje.map { moeda.texto($0) }
-                                 ?? ((snap?.custos.desconhecidasHoje ?? 0) > 0 ? "—" : "sem dado"), cor: PV.texto)
-                            stat("Gasto dos últimos 7 dias", snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", cor: PV.texto)
-                            stat("7 dias anteriores (mesmo horário)", snap?.indicadores.semanaAnterior.map { moeda.texto($0) } ?? "sem dado",
-                                 cor: PV.texto)
+                    cartaoPagina("Builds", direita: { SeletorPeriodo(periodo: $periodo) }) {
+                        let p = snap?.custos.periodos[periodo]
+                        let filtro = FiltroBusca(busca.texto)
+                        let buildsFiltrados = filtro.filtrar(p?.builds ?? []) { b in [b.card, b.descricao, b.lane] }
+                        let topFiltrado = filtro.filtrar(p?.top ?? []) { b in [b.card, b.descricao, b.lane] }
+                        let fatia: GastoCore.PaginaBuilds = ListaBuilds.pagina(buildsFiltrados, numero: pagina)
+                        let top = topFiltrado
+                        SeletorAbasCustos(aba: $aba)
+                        if p?.total != nil || (aba == .todos && fatia.total > 0) {
+                            HStack(spacing: 10) {
+                                if let total = p?.total {
+                                    Text("Total do período: \(moeda.texto(total))")
+                                        .fontePainel(12).foregroundStyle(PV.mudo)
+                                }
+                                Spacer(minLength: 8)
+                                if aba == .todos, fatia.total > 0 {
+                                    controles(fatia)
+                                }
+                            }
                         }
-                        if let n = snap?.custos.desconhecidasSemana, n > 0 {
-                            Text("\(Formato.plural(n, "execução", "execuções")) dos últimos 7 dias com custo desconhecido, fora da soma.")
-                                .fontePainel(12).foregroundStyle(PV.mudo)
+                        switch aba {
+                        case .todos:
+                            if fatia.total == 0 {
+                                ListaVazia(mensagem: "Nenhum build neste período", busca: busca)
+                            } else {
+                                TabelaCustosBuilds(cards: fatia.itens,
+                                                   indiceInicial: (fatia.pagina - 1) * fatia.tamanho,
+                                                   moeda: moeda, agora: ctx.date, abrir: modelo.abrirCard)
+                            }
+                        case .maisCaros:
+                            if top.isEmpty {
+                                ListaVazia(mensagem: "Sem gasto conhecido neste período", busca: busca)
+                            } else {
+                                TabelaCustosBuilds(cards: top, indiceInicial: 0, moeda: moeda,
+                                                   agora: ctx.date, abrir: modelo.abrirCard)
+                            }
                         }
                     }
                     cartaoPagina("Uso por conta") {
@@ -542,44 +634,7 @@ struct PaginaCustos: View {
                             }
                         }
                     }
-                }
-                cartaoPagina("Builds", direita: { SeletorPeriodo(periodo: $periodo) }) {
-                    let p = snap?.custos.periodos[periodo]
-                    let filtro = FiltroBusca(busca.texto)
-                    let buildsFiltrados = filtro.filtrar(p?.builds ?? []) { b in [b.card, b.descricao, b.lane] }
-                    let topFiltrado = filtro.filtrar(p?.top ?? []) { b in [b.card, b.descricao, b.lane] }
-                    let fatia: GastoCore.PaginaBuilds = ListaBuilds.pagina(buildsFiltrados, numero: pagina)
-                    let top = topFiltrado
-                    SeletorAbasCustos(aba: $aba)
-                    if p?.total != nil || (aba == .todos && fatia.total > 0) {
-                        HStack(spacing: 10) {
-                            if let total = p?.total {
-                                Text("Total do período: \(moeda.texto(total))")
-                                    .fontePainel(12).foregroundStyle(PV.mudo)
-                            }
-                            Spacer(minLength: 8)
-                            if aba == .todos, fatia.total > 0 {
-                                controles(fatia)
-                            }
-                        }
-                    }
-                    switch aba {
-                    case .todos:
-                        if fatia.total == 0 {
-                            ListaVazia(mensagem: "Nenhum build neste período", busca: busca)
-                        } else {
-                            TabelaCustosBuilds(cards: fatia.itens,
-                                               indiceInicial: (fatia.pagina - 1) * fatia.tamanho,
-                                               moeda: moeda, agora: ctx.date, abrir: modelo.abrirCard)
-                        }
-                    case .maisCaros:
-                        if top.isEmpty {
-                            ListaVazia(mensagem: "Sem gasto conhecido neste período", busca: busca)
-                        } else {
-                            TabelaCustosBuilds(cards: top, indiceInicial: 0, moeda: moeda,
-                                               agora: ctx.date, abrir: modelo.abrirCard)
-                        }
-                    }
+                    .frame(width: 380)
                 }
             }
             .padding(.top, 10)
@@ -587,6 +642,32 @@ struct PaginaCustos: View {
         .onChange(of: periodo) { _, _ in pagina = 1 }
         .onChange(of: aba) { _, _ in pagina = 1 }
         .onChange(of: busca.texto) { _, _ in pagina = 1 }
+    }
+
+    /// Resumo em linha do gasto: os mesmos números do cartão «Resumo», sem o cartão.
+    private var faixaResumo: some View {
+        faixaPagina {
+            Text("Hoje").fontePainel(11.5).foregroundStyle(PV.mudo)
+            Text(snap?.custos.hoje.map { moeda.texto($0) }
+                 ?? ((snap?.custos.desconhecidasHoje ?? 0) > 0 ? "—" : "sem dado"))
+                .fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
+            PontoFaixa()
+            Text("7 dias").fontePainel(11.5).foregroundStyle(PV.mudo)
+            Text(snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado")
+                .fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
+            PontoFaixa()
+            Text("7 anteriores").fontePainel(11.5).foregroundStyle(PV.mudo)
+            Text(snap?.indicadores.semanaAnterior.map { moeda.texto($0) } ?? "sem dado")
+                .fontePainel(12.5).foregroundStyle(PV.mudo)
+            if let n = snap?.custos.desconhecidasSemana, n > 0 {
+                PontoFaixa()
+                Text("\(Formato.plural(n, "execução", "execuções")) sem custo, fora da soma")
+                    .fontePainel(11.5).foregroundStyle(PV.mudo)
+                    .help("Execuções dos últimos 7 dias com custo desconhecido.")
+            }
+        } direita: {
+            Text(moeda.detalhe).fontePainel(11.5).foregroundStyle(PV.mudo)
+        }
     }
 
     private func controles(_ fatia: GastoCore.PaginaBuilds) -> some View {
@@ -714,84 +795,106 @@ struct PaginaTestes: View {
         // inteira antes só se redesenhava quando o snapshot mudava.
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
             VStack(spacing: 13) {
+                if temProva { cartaoProvas }
                 HStack(alignment: .top, spacing: 13) {
-                cartaoPagina("Prova em curso", direita: {
-                    Text("lock único: uma prova por vez").fontePainel(11.5).foregroundStyle(PV.ambar)
-                }) {
-                    if let provas = snap?.provas, !provas.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(provas, id: \.chave) { prova in
-                                    let foco = (provaFoco ?? provas.first?.chave) == prova.chave
-                                    Button { provaFoco = prova.chave } label: {
-                                        HStack(spacing: 7) {
-                                            Circle().fill(prova.seguraLock ? PV.ciano : PV.ambar).frame(width: 7, height: 7)
-                                            Text(prova.lane.isEmpty ? prova.card : prova.lane)
-                                            Text(prova.posicaoFila.map { "fila \($0)º" } ?? (prova.emCurso ? "rodando" : prova.card))
-                                                .foregroundStyle(PV.mudo)
-                                        }
-                                        .fontePainel(12)
-                                        .padding(.horizontal, 12).frame(height: 32)
-                                        .background(Capsule().fill(foco ? PV.navSelecao : PV.linha))
-                                        .overlay(Capsule().strokeBorder(foco ? PV.navSelecaoBorda : PV.campoBorda, lineWidth: 1))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                        if let carta = provas.first(where: { $0.chave == provaFoco }) ?? provas.first {
-                            CartaoProvaV2(carta: carta)
-                        }
-                    } else if (snap?.provasRemotasEmCurso ?? []).isEmpty {
-                        Text("Nenhuma prova agora").fontePainel(12.5).foregroundStyle(PV.mudo)
-                        RegraZeroTestes(alerta: false)
-                    }
-                    ForEach(snap?.provasRemotasEmCurso ?? [], id: \.card) { r in
-                        LinhaProvaRemota(prova: r, abrir: modelo.abrirCard)
-                    }
+                    cartaoHistorico(agora: ctx.date)
+                    cartaoHoje
+                        .frame(width: 380)
                 }
-                cartaoPagina("Hoje") {
-                    let ind = snap?.indicadores ?? .vazio
-                    HStack(spacing: 18) {
-                        Rosca(passou: ind.provasOk, falhou: ind.provasFalha).frame(width: 120, height: 120)
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("\(ind.provasOk) passou").foregroundStyle(Aurora.verde)
-                                .help("Provas de hoje com veredito ok (local e GitHub)")
-                            Text("\(ind.provasFalha) falhou").foregroundStyle(Aurora.vermelho)
-                            Text("— ignorado").foregroundStyle(PV.mudo).help("Testes ignorados: em breve")
-                            Text(Formato.plural(ind.provasHoje, "prova hoje", "provas hoje")).foregroundStyle(PV.mudo)
-                            if ind.remotasVerdes + ind.remotasVermelhas > 0 {
-                                Text("remotas: \(ind.remotasVerdes) ✓ · \(ind.remotasVermelhas) ✗")
-                                    .foregroundStyle(PV.mudo)
-                                    .help("Check prova-remota no GitHub; os testes rodam lá")
-                            }
-                        }
-                        .fontePainel(12.5)
-                    }
-                }
-                .frame(width: 380)
-            }
-            cartaoPagina("Histórico") {
-                let historico = FiltroBusca(busca.texto).filtrar(snap?.historico ?? []) { h in
-                    [h.card, h.titulo, h.lane, h.selo] }
-                if historico.isEmpty {
-                    ListaVazia(mensagem: "Sem prova terminada ainda", busca: busca)
-                } else {
-                    let fatia = ListaPaginada.cortar(historico, numero: paginaHistorico, vazio: "0 provas")
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 10) {
-                            Text(Formato.plural(historico.count, "prova", "provas"))
-                                .fontePainel(12).foregroundStyle(PV.mudo)
-                            Spacer(minLength: 8)
-                            controlesHistorico(fatia)
-                        }
-                        TabelaHistoricoTestes(itens: fatia.itens, agora: ctx.date, abrir: modelo.abrirCard)
-                    }
-                }
-            }
             }
             .padding(.top, 10)
             .onChange(of: busca.texto) { _, _ in paginaHistorico = 1 }
+        }
+    }
+
+    /// Só há cartão de prova quando existe prova: antes um cartão vazio ocupava a
+    /// largura toda para dizer «Nenhuma prova agora».
+    private var temProva: Bool {
+        !(snap?.provas ?? []).isEmpty || !(snap?.provasRemotasEmCurso ?? []).isEmpty
+    }
+
+    @ViewBuilder private var cartaoProvas: some View {
+        cartaoPagina("Prova em curso", direita: {
+            Text("lock único: uma prova por vez").fontePainel(11.5).foregroundStyle(PV.ambar)
+        }) {
+            if let provas = snap?.provas, !provas.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(provas, id: \.chave) { prova in
+                            let foco = (provaFoco ?? provas.first?.chave) == prova.chave
+                            Button { provaFoco = prova.chave } label: {
+                                HStack(spacing: 7) {
+                                    Circle().fill(prova.seguraLock ? PV.ciano : PV.ambar).frame(width: 7, height: 7)
+                                    Text(prova.lane.isEmpty ? prova.card : prova.lane)
+                                    Text(prova.posicaoFila.map { "fila \($0)º" } ?? (prova.emCurso ? "rodando" : prova.card))
+                                        .foregroundStyle(PV.mudo)
+                                }
+                                .fontePainel(12)
+                                .padding(.horizontal, 12).frame(height: 32)
+                                .background(Capsule().fill(foco ? PV.navSelecao : PV.linha))
+                                .overlay(Capsule().strokeBorder(foco ? PV.navSelecaoBorda : PV.campoBorda, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if let carta = provas.first(where: { $0.chave == provaFoco }) ?? provas.first {
+                    CartaoProvaV2(carta: carta)
+                }
+            }
+            ForEach(snap?.provasRemotasEmCurso ?? [], id: \.card) { r in
+                LinhaProvaRemota(prova: r, abrir: modelo.abrirCard)
+            }
+        }
+    }
+
+    private var cartaoHoje: some View {
+        cartaoPagina("Hoje") {
+            let ind = snap?.indicadores ?? .vazio
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 18) {
+                    Rosca(passou: ind.provasOk, falhou: ind.provasFalha).frame(width: 120, height: 120)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("\(ind.provasOk) passou").foregroundStyle(Aurora.verde)
+                            .help("Provas de hoje com veredito ok (local e GitHub)")
+                        Text("\(ind.provasFalha) falhou").foregroundStyle(Aurora.vermelho)
+                        Text("— ignorado").foregroundStyle(PV.mudo).help("Testes ignorados: em breve")
+                        Text(Formato.plural(ind.provasHoje, "prova hoje", "provas hoje")).foregroundStyle(PV.mudo)
+                        if ind.remotasVerdes + ind.remotasVermelhas > 0 {
+                            Text("remotas: \(ind.remotasVerdes) ✓ · \(ind.remotasVermelhas) ✗")
+                                .foregroundStyle(PV.mudo)
+                                .help("Check prova-remota no GitHub; os testes rodam lá")
+                        }
+                    }
+                    .fontePainel(12.5)
+                }
+                RegraZeroTestes(alerta: false)
+            }
+        }
+    }
+
+    @ViewBuilder private func cartaoHistorico(agora: Date) -> some View {
+        cartaoPagina("Histórico", direita: {
+            if !temProva {
+                Text("nenhuma prova agora").fontePainel(11.5).foregroundStyle(PV.mudo)
+            }
+        }) {
+            let historico = FiltroBusca(busca.texto).filtrar(snap?.historico ?? []) { h in
+                [h.card, h.titulo, h.lane, h.selo] }
+            if historico.isEmpty {
+                ListaVazia(mensagem: "Sem prova terminada ainda", busca: busca)
+            } else {
+                let fatia = ListaPaginada.cortar(historico, numero: paginaHistorico, vazio: "0 provas")
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Text(Formato.plural(historico.count, "prova", "provas"))
+                            .fontePainel(12).foregroundStyle(PV.mudo)
+                        Spacer(minLength: 8)
+                        controlesHistorico(fatia)
+                    }
+                    TabelaHistoricoTestes(itens: fatia.itens, agora: agora, abrir: modelo.abrirCard)
+                }
+            }
         }
     }
 
@@ -835,6 +938,7 @@ private struct TabelaHistoricoTestes: View {
                     Text((item.titulo == nil || item.titulo == "sem descrição") ? item.card : item.titulo!)
                         .foregroundStyle((item.titulo == nil || item.titulo == "sem descrição") ? PV.mudo : PV.texto)
                         .lineLimit(1)
+                        .padding(.trailing, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(item.lane.isEmpty ? "—" : item.lane)
                         .foregroundStyle(item.lane.isEmpty ? PV.mudo : PV.texto)
@@ -1068,18 +1172,24 @@ struct RegraZeroTestes: View {
     var alerta: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        Group {
             if alerta {
-                Text("!").fontePainel(12, .bold).foregroundStyle(.white).frame(width: 20, height: 20)
-                    .background(Circle().fill(PV.vermelho))
+                HStack(spacing: 8) {
+                    Text("!").fontePainel(12, .bold).foregroundStyle(.white).frame(width: 20, height: 20)
+                        .background(Circle().fill(PV.vermelho))
+                    Text("0 testes rodados = falha.").fontePainel(12.5, .semibold).foregroundStyle(PV.vermelho)
+                    Text("A prova é reprovada mesmo que o xcodebuild diga sucesso.").fontePainel(12.5)
+                        .foregroundStyle(Aurora.rosa)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(PV.vermelho.opacity(0.16)))
+            } else {
+                Text("0 testes rodados = falha. A prova é reprovada mesmo que o xcodebuild diga sucesso.")
+                    .fontePainel(11.5).foregroundStyle(PV.mudo)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("0 testes rodados = falha.").fontePainel(12.5, alerta ? .semibold : .regular)
-                .foregroundStyle(alerta ? PV.vermelho : PV.mudo)
-            Text("A prova é reprovada mesmo que o xcodebuild diga sucesso.").fontePainel(12.5)
-                .foregroundStyle(alerta ? Aurora.rosa : PV.mudo)
         }
-        .padding(alerta ? 10 : 0)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background { if alerta { RoundedRectangle(cornerRadius: 8).fill(PV.vermelho.opacity(0.16)) } }
     }
 }

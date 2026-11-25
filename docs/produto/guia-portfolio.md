@@ -50,8 +50,11 @@ lane não roda em dois projetos. Para desligar:
 No app:
 
 - **Dashboard** e **Lanes**: projeto do ciclo, lanes e custo;
-- **Projetos**: cadastro, ligado/desligado, principal, prioridade, custo dos
-  últimos 7 dias, claims/merges/duração e ação de trocar o principal;
+- **Projetos**: uma linha por projeto, com ligado/desligado, principal,
+  prioridade, custo dos últimos 7 dias, claims/merges/duração e a situação da
+  instalação. A instalação abre na própria linha (subir, parar, empacotar,
+  validar, instalar uma versão e ver o log) e o cadastro completo abre em
+  **Editar**, no menu da linha;
 - **Custos**: visão geral; o CLI separa por projeto.
 
 No terminal:

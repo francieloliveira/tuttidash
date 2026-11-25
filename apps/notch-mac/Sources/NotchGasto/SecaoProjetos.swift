@@ -235,6 +235,13 @@ final class EstadoProjetos: ObservableObject {
         linhas[i].aberto.toggle()
     }
 
+    /// Abre o formulário da linha no popup (a página Projetos edita assim) sem
+    /// alternar: chamar de novo com o editor aberto não fecha.
+    func abrirEditor(_ id: UUID) {
+        guard let i = indice(id) else { return }
+        linhas[i].aberto = true
+    }
+
     func cancelar(_ id: UUID) {
         guard let i = indice(id) else { return }
         if let s = linhas[i].salvo {
@@ -377,7 +384,7 @@ struct SecaoProjetos: View {
     /// Embutido nos Ajustes: o título vem do grupo, não de outro Section.
     var embutido = false
     /// Cadastro novo abre num popup; a lista só mostra o que já foi salvo.
-    @State private var novoPopup: NovoProjeto?
+    @State private var novoPopup: PopupProjeto?
 
     init(estado: @autoclosure @escaping () -> EstadoProjetos, embutido: Bool = false) {
         _estado = StateObject(wrappedValue: estado())
@@ -445,7 +452,7 @@ struct SecaoProjetos: View {
         Button {
             estado.adicionar()
             if let nova = estado.linhas.last(where: \.nova) {
-                novoPopup = NovoProjeto(id: nova.id)
+                novoPopup = PopupProjeto(id: nova.id)
             }
         } label: {
             Label(String(localized: "Adicionar projeto"), systemImage: "plus")
@@ -1113,15 +1120,17 @@ private struct CampoLinhas: View {
 }
 
 
-/// Identificador do popup de projeto novo.
-private struct NovoProjeto: Identifiable {
+/// Identificador do popup de projeto (novo ou edição).
+struct PopupProjeto: Identifiable {
     let id: UUID
 }
 
-/// Popup de cadastro novo: reusa o mesmo formulário da linha, sem abrir a lista.
-private struct EditorProjetoPopup: View {
+/// Popup de cadastro (novo ou edição): reusa o mesmo formulário da linha, sem abrir a lista.
+struct EditorProjetoPopup: View {
     @Binding var linha: LinhaCadastro
     @ObservedObject var estado: EstadoProjetos
+    var titulo = String(localized: "Novo projeto")
+    var subtitulo = String(localized: "Escolha o projeto do Linear, o repositório do GitHub e a pasta deste Mac.")
     var fechar: () -> Void
     var cancelar: () -> Void
 
@@ -1134,8 +1143,8 @@ private struct EditorProjetoPopup: View {
                     .frame(width: 36, height: 36)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "Novo projeto")).font(.title3.weight(.semibold))
-                    Text(String(localized: "Escolha o projeto do Linear, o repositório do GitHub e a pasta deste Mac."))
+                    Text(titulo).font(.title3.weight(.semibold))
+                    Text(subtitulo)
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

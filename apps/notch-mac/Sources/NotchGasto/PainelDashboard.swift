@@ -31,8 +31,9 @@ struct DashboardPainel: View {
     private func conteudo(largura: CGFloat) -> some View {
         TimelineView(.periodic(from: .now, by: 30)) { ctx in
             VStack(spacing: 0) {
-                kpis(largura).frame(height: 82 * escala).padding(.top, 14)
-                if alertasFechados == nil || alertasFechados != alertas {
+                faixaResumo.padding(.top, 14)
+                // Sem alerta não há faixa: a barra vazia só repetia «Nenhum alerta agora».
+                if !alertas.isEmpty, alertasFechados == nil || alertasFechados != alertas {
                     faixaAlertas.frame(height: 42 * escala).padding(.top, 12)
                 }
                 meio(largura, agora: ctx.date).frame(height: 430 * escala).padding(.top, 12)
@@ -41,116 +42,35 @@ struct DashboardPainel: View {
         }
     }
 
-    // MARK: Cartões do topo
+    // MARK: Resumo do topo
 
-    private func kpis(_ largura: CGFloat) -> some View {
-        let k = (largura - 48) / 1300
-        return HStack(spacing: 16) {
-            kpi(icone: IconeCartao(simbolo: "square.3.layers.3d", cor: PV.teal, fundo: PV.tealFundo, tamanho: 46, tamanhoIcone: 21),
-                rotulo: "Lanes ativas", valor: "\(ind.lanesAtivas) / \(ind.lanesTotal)", espaco: 16,
-                larguraMinimaDelta: 195, larguraMinimaAbaixo: 316, larguraMinimaDireita: 295) {
-                // Mock: sem histórico do nº de lanes ativas, a variação não tem número.
-                Text("—").fontePainel(13, .semibold).foregroundStyle(PV.verde).help("Variação: em breve")
-            } abaixo: {
-                BarraPV(fracao: ind.lanesTotal > 0 ? Double(ind.lanesAtivas) / Double(ind.lanesTotal) : 0,
-                        cor: PV.teal, altura: 4, trilho: PV.trilho)
-                    .frame(width: 143).padding(.leading, 63)
-            } direita: { EmptyView() }
-            .frame(width: 316 * k)
-            .clipped()
-
-            kpi(icone: IconeCartao(simbolo: "bolt", cor: PV.azulIcone, fundo: PV.azulFundo, tamanho: 46, tamanhoIcone: 21),
-                rotulo: "Builds hoje", valor: "\(ind.buildsHoje)", espaco: 12,
-                larguraMinimaDelta: 185, larguraMinimaDireita: 265) {
-                variacao(ind.buildsHoje - ind.buildsOntem, sobeBom: true)
-            } abaixo: { EmptyView() } direita: {
-                Barrinhas(valores: ind.buildsSerie.map(Double.init)) { i, _ in
-                    i >= 9 ? PV.azul : (i >= 3 ? PV.azulIcone : Color(hex: 0x2F7BEA))
-                }
-                .help("Execuções por hora nas últimas 12 h")
-                .padding(.top, 12)
+    /// Faixa de resumo no lugar dos quatro cartões: os mesmos números continuam nas
+    /// seções abaixo; aqui eles viram uma linha, sem o peso visual dos cartões.
+    private var faixaResumo: some View {
+        faixaPagina {
+            Text("Lanes ativas").fontePainel(11.5).foregroundStyle(PV.mudo)
+            Text("\(ind.lanesAtivas) / \(ind.lanesTotal)")
+                .fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
+            PontoFaixa()
+            Text("Builds hoje").fontePainel(11.5).foregroundStyle(PV.mudo)
+            Text("\(ind.buildsHoje)")
+                .fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
+            variacao(ind.buildsHoje - ind.buildsOntem, sobeBom: true)
+            PontoFaixa()
+            Text("Falhas (24h)").fontePainel(11.5).foregroundStyle(PV.mudo)
+            Text("\(ind.falhas24h)")
+                .fontePainel(12.5, .semibold)
+                .foregroundStyle(ind.falhas24h > 0 ? PV.vermelho : PV.texto2)
+            if let p = ind.falhasPct {
+                Text(Formato.pct(p)).fontePainel(11.5).foregroundStyle(PV.vermelho)
             }
-            .frame(width: 296 * k)
-            .clipped()
-
-            kpi(icone: IconeCartao(simbolo: "xmark.circle", cor: PV.vermelho, fundo: PV.vermelhoFundo, tamanho: 46, tamanhoIcone: 22),
-                rotulo: "Falhas (24h)", valor: "\(ind.falhas24h)", espaco: 14,
-                larguraMinimaDelta: 195, larguraMinimaDireita: 275) {
-                Text(ind.falhasPct.map { Formato.pct($0) } ?? "—").fontePainel(13, .semibold).foregroundStyle(PV.vermelho)
-            } abaixo: { EmptyView() } direita: {
-                Barrinhas(valores: ind.falhasSerie.map(Double.init)) { _, v in v > 0 ? PV.vermelho : Color(hex: 0x3A4868) }
-                    .padding(.top, 12)
-            }
-            .frame(width: 336 * k)
-            .clipped()
-
-            kpi(icone: IconeCartao(simbolo: "cylinder.split.1x2", cor: PV.dourado, fundo: PV.ambarFundo, tamanho: 46, tamanhoIcone: 21),
-                rotulo: "Custo (7 dias)", valor: snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado", espaco: 12,
-                larguraMinimaDelta: 235, larguraMinimaDireita: 290) {
-                variacaoCusto
-            } abaixo: { EmptyView() } direita: {
-                Barrinhas(valores: (snap?.custos.dias ?? []).map(\.total), cor: { _, _ in PV.verde }, largura: 5)
-                    .padding(.top, 10)
-            }
-            .frame(width: 352 * k)
-            .clipped()
-        }
-    }
-
-    private func kpi<Delta: View, Abaixo: View, Direita: View>(
-        icone: IconeCartao, rotulo: String, valor: String, espaco: CGFloat,
-        larguraMinimaDelta: CGFloat = 0,
-        larguraMinimaAbaixo: CGFloat = 0,
-        larguraMinimaDireita: CGFloat = 0,
-        @ViewBuilder delta: @escaping () -> Delta,
-        @ViewBuilder abaixo: @escaping () -> Abaixo,
-        @ViewBuilder direita: @escaping () -> Direita
-    ) -> some View {
-        // O espaço que vale é o do cartão, medido abaixo; a janela não entra na conta.
-        // Primeiro saem os detalhes (gráfico), depois a variação e a barra de apoio;
-        // ícone, rótulo, valor e o que estiver na faixa essencial ficam.
-        let pecas = [
-            PecaCard(id: "icone", prioridade: .essencial),
-            PecaCard(id: "texto", prioridade: .essencial),
-            PecaCard(id: "delta", prioridade: .secundaria,
-                     minimo: EspacoCard(largura: Double(larguraMinimaDelta), altura: 0)),
-            PecaCard(id: "abaixo", prioridade: .secundaria,
-                     minimo: EspacoCard(largura: Double(larguraMinimaAbaixo), altura: 0)),
-            PecaCard(id: "direita", prioridade: .detalhe,
-                     minimo: EspacoCard(largura: Double(larguraMinimaDireita), altura: 0)),
-        ]
-        return ComEspacoDoCard { espacoDoCard in
-            let visiveis = Set(DegradacaoCard.visiveis(pecas, em: espacoDoCard))
-            HStack(spacing: 0) {
-                if visiveis.contains("icone") { icone.padding(.trailing, 14) }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(rotulo.uppercased())
-                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                        .tracking(0.7)
-                        .foregroundStyle(Aurora.mudo)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    HStack(alignment: .firstTextBaseline, spacing: espaco) {
-                        Text(valor)
-                            .font(.system(size: 25, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(Aurora.texto)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .fixedSize()
-                            .contentTransition(.numericText())
-                            .animation(DS.anim(DS.mola), value: valor)
-                        if visiveis.contains("delta") { delta().fixedSize() }
-                    }
-                    if visiveis.contains("abaixo") { abaixo() }
-                }
-                .layoutPriority(1)
-                Spacer(minLength: 0)
-                if visiveis.contains("direita") { direita() }
-            }
-            .padding(.leading, 15).padding(.trailing, 18)
-            .frame(maxHeight: .infinity)
-            .vidroAurora(raio: 16)
+            PontoFaixa()
+            Text("Custo (7 dias)").fontePainel(11.5).foregroundStyle(PV.mudo)
+            Text(snap?.custos.semana.map { moeda.texto($0) } ?? "sem dado")
+                .fontePainel(12.5, .semibold).foregroundStyle(PV.texto2)
+            variacaoCusto
+        } direita: {
+            EmptyView()
         }
     }
 
@@ -699,6 +619,9 @@ struct LinhaLaneDashboard: View {
 
     var body: some View {
         let estado = EstadoPilula(linha.estado)
+        // Lane desligada não tem detalhe para abrir: mostrar o chevron e uma caixa vazia
+        // só ocupava a lista (a ação de ativar está no menu ⋮).
+        let podeAbrir = linha.estado != .desligada
         // A linha também degrada pelo espaço dela: a altura chega do cartão e diz
         // o que cabe. Primeiro saem a segunda linha e a build; lane e estado ficam.
         let pecas = [
@@ -713,10 +636,17 @@ struct LinhaLaneDashboard: View {
         let visiveis = Set(DegradacaoCard.visiveis(pecas, altura: Double(altura)))
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                Button(action: alternar) {
+                Button(action: { if podeAbrir { alternar() } }) {
                     HStack(spacing: 0) {
-                        Image(systemName: aberta ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 11, weight: .bold)).foregroundStyle(PV.icone).frame(width: 14)
+                        Group {
+                            if podeAbrir {
+                                Image(systemName: aberta ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: 11, weight: .bold)).foregroundStyle(PV.icone)
+                            } else {
+                                Color.clear
+                            }
+                        }
+                        .frame(width: 14)
                         PontoLane(cor: estado.corLane, piscando: linha.estado == .rodando)
                             .padding(.leading, 14)
                         VStack(alignment: .leading, spacing: 1) {
@@ -733,7 +663,7 @@ struct LinhaLaneDashboard: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(aberta ? "Recolher \(linha.lane)" : "Expandir \(linha.lane)")
+                .accessibilityLabel(podeAbrir ? (aberta ? "Recolher \(linha.lane)" : "Expandir \(linha.lane)") : "Lane \(linha.lane) desligada")
                 PilulaEstado(estado: estado).fixedSize().frame(width: 97, alignment: .leading)
                 if visiveis.contains("build") {
                     VStack(alignment: .leading, spacing: 1) {
@@ -769,7 +699,7 @@ struct LinhaLaneDashboard: View {
                         .help("No card há \(TextoTempo.duracao(Double(s)))")
                 }
             }
-            if aberta {
+            if aberta, podeAbrir {
                 DetalheLane(linha: linha)
                     .padding(.leading, 38).padding(.trailing, 10).padding(.bottom, 10)
                     .transition(.opacity.combined(with: .move(edge: .top)))
