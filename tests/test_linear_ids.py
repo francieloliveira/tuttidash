@@ -31,6 +31,7 @@ LABELS = [
     {"id": "l-baixo", "name": "baixo", "parent": {"name": "esforco"}, "team": None},
     {"id": "l-claude", "name": "claude", "parent": {"name": "lane"}, "team": None},
     {"id": "l-solto", "name": "claude", "parent": None, "team": None},
+    {"id": "l-repo-app", "name": "repo:app", "parent": None, "team": None},
 ]
 
 
@@ -84,6 +85,13 @@ class IdsDoLinear(unittest.TestCase):
         de_novo = L.garantir(cfg, f2, dono="needs:dono", lanes=["claude"], project_id="p1", caminho=self.cache)
         self.assertEqual(de_novo, ids)
         self.assertEqual(f2.chamadas, [], "tudo no cache: não vai à rede")
+
+    def test_etiqueta_repo_do_card(self):
+        """FRA-711: o dispatcher escolhe o repositório pela etiqueta solta `repo:<slug>`."""
+        ids = L.resolver(Falso(), project_id="p1", dono="needs:dono", repos=["app", "web"])
+        self.assertEqual(ids["repos"], {"app": "l-repo-app"}, "só entra o que o Linear já tem")
+        self.assertNotIn("repo:app", L.faltando(ids, "needs:dono", repos=["app", "web"]))
+        self.assertIn("repo:web", L.faltando(ids, "needs:dono", repos=["app", "web"]))
 
     def test_cache_e_por_projeto(self):
         self.assertEqual(L.caminho_cache(""), L.CACHE)
@@ -173,6 +181,25 @@ class CriaEtiquetas(unittest.TestCase):
                          caminho=self.tmp / "c.json", log=avisos.append)
         self.assertEqual(L.faltando(ids, "needs:dono", ["claude"]), [])
         self.assertTrue(any("etiquetas criadas" in a for a in avisos))
+
+    def test_cria_etiqueta_repo_solta_sem_pai(self):
+        f = LinearQueCria([])
+        criadas = L.criar_faltando(f, project_id="p1", dono="needs:dono", repos=["app"])
+        self.assertIn("repo:app", criadas)
+        etiqueta = next(c for c in f.criadas if c["name"] == "repo:app")
+        self.assertNotIn("parentId", etiqueta, "o dispatcher lê o nome da etiqueta, não o grupo")
+        self.assertTrue(etiqueta["teamId"])
+        ids = L.resolver(f, project_id="p1", dono="needs:dono", repos=["app"])
+        self.assertFalse([x for x in L.faltando(ids, "needs:dono", repos=["app"]) if x.startswith("repo:")])
+
+    def test_garantir_guarda_o_id_do_repo_no_cache(self):
+        caminho = self.tmp / "repos.json"
+        ids = L.garantir(leitor({}), LinearQueCria([]), dono="needs:dono", repos=["app"],
+                         project_id="p1", caminho=caminho)
+        self.assertTrue(ids["repos"].get("app"))
+        f2 = LinearQueCria([])
+        L.garantir(leitor({}), f2, dono="needs:dono", repos=["app"], project_id="p1", caminho=caminho)
+        self.assertEqual(f2.criadas, [], "no segundo ciclo o id sai do cache")
 
     def test_sem_criar_so_avisa(self):
         f = LinearQueCria([])
