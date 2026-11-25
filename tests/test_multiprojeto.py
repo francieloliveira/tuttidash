@@ -99,5 +99,94 @@ class EstadoDaLane(Base):
         self.assertEqual(st["lanes"]["grok"]["projeto_nome"], "Projeto 2")
 
 
+class CiclosMultiProjeto(Base):
+    def test_dispatcher_consulta_cada_projeto_mesmo_se_um_proxy_falhar(self):
+        # Exercita o ciclo real do dispatcher com o proxy substituído por uma
+        # fixture local. A falha na consulta de A não pode pular a consulta de B.
+        from unittest.mock import patch
+        import lanes.dispatcher as dispatcher
+
+        a = projetos.Projeto(id="a", nome="A", repo=str(self.tmp / "repo-a"))
+        b = projetos.Projeto(id="b", nome="B", repo=str(self.tmp / "repo-b"))
+        consultas = []
+
+        def linear(_query, variables):
+            consultas.append(variables["project"])
+            if variables["project"] == "a":
+                raise RuntimeError("proxy fixture: projeto A indisponível")
+            return {"issues": {"nodes": []}}
+
+        with patch.object(dispatcher, "STATE_DIR", self.estado), \
+             patch.object(dispatcher, "HEARTBEAT_FILE", self.estado / "heartbeat.json"), \
+             patch.object(dispatcher, "PAUSE_FILE", self.estado / "PAUSE"), \
+             patch.object(dispatcher, "app_aberta", return_value=True), \
+             patch.object(dispatcher, "garantir_ids"), \
+             patch.object(dispatcher, "STATE_TODO_ID", ""), \
+             patch.object(dispatcher, "enabled_lanes", return_value={"codex"}), \
+             patch.object(dispatcher, "measures_cached", return_value=None), \
+             patch.object(dispatcher.projetos, "recarregar"), \
+             patch.object(dispatcher.projetos, "configurado", return_value=True), \
+             patch.object(dispatcher.projetos, "ativos", return_value=[a, b]), \
+             patch.object(dispatcher.projetos, "projetos", return_value=[a, b]), \
+             patch.object(dispatcher, "effective_lanes", return_value=({"codex"}, [])), \
+             patch.object(dispatcher, "lane_runnable", return_value=True), \
+             patch.object(dispatcher, "now", return_value="2026-11-25T12:00:00"), \
+             patch.object(dispatcher, "_privar"), \
+             patch.object(dispatcher, "load_state", return_value=None), \
+             patch.object(dispatcher.linear_ids, "carregar", return_value={}), \
+             patch.object(dispatcher, "_aplicar_ids"), \
+             patch.object(dispatcher, "lane_limited_conta", return_value=False), \
+             patch.object(dispatcher, "linear", side_effect=linear), \
+             patch.object(dispatcher, "log"):
+            dispatcher._ciclo_simultaneo(real=True, verbose=False)
+
+        self.assertEqual(consultas, ["a", "b"])
+
+    def test_vigia_continua_no_proximo_projeto_apos_falha(self):
+        # Verifica a fronteira de isolamento usada pelo tick multi-projeto:
+        # uma exceção de A não cancela o processamento de B.
+        from unittest.mock import patch
+        import bots.watch as watch
+
+        a = projetos.Projeto(id="a", nome="A", repo=str(self.tmp / "repo-a"))
+        b = projetos.Projeto(id="b", nome="B", repo=str(self.tmp / "repo-b"))
+        processados = []
+
+        def main(p, _lock=False):
+            processados.append(p.id)
+            if p.id == "a":
+                raise RuntimeError("falha isolada de A")
+            return 0
+
+        with patch.object(watch, "STATE_DIR", self.estado), \
+             patch.object(watch, "app_aberta", return_value=True), \
+             patch.object(watch, "pausado_pelo_dono", return_value=False), \
+             patch.object(watch.projetos, "recarregar"), \
+             patch.object(watch.projetos, "configurado", return_value=True), \
+             patch.object(watch.projetos, "ativos", return_value=[a, b]), \
+             patch.object(watch, "agenda_ligada", return_value=True), \
+             patch.object(watch, "main", side_effect=main), \
+             patch.object(watch, "log"):
+            watch.main_todos()
+
+        self.assertEqual(processados, ["a", "b"])
+
+    def test_vigia_isola_estado_repo_e_cards_por_projeto(self):
+        from unittest.mock import patch
+        import bots.watch as watch
+
+        repo_a = self.tmp / "repo-a"
+        repo_b = self.tmp / "repo-b"
+        repo_a.mkdir()
+        repo_b.mkdir()
+        a = projetos.Projeto(id="team-a", nome="A", repo=str(repo_a), github="org/a")
+        b = projetos.Projeto(id="team-b", nome="B", repo=str(repo_b), github="org/b")
+        with patch.object(watch, "_cfg", return_value=True):
+            self.assertEqual(watch._estado_do_projeto(a), self.estado / "projetos" / "team-a.json")
+            self.assertEqual(watch._estado_do_projeto(b), self.estado / "projetos" / "team-b.json")
+        self.assertEqual(watch._repos_do_projeto(a)["app"], {"dir": repo_a, "slug": "org/a"})
+        self.assertEqual(watch._repos_do_projeto(b)["app"], {"dir": repo_b, "slug": "org/b"})
+
+
 if __name__ == "__main__":
     unittest.main()
