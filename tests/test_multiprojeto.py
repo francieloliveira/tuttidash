@@ -193,7 +193,8 @@ class CiclosMultiProjeto(Base):
         repo_b.mkdir()
         a = projetos.Projeto(id="team-a", nome="A", repo=str(repo_a), github="org/a")
         b = projetos.Projeto(id="team-b", nome="B", repo=str(repo_b), github="org/b")
-        with patch.object(watch, "_cfg", return_value=True):
+        with patch.object(watch, "STATE_DIR", self.estado), \
+             patch.object(watch, "_cfg", return_value=True):
             self.assertEqual(watch._estado_do_projeto(a), self.estado / "projetos" / "team-a.json")
             self.assertEqual(watch._estado_do_projeto(b), self.estado / "projetos" / "team-b.json")
         self.assertEqual(watch._repos_do_projeto(a)["app"], {"dir": repo_a, "slug": "org/a"})
